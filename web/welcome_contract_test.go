@@ -117,12 +117,23 @@ func TestWelcomeStep2ReadsTheSharedText(t *testing.T) {
 		t.Fatalf("no scroll box with the legal-text class")
 	}
 	p13MustContain(t, "scroll box", box, `tabindex="0"`, `aria-label="Disclaimer and policy text"`)
-	p13Ordered(t, page, "step 2", `{{template "legal_disclaimer_body" .Legal}}`, `{{template "legal_policy_body" .Legal}}`, `id="welcome-disagree"`, `id="welcome-agree"`)
+	// Amended 2026-10-27 by quick 261027-jhd (owner): the end-of-text marker comes
+	// right after the policy partial, so it sits under the last line of the text
+	// ("Last updated ..."), and Agree and Disagree come after the marker.
+	p13Ordered(t, page, "step 2", `{{template "legal_disclaimer_body" .Legal}}`, `{{template "legal_policy_body" .Legal}}`, `id="welcome-scrollbox-end"`, `id="welcome-disagree"`, `id="welcome-agree"`)
 	p13MustContain(t, "step 2", page, "Please read this before you use Pinalert. Tap Agree to continue.")
+	p13MustMatch(t, "step 2 scroll box", page,
+		`(?s)<div class="welcome__scrollbox legal-text"[^>]*>\s*\{\{template "legal_disclaimer_body" \.Legal\}\}\s*\{\{template "legal_policy_body" \.Legal\}\}\s*<div class="welcome__scrollbox-end" id="welcome-scrollbox-end" aria-hidden="true"></div>\s*</div>`)
+	w10Count(t, "welcome.html.tmpl", page, `id="welcome-scrollbox-end"`, 1)
+	// The hold is the script's, so a page whose script never runs still shows Agree.
+	p13MustNotContain(t, "welcome.html.tmpl", page, "data-unread")
 
 	// Two buttons in one pair row, Disagree outlined and Agree filled.
+	//
+	// Amended 2026-10-27 by quick 261027-jhd (owner): the row has an id so
+	// welcome.js can hold it back until the end of the text has been seen.
 	p13MustContain(t, "step 2 buttons", page,
-		`<div class="welcome__actions welcome__actions--pair">`,
+		`<div class="welcome__actions welcome__actions--pair" id="welcome-consent-actions">`,
 		`<button type="button" class="btn" id="welcome-disagree">Disagree</button>`,
 		`<button type="button" class="btn btn--primary" id="welcome-agree">Agree</button>`)
 
@@ -181,6 +192,43 @@ func TestWelcomeStep2ReadsTheSharedText(t *testing.T) {
 	agree := jsFunctionBody(t, js, "agree()")
 	p13MustContain(t, "agree", agree, "hideDisagreeBox();")
 	p13MustNotContain(t, "welcome.js", js, "hideLine(disagreeMessage)", "showLine(disagreeMessage")
+}
+
+// TestWelcomeAgreeAfterReading pins the pieces of quick 261027-jhd (owner,
+// 2026-10-27) that live in the stylesheet and the script: step 2 holds Agree and
+// Disagree back until the end of the text has been in view, then shows them in
+// the same place. The behaviour is run in welcome_flow_test.mjs; this file pins
+// what a Node fake cannot see.
+func TestWelcomeAgreeAfterReading(t *testing.T) {
+	css := stripCSSComments(p421ReadStatic(t, "css/welcome.css"))
+	rules := parseCSSRules(css)
+
+	// The held back row keeps its place: visibility only, so nothing moves when
+	// the buttons appear, and they leave Tab and the accessibility tree. One
+	// declaration is the no-motion proof for the reveal.
+	if r, ok := ruleBySelector(rules, ".welcome__actions--pair[data-unread]"); !ok {
+		t.Errorf("welcome.css has no .welcome__actions--pair[data-unread] rule")
+	} else {
+		d := declsOf(r.declBody)
+		if len(d) != 1 || d["visibility"] != "hidden" {
+			t.Errorf("the held back row must set visibility: hidden and nothing else, got %v", d)
+		}
+	}
+	// The end marker is 1px tall, not zero, so every browser reports it as in view.
+	if r, ok := ruleBySelector(rules, ".welcome__scrollbox-end"); !ok {
+		t.Errorf("welcome.css has no .welcome__scrollbox-end rule")
+	} else if d := declsOf(r.declBody); d["height"] != "1px" {
+		t.Errorf("the end marker is %q high, want 1px", d["height"])
+	}
+
+	js := stripJSComments(p421ReadStatic(t, "js/welcome.js"))
+	// The watcher is rooted in the text box, so reading to the end with
+	// VoiceOver counts like scrolling, and it is dropped once the end is seen.
+	p13MustContain(t, "welcome.js", js, "window.IntersectionObserver", "root: scrollbox", ".disconnect()", "function revealConsent()", "function watchForEnd()")
+	// The focus trap must skip a held back row.
+	p13MustContain(t, "isShown", jsFunctionBody(t, js, "isShown(node)"), "hasAttribute(")
+	// Read again only scrolls and focuses: it never holds the buttons back again.
+	p13MustNotContain(t, "readAgain", jsFunctionBody(t, js, "readAgain()"), "revealConsent", "watchForEnd")
 }
 
 // TestWelcomeDisagreeBoxStyle pins the look of the Disagree box (plan 31): the
@@ -465,8 +513,10 @@ func TestWelcomeAlertsStep(t *testing.T) {
 		`role="group" aria-label="Example notification"`,
 		`src="/icons/app.svg" width="40" height="40" alt=""`,
 		">Example</p>",
-		// the one install guide
-		`{{template "device_guide"}}`)
+		// Amended 2026-10-27 by quick 261027-jhd (owner, "yes make it gentler"):
+		// the needs-install part is one line instead of the install guide. The
+		// guide now lives only in the Settings window.
+		`<p class="welcome__lead" id="welcome-alerts-install" hidden>You can turn on alerts later in Settings.</p>`)
 
 	// The four parts, the lines and the three buttons, each id once.
 	for _, id := range []string{
@@ -497,11 +547,17 @@ func TestWelcomeAlertsStep(t *testing.T) {
 	// The key rides on the flow root, and the install guide has no second copy.
 	root := regexp.MustCompile(`<div class="welcome" id="welcome"[^>]*>`).FindString(page)
 	p13MustContain(t, "flow root", root, `data-push-key="{{.PushPublicKey}}"`)
-	w10Count(t, "welcome.html.tmpl", page, `{{template "device_guide"}}`, 1)
-	w10Count(t, "welcome.html.tmpl", page, "/static/css/device-guide.css?v={{.AssetVersion}}", 1)
+	// Amended 2026-10-27 by quick 261027-jhd (owner): the install guide now lives
+	// only in the Settings window, so this page neither includes it nor links its
+	// stylesheet, and it says nothing about the Home Screen.
+	w10Count(t, "welcome.html.tmpl", page, `{{template "device_guide"}}`, 0)
+	w10Count(t, "welcome.html.tmpl", page, "/static/css/device-guide.css?v={{.AssetVersion}}", 0)
+	w10Count(t, "welcome.html.tmpl", page, "You can turn on alerts later in Settings.", 1)
+	p13MustNotContain(t, "welcome.html.tmpl", page, "Home Screen")
 	p13MustContain(t, "step 5 home area", step5, `id="welcome-alerts-nohome"{{if .HasHomeArea}} hidden{{end}}>`)
 
-	// The install title lives in welcome.js, so it has one source.
+	// The needs-install title lives in welcome.js (now Alerts, and the old install
+	// title only in Settings), so it has one source.
 	if strings.Contains(page, "Install to get alerts") {
 		t.Errorf("the install title lives in welcome.js, not in the template, so it has one source")
 	}
@@ -543,14 +599,19 @@ func TestWelcomeAlertsScript(t *testing.T) {
 	js := stripJSComments(raw)
 
 	// The sentences the script writes (the others are in the template).
+	//
+	// Amended 2026-10-27 by quick 261027-jhd (owner): the needs-install title is
+	// now 'Alerts'. The old install title lives only in settings.html.tmpl, so the
+	// script holds it zero times.
 	for _, sentence := range []string{
-		`'Install to get alerts'`,
+		`'Alerts'`,
 		`'Alerts are off on this device.'`,
 		`'Couldn\'t turn alerts on. Try again.'`,
 		`'You\'re offline, so this wasn\'t saved. Try again when you have a signal.'`,
 	} {
 		w10Count(t, "welcome.js", js, sentence, 1)
 	}
+	w10Count(t, "welcome.js", js, `'Install to get alerts'`, 0)
 
 	// The browser prompt: one call to enable, inside the Allow alerts handler,
 	// before anything is awaited; the script never names the prompt itself.

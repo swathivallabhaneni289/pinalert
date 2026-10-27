@@ -115,7 +115,7 @@ class FakeEl {
 const STEP_NAMES = ['Welcome', 'Disclaimer and policy', 'Your location', 'About you', 'Alerts'];
 
 // The markup of welcome.html.tmpl, as the ids and nesting welcome.js reads.
-function buildPage({ start = 1, name = '', home = '' } = {}) {
+function buildPage({ start = 1, name = '', home = '', marker = true } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -164,8 +164,16 @@ function buildPage({ start = 1, name = '', home = '' } = {}) {
 
   const box = make('div', 'welcome-scrollbox', steps[1], 'welcome__scrollbox');
   box.setAttribute('tabindex', '0');
-  make('button', 'welcome-disagree', steps[1]);
-  make('button', 'welcome-agree', steps[1]);
+  // Quick 261027-jhd (owner, 2026-10-27): the end-of-text marker is the last
+  // child of the text box, and Agree and Disagree sit in a row of their own
+  // (id welcome-consent-actions) that welcome.js holds back until the marker
+  // has been seen. The marker is left out when a test passes marker: false.
+  if (marker) {
+    make('div', 'welcome-scrollbox-end', box, 'welcome__scrollbox-end').setAttribute('aria-hidden', 'true');
+  }
+  const consentRow = make('div', 'welcome-consent-actions', steps[1], 'welcome__actions welcome__actions--pair');
+  make('button', 'welcome-disagree', consentRow);
+  make('button', 'welcome-agree', consentRow);
   // Amended 2026-10-17 by Phase 3.4 plan 31: Disagree shows a box (its words
   // live in the template) with Read again and Log out inside it.
   const disagreeBox = make('div', 'welcome-disagree-message', steps[1]);
@@ -209,6 +217,21 @@ function buildPage({ start = 1, name = '', home = '' } = {}) {
 // to answer. getCurrentPosition keeps its callbacks for the test to run.
 function load(options) {
   const page = buildPage(options);
+  // Quick 261027-jhd: an IntersectionObserver is added only when a test asks for
+  // one (observer: true, or 'throws'), so every older case runs without one.
+  const observers = [];
+  class FakeIO {
+    constructor(callback, opts) {
+      if (options && options.observer === 'throws') { throw new Error('IntersectionObserver is not allowed here'); }
+      this.callback = callback;
+      this.options = opts;
+      this.targets = [];
+      this.disconnected = false;
+      observers.push(this);
+    }
+    observe(target) { this.targets.push(target); }
+    disconnect() { this.disconnected = true; }
+  }
   const requests = [];
   const positionCalls = [];
   const saved = [];
@@ -280,11 +303,12 @@ function load(options) {
     getComputedStyle(node) { return { display: node.hiddenByCss ? 'none' : 'block' }; },
     addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); }
   };
+  if (options && options.observer) { sandbox.IntersectionObserver = FakeIO; }
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox, { filename: 'welcome.js' });
   const popTo = (state) => (listeners.popstate || []).forEach((fn) => fn({ type: 'popstate', state }));
-  return { ...page, api: sandbox.PinalertWelcome, requests, positionCalls, saved, asked, replaced, session, advance, sandbox, pushes, stateReplaces, popTo };
+  return { ...page, api: sandbox.PinalertWelcome, requests, positionCalls, saved, asked, replaced, session, advance, sandbox, pushes, stateReplaces, popTo, observers };
 }
 
 const flush = async () => { for (let i = 0; i < 8; i++) { await new Promise((r) => setImmediate(r)); } };
@@ -303,6 +327,13 @@ const fire = (el, type, extra) => {
 };
 const click = (page, id) => fire(byId(page, id), 'click');
 const visibleStep = (page) => page.steps.findIndex((s) => !s.hidden) + 1;
+// Quick 261027-jhd: tell every watcher that has not been disconnected whether
+// the end-of-text marker is in view, the way a browser does after a scroll.
+const seeEnd = (page, isIntersecting) => {
+  page.observers.filter((o) => !o.disconnected).forEach((o) => {
+    o.callback(o.targets.map((target) => ({ target, isIntersecting })), o);
+  });
+};
 
 // The places a search answers with, short name first.
 const PLACES = [
@@ -1431,4 +1462,143 @@ test('the home area search sends only the text: no lat or lon, even with the pag
   page.advance(400);
   assert.equal(page.requests[0].url, AREA_URL + encodeURIComponent('Benz Circle Vijayawada'));
   assert.ok(!/[?&](lat|lon)=/.test(page.requests[0].url), 'no near point: the fallback centre is never sent');
+});
+
+// ---- Quick 261027-jhd (owner, 2026-10-27): Agree and Disagree appear after reading
+// Step 2 works like the terms screen of any other app: Agree and Disagree stay
+// hidden until the end of the text in the text box has been in view, then they
+// appear in the same place. welcome.js holds the row back (data-unread on
+// #welcome-consent-actions) only when the reveal can run, and drops the hold for
+// good at the first sight of the end marker. Visibility keeps the row's place
+// in the layout; that is pinned in welcome_contract_test.go.
+
+const heldBack = (page) => byId(page, 'welcome-consent-actions').hasAttribute('data-unread');
+
+test('step 2 holds Agree and Disagree back until the end marker is seen, and Tab never walks out of the dialog meanwhile', () => {
+  const page = load({ observer: true });
+  assert.equal(heldBack(page), true, 'the row is held back before step 2 is ever shown');
+  assert.equal(page.observers.length, 1, 'exactly one watcher');
+  const watcher = page.observers[0];
+  assert.ok(watcher.options.root === byId(page, 'welcome-scrollbox'), 'the text box is the root, so reading to the end with VoiceOver counts');
+  assert.equal(watcher.options.rootMargin, '0px 0px 24px 0px');
+  assert.equal(watcher.options.threshold, 0);
+  assert.equal(watcher.targets.length, 1);
+  assert.ok(watcher.targets[0] === byId(page, 'welcome-scrollbox-end'), 'the marker is the one target');
+
+  click(page, 'welcome-continue-1');
+  assert.equal(visibleStep(page), 2);
+  assert.equal(heldBack(page), true, 'arriving at step 2 does not show the buttons');
+
+  // Laptop: from the text box Tab wraps to the first control; Agree and Disagree are not in the loop.
+  const box = byId(page, 'welcome-scrollbox');
+  box.focus();
+  const forward = fire(page.root, 'keydown', { key: 'Tab' });
+  assert.equal(forward.prevented, true);
+  assert.ok(page.doc.activeElement === page.items[0].button, 'Tab wraps to the first step list button');
+  const back = fire(page.root, 'keydown', { key: 'Tab', shiftKey: true });
+  assert.equal(back.prevented, true);
+  assert.ok(page.doc.activeElement === box, 'Shift+Tab from the first control lands on the text box');
+
+  // Phone: the side panel is not drawn, so Back is the first control.
+  const phone = load({ observer: true });
+  phone.side.hiddenByCss = true;
+  click(phone, 'welcome-continue-1');
+  const phoneBox = byId(phone, 'welcome-scrollbox');
+  phoneBox.focus();
+  assert.equal(fire(phone.root, 'keydown', { key: 'Tab' }).prevented, true);
+  assert.ok(phone.doc.activeElement === byId(phone, 'welcome-back-2'));
+  assert.equal(fire(phone.root, 'keydown', { key: 'Tab', shiftKey: true }).prevented, true);
+  assert.ok(phone.doc.activeElement === phoneBox);
+
+  // An entry that is not in view changes nothing.
+  seeEnd(page, false);
+  assert.equal(heldBack(page), true);
+  assert.equal(watcher.disconnected, false);
+
+  // The end is seen: the row shows, the watcher is done, and Tab is left to the browser.
+  seeEnd(page, true);
+  assert.equal(heldBack(page), false);
+  assert.equal(watcher.disconnected, true);
+  box.focus();
+  assert.equal(fire(page.root, 'keydown', { key: 'Tab' }).prevented, false, 'Tab from the text box now reaches Disagree');
+  byId(page, 'welcome-agree').focus();
+  assert.equal(fire(page.root, 'keydown', { key: 'Tab' }).prevented, true);
+  assert.ok(page.doc.activeElement === page.items[0].button, 'Tab from Agree wraps to the first control as before');
+  assert.equal(page.requests.length, 0, 'reading sends nothing');
+});
+
+test('a text that fits shows Agree and Disagree at once', () => {
+  const page = load({ observer: true });
+  // The first report a browser makes already has the marker in view.
+  seeEnd(page, true);
+  assert.equal(heldBack(page), false);
+  assert.equal(page.observers[0].disconnected, true);
+  click(page, 'welcome-continue-1');
+  assert.equal(heldBack(page), false);
+  assert.equal(page.requests.length, 0);
+});
+
+test('with no IntersectionObserver, a constructor that throws, or no marker, Agree and Disagree show at once', () => {
+  const none = load();
+  assert.equal(heldBack(none), false, 'no IntersectionObserver in the browser');
+
+  const throws = load({ observer: 'throws' });
+  assert.equal(heldBack(throws), false, 'a constructor that throws never locks anyone out');
+  assert.equal(throws.observers.length, 0);
+
+  const noMarker = load({ observer: true, marker: false });
+  assert.equal(heldBack(noMarker), false, 'a page with no end marker has nothing to watch');
+  assert.equal(noMarker.observers.length, 0);
+
+  click(none, 'welcome-continue-1');
+  click(none, 'welcome-agree');
+  assert.equal(none.requests.length, 1, 'Agree works');
+});
+
+test('an account that already agreed is never held back, and Back to step 2 shows the buttons', () => {
+  const page = load({ observer: true, start: 3 });
+  assert.equal(page.observers.length, 0, 'no watcher for an account that has agreed');
+  assert.equal(heldBack(page), false);
+  page.api.goTo(2);
+  assert.equal(visibleStep(page), 2);
+  assert.equal(heldBack(page), false);
+});
+
+test('once shown, Agree and Disagree stay shown: Disagree, Read again, Back, a failed Agree and returning never hide them', async () => {
+  const page = load({ observer: true });
+  click(page, 'welcome-continue-1');
+  seeEnd(page, true);
+  assert.equal(heldBack(page), false);
+
+  const box = byId(page, 'welcome-scrollbox');
+  box.scrollTop = 900;
+  click(page, 'welcome-disagree');
+  assert.equal(heldBack(page), false);
+  assert.equal(byId(page, 'welcome-disagree-message').hidden, false);
+  assert.ok(page.doc.activeElement === byId(page, 'welcome-disagree-message'), 'focus is in the Disagree box');
+
+  click(page, 'welcome-reread');
+  assert.equal(box.scrollTop, 0);
+  assert.ok(page.doc.activeElement === box, 'Read again focuses the text box');
+  assert.equal(heldBack(page), false, 'Read again does not hold the buttons back again');
+
+  click(page, 'welcome-back-2');
+  assert.equal(visibleStep(page), 1);
+  click(page, 'welcome-continue-1');
+  page.api.goTo(1);
+  page.api.goTo(2);
+  assert.equal(heldBack(page), false);
+
+  click(page, 'welcome-agree');
+  answer(page.requests[0], 500, {});
+  await flush();
+  assert.equal(visibleStep(page), 2);
+  assert.equal(heldBack(page), false, 'a failed Agree leaves the buttons shown');
+  assert.equal(page.requests.length, 1, 'only the one consent request was sent');
+  assert.equal(page.requests[0].url, '/api/me/consent');
+
+  // Seeing the end again, or not seeing it, changes nothing now.
+  seeEnd(page, false);
+  seeEnd(page, true);
+  assert.equal(heldBack(page), false);
 });
