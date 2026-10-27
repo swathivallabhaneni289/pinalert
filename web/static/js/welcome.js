@@ -3,9 +3,10 @@
 //
 // Self contained, like settings.js: it needs no other script of the app, only
 // the ids welcome.html.tmpl renders, and it leaves quietly on a page that has no
-// flow. It shows one of five steps at a time, moves focus to the step title,
-// keeps Tab inside the dialog, and ignores Escape, because the flow is completed
-// and not closed.
+// flow. It shows one of four steps at a time, moves focus to the step title,
+// keeps Tab inside the dialog, and ignores Escape on the flow itself, because
+// the flow is completed and not closed. (Escape on the alerts pop-up below is
+// that pop-up's own Not now.)
 //
 // What it records, and when:
 //   - Agree (step 2) sends POST /api/me/consent and moves on only on a 204.
@@ -14,11 +15,12 @@
 //     the top and focuses it, and Log out is a plain form posting to the app's
 //     own /auth/logout, which this script never touches.
 //   - Continue on step 4 sends PATCH /api/me/profile with only the fields the
-//     person filled and then moves to step 5. Skip moves to step 5 and sends
-//     nothing. Nothing is saved before that.
-//   - The flow is recorded as done only from step 5 (Phase 3.3 plan 13, 03.4
-//     D-27, decision 15): Allow alerts (once it has finished or been refused),
-//     Not now and every Continue send POST /api/me/first-run-done.
+//     person filled and then ends the flow (below). Skip ends the flow and
+//     sends nothing. Nothing is saved before that.
+//   - The flow is recorded as done by POST /api/me/first-run-done (03.4 D-27,
+//     decision 15), sent once per finish attempt and only after step 4: directly
+//     when the alerts pop-up is not shown, otherwise once the pop-up has been
+//     answered.
 //
 // Step 2 holds Agree and Disagree back until the end of the text has been seen
 // (quick 261027-jhd, owner, 2026-10-27), like the terms screen of any other app.
@@ -29,16 +31,21 @@
 // IntersectionObserver, and the row and the marker are on the page. Once shown,
 // the buttons stay shown for the rest of the visit.
 //
-// Step 5 (Alerts) asks window.PinalertNotify (notify.js) what this device can
-// do, on arrival and without a prompt, and shows one of four parts: ready,
-// needs-install, blocked or unsupported. The needs-install part is one line
-// (written in the template) under the title Alerts, with no install guide, which
-// now lives only in Settings. It writes the words and notify.js writes none.
+// The alerts ask (quick 261027-t5w, owner, 2026-10-27; it replaced step 5) is a
+// small modal pop-up that reuses the Log out box. When step 4 finishes (Continue
+// or Skip) it opens if window.PinalertNotify.baseState() says this device can
+// turn alerts on (maybe or ready, no request and no prompt) and the page has a
+// push key. On an iPhone Safari tab (needs-install), a blocked or unsupported
+// device, a page without a key, a missing PinalertNotify or a browser without
+// dialog support there is no pop-up and the flow is recorded as done directly.
+// Allow calls enable, Not now and Escape do not; every answer, and whatever
+// enable answers, then records the flow as done, so nothing about alerts can stop
+// anyone finishing. The words are in the template.
 //
 // What it never does:
 //   - It never runs the browser's notification prompt except from the Allow
-//     alerts tap: enable is called inside that click handler with nothing
-//     awaited before it, and Not now and the Continue buttons never reach it.
+//     tap: enable is called inside that click handler with nothing awaited
+//     before it, and Not now and Escape never reach it.
 //   - It asks the browser where the device is in one place only, Allow location
 //     on step 3. The fix is saved only through PinalertPosition, in this browser,
 //     and is sent nowhere. The server stores no reader location. Not now, the
@@ -100,22 +107,12 @@
   var MESSAGE_NOT_FOUND = 'Not found. Add your town, for example: Gayathri Nagar, Vijayawada';
   var MESSAGE_UNAVAILABLE = 'Search unavailable. Try again in a moment.';
   var MESSAGE_RATE_LIMITED = 'Too many searches. Wait a few seconds and try again.';
-  // Step 5 (UI-SPEC P33-C7, C9, C10, C15). The sentences of the ready,
-  // needs-install, blocked and unsupported parts, and the example notification,
-  // are in the template.
-  var ALERTS_STEP = 5;
-  // The owner, on 2026-10-27, made the needs-install part gentler: the step's own
-  // name above the one line the template holds.
-  var TITLE_LATER = 'Alerts';
   // Step 2: the attribute that holds Agree and Disagree back, and the margin the
   // end marker is watched with. The margin is about the text box's bottom
   // padding, so the 1px marker under the last line counts as reached when
   // VoiceOver scrolls that line just into view.
   var UNREAD_ATTR = 'data-unread';
   var END_MARGIN = '0px 0px 24px 0px';
-  var MESSAGE_ALERTS_OFF = 'Alerts are off on this device.';
-  var MESSAGE_ALERTS_FAILED = 'Couldn\'t turn alerts on. Try again.';
-  var MESSAGE_ALERTS_OFFLINE = 'You\'re offline, so this wasn\'t saved. Try again when you have a signal.';
 
   var FOCUSABLE_SELECTOR = 'button, input, [tabindex]:not([tabindex="-1"])';
 
@@ -151,23 +148,14 @@
   var continueButton = el('welcome-continue-4');
   var skipButton = el('welcome-skip');
 
-  // Step 5, Alerts. The public key rides on the flow root; it is empty when the
-  // server has no key, which step 5 shows as a device that cannot show alerts.
-  var alertsStep = el('welcome-step-5');
-  var alertsTitle = el('welcome-step-5-title');
-  var alertsReady = el('welcome-alerts-ready');
-  var alertsInstall = el('welcome-alerts-install');
-  var alertsBlocked = el('welcome-alerts-blocked');
-  var alertsUnsupported = el('welcome-alerts-unsupported');
-  var alertsNoHome = el('welcome-alerts-nohome');
-  var alertsStatus = el('welcome-alerts-status');
-  var alertsError = el('welcome-alerts-error');
-  var alertsAllow = el('welcome-alerts-allow');
-  var alertsLater = el('welcome-alerts-later');
-  var alertsContinue = el('welcome-alerts-continue');
+  // The alerts pop-up, a native dialog that sits outside the flow root. The
+  // public key rides on the flow root; it is empty when the server has no key,
+  // which means no pop-up.
+  var askDialog = el('welcome-alerts-ask');
+  var askTitle = el('welcome-alerts-ask-title');
+  var askAllow = el('welcome-alerts-allow');
+  var askLater = el('welcome-alerts-later');
   var pushKey = root.getAttribute('data-push-key') || '';
-  // The title the template draws, kept so the install variant can put it back.
-  var alertsTitleReady = alertsTitle ? alertsTitle.textContent : '';
 
   // The step a person must agree on, and the highest step an address may name
   // for an account that has not agreed yet. A person may look at any step in
@@ -181,6 +169,13 @@
   var agreeing = false;
   var locating = false;
   var finishing = false;
+  // The alerts pop-up: asked is true once it has been answered in this visit, so
+  // a later Continue or Skip (after a failed first-run-done) never asks again;
+  // askBusy is true from the moment it is answered until the answer is handled.
+  var asked = false;
+  var askBusy = false;
+  // The step 4 button that finished the flow, so focus can go back to it.
+  var askOpener = null;
 
   // The values the page was drawn with, so only what the person changed is sent.
   var storedName = nameInput ? nameInput.value.trim() : '';
@@ -188,17 +183,6 @@
   // The place picked for the home area from step 4's own search. Only a picked
   // place is ever sent as a home area.
   var homePick = null;
-
-  // Whether the account has a home area: the page says so (the line "Set your
-  // home area to get these." is hidden when it does), and it turns true once a
-  // picked place is saved in step 4. It decides that line on step 5.
-  var hasHomeArea = alertsNoHome ? alertsNoHome.hidden : false;
-
-  // Step 5 state. alertsSeq numbers each arrival at step 5, so a late device
-  // answer is dropped when the person has left or the step is busy or refused.
-  var alertsSeq = 0;
-  var alertsBusy = false;
-  var alertsRefused = false;
 
   // ---- Small helpers --------------------------------------------------------
 
@@ -406,13 +390,12 @@
     renderStepList(n);
     hideDisagreeBox();
     hideLine(consentError);
-    if (previous === ALERTS_STEP && n !== ALERTS_STEP) {
-      // An answer still on its way about this device is for a step now left.
-      alertsSeq += 1;
-    }
-    if (n === ALERTS_STEP) {
-      // Drawn before focus moves, so a screen reader reads the right title.
-      enterAlerts();
+    if (askDialog && askDialog.open && !askBusy) {
+      // The step changed under an open pop-up that was not answered (for
+      // example the browser's back gesture): put it away without answering, so
+      // nothing is sent and the next Continue asks again.
+      closeAsk();
+      setFinishing(false);
     }
     el('welcome-step-' + n + '-title').focus();
   }
@@ -921,7 +904,6 @@
     finishing = on;
     continueButton.disabled = on;
     skipButton.disabled = on;
-    setAlertsBusy(on);
   }
 
   function leave() {
@@ -933,30 +915,47 @@
     window.location.replace(LAND_ON);
   }
 
+  // postDone is the only sender of first-run-done. On a 204 the page leaves (the
+  // pop-up, if it is open, goes with it). On any other answer the pop-up is
+  // closed first and step 4 takes the failure, so the person is where they were.
   function postDone() {
     return request(DONE_URL, { method: 'POST', credentials: 'same-origin' }, SAVE_TIMEOUT_MS).promise.then(function (answer) {
       if (answer.status === 204) {
         leave();
         return;
       }
-      setFinishing(false);
+      doneFailed();
       if (answer.status === 409) {
         // The server has no agreement for the current terms: go back to it.
         goTo(2);
         showLine(consentError, MESSAGE_AGREE_FIRST);
         return;
       }
-      showLine(doneErrorLine(), answer.status === 401 ? MESSAGE_SESSION_ENDED : MESSAGE_SAVE_FAILED);
+      showLine(profileError, answer.status === 401 ? MESSAGE_SESSION_ENDED : MESSAGE_SAVE_FAILED);
+      refocusOpener();
     }, function () {
-      setFinishing(false);
-      showLine(doneErrorLine(), MESSAGE_SAVE_FAILED);
+      doneFailed();
+      showLine(profileError, MESSAGE_SAVE_FAILED);
+      refocusOpener();
     });
   }
 
-  // doneErrorLine is the line a failed first-run-done answers on: step 5's own,
-  // since the flow is recorded as done only from there.
-  function doneErrorLine() {
-    return current === ALERTS_STEP ? alertsError : profileError;
+  // doneFailed frees step 4's buttons and puts the pop-up away, so the next
+  // Continue or Skip works. The pop-up has been answered (asked stays true), so
+  // it is not shown again.
+  function doneFailed() {
+    setFinishing(false);
+    closeAsk();
+    askBusy = false;
+    setAskDisabled(false);
+  }
+
+  // refocusOpener puts focus back on the step 4 button that was pressed, as the
+  // Log out box does after it closes (Safari never focuses a tapped button).
+  function refocusOpener() {
+    if (askOpener !== null && typeof askOpener.focus === 'function') {
+      askOpener.focus();
+    }
   }
 
   // profileBody builds the PATCH body from what the person filled: a changed
@@ -973,17 +972,125 @@
     return body;
   }
 
-  // toAlerts leaves step 4 for step 5. The step 4 buttons are freed first, so
-  // they work again when the person comes back with Back.
-  function toAlerts() {
-    setFinishing(false);
-    goTo(5);
+  // ---- The alerts pop-up ------------------------------------------------------
+
+  // canAsk says whether the pop-up should open now. It reads the base state only
+  // (no request, no prompt), so nothing delays the pop-up and nothing is awaited
+  // before Allow can be tapped. It is false once the pop-up has been answered in
+  // this visit, without dialog support, without a key, without notify.js, and on
+  // every device that cannot turn alerts on (needs-install, blocked,
+  // unsupported or a state this script does not know).
+  function canAsk() {
+    if (asked || !askDialog || typeof askDialog.showModal !== 'function' || pushKey === '') {
+      return false;
+    }
+    var notify = window.PinalertNotify;
+    if (!notify || typeof notify.baseState !== 'function' || typeof notify.enable !== 'function') {
+      return false;
+    }
+    try {
+      var base = notify.baseState();
+      return base === 'maybe' || base === 'ready';
+    } catch (err) {
+      return false;
+    }
   }
+
+  function setAskDisabled(on) {
+    askAllow.disabled = on;
+    askLater.disabled = on;
+    if (on) {
+      askDialog.setAttribute('aria-busy', 'true');
+    } else {
+      askDialog.removeAttribute('aria-busy');
+    }
+  }
+
+  // closeAsk puts the pop-up away when it is open. Nothing is ever sent from the
+  // dialog's close event, so one answer can never produce two requests.
+  function closeAsk() {
+    if (askDialog && askDialog.open && typeof askDialog.close === 'function') {
+      askDialog.close();
+    }
+  }
+
+  // openAsk shows the pop-up the way the Log out box opens: showModal, then the
+  // title takes focus, so no button looks chosen. A dialog that will not open
+  // sends the flow on without asking.
+  function openAsk() {
+    try {
+      askDialog.showModal();
+    } catch (err) {
+      postDone();
+      return;
+    }
+    askTitle.focus();
+  }
+
+  // endFlow ends step 4: the pop-up where alerts can be turned on, otherwise the
+  // flow is recorded as done at once. The step 4 buttons stay disabled until the
+  // pop-up is answered or a failure frees them.
+  function endFlow() {
+    if (canAsk()) {
+      openAsk();
+      return;
+    }
+    postDone();
+  }
+
+  // onAskAllow is the only place the browser's notification prompt can run.
+  // enable is the first real statement of the click, before anything is awaited,
+  // so the browser counts the tap as the person's own. Whatever enable answers
+  // (a refusal, an offline answer, a failure, a rejection or a throw), the flow
+  // is then recorded as done: nothing about alerts can stop sign up.
+  function onAskAllow() {
+    if (askBusy) {
+      return;
+    }
+    var pending = null;
+    try {
+      pending = window.PinalertNotify.enable(pushKey);
+    } catch (err) {
+      pending = null;
+    }
+    asked = true;
+    askBusy = true;
+    setAskDisabled(true);
+    Promise.resolve(pending).then(function () {
+      postDone();
+    }, function () {
+      postDone();
+    });
+  }
+
+  // onAskLater is Not now: it asks the browser nothing, so the browser's one
+  // permission prompt is kept for Settings.
+  function onAskLater() {
+    if (askBusy) {
+      return;
+    }
+    asked = true;
+    askBusy = true;
+    setAskDisabled(true);
+    postDone();
+  }
+
+  // onAskCancel is Escape on the pop-up. The browser would close it by itself, so
+  // that is prevented and the answer is Not now. While an answer is being handled
+  // it does nothing more.
+  function onAskCancel(e) {
+    e.preventDefault();
+    if (!askBusy) {
+      onAskLater();
+    }
+  }
+
+  // ---- Step 4: finishing (continued) -----------------------------------------
 
   // finish is step 4's way on. With save true it first sends the profile fields
   // the person filled (no request when there are none); with save false (Skip)
-  // it saves nothing. Then it shows step 5. The flow is not recorded as done
-  // here: only step 5 does that (decision 15).
+  // it saves nothing. Then it ends the flow through endFlow (the pop-up, or the
+  // flow recorded as done at once).
   function finish(save) {
     if (finishing) {
       return Promise.resolve();
@@ -1000,7 +1107,7 @@
     hideLine(profileError);
     var body = save ? profileBody() : {};
     if (!body.display_name && !body.home_area) {
-      toAlerts();
+      endFlow();
       return Promise.resolve();
     }
     return request(PROFILE_URL, {
@@ -1020,178 +1127,12 @@
       }
       if (body.home_area) {
         homePick = null;
-        hasHomeArea = true;
       }
-      toAlerts();
+      endFlow();
     }, function () {
       setFinishing(false);
       showLine(profileError, MESSAGE_SAVE_FAILED);
     });
-  }
-
-  // ---- Step 5: Alerts ---------------------------------------------------------
-
-  // setAlertsBusy disables the three buttons of step 5 and marks the step busy
-  // while a browser prompt or a save runs. No spinner is drawn: the browser's
-  // own prompt is the progress.
-  function setAlertsBusy(on) {
-    alertsBusy = on;
-    alertsAllow.disabled = on;
-    alertsLater.disabled = on;
-    alertsContinue.disabled = on;
-    if (on) {
-      alertsStep.setAttribute('aria-busy', 'true');
-    } else {
-      alertsStep.removeAttribute('aria-busy');
-    }
-  }
-
-  // deviceVariant names the part of step 5 a device state shows. A device that
-  // is on, ready or still unknown shows the ask; a state this script does not
-  // know shows the plainest answer, that nothing can be shown.
-  function deviceVariant(state) {
-    if (state === 'on' || state === 'ready' || state === 'maybe') {
-      return 'ready';
-    }
-    if (state === 'needs-install' || state === 'blocked' || state === 'unsupported') {
-      return state;
-    }
-    return 'unsupported';
-  }
-
-  // drawAlerts shows exactly one part of step 5 for a device state, with the
-  // title and the buttons that go with it. Only the ready part has Allow alerts
-  // and Not now; every other part has the one Continue.
-  function drawAlerts(state) {
-    var variant = deviceVariant(state);
-    alertsStep.setAttribute('data-device-state', variant);
-    alertsReady.hidden = variant !== 'ready';
-    alertsInstall.hidden = variant !== 'needs-install';
-    alertsBlocked.hidden = variant !== 'blocked';
-    alertsUnsupported.hidden = variant !== 'unsupported';
-    setText(alertsTitle, variant === 'needs-install' ? TITLE_LATER : alertsTitleReady);
-    alertsNoHome.hidden = hasHomeArea;
-    alertsAllow.hidden = variant !== 'ready';
-    alertsLater.hidden = variant !== 'ready';
-    alertsContinue.hidden = variant === 'ready';
-  }
-
-  // enterAlerts runs on every arrival at step 5. It reads the base state at once
-  // (no request, no prompt) and draws it, then asks for the device state with the
-  // server's word and redraws only if that answer is still wanted.
-  function enterAlerts() {
-    alertsSeq += 1;
-    var mine = alertsSeq;
-    alertsRefused = false;
-    setText(alertsStatus, '');
-    hideLine(alertsError);
-    var notify = window.PinalertNotify;
-    if (!notify || typeof notify.baseState !== 'function' || pushKey === '') {
-      drawAlerts('unsupported');
-      return;
-    }
-    var base = notify.baseState();
-    drawAlerts(base === 'maybe' ? 'ready' : base);
-    if (base !== 'maybe' || typeof notify.deviceState !== 'function') {
-      return;
-    }
-    notify.deviceState(pushKey).then(function (state) {
-      if (mine !== alertsSeq || current !== ALERTS_STEP || alertsBusy || alertsRefused) {
-        return;
-      }
-      drawAlerts(state);
-    }, function () {
-      // The base state stays on screen.
-    });
-  }
-
-  // needAgreement sends a person who has not agreed back to the agreement, as
-  // finish does. It returns true when it did, and then nothing else runs.
-  function needAgreement() {
-    if (agreed) {
-      return false;
-    }
-    goTo(CONSENT_STEP);
-    showLine(consentError, MESSAGE_AGREE_FIRST);
-    return true;
-  }
-
-  // alertsDone records the flow as done and leaves. It is the only caller of
-  // postDone.
-  function alertsDone() {
-    if (alertsBusy || needAgreement()) {
-      return Promise.resolve();
-    }
-    setAlertsBusy(true);
-    hideLine(alertsError);
-    return postDone();
-  }
-
-  // onAllowAlerts is the only place the browser's notification prompt can run.
-  // enable is called inside the click, before anything is awaited, so the
-  // browser counts the tap as the person's own.
-  function onAllowAlerts() {
-    if (alertsBusy || needAgreement()) {
-      return;
-    }
-    if (!window.PinalertNotify || typeof window.PinalertNotify.enable !== 'function') {
-      showLine(alertsError, MESSAGE_ALERTS_FAILED);
-      return;
-    }
-    hideLine(alertsError);
-    setText(alertsStatus, '');
-    var pending = window.PinalertNotify.enable(pushKey);
-    setAlertsBusy(true);
-    Promise.resolve(pending).then(function (result) {
-      setAlertsBusy(false);
-      onAlertsResult(result || {});
-    }, function () {
-      setAlertsBusy(false);
-      showLine(alertsError, MESSAGE_ALERTS_FAILED);
-    });
-  }
-
-  // onAlertsResult shows what enable answered. A finished or refused ask ends
-  // the flow (a refusal after the person reads it); a failure keeps both buttons.
-  function onAlertsResult(result) {
-    if (result.ok === true) {
-      alertsDone();
-      return;
-    }
-    if (result.reason === 'refused') {
-      alertsRefused = true;
-      alertsAllow.hidden = true;
-      alertsLater.hidden = true;
-      alertsContinue.hidden = false;
-      // The status line is an always-present live region (never hidden), so the
-      // screen reader announces the text written into it (review T-04).
-      setText(alertsStatus, MESSAGE_ALERTS_OFF);
-      alertsContinue.focus();
-      return;
-    }
-    if (result.reason === 'unsupported') {
-      // The device turned out not to be able to show alerts: draw that part.
-      alertsRefused = true;
-      drawAlerts(result.state);
-      alertsContinue.focus();
-      return;
-    }
-    if (result.reason === 'offline') {
-      showLine(alertsError, MESSAGE_ALERTS_OFFLINE);
-      return;
-    }
-    var sentence = typeof result.message === 'string' && result.message !== '' && result.message.length <= 200 ? result.message : '';
-    showLine(alertsError, sentence !== '' ? sentence : MESSAGE_ALERTS_FAILED);
-  }
-
-  // onNotNow (step 5) ends the flow and asks the browser nothing, so the
-  // browser's one permission prompt is kept for Settings.
-  function onNotNow() {
-    alertsDone();
-  }
-
-  function onAlertsContinue() {
-    alertsDone();
   }
 
   // ---- Keyboard: Tab stays inside, Escape does nothing ----------------------
@@ -1224,7 +1165,7 @@
   // ---- Wiring ---------------------------------------------------------------
 
   el('welcome-continue-1').addEventListener('click', function () { goTo(2); });
-  // Back on steps 2 to 5 shows the previous step; the step list buttons show
+  // Back on steps 2 to 4 shows the previous step; the step list buttons show
   // the step they name. Looking at a step records nothing.
   function wireBack(n) {
     var back = el('welcome-back-' + n);
@@ -1257,11 +1198,15 @@
   agreeButton.addEventListener('click', function () { agree(); });
   allowButton.addEventListener('click', allowLocation);
   notNowButton.addEventListener('click', notNow);
-  continueButton.addEventListener('click', function () { finish(true); });
-  skipButton.addEventListener('click', function () { finish(false); });
-  alertsAllow.addEventListener('click', onAllowAlerts);
-  alertsLater.addEventListener('click', onNotNow);
-  alertsContinue.addEventListener('click', onAlertsContinue);
+  // The pressed button is remembered, so focus can go back to it if the flow
+  // cannot be recorded (Safari never focuses a tapped button).
+  continueButton.addEventListener('click', function () { askOpener = continueButton; finish(true); });
+  skipButton.addEventListener('click', function () { askOpener = skipButton; finish(false); });
+  if (askDialog && askTitle && askAllow && askLater) {
+    askAllow.addEventListener('click', onAskAllow);
+    askLater.addEventListener('click', onAskLater);
+    askDialog.addEventListener('cancel', onAskCancel);
+  }
   root.addEventListener('keydown', onKeydown);
 
   var startStep = parseInt(root.getAttribute('data-start-step'), 10);
