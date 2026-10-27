@@ -157,7 +157,7 @@ Neighbour confirmations must stop at `service.IndependentAgreementThreshold` (vi
 
 ### `internal/service/pushkinds.go` and official push (event-driven)
 `PushKindOfficial` already exists as a reserved name (lines 31-35, `ReservedPushKinds` line 48). `Valid()` (50-57) loops `PushKinds`; Phase 5 widens that list and flips the pinned test in `pushkinds_test.go`. Caps constants (lines 62-80) are pinned by `TestPushCapsAreNamed`. Words: closed tables like `service/pushcopy.go` (`SeverityWord`, `AreaWords`, `BuildPushText` line 209) and must pass `push.ValidTopic`, `PushTitleMaxRunes`, the noise word test and the no dash test. Delivery: `internal/push` `Sender`/`Message{Payload, TTL, Urgency, Topic}` (sender.go 52-56); `Urgency` high or normal. Recipient reading: `service/pushrecipients.go` (`candidateCells` line 49, `filterRecipients` 100) and `HomeAreaAnchor` (alertsettings.go 56). RESEARCH line 274: test the home cell centre plus four corners. Settings default: `DefaultAlertRadiusKm`-style constant `DefaultOfficialPushOn = true` with a pin test. Silent only: no sound or vibration anywhere (D-11, MEMORY "No buzzes"), `sw.js` already builds notifications with `silent: true`.
-3.3 items to re-grep: plan `03.3-11` (worker lane and its single dispatch seam, RESEARCH Open Question 5), plan `03.3-12` (PATCH `/api/me/alerts` kind switches), plan `03.3-14` (Settings rows), plan `03.3-13` (step 5 second card).
+3.3 items to re-grep: plan `03.3-11` (worker lane and its single dispatch seam, RESEARCH Open Question 5), plan `03.3-12` (PATCH `/api/me/alerts` kind switches), plan `03.3-14` (Settings rows), plan `03.3-13` (step 5, replaced on 2026-10-27 by quick 261027-t5w's pop-up after step 4; Phase 5 adds nothing to the first-time flow).
 
 ---
 
