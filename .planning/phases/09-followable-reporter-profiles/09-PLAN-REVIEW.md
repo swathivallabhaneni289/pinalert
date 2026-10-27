@@ -50,3 +50,18 @@ Every round 1 item CLOSED with a named test; structure clean across 29 plans in 
 |----|-------|---------|-----|
 | R2-W1 | 22 | A follow note in the bell keeps the username and link after the report finishes (D-20). | A finished report's followed_posted row shows the unavailable line with no username and no link; TestFollowBellFinishedReportDropsName. |
 | R2-W2 | 14 | The cross surface test has no private profile leg (D-22). | Add the leg: outcome 86, five one star raters in five cells, profile off, every reader 53 Mixed record, and still 53 after switching it on. |
+
+# Cross check against the Phase 8 plans (2026-10-27, opus)
+
+Phase 8 was planned after Phase 9 (commit 2d2f10b). All ten assumptions A-P8-1 to A-P8-10 hold. Fixes sent to the planner:
+
+| Id | Plans | Finding | Fix |
+|----|-------|---------|-----|
+| M1 | 10 T2 | The block skip for comment notifications was put in Go, but Phase 8's one insert is the SQL `InsertCommentUpdate` (08-11). | Add the person_blocks NOT EXISTS to `InsertCommentUpdate` next to its self, mute and deleted skips; add comments.sql and its sqlc file to the task files. |
+| M2 | 10 T1 | No placeholder exists for a comment hidden by a block. | `gone = 'hidden'`, read "Comment hidden" (UI-SPEC P9-C31, a default for the owner); Phase 8's placeholder zeros apply; the block test sits inside 08-08's "shown" CTE; add the service mapping and comments.js files. |
+| M3 | 10 T1 | `reply_to_author` would still show "@B" to someone who blocked B. | NULL it when the viewer blocked the replied to author; test it in TestBlockHidesCommentsFromBlocker. |
+| M4 | 21 | List positions and the Down migration not pinned. | Literal nine kind CHECK; UpdateFollowedPosted after UpdateReplyToYours and before UpdateMore; the Down restores 08-11's eight kind text; uq_updates_comment_unread untouched. |
+| M5 | 02, 13, 18 | Deletion order ambiguous. | Follows, Blocks, Ratings, PersonMutes immediately before RevokeAccountSessions, after every Phase 5, 7.1 and 8 step; pin the tail of wantDeleteOrder. |
+| M6 | 17 | Star box host under default A not stated. | Mount inside the card node after the resolve controls, so it moves with the card into the laptop panel; two new test cases. |
+| M7 | 25 | The 08-15 `u.kind IN` list must stay. | Assert it unchanged. |
+| M8, M9 | 01, 11 | Wording. | Correct A-P8-9's description; spell out bubble on the laptop under default A, page on the phone. |

@@ -519,6 +519,7 @@ Sentences the plans need that the copy table above did not have. Same rules: pla
 | P9-C28 | Rating out of range | "Choose 1 to 5 stars." |
 | P9-C29 | Trust panel, from 5 distinct raters (review W6) | "Includes ratings by N people." |
 | P9-C30 | Moderator Ratings screen (plan 09-15) | section title "Ratings"; field "Reporter's username"; button "Show ratings"; rows "{rater} gave {n} stars", "Removed", "Cleared by the rater"; buttons "Remove", "Remove all by {rater}"; confirm box title "Remove all ratings by {rater}?", text "Their ratings stop counting for every reporter, and they cannot rate again.", buttons "Cancel" and "Remove all"; lines "No ratings for this person.", "Couldn't load ratings. Try again.", "Removed {n} ratings by {rater}."; a moderator 404 reads "No such person." |
+| P9-C31 | A comment hidden because you blocked its author, kept as a placeholder when it has replies (added 2026-10-27 after the Phase 8 cross check) | **Comment hidden** (same look as Phase 8's "Comment deleted"; no author, no Reporter tag, no likes, no Like or Flag) |
 
 The tapped part of the stars is shown rounded to half a star (review W5), and a finished report on a profile shows its date only (D-20).
 
