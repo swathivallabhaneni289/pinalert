@@ -777,7 +777,7 @@ body.mode-direct .mock-show { display: none; }
       <section class="welcome__step" id="welcome-step-4" aria-labelledby="welcome-step-4-title">
         <div class="welcome__head">
           <button type="button" class="welcome__back" id="welcome-back-4"><span class="app-icon ic-arrow-left" aria-hidden="true"></span><span>Back</span></button>
-          <p class="welcome__label">Step 4 of 5</p>
+          <p class="welcome__label">Step 4 of 4</p>
         </div>
         <h1 class="welcome__title" id="welcome-step-4-title" tabindex="-1">About you</h1>
         <p class="welcome__lead" id="welcome-lead">All three are needed to finish signing up. You can change them later in Settings.</p>
@@ -1735,7 +1735,7 @@ body.mode-direct .mock-show { display: none; }
       s4Cont.removeAttribute('aria-busy');
       if (r.fate) { showErr(s4Err, SAVE_FATES[r.fate] || SAVE_FATES.server); return; }
       if (r.kind) { s4Uname.render(r.kind, name); s4User.focus(); s4Update(); return; }
-      toStub('Step 5 of 5, Alerts, follows here. It is built already and is not redrawn in this mockup.');
+      toStub('The alerts pop-up opens here (Get alerts for critical reports near you? Not now, Allow). It is built already and is not redrawn in this mockup.');
     });
   });
 
