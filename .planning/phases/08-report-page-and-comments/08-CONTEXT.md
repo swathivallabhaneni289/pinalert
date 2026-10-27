@@ -2,6 +2,7 @@
 
 **Gathered:** 2026-10-17 and 2026-10-18, from the owner's answers in the discuss round run by session pinalert-60, on top of the design the owner LOCKED on 2026-10-17 from the clickable mockup `.planning/sketches/008-report-page/` (ROADMAP Phase 8 scope notes 5 and 6).
 **Status:** Ready for research and planning. The page design is locked: changes go back to the owner first. The new sign in (scope note 6) is shown to the owner as a mockup before it is built. Everything tagged CLAUDE'S DISCRETION stands unless the owner vetoes it at the viewing session.
+**Split at planning, 2026-10-25 (D-11):** the password sign in, the required step 4 and the Username (D-07 to D-10, scope notes 5 and 6 for those parts) moved to Phase 7.1, `.planning/phases/07.1-password-sign-in-and-usernames/07.1-CONTEXT.md`, which builds before this phase. This phase no longer builds them; it uses the Username 7.1 adds and the gate's exempt list 7.1 leaves, and adds the shared report page to that list (D-05).
 
 <domain>
 ## Phase Boundary
