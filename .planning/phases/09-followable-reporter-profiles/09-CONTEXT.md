@@ -49,6 +49,20 @@ Requirements: PROF-01, PROF-02, PROF-03.
 - **D-13:** The profile header in order: round picture, username, name, stars with both parts beside the total (D-02), the reporter tag with its counts ("7 of 9 earlier reports were confirmed by people nearby"), member since, Followers and Following, then Follow (or Following) with the bell beside it. Shown to the owner as a mockup at the UI step; the owner judges by looking.
 - **D-14:** Rating abuse: a moderator can remove a tapped rating; ratings from an account later removed for abuse stop counting; burst detection (TRUSTX-03) stays a named dependency, recorded in `docs/TRUST-MODEL.md` with the lower 3.5 bar (D-05) as a reason it matters more.
 
+### Decisions at planning (2026-10-25, CLAUDE'S DISCRETION unless marked)
+- **D-15 [from ROADMAP owner decision 2026-10-16]:** The home area shows on an opted in profile ("Both show only on an opted in profile"), so D-13's header gains it after the name.
+- **D-16:** The 3.5 star cutoff (score 70) ships in this phase's first wave and stands even if later parts of this phase are cut.
+- **D-17:** Phase 7.1's Policy edit covers passwords and public usernames; this phase makes its own Policy edit for opt in profiles, ratings and the public Followers and Following lists (a second agreement prompt is accepted).
+- **D-18:** Research open questions Q2, Q4, Q6, Q9 and the gaps it named (Name screening and reserved words, a removed for abuse state, moderator rating routes, person mute, account deletion hooks) are the planner's call within this file; each choice is written in the plan that makes it.
+- **D-19:** REQUIREMENTS.md PROF-01 to PROF-03 text is stale (nickname, no follower counts, privately) and is refreshed at planning to match this file.
+
+### Decisions after the plan review (2026-10-27, CLAUDE'S DISCRETION, details in 09-PLAN-REVIEW.md)
+- **D-20:** A finished report never carries the reporter's profile link anywhere (Focus, Past, Activity, the feed), and a finished row on a profile shows its date only, never a time, so it cannot be matched to the anonymous Past row at its exact point.
+- **D-21:** Ratings follow the same independence rule as confirmations: raters count by distinct voter cell of their qualifying vote (one rating per cell, the most recent), the same rule as confirmations, and follows end softly (kept with an end time and a reason) so a moderator who removes bad ratings can restore the follows they cost. This tightens D-02 without changing what the owner chose.
+- **D-22:** While "Let others follow me" is off, ratings can only lower the score, never raise it, so going private cannot wipe critics.
+- **D-23:** "Voted on at least one of that reporter's reports" (D-02) means a confirm, dispute, resolve or reopen vote; an unresolve alone does not qualify, because it only undoes one's own resolve.
+- **D-24:** "At once" in SC5 is met by the computed tag: from the moment it falls away no follow note is produced or sent and the person cannot be followed; the stored follows end at the next sweep or touch.
+
 </decisions>
 
 <canonical_refs>
