@@ -20,10 +20,20 @@
 //     D-27, decision 15): Allow alerts (once it has finished or been refused),
 //     Not now and every Continue send POST /api/me/first-run-done.
 //
+// Step 2 holds Agree and Disagree back until the end of the text has been seen
+// (quick 261027-jhd, owner, 2026-10-27), like the terms screen of any other app.
+// The end is a marker inside the text box, watched by an IntersectionObserver
+// whose root is the text box, so reading to the last line with VoiceOver reveals
+// the buttons the same way scrolling does. This script alone sets the hold, and
+// only when the reveal can run: the account has not agreed, the browser has an
+// IntersectionObserver, and the row and the marker are on the page. Once shown,
+// the buttons stay shown for the rest of the visit.
+//
 // Step 5 (Alerts) asks window.PinalertNotify (notify.js) what this device can
 // do, on arrival and without a prompt, and shows one of four parts: ready,
-// needs-install, blocked or unsupported. It writes the words and notify.js
-// writes none.
+// needs-install, blocked or unsupported. The needs-install part is one line
+// (written in the template) under the title Alerts, with no install guide, which
+// now lives only in Settings. It writes the words and notify.js writes none.
 //
 // What it never does:
 //   - It never runs the browser's notification prompt except from the Allow
@@ -90,10 +100,19 @@
   var MESSAGE_NOT_FOUND = 'Not found. Add your town, for example: Gayathri Nagar, Vijayawada';
   var MESSAGE_UNAVAILABLE = 'Search unavailable. Try again in a moment.';
   var MESSAGE_RATE_LIMITED = 'Too many searches. Wait a few seconds and try again.';
-  // Step 5 (UI-SPEC P33-C7, C9, C10, C15). The sentences of the ready, blocked
-  // and unsupported parts, and the example notification, are in the template.
+  // Step 5 (UI-SPEC P33-C7, C9, C10, C15). The sentences of the ready,
+  // needs-install, blocked and unsupported parts, and the example notification,
+  // are in the template.
   var ALERTS_STEP = 5;
-  var TITLE_INSTALL = 'Install to get alerts';
+  // The owner, on 2026-10-27, made the needs-install part gentler: the step's own
+  // name above the one line the template holds.
+  var TITLE_LATER = 'Alerts';
+  // Step 2: the attribute that holds Agree and Disagree back, and the margin the
+  // end marker is watched with. The margin is about the text box's bottom
+  // padding, so the 1px marker under the last line counts as reached when
+  // VoiceOver scrolls that line just into view.
+  var UNREAD_ATTR = 'data-unread';
+  var END_MARGIN = '0px 0px 24px 0px';
   var MESSAGE_ALERTS_OFF = 'Alerts are off on this device.';
   var MESSAGE_ALERTS_FAILED = 'Couldn\'t turn alerts on. Try again.';
   var MESSAGE_ALERTS_OFFLINE = 'You\'re offline, so this wasn\'t saved. Try again when you have a signal.';
@@ -119,6 +138,9 @@
 
   var disagreeBox = el('welcome-disagree-message');
   var scrollbox = el('welcome-scrollbox');
+  var consentActions = el('welcome-consent-actions');
+  var scrollEnd = el('welcome-scrollbox-end');
+  var endWatcher = null;
   var consentError = el('welcome-error-2');
   var agreeButton = el('welcome-agree');
   var allowButton = el('welcome-allow-location');
@@ -199,10 +221,11 @@
   }
 
   // isShown says whether node and every ancestor up to the root are visible, so
-  // the focus trap skips the controls of a hidden step and a hidden search.
+  // the focus trap skips the controls of a hidden step and a hidden search, and
+  // the Agree and Disagree row while it is held back (it carries UNREAD_ATTR).
   function isShown(node) {
     for (var n = node; n && n !== root; n = n.parentNode) {
-      if (n.hidden) {
+      if (n.hidden || (typeof n.hasAttribute === 'function' && n.hasAttribute(UNREAD_ATTR))) {
         return false;
       }
     }
@@ -418,6 +441,48 @@
   function readAgain() {
     scrollbox.scrollTop = 0;
     scrollbox.focus();
+  }
+
+  // revealConsent shows Agree and Disagree for good: the hold comes off and the
+  // watcher is dropped. Nothing ever sets the hold again, and focus is left where
+  // the person is.
+  function revealConsent() {
+    if (consentActions) {
+      consentActions.removeAttribute(UNREAD_ATTR);
+    }
+    if (endWatcher !== null) {
+      try {
+        endWatcher.disconnect();
+      } catch (err) {
+        // The buttons are shown either way.
+      }
+      endWatcher = null;
+    }
+  }
+
+  // watchForEnd holds Agree and Disagree back until the end marker has been in
+  // view. It does nothing where the reveal could not run (the account has agreed,
+  // the page lacks the row or the marker, or the browser has no
+  // IntersectionObserver), so a page whose script fails never hides Agree. A
+  // browser that cannot watch shows the buttons at once.
+  function watchForEnd() {
+    if (agreed || !consentActions || !scrollEnd || typeof window.IntersectionObserver !== 'function') {
+      return;
+    }
+    consentActions.setAttribute(UNREAD_ATTR, '');
+    try {
+      endWatcher = new window.IntersectionObserver(function (entries) {
+        for (var i = 0; i < entries.length; i++) {
+          if (entries[i].isIntersecting) {
+            revealConsent();
+            return;
+          }
+        }
+      }, { root: scrollbox, rootMargin: END_MARGIN, threshold: 0 });
+      endWatcher.observe(scrollEnd);
+    } catch (err) {
+      revealConsent();
+    }
   }
 
   function agree() {
@@ -1004,7 +1069,7 @@
     alertsInstall.hidden = variant !== 'needs-install';
     alertsBlocked.hidden = variant !== 'blocked';
     alertsUnsupported.hidden = variant !== 'unsupported';
-    setText(alertsTitle, variant === 'needs-install' ? TITLE_INSTALL : alertsTitleReady);
+    setText(alertsTitle, variant === 'needs-install' ? TITLE_LATER : alertsTitleReady);
     alertsNoHome.hidden = hasHomeArea;
     alertsAllow.hidden = variant !== 'ready';
     alertsLater.hidden = variant !== 'ready';
@@ -1204,6 +1269,7 @@
     startStep = 1;
   }
   agreed = startStep > CONSENT_STEP;
+  watchForEnd();
   goTo(firstStep(startStep), 'replace');
 
   window.PinalertWelcome = {

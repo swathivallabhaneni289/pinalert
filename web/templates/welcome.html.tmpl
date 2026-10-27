@@ -10,7 +10,6 @@
   <link rel="stylesheet" href="/static/css/app-bar.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/legal.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/window.css?v={{.AssetVersion}}">
-  <link rel="stylesheet" href="/static/css/device-guide.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/welcome.css?v={{.AssetVersion}}">
   <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
 </head>
@@ -25,6 +24,11 @@
   step 5, Alerts, and its name in welcomeSteps. Step 5 shows one of four parts
   by device state; its example notification is built in Go
   (service.AlertExample), never typed here.
+  Quick 261027-jhd (owner, 2026-10-27) makes step 2's Agree and Disagree wait
+  until the end of the text has been seen, which welcome.js does (the marker is
+  the last child of the text box; the hold is never written here). It also makes
+  step 5 on an iPhone tab show one line instead of the install guide, which now
+  lives only in Settings (the device guide partial, shown in its window).
 */}}
   <div class="welcome" id="welcome" role="dialog" aria-modal="true" aria-labelledby="welcome-step-{{.StartStep}}-title" data-start-step="{{.StartStep}}" data-step="{{.StartStep}}" data-account-id="{{.AccountID}}" data-push-key="{{.PushPublicKey}}">
     <div class="welcome__progress" aria-hidden="true"><div class="welcome__progress-fill"></div></div>
@@ -81,8 +85,9 @@
         <div class="welcome__scrollbox legal-text" id="welcome-scrollbox" tabindex="0" role="region" aria-label="Disclaimer and policy text">
           {{template "legal_disclaimer_body" .Legal}}
           {{template "legal_policy_body" .Legal}}
+          <div class="welcome__scrollbox-end" id="welcome-scrollbox-end" aria-hidden="true"></div>
         </div>
-        <div class="welcome__actions welcome__actions--pair">
+        <div class="welcome__actions welcome__actions--pair" id="welcome-consent-actions">
           <button type="button" class="btn" id="welcome-disagree">Disagree</button>
           <button type="button" class="btn btn--primary" id="welcome-agree">Agree</button>
         </div>
@@ -187,9 +192,7 @@
           </div>
           <p class="welcome__lead">You can change this any time in Settings.</p>
         </div>
-        <div class="welcome__alerts-part" id="welcome-alerts-install" hidden>
-          {{template "device_guide"}}
-        </div>
+        <p class="welcome__lead" id="welcome-alerts-install" hidden>You can turn on alerts later in Settings.</p>
         <p class="welcome__lead" id="welcome-alerts-blocked" hidden>Notifications are blocked for Pinalert in this browser. Allow them in your browser settings, then turn on On this device in Settings.</p>
         <p class="welcome__lead" id="welcome-alerts-unsupported" hidden>This browser can't show notifications. Updates still show in the bell.</p>
         {{/* Review T-04: an always-present live region, never hidden. It is empty (and clipped by :empty in welcome.css) until welcome.js writes the refusal sentence into it, so a screen reader announces the text. */}}

@@ -137,10 +137,20 @@ func TestOnboardingFlowEndToEnd(t *testing.T) {
 		`<button type="button" class="welcome__steps-button" data-step="4">`,
 		`<button type="button" class="welcome__steps-button" data-step="5">`,
 		`<span class="welcome__steps-name">Alerts</span>`,
+		// Quick 261027-jhd (owner, 2026-10-27): the Agree and Disagree row has an
+		// id and the end-of-text marker closes the text box, so welcome.js can hold
+		// the row back until the end has been seen.
+		`<div class="welcome__actions welcome__actions--pair" id="welcome-consent-actions">`,
+		`<div class="welcome__scrollbox-end" id="welcome-scrollbox-end" aria-hidden="true"></div>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("/welcome lacks %q", want)
 		}
+	}
+	// The hold is welcome.js's, never the server's: a page whose script fails
+	// must still show Agree.
+	if strings.Contains(body, "data-unread") {
+		t.Errorf("/welcome holds data-unread: the script sets the hold, the server never does")
 	}
 	// The text agreed to is the published text: its headings and a sentence of
 	// each part are in the scroll box.
@@ -437,9 +447,19 @@ func TestWelcomeStepFiveRendersForNewAccount(t *testing.T) {
 		`<p class="welcome__example-body">` + example.Body + `</p>`,
 		`id="welcome-alerts-allow">Allow alerts</button>`, `id="welcome-alerts-later">Not now</button>`,
 		`<span class="welcome__steps-name">Alerts</span>`,
+		// Quick 261027-jhd (owner, 2026-10-27, "yes make it gentler"): the
+		// needs-install part is this one line.
+		"You can turn on alerts later in Settings.",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("/welcome lacks %q", want)
+		}
+	}
+	// The install guide now lives only in the Settings window, so the first-time
+	// flow neither links its stylesheet nor mentions the Home Screen.
+	for _, banned := range []string{"device-guide", "Home Screen"} {
+		if strings.Contains(body, banned) {
+			t.Errorf("/welcome holds %q: the install guide lives only in Settings", banned)
 		}
 	}
 	// No home area: the card shows its second line.

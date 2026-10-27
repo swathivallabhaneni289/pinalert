@@ -1,7 +1,8 @@
 /* device-guide.css: the iPhone install guide (Phase 3.3, plan 06, UI-SPEC
-   Surface 4a). One partial (device_guide.html.tmpl), shown in step 5 of the
-   first-time flow and in the Settings guide window. Plans 13 and 14 link this
-   file from those pages. The glyph base (.app-icon) comes from app-bar.css.
+   Surface 4a). One partial (device_guide.html.tmpl), shown in the Settings
+   guide window only (step 5 of the first-time flow showed it until 2026-10-27,
+   quick 261027-jhd). settings.html.tmpl links this file. The glyph base
+   (.app-icon) comes from app-bar.css.
 
    Tokens only: no gradient, no shadow, no animation. */
 

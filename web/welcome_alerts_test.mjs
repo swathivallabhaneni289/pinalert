@@ -6,7 +6,9 @@
 //     step 5; first-run-done is sent only from step 5;
 //   - step 5 reads PinalertNotify.baseState() at once and deviceState(key) after,
 //     and shows one of four parts by device state: ready, needs-install, blocked,
-//     unsupported (an empty key is unsupported);
+//     unsupported (an empty key is unsupported). Amended 2026-10-27 by quick
+//     261027-jhd (owner): the needs-install part is one line under the title
+//     Alerts, with Continue and Back, and no install guide;
 //   - Allow alerts calls PinalertNotify.enable(key) inside the click, so the
 //     browser prompt keeps its tap; Not now never asks the browser anything;
 //   - a refusal, an offline answer and a failure each show their own line;
@@ -27,6 +29,11 @@ const here = path.dirname(url.fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.join(here, 'static', 'js', 'welcome.js'), 'utf8');
 
 const READY_TITLE = 'Get alerts when it matters';
+// Amended 2026-10-27 by quick 261027-jhd (owner, "yes make it gentler"): the
+// needs-install variant (an iPhone Safari tab) shows the step's own name above
+// one line, "You can turn on alerts later in Settings.", instead of the install
+// guide, which now lives only in Settings.
+const LATER_TITLE = 'Alerts';
 const KEY = 'test-public-key-placeholder';
 
 class FakeEl {
@@ -330,15 +337,15 @@ test('ready: shows the ask with Allow alerts and Not now, reads the base state a
   assert.equal(shown(page, 'welcome-alerts-allow'), true);
 });
 
-test('needs-install: the guide, the title Install to get alerts, and one Continue with no Allow alerts', () => {
+test('needs-install: one line, the title Alerts, and one Continue with no Allow alerts', () => {
   const page = load({ start: 3, notify: makeNotify({ base: 'needs-install', now: true }) });
   page.api.goTo(5);
   assert.equal(page.steps[4].getAttribute('data-device-state'), 'needs-install');
   assert.equal(shown(page, 'welcome-alerts-install'), true);
   assert.equal(shown(page, 'welcome-alerts-ready'), false);
-  assert.equal(text(page, 'welcome-step-5-title'), 'Install to get alerts');
+  assert.equal(text(page, 'welcome-step-5-title'), LATER_TITLE);
   assert.ok(page.doc.activeElement === byId(page, 'welcome-step-5-title'));
-  assert.equal(text(page, 'welcome-step-5-title'), 'Install to get alerts', 'the title is right when the screen reader lands on it');
+  assert.equal(text(page, 'welcome-step-5-title'), LATER_TITLE, 'the title is right when the screen reader lands on it');
   assert.equal(shown(page, 'welcome-alerts-allow'), false);
   assert.equal(shown(page, 'welcome-alerts-later'), false);
   assert.equal(shown(page, 'welcome-alerts-continue'), true);
@@ -531,7 +538,7 @@ test('Allow alerts on a device that turns out unsupported redraws that variant',
   page.notify.waiting.enable.resolve({ ok: false, state: 'needs-install', reason: 'unsupported' });
   await flush();
   assert.equal(page.steps[4].getAttribute('data-device-state'), 'needs-install');
-  assert.equal(text(page, 'welcome-step-5-title'), 'Install to get alerts');
+  assert.equal(text(page, 'welcome-step-5-title'), LATER_TITLE);
   assert.equal(shown(page, 'welcome-alerts-continue'), true);
   assert.equal(shown(page, 'welcome-alerts-allow'), false);
 });
