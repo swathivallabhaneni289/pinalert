@@ -1,15 +1,16 @@
 {{define "device_guide"}}{{/*
   The iPhone install guide (Phase 3.3, plan 06, UI-SPEC Surface 4a, decision 5).
-  One partial, shown in exactly two places and nowhere else: step 5 of the
-  first-time flow when the device state is needs-install, and the Settings guide
-  window (id device-guide-window) opened from the On this device row in the same
-  state. It is never a banner on Nearby and never in the top bar.
+  One partial, shown in one place only: the Settings guide window (id
+  device-guide-window) opened from the On this device row when the device state
+  is needs-install. Step 5 of the first-time flow showed it until 2026-10-27,
+  when the owner made that step gentler (quick 261027-jhd). It is never a banner
+  on Nearby and never in the top bar.
 
   The title belongs to the page that includes it (the step title or the window
   title), so there is none here. There is no button and no hint line: the window
   closes with its X. The words are fixed copy; the key words are in strong, and
-  the three icons are decoration (aria-hidden). Plans 13 and 14 link
-  /static/css/device-guide.css from the pages that include this partial.
+  the three icons are decoration (aria-hidden). settings.html.tmpl links
+  /static/css/device-guide.css.
 */}}
 <p class="device-guide__lead">On this device, alerts work once Pinalert is on your Home Screen.</p>
 <ol class="device-guide__steps" role="list">
