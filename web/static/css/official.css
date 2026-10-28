@@ -503,11 +503,19 @@
     border: 0;
   }
 
-  /* "6 min ago" and "about 8:35 pm" are written lower case so they read after
-     "Issued" and "Until" on the phone; the column shows them capitalised. */
-  .official-row__issued::first-letter,
-  .official-row__until::first-letter {
+  /* "just now" and "about" are written lower case so they read after "Issued"
+     and "Until" on the phone; the column shows them capitalised. The time span
+     is a block of its own so its first letter can be raised. */
+  .official-row__time {
+    display: inline-block;
+  }
+
+  .official-row__time::first-letter {
     text-transform: uppercase;
+  }
+
+  .official-about {
+    text-transform: capitalize;
   }
 }
 
