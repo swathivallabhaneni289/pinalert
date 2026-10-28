@@ -1,0 +1,30 @@
+<!-- synthetic: written by hand for plan 05-02 with CAP 1.2 element names. No Cancel message appeared in the real feed sample. It cancels the real IMD Chennai message in cap_imd_chennai.xml. -->
+<cap:alert xmlns:cap="urn:oasis:names:tc:emergency:cap:1.2">
+<cap:identifier>IN-1792915039196007_44</cap:identifier>
+<cap:sender>IMD-Chennai</cap:sender>
+<cap:sent>2026-10-25T14:05:00+05:30</cap:sent>
+<cap:status>Actual</cap:status>
+<cap:msgType>Cancel</cap:msgType>
+<cap:scope>Public</cap:scope>
+<cap:references>IMD-Chennai,IN-1792915039196007_43,2026-10-25T13:26:49+05:30</cap:references>
+<cap:info>
+<cap:language>en-IN</cap:language>
+<cap:category>Met</cap:category>
+<cap:event>Moderate Rain</cap:event>
+<cap:urgency>Past</cap:urgency>
+<cap:severity>Moderate</cap:severity>
+<cap:certainty>Likely</cap:certainty>
+<cap:effective>2026-10-25T14:05:00+05:30</cap:effective>
+<cap:expires>2026-10-25T16:00:00+05:30</cap:expires>
+<cap:headline>The earlier rain warning is withdrawn.</cap:headline>
+<cap:description/>
+<cap:instruction/>
+<cap:area>
+<cap:areaDesc>Chengalpattu, Chennai districts of Tamil Nadu</cap:areaDesc>
+<cap:geocode>
+<cap:valueName>LGD District Code</cap:valueName>
+<cap:value>574</cap:value>
+</cap:geocode>
+</cap:area>
+</cap:info>
+</cap:alert>

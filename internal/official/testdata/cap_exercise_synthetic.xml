@@ -1,0 +1,25 @@
+<!-- synthetic: written by hand for plan 05-02 with CAP 1.2 element names. A drill message that must never be kept. -->
+<cap:alert xmlns:cap="urn:oasis:names:tc:emergency:cap:1.2">
+<cap:identifier>IN-1792000000000001_1</cap:identifier>
+<cap:sender>Test-SDMA</cap:sender>
+<cap:sent>2026-10-25T10:00:00+05:30</cap:sent>
+<cap:status>Exercise</cap:status>
+<cap:msgType>Alert</cap:msgType>
+<cap:scope>Public</cap:scope>
+<cap:info>
+<cap:language>en-IN</cap:language>
+<cap:category>Met</cap:category>
+<cap:event>Cyclone</cap:event>
+<cap:urgency>Immediate</cap:urgency>
+<cap:severity>Extreme</cap:severity>
+<cap:certainty>Observed</cap:certainty>
+<cap:effective>2026-10-25T10:00:00+05:30</cap:effective>
+<cap:expires>2026-10-25T13:00:00+05:30</cap:expires>
+<cap:headline>This is a drill. No action is needed.</cap:headline>
+<cap:description/>
+<cap:instruction/>
+<cap:area>
+<cap:areaDesc>Nowhere</cap:areaDesc>
+</cap:area>
+</cap:info>
+</cap:alert>

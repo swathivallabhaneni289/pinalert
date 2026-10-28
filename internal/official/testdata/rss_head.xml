@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?xml-stylesheet title="XSL_formatting" type="text/xsl" href="feed.xsl"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>All India: CAP Disaster Alert Feeds</title>
+    <description>CAP Integrated Alert System Warning Updates</description>
+    <language>en</language>
+    <link>https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml</link>
+    <atom:link href="https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml" rel="self" type="application/rss+xml"/>
+    <copyright>public domain</copyright>
+    <pubDate>Fri, 16 Oct 2026 09:04:39 GMT</pubDate>
+    <item>
+      <title>അടുത്ത 24 മണിക്കൂറിൽ ശക്തമായ മഴയെ തുടർന്ന് കോഴിക്കോട്, മലപ്പുറം, പാലക്കാട്, തൃശൂർ, വയനാട്, ഇടുക്കി, കോട്ടയം, പത്തനംതിട്ട ജില്ലകളിൽ മലവെള്ളപ്പാച്ചിലിന് സാധ്യത. IMD-KSDMA 25-10-2026, 2.42 pm</title>
+      <description/>
+      <category>Met</category>
+      <link>https://sachet.ndma.gov.in/cap_public_website/FetchXMLFile?identifier=1792916961451006</link>
+      <author>controlroom@ndma.gov.in (IMD Thiruvananthapuram)</author>
+      <guid isPermaLink="false">1792916961451006</guid>
+      <pubDate>Sun, 25 Oct 2026 09:15:09 GMT</pubDate>
+    </item>
+    <item>
+      <title>మీ ప్రాంతంలో పిడుగులు పడే అవకాశం ఉంది.ఉరుములు మెరుపులతో కూడిన వర్షం పడేప్పుడు చెట్లు,టవర్స్,పోల్స్,పొలాలు,బహిరంగ ప్రదేశాల్లో ఉండరాదు.సురక్షితమైన భవనాల్లో ఆశ్రయం పొందండి-ఆంధ్రప్రదేశ్ ప్రభుత్వం.</title>
+      <description/>
+      <category>Met</category>
+      <link>https://sachet.ndma.gov.in/cap_public_website/FetchXMLFile?identifier=1792919196941008</link>
+      <author>controlroom@ndma.gov.in (Andhra Pradesh SDMA)</author>
+      <guid isPermaLink="false">1792919196941008</guid>
+      <pubDate>Sun, 25 Oct 2026 09:07:56 GMT</pubDate>
+    </item>
+    <item>
+      <title>మీ ప్రాంతంలో పిడుగులు పడే అవకాశం ఉంది.ఉరుములు మెరుపులతో కూడిన వర్షం పడేప్పుడు చెట్లు,టవర్స్,పోల్స్,పొలాలు,బహిరంగ ప్రదేశాల్లో ఉండరాదు.సురక్షితమైన భవనాల్లో ఆశ్రయం పొందండి-ఆంధ్రప్రదేశ్ ప్రభుత్వం.</title>
+      <description/>
+      <category>Met</category>
+      <link>https://sachet.ndma.gov.in/cap_public_website/FetchXMLFile?identifier=1792918946568008</link>
+      <author>controlroom@ndma.gov.in (Andhra Pradesh SDMA)</author>
+      <guid isPermaLink="false">1792918946568008</guid>
+      <pubDate>Sun, 25 Oct 2026 09:03:34 GMT</pubDate>
+    </item>
+    <item>
+      <title>మీ ప్రాంతంలో పిడుగులు పడే అవకాశం ఉంది.ఉరుములు మెరుపులతో కూడిన వర్షం పడేప్పుడు చెట్లు,టవర్స్,పోల్స్,పొలాలు,బహిరంగ ప్రదేశాల్లో ఉండరాదు.సురక్షితమైన భవనాల్లో ఆశ్రయం పొందండి-ఆంధ్రప్రదేశ్ ప్రభుత్వం.</title>
+      <description/>
+      <category>Met</category>
+      <link>https://sachet.ndma.gov.in/cap_public_website/FetchXMLFile?identifier=1792918626855008</link>
+      <author>controlroom@ndma.gov.in (Andhra Pradesh SDMA)</author>
+      <guid isPermaLink="false">1792918626855008</guid>
+      <pubDate>Sun, 25 Oct 2026 08:59:28 GMT</pubDate>
+    </item>
+    <item>
+      <title>మీ ప్రాంతంలో పిడుగులు పడే అవకాశం ఉంది.ఉరుములు మెరుపులతో కూడిన వర్షం పడేప్పుడు చెట్లు,టవర్స్,పోల్స్,పొలాలు,బహిరంగ ప్రదేశాల్లో ఉండరాదు.సురక్షితమైన భవనాల్లో ఆశ్రయం పొందండి-ఆంధ్రప్రదేశ్ ప్రభుత్వం.</title>
+      <description/>
+      <category>Met</category>
+      <link>https://sachet.ndma.gov.in/cap_public_website/FetchXMLFile?identifier=1792918014799008</link>
+      <author>controlroom@ndma.gov.in (Andhra Pradesh SDMA)</author>
+      <guid isPermaLink="false">1792918014799008</guid>
+      <pubDate>Sun, 25 Oct 2026 08:47:58 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
