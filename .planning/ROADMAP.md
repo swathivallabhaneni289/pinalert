@@ -645,7 +645,7 @@ Plans:
   - The Reliable reporter kind is built, not held: a quiet note at posting, marked "Not confirmed yet" and updated in place once people nearby confirm, on Phase 3.2's single rule (03.2 D-29). This settles scope note 4's hold or build choice.
   - "Someone I follow posts" is not a Settings switch: Phase 9 puts a per person Notify me bell on the followed person's profile.
 
-**Plans:** 15/15 plans executed
+**Plans:** 22/22 plans executed (15 planned, plus 7 gap closure plans from the owner checks of 2026-10-27 and 2026-10-28; the owner re-tests in the final check session)
 
 Plans:
 
@@ -678,6 +678,16 @@ Plans:
 **Wave 5** *(blocked on Wave 4 completion)*
 
 - [x] 03.3-15-PLAN.md: End to end proof, trust model and push docs, the owner's device checks
+
+**Gap closure** *(owner checks 4, 7 and 8; merged 2026-10-28, review fixes 66f0883f and 966c7b6f)*
+
+- [x] 03.3-16-PLAN.md: A Critical alert is never held by the hourly limit, and Apple endpoints get the first push about a report only
+- [x] 03.3-17-PLAN.md: The first page after signing in registers the device again, without Settings
+- [x] 03.3-18-PLAN.md: The now disputed phone note goes out only for a report that was confirmed before
+- [x] 03.3-19-PLAN.md: The sign up alerts pop-up names the home area, asks for it when missing, and offers Reliable reporter alerts
+- [x] 03.3-20-PLAN.md: The Tell you when this report changes? pop-up after the first post or vote
+- [x] 03.3-21-PLAN.md: Nearby and Low data render that pop-up while Changes is off
+- [x] 03.3-22-PLAN.md: The docs for the four gaps and the full gate
 
 ### Phase 4: Robustness — Real-World Resilience
 
@@ -822,7 +832,7 @@ Phases execute in the owner's build order (2026-10-16): 1 → 1.1 → 2 → 3 �
 | 3. Trust-Model Hardening — Diversity-Weighted Trust | 31/31 | Complete | 2026-10-13 |
 | 3.1 Report history views | 16/16 | In Progress|  |
 | 3.2 In-app updates and trusted-reporter alerts | 19/19 | In Progress|  |
-| 3.3 Installable app and phone alerts | 15/15 | In Progress|  |
+| 3.3 Installable app and phone alerts | 22/22 | In Progress|  |
 | 3.4 App layout | 44/44 | Complete | 2026-10-22 |
 | 4. Robustness — Real-World Resilience | 29/29 | In Progress|  |
 | 5. Official Feed & Demo Mode | 0/22 | Planned | - |
