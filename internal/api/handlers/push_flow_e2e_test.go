@@ -522,20 +522,27 @@ func TestPhoneAlertChangesToMyReport(t *testing.T) {
 	}
 }
 
-// TestPhoneAlertCapShowsNothingExtra is decision 6 and T-03.3-08: five Critical
-// reports from five reporters near one reader in one hour give four
-// notifications and no fifth and no summary.
+// TestPhoneAlertCapShowsNothingExtra is decision 6, T-03.3-08 and the 03.3-UAT
+// gap for test 8 (2026-10-28): the hourly cap never holds a Critical alert near
+// the home area, because it is never stored in the bell, so five Critical
+// reports from five reporters near one reader in one hour give five
+// notifications, every one of kind critical, with no summary and no extra kind.
+// They count toward the cap, so the next push of another kind in the same hour
+// (a Reliable reporter's report, with that switch on) is held back: the phone
+// gets nothing for it and its outbox row is skipped as cap_account_hour.
 func TestPhoneAlertCapShowsNothingExtra(t *testing.T) {
 	w := pwSetup(t)
 	a := w.near(t, "cap-a")
+	pwAlerts(t, w, a.client, `{"reliable_alerts":true,"alert_radius_km":5}`)
+	const critical = 5
 	var ids []int64
-	for i := 0; i < 5; i++ {
+	for i := 0; i < critical; i++ {
 		reporter := w.person(t, "cap-r"+strconv.Itoa(i))
 		ids = append(ids, pwPostCritical(t, w, reporter.client, ""))
 		w.run(t)
 	}
 
-	got := pwWantCount(t, w, a, service.PushPerAccountPerHour)
+	got := pwWantCount(t, w, a, critical)
 	if service.PushPerAccountPerHour != 4 {
 		t.Fatalf("the hourly cap is %d, this test is written for 4", service.PushPerAccountPerHour)
 	}
@@ -549,17 +556,29 @@ func TestPhoneAlertCapShowsNothingExtra(t *testing.T) {
 		}
 		tags[m.Payload.Tag] = true
 	}
-	if len(tags) != 4 {
-		t.Errorf("the four messages carry %d distinct tags, want 4", len(tags))
+	if len(tags) != critical {
+		t.Errorf("the %d messages carry %d distinct tags, want %d", critical, len(tags), critical)
 	}
-	if tags["report-"+strconv.FormatInt(ids[4], 10)] {
-		t.Errorf("the fifth report reached the phone")
+	if !tags["report-"+strconv.FormatInt(ids[critical-1], 10)] {
+		t.Errorf("the fifth Critical report did not reach the phone")
 	}
-	if n := delCount(t, w.pool, `SELECT count(*) FROM push_outbox WHERE account_id = $1 AND state = 'skipped' AND skip_reason = 'cap_account_hour'`, a.id); n != 1 {
-		t.Errorf("rows skipped by the hourly cap = %d, want 1", n)
+	if n := delCount(t, w.pool, `SELECT count(*) FROM push_outbox WHERE account_id = $1 AND state = 'skipped' AND skip_reason = 'cap_account_hour'`, a.id); n != 0 {
+		t.Errorf("rows skipped by the hourly cap = %d before the sixth push, want 0 (Critical is never held)", n)
 	}
-	if total := w.sender.total(); total != 4 {
-		t.Errorf("the fake push service saw %d messages in all, want 4", total)
+
+	// The sixth push, of another kind, in the same hour: held back, nothing shown.
+	const sessionID = "pw-cap-reliable-reporter-session"
+	testutil.SeedReliableReporter(t, w.pool, pwEmail("cap-rel"), sessionID, time.Now().UTC())
+	relReporter := p17raSessionClient(t, w.srv.URL, sessionID)
+	submitReportGetID(t, relReporter, w.srv.URL, floodReportBody(p07ReportLat, p07ReportLon))
+	w.run(t)
+
+	pwWantCount(t, w, a, critical)
+	if n := delCount(t, w.pool, `SELECT count(*) FROM push_outbox WHERE account_id = $1 AND kind = 'reliable' AND state = 'skipped' AND skip_reason = 'cap_account_hour'`, a.id); n != 1 {
+		t.Errorf("reliable rows skipped by the hourly cap = %d, want 1", n)
+	}
+	if total := w.sender.total(); total != critical {
+		t.Errorf("the fake push service saw %d messages in all, want %d", total, critical)
 	}
 }
 
