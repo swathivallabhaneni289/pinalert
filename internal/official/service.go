@@ -26,8 +26,9 @@ import (
 	sqlcgen "pinalert/internal/store/sqlc"
 )
 
-// kickTimeout bounds one background refresh. Render's free host allows a
-// request to run a minute, and the refresher bounds the CAP fetches itself.
+// kickTimeout bounds one background refresh of each feed. Render's free host
+// allows a request to run a minute, and the refresher bounds the CAP fetches
+// itself. The feeds run at the same time, so each gets the whole 55 seconds.
 const kickTimeout = 55 * time.Second
 
 // Config is what the service knows about this deployment, used only to say who
@@ -119,23 +120,39 @@ func (s *Service) Refresher() *Refresher { return s.refresher }
 // so a sweep right after a cron call finds the feed not due and does nothing.
 const TickerInterval = 5 * time.Minute
 
-// RefreshAll runs every registered feed through RefreshIfDue, one after the
-// other in the refresher's fixed order, so each feed's minimum gap, single flight
-// and CAP bound apply however often this is called. A feed that failed carries
-// its closed word in ErrorClass; one failure does not stop the others. The cron
-// endpoint and the ticker call this and nothing else (the lazy kick runs the same
-// feeds, each behind its own gate).
+// RefreshAll runs every registered feed through RefreshIfDue at the same time, so
+// each feed gets the caller's whole deadline (SACHET's CAP fetches no longer eat
+// into GDACS's minute) and each feed's minimum gap, single flight and claim apply
+// however often this is called. The results come back in the refresher's fixed
+// order (SACHET, then GDACS) whatever order the feeds finish in. A feed that
+// failed carries its closed word in ErrorClass; one failure does not stop the
+// others, and a panic inside one feed is recovered in that feed's goroutine and
+// reported as the word network, because nothing outside a goroutine can recover
+// its panic. The cron endpoint and the ticker call this and nothing else (the
+// lazy kick runs the same feeds, each behind its own gate).
 func (s *Service) RefreshAll(ctx context.Context) []Result {
 	feeds := s.refresher.Feeds()
-	out := make([]Result, 0, len(feeds))
-	for _, feed := range feeds {
-		res, err := s.refresher.RefreshIfDue(ctx, feed)
-		res.Feed = feed
-		if err != nil && res.ErrorClass == "" {
-			res.ErrorClass = ErrorClass(err)
-		}
-		out = append(out, res)
+	out := make([]Result, len(feeds)) // each goroutine writes only its own index
+	var wg sync.WaitGroup
+	for i, feed := range feeds {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() {
+				if recover() != nil {
+					log.Printf("official: refresh feed=%s class=panic", feed)
+					out[i] = Result{Feed: feed, ErrorClass: "network"}
+				}
+			}()
+			res, err := s.refresher.RefreshIfDue(ctx, feed)
+			res.Feed = feed
+			if err != nil && res.ErrorClass == "" {
+				res.ErrorClass = ErrorClass(err)
+			}
+			out[i] = res
+		}()
 	}
+	wg.Wait()
 	return out
 }
 
@@ -165,9 +182,10 @@ func (s *Service) Run(ctx context.Context) {
 	}
 }
 
-// sweep is one RefreshAll on a context of its own deadline. The refresher logs a
-// failed run itself (feed name and class word), and nobody is waiting for the
-// result, so it is dropped.
+// sweep is one RefreshAll on a context of its own deadline. The feeds inside it
+// run at the same time, each with its own recover in RefreshAll. The refresher
+// logs a failed run itself (feed name and class word), and nobody is waiting for
+// the result, so it is dropped.
 func (s *Service) sweep(ctx context.Context) {
 	defer func() {
 		if recover() != nil {

@@ -42,6 +42,10 @@ const (
 	RefreshDeadline = 55 * time.Second
 	// RefreshTokenMinLen is the shortest OFFICIAL_REFRESH_TOKEN the server accepts.
 	RefreshTokenMinLen = 32
+
+	// refreshWriteSlack is how long after the refresh deadline the door may
+	// still write its answer.
+	refreshWriteSlack = 5 * time.Second
 )
 
 // bearerPrefix is the exact scheme word the Authorization header must start with.
@@ -101,6 +105,15 @@ func officialRefresh(svc OfficialRefresher, token string, deadline time.Duration
 		if svc == nil {
 			http.Error(w, "the official feed is not available", http.StatusServiceUnavailable)
 			return
+		}
+
+		// The production server sets a 10 s WriteTimeout, while this door waits up
+		// to the refresh deadline for the feeds. Give this one authorised answer a
+		// write deadline that outlives the refresh, so a slow upstream is answered
+		// and not dropped. It is set only here, after the token passed, and only
+		// for this response: no other route and no refused caller gets it.
+		if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(deadline + refreshWriteSlack)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			log.Printf("official refresh: write deadline class=network")
 		}
 
 		ctx, cancel := context.WithTimeout(r.Context(), deadline)

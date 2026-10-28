@@ -31,7 +31,8 @@ package official
 // the constant gdacsBaseURL (in this package's tests, the base the unexported
 // seam constructor is given); every query is built with url.Values; redirects are
 // refused; no URL found in an answer is ever requested; the body is capped at
-// 2 MB and each request at 15 seconds. Every failure is reduced to one closed
+// 2 MB and each request at 40 seconds. The two requests run at the same time, so
+// a refresh takes as long as the slower one. Every failure is reduced to one closed
 // word (see ErrorClass) and no error value holds a URL or a query. Feed text is
 // stored as untrusted text: control characters removed and every field cut to a
 // length cap, and a report link is kept only when it starts with
@@ -50,6 +51,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -66,8 +68,11 @@ const gdacsSearchPath = "/gdacsapi/api/events/geteventlist/SEARCH"
 const (
 	// GdacsMaxBytes caps one answer.
 	GdacsMaxBytes = 2 << 20
-	// GdacsTimeout bounds one request.
-	GdacsTimeout = 15 * time.Second
+	// GdacsTimeout bounds one request. Request A and request B run at the same
+	// time, so a refresh takes as long as the slower of the two, inside the
+	// caller's context (which still caps it). Raised from 15 s on 2026-10-29 by
+	// quick 261029-6wb after the live service took 20.9 s for one request.
+	GdacsTimeout = 40 * time.Second
 	// GdacsMinGap is the shortest time between two refreshes of the GDACS feed.
 	GdacsMinGap = 15 * time.Minute
 	// GdacsEndedKeep is how long a pin and a row stay after the hazard's end date.
@@ -421,6 +426,18 @@ func (c *GdacsClient) Search(ctx context.Context, req SearchRequest) ([]Hazard, 
 	return hs, nil
 }
 
+// searchSafely is Search with a recover, because it runs in a goroutine of its
+// own, where no caller's recover can see a panic. A panic is reported as a
+// network failure and never crashes the process.
+func (c *GdacsClient) searchSafely(ctx context.Context, req SearchRequest) (hs []Hazard, err error) {
+	defer func() {
+		if recover() != nil {
+			hs, err = nil, gdacsErr(&fetchError{class: "network", msg: "request failed"})
+		}
+	}()
+	return c.Search(ctx, req)
+}
+
 // GdacsResult is what one refresh read: the hazards worth storing and how many
 // raw features the two answers held.
 type GdacsResult struct {
@@ -428,27 +445,54 @@ type GdacsResult struct {
 	Seen    int
 }
 
-// FetchHazards runs request A and request B at the given time, filters, drops
-// droughts and joins the two lists once per event. If either request fails the
-// whole call fails and returns no hazards, so a refresh never claims a check
-// that half of it did not make.
+// FetchHazards runs request A and request B at the given time, at the same time
+// as each other, filters, drops droughts and joins the two lists once per event.
+// If either request fails the whole call fails and returns no hazards, so a
+// refresh never claims a check that half of it did not make. The error returned
+// is the first one that happened, and at that moment the other request is
+// cancelled, so the call returns at the failure and does not wait for the other
+// request's timeout. Both requests are always finished with before it returns.
 func (c *GdacsClient) FetchHazards(ctx context.Context, now time.Time) (GdacsResult, error) {
 	now = now.UTC()
-	a, err := c.Search(ctx, SearchRequest{
+	reqA := SearchRequest{
 		EventTypes: []string{"TC", "FL", "EQ", "VO", "WF"},
 		From:       now.AddDate(0, 0, -14), To: now,
 		Levels: []string{"orange", "red"},
-	})
-	if err != nil {
-		return GdacsResult{}, err
 	}
-	b, err := c.Search(ctx, SearchRequest{
+	reqB := SearchRequest{
 		EventTypes: []string{"EQ", "TC", "FL"},
 		From:       now.AddDate(0, 0, -3), To: now,
 		Levels: []string{"green", "orange", "red"},
-	})
-	if err != nil {
-		return GdacsResult{}, err
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var (
+		wg       sync.WaitGroup
+		once     sync.Once
+		firstErr error
+		a, b     []Hazard
+	)
+	run := func(req SearchRequest, into *[]Hazard) {
+		defer wg.Done()
+		hs, err := c.searchSafely(ctx, req)
+		if err != nil {
+			// Only the first failure is kept: the other request's later
+			// "context canceled" is a result of this cancel, not a cause.
+			once.Do(func() {
+				firstErr = err
+				cancel()
+			})
+			return
+		}
+		*into = hs
+	}
+	wg.Add(2)
+	go run(reqA, &a)
+	go run(reqB, &b)
+	wg.Wait()
+	if firstErr != nil {
+		return GdacsResult{}, firstErr
 	}
 	return GdacsResult{
 		Hazards: mergeHazards(filterGdacsA(a), filterGdacsB(b)),

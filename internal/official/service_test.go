@@ -2,6 +2,7 @@ package official
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -348,4 +349,128 @@ func TestRefreshAllReportsFailures(t *testing.T) {
 	if got := newService(NewRefresher(nil, nil), nil, areas.Default()).RefreshAll(context.Background()); len(got) != 0 {
 		t.Errorf("a service with no feed returned %+v, want none", got)
 	}
+}
+
+// waitFetcher is a fetcher that finishes after d, or fails with the context's
+// error when the context ends first.
+type waitFetcher struct {
+	d   time.Duration
+	res Result
+}
+
+func (f *waitFetcher) Fetch(ctx context.Context, _ FeedStatus) (Result, error) {
+	select {
+	case <-time.After(f.d):
+		return f.res, nil
+	case <-ctx.Done():
+		return Result{}, ctx.Err()
+	}
+}
+
+// panicFetcher panics when it runs.
+type panicFetcher struct{}
+
+func (panicFetcher) Fetch(context.Context, FeedStatus) (Result, error) {
+	panic("a fetcher went wrong")
+}
+
+// twoFeedService is a Service over fake stores with a gap of 0 for both feeds.
+func twoFeedService(sachet, gdacs Fetcher) *Service {
+	clk := &clock{t: refreshT0}
+	r := NewRefresher(nil, nil, withStores(newFakeFeeds(0), newFakeAlerts()), WithRefresherClock(clk.now))
+	r.Register(FeedSachet, sachet, 0)
+	r.Register(FeedGdacs, gdacs, 0)
+	s := newService(r, nil, areas.Default())
+	s.now = clk.now
+	return s
+}
+
+// TestRefreshAllRunsFeedsTogether (quick 261029-6wb): the feeds are refreshed at
+// the same time, each with the caller's whole deadline, the results come back in
+// the fixed feed order, and a panic in one feed is contained to that feed.
+func TestRefreshAllRunsFeedsTogether(t *testing.T) {
+	t.Run("both feeds start before either finishes and the order is kept", func(t *testing.T) {
+		sachet := &fakeFetcher{res: Result{ItemsSeen: 5, Stored: 2}, release: make(chan struct{}), started: make(chan struct{}, 1)}
+		gdacs := &fakeFetcher{res: Result{ItemsSeen: 1}, release: make(chan struct{}), started: make(chan struct{}, 1)}
+		// Each release is closed exactly once, even when the test fails early,
+		// so a sequential RefreshAll fails at the wait below and never hangs.
+		var onceS, onceG sync.Once
+		releaseS := func() { onceS.Do(func() { close(sachet.release) }) }
+		releaseG := func() { onceG.Do(func() { close(gdacs.release) }) }
+		defer releaseS()
+		defer releaseG()
+		s := twoFeedService(sachet, gdacs)
+
+		done := make(chan []Result, 1)
+		go func() { done <- s.RefreshAll(context.Background()) }()
+
+		for name, started := range map[string]chan struct{}{"sachet": sachet.started, "gdacs": gdacs.started} {
+			select {
+			case <-started:
+			case <-time.After(2 * time.Second):
+				t.Fatalf("%s never started while the other feed was still running", name)
+			}
+		}
+		releaseG() // the later feed finishes first
+		releaseS()
+
+		var out []Result
+		select {
+		case out = <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("RefreshAll never returned")
+		}
+		if len(out) != 2 {
+			t.Fatalf("%d results, want 2: %+v", len(out), out)
+		}
+		if out[0].Feed != FeedSachet || out[0].ItemsSeen != 5 || out[0].Stored != 2 || out[0].Skipped || out[0].ErrorClass != "" {
+			t.Errorf("first result = %+v, want sachet with 5 seen and 2 stored", out[0])
+		}
+		if out[1].Feed != FeedGdacs || out[1].ItemsSeen != 1 || out[1].Skipped || out[1].ErrorClass != "" {
+			t.Errorf("second result = %+v, want gdacs with 1 seen", out[1])
+		}
+	})
+
+	t.Run("each feed gets the caller's whole budget", func(t *testing.T) {
+		s := twoFeedService(&waitFetcher{d: 700 * time.Millisecond, res: Result{ItemsSeen: 2}}, &waitFetcher{d: 700 * time.Millisecond, res: Result{ItemsSeen: 3}})
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+
+		out := s.RefreshAll(ctx)
+		if len(out) != 2 {
+			t.Fatalf("%d results, want 2", len(out))
+		}
+		for _, res := range out {
+			if res.ErrorClass != "" || res.Skipped {
+				t.Errorf("%s = %+v, want a clean run: each feed needs 700 ms of a 1 s budget, not 700 ms after the other", res.Feed, res)
+			}
+		}
+	})
+
+	t.Run("a panicking feed is reported and the other still runs", func(t *testing.T) {
+		gdacs := &fakeFetcher{res: Result{ItemsSeen: 1}}
+		s := twoFeedService(panicFetcher{}, gdacs)
+
+		var out []Result
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("a panic in a feed escaped RefreshAll: %v", r)
+				}
+			}()
+			out = s.RefreshAll(context.Background())
+		}()
+		if len(out) != 2 {
+			t.Fatalf("%d results, want 2: %+v", len(out), out)
+		}
+		if out[0].Feed != FeedSachet || out[0].ErrorClass != "network" {
+			t.Errorf("first result = %+v, want sachet with the word network", out[0])
+		}
+		if out[1].Feed != FeedGdacs || out[1].ErrorClass != "" || out[1].ItemsSeen != 1 {
+			t.Errorf("second result = %+v, want gdacs clean with 1 seen", out[1])
+		}
+		if n := gdacs.calls.Load(); n != 1 {
+			t.Errorf("gdacs ran %d times, want 1", n)
+		}
+	})
 }
