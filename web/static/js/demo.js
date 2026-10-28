@@ -228,6 +228,74 @@
     window.PinalertDemoEnded = onEndedVisit;
   }
 
+  // One visit across the three places (plan 05-19, D-01, D-05).
+  //
+  // The bars of a Demo page link to the other places with ?v=<visit>, so
+  // Nearby, Official alerts and My activity show one world in one visit. The
+  // visit is only a hand over: as soon as a page loads it takes the v parameter
+  // off its own address with history.replaceState, so a reload or a copied
+  // address starts a fresh Demo (leaving or reloading starts the Demo fresh), and
+  // nothing is kept in the browser. The other parameters (from, post) stay.
+  //
+  // The wordmark and the Report links are written by the shared bar with the
+  // bare Demo address, so this file adds the visit to them from the page's own
+  // data-visit, and from=welcome when the address says so. A visit of any other
+  // shape than the ids the server hands out is never written into a link.
+  var VISIT_PATTERN = /^[A-Za-z0-9_-]{22}$/;
+  var VISIT_PARAM = 'v';
+
+  function searchOf() {
+    var loc = window.location;
+    return loc && typeof loc.search === 'string' ? loc.search : '';
+  }
+
+  // dropVisit rewrites the address without the v parameter. An address without
+  // it, and a page without history, are left as they are.
+  function dropVisit() {
+    var loc = window.location;
+    var hist = window.history;
+    if (!loc || !hist || typeof hist.replaceState !== 'function') {
+      return;
+    }
+    var search = searchOf();
+    var pairs = search.replace(/^\?/, '').split('&').filter(function (pair) {
+      return pair !== '';
+    });
+    var kept = pairs.filter(function (pair) {
+      return pair.split('=')[0] !== VISIT_PARAM;
+    });
+    if (kept.length === pairs.length) {
+      return;
+    }
+    var path = typeof loc.pathname === 'string' ? loc.pathname : '/demo';
+    var hash = typeof loc.hash === 'string' ? loc.hash : '';
+    hist.replaceState(hist.state, '', path + (kept.length ? '?' + kept.join('&') : '') + hash);
+  }
+
+  // carryVisit adds the visit to the bar links that do not name one.
+  function carryVisit() {
+    if (typeof document.querySelector !== 'function' || typeof document.querySelectorAll !== 'function') {
+      return;
+    }
+    var holder = document.querySelector('[data-visit]');
+    var visit = holder ? holder.getAttribute('data-visit') : null;
+    if (typeof visit !== 'string' || !VISIT_PATTERN.test(visit)) {
+      return;
+    }
+    var from = /(?:^|[?&])from=welcome(?:&|$)/.test(searchOf()) ? '&from=' + WELCOME_WORD : '';
+    var links = document.querySelectorAll('a[data-open-report], a.app-topbar__brand');
+    for (var i = 0; i < links.length; i += 1) {
+      var href = links[i].getAttribute('href');
+      if (typeof href !== 'string' || href.indexOf('/demo') !== 0 || /[?&]v=/.test(href)) {
+        continue;
+      }
+      links[i].setAttribute('href', href + (href.indexOf('?') === -1 ? '?' : '&') + VISIT_PARAM + '=' + visit + from);
+    }
+  }
+
+  carryVisit();
+  dropVisit();
+
   window.PinalertDemoPractice = {
     PRACTICE_POLL_MS: PRACTICE_POLL_MS,
     onPosted: onPosted,

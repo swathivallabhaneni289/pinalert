@@ -1,0 +1,111 @@
+{{/*
+  The Demo's Official alerts page (Phase 5, plan 19; D-05, D-06, ROBUST-06;
+  UI-SPEC 4b and 4c). It mirrors alerts.html.tmpl, so the real renderer
+  (official-alerts.js) finds every id it expects and draws the sample alerts
+  exactly as it draws the real ones. It differs in what the Demo needs:
+
+    - the Demo strip is the first element, as on every Demo screen;
+    - the page root names the Demo's API base (data-api-base, read by
+      api-base.js) and the fixed pretend position (data-fixed-lat,
+      data-fixed-lon), so the renderer asks the visit's own sample route about
+      Singh Nagar and never reads a stored position or a signed in person;
+    - the attribution says the alerts are made up, and the renderer leaves it
+      alone;
+    - no app_head (it would register the service worker), no stored position
+      script, no bell, no person menu.
+
+  The status line and the rows come from the sample view the server builds
+  (internal/demo SampleView): every row carries the Demo tag and no authority
+  badge.
+*/}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/icons/app.svg" type="image/svg+xml">
+  <title>Pinalert Demo: Official alerts</title>
+  <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/app-bar.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/places.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/official.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/phone.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/demo.css?v={{.AssetVersion}}">
+  <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
+</head>
+<body class="has-app-bar">
+  {{template "demo_strip" .}}
+  <div class="top-chrome">
+    {{template "app_topbar" .}}
+  </div>
+  <div id="notice-live" class="visually-hidden" role="status" aria-live="polite"></div>
+
+  <div class="app-content">
+  <main class="place-page" id="official-page"
+        data-demo="1"
+        data-visit="{{.Visit}}"
+        data-api-base="{{.APIBase}}"
+        data-fixed-lat="{{.FixedLat}}"
+        data-fixed-lon="{{.FixedLon}}">
+    <h1 class="place-head">Official alerts</h1>
+
+    <p class="official-status" id="official-status"></p>
+
+    <div class="official-notice" id="official-notice" role="status" hidden>
+      <span class="official-notice__icon" aria-hidden="true"></span>
+      <span class="official-notice__text" id="official-notice-text"></span>
+    </div>
+
+    <div class="official-skeleton" id="official-skeleton" aria-hidden="true" hidden>
+      <div class="skeleton-row"></div>
+      <div class="skeleton-row"></div>
+      <div class="skeleton-row"></div>
+      <div class="skeleton-row"></div>
+    </div>
+
+    <section class="place-section official-section" id="official-section" aria-labelledby="official-title" hidden>
+      <div class="official-section__head">
+        <h2 class="place-section__title" id="official-title"></h2>
+        <p class="place-section__line" id="official-districts"></p>
+      </div>
+      <div class="place-box official-list" id="official-list"></div>
+    </section>
+
+    <div class="empty-state place-empty official-state" id="official-empty" hidden>
+      <h2 id="official-empty-title"></h2>
+      <p id="official-empty-body"></p>
+    </div>
+
+    <div class="empty-state place-empty official-state" id="official-unavailable" hidden>
+      <h2 id="official-unavailable-title"></h2>
+      <p id="official-unavailable-body"></p>
+    </div>
+
+    <div class="empty-state place-empty official-state" id="official-noarea" hidden>
+      <h2 id="official-noarea-title"></h2>
+      <p id="official-noarea-body"></p>
+    </div>
+
+    <div class="empty-state place-empty official-state" id="official-error" hidden>
+      <h2 id="official-error-title"></h2>
+      <p id="official-error-body"></p>
+      <button type="button" class="btn" id="official-retry">Try again</button>
+    </div>
+
+    <p class="official-attribution" id="official-attribution">These alerts are made up for the Demo.</p>
+    <noscript>
+      <p class="official-attribution">Turn on JavaScript to see the Demo's alerts.</p>
+    </noscript>
+  </main>
+  </div>
+
+  {{template "app_bottombar" .}}
+
+  <script src="/static/js/api-base.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/app-bar.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/demo.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/official-alerts.js?v={{.AssetVersion}}" defer></script>
+</body>
+</html>

@@ -44,7 +44,13 @@ func TestEveryPageIncludesAppHead(t *testing.T) {
 		// alert subscription, and the Demo registers nothing and stores nothing.
 		// The exemption is this one named file, and the Demo page is pinned to
 		// hold no app head and no notify.js by TestDemoPageLoadsNoForbiddenScripts.
-		if path == "templates/demo.html.tmpl" {
+		//
+		// Amended 2026-10-29 by plan 05-19: the Demo's Official alerts and My
+		// activity pages are exempt for the same reason (each is pinned to carry
+		// no app head by its own markup test, TestDemoAlertsPageMarkup and
+		// TestDemoActivityPageMarkup).
+		if path == "templates/demo.html.tmpl" || path == "templates/demo_alerts.html.tmpl" ||
+			path == "templates/demo_activity.html.tmpl" {
 			return nil
 		}
 		checked++

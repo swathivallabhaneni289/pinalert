@@ -12,6 +12,13 @@ package handlers
 // starts a new world, so nothing a visitor did survives the visit. The page
 // asks the browser for no location: the pretend position is on the page shell
 // and the scripts use it instead.
+//
+// Plan 05-19 added the Demo's other two places (Official alerts and My
+// activity). They share this file's view model and builders. The bars of the
+// three pages link to each other with ?v=<visit>, and a page given a valid,
+// living visit shows that world again, so the three places of one visit agree.
+// A page removes the v from its own address as it loads (demo.js), so a reload
+// or a copied address has no visit and starts a fresh Demo.
 
 import (
 	"bytes"
@@ -67,6 +74,9 @@ type demoViewModel struct {
 	APIBase string
 	// ExitHref is where Exit demo goes: /welcome or /login, nothing else.
 	ExitHref string
+	// AlertsHref is the address of the Demo's Official alerts for this visit,
+	// the target of the Nearby banner.
+	AlertsHref string
 	// FixedLat and FixedLon are the pretend position (Singh Nagar). The map,
 	// the report window and the vote path use it instead of the browser's.
 	FixedLat, FixedLon float64
@@ -90,49 +100,90 @@ func demoExitHref(from string) string {
 	return "/login"
 }
 
-// DemoPage renders the Demo's Nearby page for a new visit. store makes the
-// world; cfg is the page configuration of the real Nearby page. It is reached
-// through DemoRoutes, behind the per IP visit limit.
+// demoFromWord is the from query value to carry on: demoFromWelcome when the
+// address says exactly that, else empty. Nothing else is ever carried on.
+func demoFromWord(r *http.Request) string {
+	if r.URL.Query().Get(demoFromParam) == demoFromWelcome {
+		return demoFromWelcome
+	}
+	return ""
+}
+
+// demoVisitFor finds the world a Demo page is for. A valid, living visit named
+// by ?v= is reused, so the three places of one visit show one world; a missing,
+// malformed, unknown or ended visit starts a new world, as a reload does. The
+// shape is checked before the lookup (T-05-102), and a reused world costs no
+// new memory (T-05-101).
+func demoVisitFor(store *demo.Store, r *http.Request) (*demo.World, error) {
+	if visit := r.URL.Query().Get(demoVisitParam); demo.ValidVisitID(visit) {
+		if world, ok := store.Get(visit); ok {
+			return world, nil
+		}
+	}
+	return store.Create()
+}
+
+// newDemoPlaceModel builds the view model shared by the Demo's pages for the
+// place current (one of the Nav constants): the visit's world, the Demo bars
+// whose places carry the visit, the Exit address and the pretend position. When
+// the world cannot be made it answers 503 itself and returns false.
+func newDemoPlaceModel(w http.ResponseWriter, r *http.Request, store *demo.Store, cfg PageConfig, current string, opts ...navOption) (demoViewModel, *demo.World, bool) {
+	world, err := demoVisitFor(store, r)
+	if err != nil {
+		log.Printf("handlers: Demo page: starting a visit failed: %v", err)
+		w.Header().Set("Cache-Control", "no-store")
+		http.Error(w, demoBusyMessage, http.StatusServiceUnavailable)
+		return demoViewModel{}, nil, false
+	}
+	from := demoFromWord(r)
+	chrome := cfg.Chrome.withDefaults()
+	chrome.DemoPage = true
+	return demoViewModel{
+		AssetVersion:    cfg.AssetVersion,
+		Chrome:          chrome,
+		Demo:            true,
+		Nav:             demoNavFor(current, world.ID, from, opts...),
+		Visit:           world.ID,
+		APIBase:         "/demo/api/v/" + world.ID,
+		ExitHref:        demoExitHref(r.URL.Query().Get(demoFromParam)),
+		AlertsHref:      demoPlaceHref(demoNavHrefs[NavAlerts], world.ID, from),
+		FixedLat:        demo.PretendLat,
+		FixedLon:        demo.PretendLon,
+		PretendPlace:    demo.PretendPlace,
+		DefaultRadiusKm: cfg.DefaultRadiusKm,
+		VoteRadiusKm:    cfg.VoteRadiusKm,
+	}, world, true
+}
+
+// serveDemoPlace renders one Demo page from a view model. The page is built in
+// full first, so a template error answers a clean 500 and never a half page.
+// The page names a visit that exists once, so it is never cached, and a link
+// out of the Demo must not carry the address (and so the visit id) along.
+func serveDemoPlace(w http.ResponseWriter, tmpl *template.Template, name string, data any) {
+	var page bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&page, name, data); err != nil {
+		log.Printf("handlers: Demo page %s: %v", name, err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "same-origin")
+	_, _ = w.Write(page.Bytes())
+}
+
+// DemoPage renders the Demo's Nearby page. store holds the worlds; cfg is the
+// page configuration of the real Nearby page. A valid, living ?v= names the
+// visit to show again (the Demo's other places link back with it); anything
+// else starts a new world, so a reload or a shared address starts fresh. It is
+// reached through DemoRoutes, behind the per IP visit limit.
 func DemoPage(tmpl *template.Template, store *demo.Store, cfg PageConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		world, err := store.Create()
-		if err != nil {
-			log.Printf("handlers: DemoPage: starting a visit failed: %v", err)
-			w.Header().Set("Cache-Control", "no-store")
-			http.Error(w, demoBusyMessage, http.StatusServiceUnavailable)
+		vm, _, ok := newDemoPlaceModel(w, r, store, cfg, NavNearby, navTitle(demoWordmark))
+		if !ok {
 			return
 		}
-		chrome := cfg.Chrome.withDefaults()
-		chrome.DemoPage = true
-		vm := demoViewModel{
-			AssetVersion:    cfg.AssetVersion,
-			Chrome:          chrome,
-			Demo:            true,
-			Nav:             demoNavFor(NavNearby, navTitle(demoWordmark)),
-			Visit:           world.ID,
-			APIBase:         "/demo/api/v/" + world.ID,
-			ExitHref:        demoExitHref(r.URL.Query().Get("from")),
-			FixedLat:        demo.PretendLat,
-			FixedLon:        demo.PretendLon,
-			PretendPlace:    demo.PretendPlace,
-			DefaultRadiusKm: cfg.DefaultRadiusKm,
-			VoteRadiusKm:    cfg.VoteRadiusKm,
-		}
-		// The page is built in full first, so a template error answers a clean
-		// 500 and never a half page.
-		var page bytes.Buffer
-		if err := tmpl.ExecuteTemplate(&page, demoPageTemplate, vm); err != nil {
-			log.Printf("handlers: DemoPage: %v", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		// The page names a visit that exists once: never cached.
-		w.Header().Set("Cache-Control", "no-store")
-		// The visit id is in the page; a link out of the Demo must not carry
-		// the address (and so the id) along.
-		w.Header().Set("Referrer-Policy", "same-origin")
-		_, _ = w.Write(page.Bytes())
+		serveDemoPlace(w, tmpl, demoPageTemplate, vm)
 	}
 }
 

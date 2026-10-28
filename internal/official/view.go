@@ -18,6 +18,7 @@ import (
 	"time"
 	"unicode"
 
+	"pinalert/internal/areas"
 	"pinalert/internal/service"
 )
 
@@ -33,6 +34,7 @@ const (
 	badgeGdacs     = "GDACS"
 	sourceLineNDMA = "NDMA SACHET"
 	sourceLineGDAC = "GDACS. Automatic estimate. Follow your state disaster management authority."
+	sourceLineDemo = "Made up for the Demo. Not from any issuer."
 	unplacedLabel  = "Could not be placed on a map"
 )
 
@@ -105,6 +107,11 @@ type View struct {
 	Banner        *Banner
 }
 
+// AreaOfDistrict is the Area of one district in our own boundary data names,
+// the same one the service builds for a reader's position. The Demo (plan
+// 05-19) uses it to place its sample alerts on the pretend position's district.
+func AreaOfDistrict(d areas.District) *Area { return districtArea(d) }
+
 // Group is one labelled section of rows. Kind is reader, home, state or
 // unplaced.
 type Group struct {
@@ -155,6 +162,9 @@ type Banner struct {
 	Area        string
 	More        int
 	AlertID     int64
+	// Demo is true when the view was built for the Demo (ViewInput.Demo): the
+	// banner then draws the Demo tag and the alert is a made up sample.
+	Demo bool
 }
 
 // entry is a row together with what the banner rule needs and the row does not
@@ -363,7 +373,10 @@ func buildRow(a StoredAlert, demo bool) Row {
 		badge, sourceLine = badgeGdacs, sourceLineGDAC
 	}
 	if demo {
-		badge = ""
+		// A Demo row has no authority badge and does not name an issuer's
+		// channel as its source: nothing in it was ever sent by anyone
+		// (T-05-99, ROBUST-06).
+		badge, sourceLine = "", sourceLineDemo
 	}
 	issuer := a.Issuer
 	if issuer == "" {
@@ -485,6 +498,7 @@ func pickBanner(in ViewInput, reader *section, stateSecs []*section) *Banner {
 		Area:        c.area,
 		More:        len(cands) - 1,
 		AlertID:     c.e.row.ID,
+		Demo:        in.Demo,
 	}
 }
 

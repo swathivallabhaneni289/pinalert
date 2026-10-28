@@ -45,8 +45,8 @@ function report(id, { confirmed = false, lead = SERVER_LEAD_0, sentence = 'serve
 
 // load builds a Demo page around demo.js with a fake Pinalert (the feed state,
 // subscribe, fetchReports, setText, showToast), a fake map and fake timers.
-function load({ demoPage = true, search = '' } = {}) {
-  const calls = { toast: [], open: [], fetch: 0, intervals: [], cleared: [], replaced: [] };
+function load({ demoPage = true, search = '', hash = '', withHistory = false, visit = null, links = [] } = {}) {
+  const calls = { toast: [], open: [], fetch: 0, intervals: [], cleared: [], replaced: [], history: [] };
   const listeners = [];
   const state = { reports: [] };
   const subscribers = [];
@@ -74,13 +74,21 @@ function load({ demoPage = true, search = '' } = {}) {
     clearTimeout() {},
     requestAnimationFrame() { return 1; },
     addEventListener() {},
-    location: { pathname: '/demo', search, replace(target) { calls.replaced.push(target); } }
+    location: { pathname: '/demo', search, hash, replace(target) { calls.replaced.push(target); } }
   };
+  // Amended 2026-10-29 by plan 05-19: the fixture can carry a history object, an
+  // element naming the visit (data-visit) and the links the page rewrites. By
+  // default there are none, so every case written before this one runs as it did.
+  if (withHistory) {
+    win.history = { state: { kept: true }, replaceState(state, title, target) { calls.history.push({ state, title, target }); } };
+  }
+  const visitEl = visit === null ? null : { getAttribute(n) { return n === 'data-visit' ? visit : null; } };
   const doc = {
     readyState: 'complete',
     documentElement: { style: { setProperty() {} } },
     getElementById(id) { return nodes[id] || null; },
-    querySelector() { return null; },
+    querySelector(sel) { return sel === '[data-visit]' ? visitEl : null; },
+    querySelectorAll() { return links; },
     addEventListener(type, fn) { listeners.push({ type, fn }); }
   };
   const sandbox = {
@@ -203,6 +211,70 @@ test('demo.js: an ended visit sends the page back to the Demo, keeping from=welc
   const other = load({ search: '?from=https://evil.example' });
   other.win.PinalertDemoEnded();
   assert.deepEqual(other.calls.replaced, ['/demo'], 'only the one allowed word is carried');
+});
+
+// Amended 2026-10-29 by plan 05-19 (D-01, D-05): moving between the Demo's three
+// places keeps one visit through ?v=<visit>, and each page takes the v off its
+// own address as soon as it loads, so a reload or a shared address starts a
+// fresh Demo and nothing is kept in the browser.
+
+const VISIT = 'abcdefghijklmnopqrstuv';
+
+test('demo.js: ?v= is taken off the address with replaceState, keeping the other parameters', () => {
+  const cases = [
+    ['?v=' + VISIT, '/demo'],
+    ['?v=' + VISIT + '&from=welcome', '/demo?from=welcome'],
+    ['?post=1&v=' + VISIT, '/demo?post=1'],
+    ['?from=welcome&v=' + VISIT + '&post=1', '/demo?from=welcome&post=1']
+  ];
+  for (const [search, want] of cases) {
+    const m = load({ search, withHistory: true });
+    assert.equal(m.calls.history.length, 1, search);
+    assert.equal(m.calls.history[0].target, want, search);
+    assert.deepEqual(m.calls.history[0].state, { kept: true }, 'the history state is kept as it was');
+  }
+  const withHash = load({ search: '?v=' + VISIT, hash: '#list', withHistory: true });
+  assert.equal(withHash.calls.history[0].target, '/demo#list');
+});
+
+test('demo.js: an address with no v is left alone, and a page without history does not fail', () => {
+  for (const search of ['', '?from=welcome', '?post=1', '?vv=1', '?x=v']) {
+    const m = load({ search, withHistory: true });
+    assert.equal(m.calls.history.length, 0, search);
+  }
+  assert.doesNotThrow(() => load({ search: '?v=' + VISIT }));
+});
+
+test('demo.js: it keeps nothing in browser storage', () => {
+  // The sandbox has no localStorage, sessionStorage or indexedDB: any touch of
+  // them would throw a ReferenceError and fail the load.
+  assert.doesNotThrow(() => load({ search: '?v=' + VISIT, withHistory: true, visit: VISIT }));
+});
+
+test('demo.js: the wordmark and Report links carry the visit, and from=welcome when it came with it', () => {
+  const link = (href) => ({ href, getAttribute(n) { return n === 'href' ? this.href : null; }, setAttribute(n, v) { if (n === 'href') { this.href = v; } } });
+  const brand = link('/demo');
+  const post = link('/demo?post=1');
+  const done = link('/demo?v=' + VISIT);
+  load({ search: '?v=' + VISIT, visit: VISIT, links: [brand, post, done], withHistory: true });
+  assert.equal(brand.href, '/demo?v=' + VISIT);
+  assert.equal(post.href, '/demo?post=1&v=' + VISIT);
+  assert.equal(done.href, '/demo?v=' + VISIT, 'a link that already names a visit is left alone');
+
+  const welcomeBrand = link('/demo');
+  load({ search: '?v=' + VISIT + '&from=welcome', visit: VISIT, links: [welcomeBrand], withHistory: true });
+  assert.equal(welcomeBrand.href, '/demo?v=' + VISIT + '&from=welcome');
+
+  const other = link('/demo');
+  load({ search: '?from=https://evil.example', visit: VISIT, links: [other] });
+  assert.equal(other.href, '/demo?v=' + VISIT, 'only the one allowed word is carried');
+
+  const bad = link('/demo');
+  load({ visit: 'not a visit', links: [bad] });
+  assert.equal(bad.href, '/demo', 'a visit of any other shape is never written into a link');
+  const none = link('/demo');
+  load({ links: [none] });
+  assert.equal(none.href, '/demo', 'no visit on the page, no change');
 });
 
 // The app side: the event after a post and the ended visit.

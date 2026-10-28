@@ -13,8 +13,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
+	"regexp"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"pinalert/internal/api"
+	"pinalert/internal/api/handlers"
 	"pinalert/internal/demo"
 	"pinalert/internal/service"
 	sqlcgen "pinalert/internal/store/sqlc"
@@ -454,5 +458,461 @@ func TestDemoRulesAreReal(t *testing.T) {
 	// A report that is not there is the real 404.
 	if status, raw = d.vote(999999, "confirm"); status != http.StatusNotFound {
 		t.Fatalf("vote on a missing report = %d, want 404: %s", status, raw)
+	}
+}
+
+// demoStartVisit opens GET /demo on a server and returns the visit it started.
+func demoStartVisit(t *testing.T, client *http.Client, base string) string {
+	t.Helper()
+	resp, body := demoPageGet(t, client, base+"/demo")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /demo = %d, want 200", resp.StatusCode)
+	}
+	m := demoAPIBaseRe.FindStringSubmatch(body)
+	if m == nil {
+		t.Fatalf("GET /demo has no data-api-base: %.200s", body)
+	}
+	return strings.TrimPrefix(m[1], "/demo/api/v/")
+}
+
+// demoPostJSON sends one JSON body to a Demo path and returns the status and body.
+func demoPostJSON(t *testing.T, client *http.Client, target string, body any) (int, []byte) {
+	t.Helper()
+	buf, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshalling the body: %v", err)
+	}
+	resp, err := client.Post(target, "application/json", bytes.NewReader(buf))
+	if err != nil {
+		t.Fatalf("POST %s: %v", target, err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, raw
+}
+
+var (
+	demoPartRe   = regexp.MustCompile(`(?s)<section class="activity-part activity-part--([a-z]+)".*?</section>`)
+	demoReportRe = regexp.MustCompile(`data-report-id="(\d+)"`)
+)
+
+// demoPartsOf splits a My activity page into its part sections by key.
+func demoPartsOf(page string) map[string]string {
+	out := map[string]string{}
+	for _, m := range demoPartRe.FindAllStringSubmatch(page, -1) {
+		out[m[1]] = m[0]
+	}
+	return out
+}
+
+// TestDemoActivityPageParts (plan 05-19, D-05, UI-SPEC 4c): a fresh visit shows
+// the four parts with their empty states and no Updates part, no queue strip and
+// no reporter record. After a practice post, a confirm and a dispute in the same
+// visit the cards are in the right parts, each with the Demo tag, and the part
+// the address names is the one marked current. A part word the Demo has no part
+// for (updates) reads as the list. The page sets no cookie and needs no account.
+func TestDemoActivityPageParts(t *testing.T) {
+	srv := demoPageServer(t, handlers.DemoLimit{})
+	client := &http.Client{}
+	visit := demoStartVisit(t, client, srv.URL)
+	api := srv.URL + "/demo/api/v/" + visit
+	get := func(query string) string {
+		t.Helper()
+		resp, body := demoPageGet(t, client, srv.URL+"/demo/activity?v="+visit+query)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET /demo/activity%s = %d, want 200: %.200s", query, resp.StatusCode, body)
+		}
+		if got := resp.Header.Values("Set-Cookie"); len(got) != 0 {
+			t.Fatalf("GET /demo/activity set a cookie: %v", got)
+		}
+		return body
+	}
+
+	fresh := get("")
+	parts := demoPartsOf(fresh)
+	if len(parts) != 4 {
+		t.Fatalf("the page has %d parts, want 4 (%v)", len(parts), parts)
+	}
+	for key, empty := range map[string]string{
+		"posted": "No reports yet", "confirmed": "No confirmations yet",
+		"disputed": "No disputes yet", "ended": "No ended reports nearby",
+	} {
+		if !strings.Contains(parts[key], empty) {
+			t.Errorf("part %s lacks its empty state %q", key, empty)
+		}
+	}
+	last := -1
+	for _, name := range []string{"Posted by you", "You confirmed", "You disputed", "Ended nearby"} {
+		at := strings.Index(fresh, name)
+		if at <= last {
+			t.Errorf("part name %q is missing or out of order", name)
+		}
+		last = at
+	}
+	for _, banned := range []string{"Updates", "queue-strip", "reporter record", "data-account-id", "bell-trigger", "tel:"} {
+		if strings.Contains(fresh, banned) {
+			t.Errorf("the fresh activity page must not contain %q", banned)
+		}
+	}
+	if n := strings.Count(fresh, `class="report-row activity-card`); n != 0 {
+		t.Errorf("a fresh visit shows %d cards, want 0", n)
+	}
+
+	// Do something in this visit: post, confirm one near report, dispute another.
+	resp, body := demoPageGet(t, client, api+demoFeedQuery)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET Demo feed = %d: %.200s", resp.StatusCode, body)
+	}
+	var feed struct {
+		Reports []map[string]any `json:"reports"`
+	}
+	if err := json.Unmarshal([]byte(body), &feed); err != nil {
+		t.Fatalf("decoding the feed: %v", err)
+	}
+	near := nearSeedReports(feed.Reports)
+	if len(near) < 2 {
+		t.Fatalf("only %d near seed reports, want at least 2", len(near))
+	}
+	status, raw := demoPostJSON(t, client, api+"/reports", map[string]any{
+		"category": "flood", "severity": "low", "description": "Water rising near the bridge",
+		"latitude": demo.PretendLat, "longitude": demo.PretendLon,
+	})
+	if status != http.StatusCreated {
+		t.Fatalf("practice post = %d: %s", status, raw)
+	}
+	var posted struct {
+		Report struct {
+			ID int64 `json:"id"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal(raw, &posted); err != nil {
+		t.Fatalf("decoding the practice post: %v", err)
+	}
+	pos := map[string]float64{"latitude": demo.PretendLat, "longitude": demo.PretendLon}
+	confirmID, disputeID := reportIDOf(near[0]), reportIDOf(near[1])
+	if status, raw = demoPostJSON(t, client, api+"/reports/"+strconv.FormatInt(confirmID, 10)+"/confirm", pos); status != http.StatusOK {
+		t.Fatalf("confirm = %d: %s", status, raw)
+	}
+	if status, raw = demoPostJSON(t, client, api+"/reports/"+strconv.FormatInt(disputeID, 10)+"/dispute", pos); status != http.StatusOK {
+		t.Fatalf("dispute = %d: %s", status, raw)
+	}
+
+	busy := get("")
+	parts = demoPartsOf(busy)
+	want := map[string]int64{"posted": posted.Report.ID, "confirmed": confirmID, "disputed": disputeID}
+	for key, id := range want {
+		section := parts[key]
+		ids := demoReportRe.FindAllStringSubmatch(section, -1)
+		if len(ids) != 1 || ids[0][1] != strconv.FormatInt(id, 10) {
+			t.Errorf("part %s holds %v, want exactly report %d", key, ids, id)
+		}
+		if !strings.Contains(section, `class="demo-tag"`) {
+			t.Errorf("part %s: the card has no Demo tag", key)
+		}
+		if strings.Contains(section, "No reports yet") || strings.Contains(section, "No confirmations yet") || strings.Contains(section, "No disputes yet") {
+			t.Errorf("part %s still shows an empty state beside its card", key)
+		}
+	}
+	if !strings.Contains(parts["posted"], "Posted just now") || !strings.Contains(parts["confirmed"], "You confirmed just now") ||
+		!strings.Contains(parts["disputed"], "You disputed just now") {
+		t.Errorf("the When cells do not read from the times of this visit: %q %q %q", parts["posted"], parts["confirmed"], parts["disputed"])
+	}
+	if !strings.Contains(busy, "1 still happening, 0 resolved") {
+		t.Errorf("the Posted hub line does not count the practice report")
+	}
+
+	// The part in the address is the current one; updates is not a Demo part.
+	if got := get("&part=confirmed"); !strings.Contains(got, `data-part="confirmed"`) {
+		t.Errorf("part=confirmed is not the current part")
+	}
+	for _, query := range []string{"&part=updates", "&part=nonsense", "&tab=votes"} {
+		if got := get(query); !strings.Contains(got, `data-part=""`) {
+			t.Errorf("%s should read as the list (data-part is empty)", query)
+		}
+	}
+}
+
+// TestDemoPlacesWriteNothing (plan 05-19, D-02, D-05, T-05-100): the Demo's three
+// places, the sample alerts route and a practice post and vote write nothing to
+// any table and set no cookie. The count is taken first over every table; the
+// Official alerts page and route and the My activity page are opened for the
+// same visit, a practice report is posted and a report is voted on, and My
+// activity is opened again. Only pages and the API are fetched here: the static
+// files are covered by TestDemoPageWritesNothing.
+func TestDemoPlacesWriteNothing(t *testing.T) {
+	store := demo.NewStore(demo.WithWorldSetup(demo.SeedSetup))
+	srv, _, pool := newE2EServerWith(t, func(d *api.Deps, _ *sqlcgen.Queries) {
+		d.Demo = store
+	})
+	before := tableCounts(t, pool)
+	for _, must := range []string{"sessions", "reports", "votes", "accounts", "official_alerts"} {
+		if _, ok := before[must]; !ok {
+			t.Fatalf("the table list %v lacks %s: the count would prove nothing", before, must)
+		}
+	}
+
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	fetch := func(method, target string, body any) (int, string) {
+		t.Helper()
+		var rd io.Reader
+		if body != nil {
+			buf, err := json.Marshal(body)
+			if err != nil {
+				t.Fatalf("marshalling the body: %v", err)
+			}
+			rd = bytes.NewReader(buf)
+		}
+		req, err := http.NewRequest(method, srv.URL+target, rd)
+		if err != nil {
+			t.Fatalf("building %s %s: %v", method, target, err)
+		}
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, target, err)
+		}
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(resp.Body)
+		if got := resp.Header.Values("Set-Cookie"); len(got) != 0 {
+			t.Fatalf("%s %s set a cookie: %v", method, target, got)
+		}
+		return resp.StatusCode, string(raw)
+	}
+
+	status, nearby := fetch(http.MethodGet, "/demo", nil)
+	if status != http.StatusOK {
+		t.Fatalf("GET /demo = %d, want 200", status)
+	}
+	m := demoAPIBaseRe.FindStringSubmatch(nearby)
+	if m == nil {
+		t.Fatalf("GET /demo has no data-api-base")
+	}
+	visit := strings.TrimPrefix(m[1], "/demo/api/v/")
+	api := "/demo/api/v/" + visit
+
+	for _, place := range []string{"/demo/alerts", "/demo/activity", "/demo"} {
+		if status, body := fetch(http.MethodGet, place+"?v="+visit, nil); status != http.StatusOK {
+			t.Fatalf("GET %s = %d, want 200: %.200s", place, status, body)
+		}
+	}
+	if status, body := fetch(http.MethodGet, api+"/official/alerts?lat=16.5424&lon=80.6386", nil); status != http.StatusOK {
+		t.Fatalf("GET the sample alerts = %d, want 200: %s", status, body)
+	}
+
+	status, feedBody := fetch(http.MethodGet, api+demoFeedQuery, nil)
+	if status != http.StatusOK {
+		t.Fatalf("GET Demo feed = %d: %.200s", status, feedBody)
+	}
+	var feed struct {
+		Reports []map[string]any `json:"reports"`
+	}
+	if err := json.Unmarshal([]byte(feedBody), &feed); err != nil {
+		t.Fatalf("decoding the feed: %v", err)
+	}
+	near := nearSeedReports(feed.Reports)
+	if len(near) < 1 {
+		t.Fatal("no near seed report to vote on")
+	}
+	if status, body := fetch(http.MethodPost, api+"/reports", map[string]any{
+		"category": "flood", "severity": "low", "description": "Water rising near the bridge",
+		"latitude": demo.PretendLat, "longitude": demo.PretendLon,
+	}); status != http.StatusCreated {
+		t.Fatalf("practice post = %d: %s", status, body)
+	}
+	if status, body := fetch(http.MethodPost, api+"/reports/"+strconv.FormatInt(reportIDOf(near[0]), 10)+"/confirm",
+		map[string]float64{"latitude": demo.PretendLat, "longitude": demo.PretendLon}); status != http.StatusOK {
+		t.Fatalf("confirm = %d: %s", status, body)
+	}
+
+	status, activity := fetch(http.MethodGet, "/demo/activity?v="+visit, nil)
+	if status != http.StatusOK || strings.Count(activity, `class="report-row activity-card`) != 2 {
+		t.Fatalf("My activity = %d with %d cards, want 200 and the practice report and the confirm",
+			status, strings.Count(activity, `class="report-row activity-card`))
+	}
+
+	if got := tableCounts(t, pool); !reflect.DeepEqual(before, got) {
+		t.Fatalf("the Demo's places changed the table row counts\nbefore: %v\nafter:  %v", before, got)
+	}
+}
+
+// TestDemoNavKeepsVisit (plan 05-19, D-01, D-05, T-05-101, T-05-102): the three
+// places of one visit show the same world. The bars of each page link to the
+// other two with ?v=<visit>, a page opened with that visit shows the practice
+// report the visitor posted, and a missing, malformed or unknown visit starts a
+// new world instead of showing someone else's. from=welcome travels with the
+// visit so Exit demo goes to the same place on every page.
+func TestDemoNavKeepsVisit(t *testing.T) {
+	srv := demoPageServer(t, handlers.DemoLimit{})
+	client := &http.Client{}
+	visit := demoStartVisit(t, client, srv.URL)
+	api := srv.URL + "/demo/api/v/" + visit
+
+	status, raw := demoPostJSON(t, client, api+"/reports", map[string]any{
+		"category": "flood", "severity": "low", "description": "Water rising near the bridge",
+		"latitude": demo.PretendLat, "longitude": demo.PretendLon,
+	})
+	if status != http.StatusCreated {
+		t.Fatalf("practice post = %d: %s", status, raw)
+	}
+	var posted struct {
+		Report struct {
+			ID int64 `json:"id"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal(raw, &posted); err != nil {
+		t.Fatalf("decoding the practice post: %v", err)
+	}
+	postedAttr := `data-report-id="` + strconv.FormatInt(posted.Report.ID, 10) + `"`
+
+	// The page writes the address with its ampersand escaped, as html/template
+	// does in an attribute.
+	hrefs := func(visit, from string) []string {
+		q := "?v=" + visit
+		if from != "" {
+			q += "&amp;from=welcome"
+		}
+		return []string{`href="/demo` + q + `"`, `href="/demo/alerts` + q + `"`, `href="/demo/activity` + q + `"`}
+	}
+
+	for _, from := range []string{"", "welcome"} {
+		query := "?v=" + visit
+		if from != "" {
+			query += "&from=welcome"
+		}
+		wantExit := `href="/login"`
+		if from != "" {
+			wantExit = `href="/welcome"`
+		}
+		for _, place := range []string{"/demo", "/demo/alerts", "/demo/activity"} {
+			resp, body := demoPageGet(t, client, srv.URL+place+query)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("GET %s%s = %d, want 200", place, query, resp.StatusCode)
+			}
+			if m := demoAPIBaseRe.FindStringSubmatch(body); m == nil || m[1] != "/demo/api/v/"+visit {
+				t.Errorf("GET %s%s shows the world %v, want the visit %s", place, query, m, visit)
+			}
+			// The three place links in the bars come from the server. The wordmark
+			// and the Report links are completed by demo.js from the page's own
+			// data-visit.
+			for _, want := range hrefs(visit, from) {
+				if !strings.Contains(body, want) {
+					t.Errorf("GET %s%s: the bars lack %s", place, query, want)
+				}
+			}
+			if exit := demoExitRe.FindString(body); !strings.Contains(exit, wantExit) {
+				t.Errorf("GET %s%s: Exit demo is %s, want %s", place, query, exit, wantExit)
+			}
+		}
+	}
+
+	// The practice report shows in this visit's My activity, and not in another's.
+	_, mine := demoPageGet(t, client, srv.URL+"/demo/activity?v="+visit)
+	if !strings.Contains(mine, postedAttr) {
+		t.Errorf("My activity for the visit does not show the practice report %d", posted.Report.ID)
+	}
+	other := demoStartVisit(t, client, srv.URL)
+	_, theirs := demoPageGet(t, client, srv.URL+"/demo/activity?v="+other)
+	if other == visit || strings.Contains(theirs, postedAttr) {
+		t.Errorf("another visit (%s) shows this visit's practice report", other)
+	}
+
+	// A missing, malformed or unknown visit starts a new world.
+	for _, v := range []string{"", "garbage", "..%2F..%2Fetc", "<script>", visit[:21], strings.Repeat("A", 22)} {
+		for _, place := range []string{"/demo", "/demo/alerts", "/demo/activity"} {
+			resp, body := demoPageGet(t, client, srv.URL+place+"?v="+url.QueryEscape(v))
+			if resp.StatusCode != http.StatusOK {
+				t.Errorf("GET %s?v=%s = %d, want 200 (a new world)", place, v, resp.StatusCode)
+				continue
+			}
+			m := demoAPIBaseRe.FindStringSubmatch(body)
+			if m == nil || m[1] == "/demo/api/v/"+visit || !strings.HasPrefix(m[1], "/demo/api/v/") {
+				t.Errorf("GET %s?v=%s shows %v, want a new world", place, v, m)
+			}
+			if strings.Contains(body, postedAttr) {
+				t.Errorf("GET %s?v=%s shows the practice report of another visit", place, v)
+			}
+			if v != "" && strings.Contains(body, v) {
+				t.Errorf("GET %s?v=%s echoes the value into the page", place, v)
+			}
+		}
+	}
+}
+
+// TestDemoOfficialAlertsAPI (plan 05-19, D-05, ROBUST-06): the Demo's alerts
+// answer has the real route's shape, built from the sample alerts through the
+// real view. Every row is a Demo row with no badge, the banner carries the Demo
+// flag, the position in the query changes nothing (the reader is the pretend
+// position), and an unknown, malformed or ended visit is the Demo's 404 with
+// field visit.
+func TestDemoOfficialAlertsAPI(t *testing.T) {
+	d := newDemoE2E(t)
+	read := func(query string) map[string]any {
+		t.Helper()
+		status, raw := d.do(http.MethodGet, "/official/alerts"+query, nil)
+		if status != http.StatusOK {
+			t.Fatalf("GET Demo official alerts%s = %d, want 200: %s", query, status, raw)
+		}
+		return mustDecodeAny(t, raw)
+	}
+	whole := read("?lat=16.5424&lon=80.6386")
+	if whole["state"] != "fresh" || whole["area_known"] != true {
+		t.Fatalf("state %v area_known %v, want fresh and true", whole["state"], whole["area_known"])
+	}
+	groups, _ := whole["groups"].([]any)
+	if len(groups) != 2 || whole["count"] != float64(3) {
+		t.Fatalf("groups %d count %v, want 2 groups and 3 rows", len(groups), whole["count"])
+	}
+	for _, g := range groups {
+		for _, r := range g.(map[string]any)["rows"].([]any) {
+			row := r.(map[string]any)
+			if row["demo"] != true || row["badge"] != "" {
+				t.Errorf("row %v: demo %v badge %q, want a Demo row with no badge", row["id"], row["demo"], row["badge"])
+			}
+		}
+	}
+	banner, _ := whole["banner"].(map[string]any)
+	if banner == nil || banner["demo"] != true || banner["level"] != "extreme" {
+		t.Fatalf("banner = %v, want the Extreme sample with demo true", whole["banner"])
+	}
+
+	// The reader is the pretend position whatever the query says, or says
+	// nothing. The times move with the clock, so the shapes and the group
+	// labels are compared, not the whole answer.
+	for _, query := range []string{"", "?lat=28.6&lon=77.2"} {
+		other := read(query)
+		if !reflect.DeepEqual(demoShape(whole), demoShape(other)) {
+			t.Errorf("the answer for %q has another shape", query)
+		}
+		if other["districts_line"] != whole["districts_line"] || other["count"] != whole["count"] {
+			t.Errorf("the answer for %q covers %v (%v rows), want %v (%v rows): the reader must be the pretend position",
+				query, other["districts_line"], other["count"], whole["districts_line"], whole["count"])
+		}
+	}
+
+	for _, visit := range []string{"nosuchvisit0123456789ab", "short", "..%2f..%2fetc"} {
+		req, err := http.NewRequest(http.MethodGet, d.srv.URL+"/demo/api/v/"+visit+"/official/alerts", nil)
+		if err != nil {
+			t.Fatalf("building the request: %v", err)
+		}
+		resp, err := d.client.Do(req)
+		if err != nil {
+			t.Fatalf("GET official alerts for %q: %v", visit, err)
+		}
+		raw, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("visit %q = %d, want 404: %s", visit, resp.StatusCode, raw)
+			continue
+		}
+		var e struct {
+			Error struct {
+				Field string `json:"field"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(raw, &e); err != nil || e.Error.Field != "visit" {
+			t.Errorf("visit %q answered %s, want the error with field visit", visit, raw)
+		}
 	}
 }

@@ -156,9 +156,13 @@ func TestDemoPageLoadsNoForbiddenScripts(t *testing.T) {
 	page := p13ReadTemplate(t, "demo.html.tmpl")
 	names := dm13Scripts(page)
 
-	want := []string{"api-base.js", "app.js", "votes.js", "visibility.js", "trust.js", "report-form.js",
-		"sheet.js", "map.js", "modal.js", "ended-cards.js", "show-menu.js", "feed.js", "map-tools.js",
-		"app-bar.js", "demo.js"}
+	// Amended 2026-10-29 by plan 05-19: official-banner.js loads right after
+	// app.js, as it does on the real Nearby page, so the Demo's sample banner
+	// is drawn by the real banner script. Every other script and the order of
+	// the rest are as they were.
+	want := []string{"api-base.js", "app.js", "official-banner.js", "votes.js", "visibility.js", "trust.js",
+		"report-form.js", "sheet.js", "map.js", "modal.js", "ended-cards.js", "show-menu.js", "feed.js",
+		"map-tools.js", "app-bar.js", "demo.js"}
 	var local []string
 	for _, n := range names {
 		if n != "theme.js" {
@@ -390,4 +394,205 @@ func TestReportFormToleratesNoSearch(t *testing.T) {
 	modal := p13ReadStatic(t, "static/js/modal.js")
 	p13MustMatch(t, "modal.js", modal, `if \(locationNotice\)`)
 	p13MustContain(t, "modal.js", modal, "data-pretend-place")
+}
+
+// ---- Plan 05-19: the Demo's other two places and the sample banner ----------
+//
+// Official alerts and My activity each have their own Demo template, with the
+// same shell as the real page and the Demo strip first. The helpers carry the
+// dm19 prefix.
+
+// dm19Attribution is the one sentence the Demo's Official alerts page ends with
+// (UI-SPEC 1a). The real page's attribution names the issuers; the Demo's
+// names none, because nothing on it is from an issuer.
+const dm19Attribution = "These alerts are made up for the Demo."
+
+// TestDemoAlertsPageMarkup pins the Demo's Official alerts page (plan 05-19,
+// D-05, D-06, ROBUST-06, UI-SPEC 4b and 4c): the Demo strip first, the same
+// shell the real renderer fills, the Demo's API base and pretend position on
+// the page root, no account, no stored position, and the Demo attribution in
+// place of the real one.
+func TestDemoAlertsPageMarkup(t *testing.T) {
+	page := p13ReadTemplate(t, "demo_alerts.html.tmpl")
+
+	p13Ordered(t, page, "demo alerts page",
+		`<body`, `{{template "demo_strip" .}}`, `<div class="top-chrome">`, `{{template "app_topbar" .}}`,
+		`id="official-page"`, `id="official-status"`, `id="official-section"`, `id="official-list"`,
+		`id="official-attribution"`, `{{template "app_bottombar" .}}`)
+
+	root := dm13OpenTag(t, page, `id="official-page"`)
+	p13MustContain(t, "#official-page", root,
+		`data-demo="1"`, `data-api-base="{{.APIBase}}"`, `data-fixed-lat="{{.FixedLat}}"`, `data-fixed-lon="{{.FixedLon}}"`)
+
+	if n := strings.Count(page, dm19Attribution); n != 1 {
+		t.Errorf("demo_alerts.html.tmpl holds the Demo attribution %d times, want 1", n)
+	}
+	attribution := dm13OpenTag(t, page, `id="official-attribution"`)
+	at := strings.Index(page, attribution) + len(attribution)
+	if got := page[at : at+strings.Index(page[at:], "</p>")]; got != dm19Attribution {
+		t.Errorf("#official-attribution says %q, want %q", got, dm19Attribution)
+	}
+
+	// The real page names the issuers and holds an account id and the stored
+	// position script. None of that belongs to the Demo.
+	p13MustNotContain(t, "demo alerts page", page,
+		"data-account-id", "AccountID", ".Email", "NDMA", "SACHET", "GDACS", "position.js", `template "app_head"`,
+		"manifest", "serviceWorker", "tel:", `href="/alerts"`, `href="/profile`, `href="/settings`)
+
+	names := dm13Scripts(page)
+	want := []string{"api-base.js", "app-bar.js", "demo.js", "official-alerts.js"}
+	var local []string
+	for _, n := range names {
+		if n != "theme.js" {
+			local = append(local, n)
+		}
+	}
+	if strings.Join(local, ",") != strings.Join(want, ",") {
+		t.Errorf("the Demo alerts page loads %v, want %v in this order", local, want)
+	}
+	if dm13Index(names, "api-base.js") > dm13Index(names, "official-alerts.js") {
+		t.Errorf("api-base.js must load before official-alerts.js: %v", names)
+	}
+	p13MustContain(t, "demo alerts page", page, "/static/css/official.css", "/static/css/demo.css")
+
+	// The sentence is written by the page, and the renderer leaves it alone.
+	script := dm13Code(p13ReadStatic(t, "static/js/official-alerts.js"))
+	p13MustNotContain(t, "official-alerts.js code", script, "official-attribution")
+}
+
+// TestDemoBannerOnDemoPage pins the sample banner on the Demo's Nearby (plan
+// 05-19, D-05, D-07, UI-SPEC 2a In the Demo): the same banner link and inner
+// spans as the real page, pointing at the Demo's Official alerts for this
+// visit, with the Demo tag right after the level icon, drawn by the real banner
+// script, which loads after api-base.js and app.js. The tag is optional for the
+// script, so the real page, which has none, keeps drawing its banner.
+func TestDemoBannerOnDemoPage(t *testing.T) {
+	page := p13ReadTemplate(t, "demo.html.tmpl")
+	real := p13ReadTemplate(t, "index.html.tmpl")
+
+	open := regexp.MustCompile(`<a class="alert-banner" id="alert-banner" href="\{\{\.AlertsHref\}\}" hidden>`)
+	if !open.MatchString(page) {
+		t.Fatal(`demo.html.tmpl has no <a class="alert-banner" id="alert-banner" href="{{.AlertsHref}}" hidden>`)
+	}
+	// Every id the real banner holds is in the Demo's banner, in the same order.
+	var last int
+	for _, id := range []string{"alert-banner-level", "alert-banner__icon", "alert-banner-demo", "alert-banner-event",
+		"alert-banner__sep", "alert-banner-area", "alert-banner-more", "alert-banner-more-sr", "alert-banner__chevron"} {
+		at := strings.Index(page[last:], id)
+		if at == -1 {
+			t.Fatalf("the Demo banner lacks %q after position %d", id, last)
+		}
+		last += at + len(id)
+	}
+	if n := strings.Count(page, "alert-banner-demo"); n != 1 {
+		t.Errorf("demo.html.tmpl names alert-banner-demo %d times, want 1", n)
+	}
+	tag := dm13OpenTag(t, page, `id="alert-banner-demo"`)
+	p13MustContain(t, "the Demo tag", tag, `class="demo-tag alert-banner__demo"`, " hidden")
+	for _, id := range []string{"alert-banner-level", "alert-banner-event", "alert-banner-area", "alert-banner-more", "alert-banner-more-sr"} {
+		if !strings.Contains(real, `id="`+id+`"`) {
+			t.Errorf("index.html.tmpl lost #%s: the Demo copy would drift", id)
+		}
+	}
+
+	// The banner sits at the top of the list pane, as on the real page.
+	p13Ordered(t, page, "demo list pane", `class="pane pane--list"`, `class="sheet__handle-row"`, `id="alert-banner"`, `class="list-head"`)
+
+	names := dm13Scripts(page)
+	if n := strings.Count(page, "/static/js/official-banner.js"); n != 1 {
+		t.Errorf("demo.html.tmpl loads official-banner.js %d times, want 1", n)
+	}
+	if i, a, b := dm13Index(names, "official-banner.js"), dm13Index(names, "api-base.js"), dm13Index(names, "app.js"); i == -1 || i < a || i < b {
+		t.Errorf("official-banner.js must load after api-base.js and app.js: %v", names)
+	}
+	p13MustContain(t, "demo page", page, "/static/css/official.css")
+
+	// The script finds the tag by its id and does not require it.
+	script := p13ReadStatic(t, "static/js/official-banner.js")
+	code := dm13Code(script)
+	p13MustContain(t, "official-banner.js", code, "alert-banner-demo")
+	p13MustContain(t, "official-banner.js", code, "var required = [bannerEl, levelEl, eventEl, areaEl, moreEl, moreSrEl];")
+	p13MustNotContain(t, "official-banner.js", code, "innerHTML")
+
+	// A hidden Demo tag stays hidden: the tag's own display rule must not beat
+	// the hidden attribute.
+	css := p13ReadStatic(t, "static/css/demo.css")
+	p13MustMatch(t, "demo.css", css, `\.alert-banner__demo\[hidden\]\s*\{[^}]*display:\s*none`)
+	p13MustMatch(t, "demo.css", css, `\.alert-banner__demo[^{]*\{[^}]*flex:\s*none`)
+}
+
+// TestDemoActivityPageMarkup pins the Demo's My activity page (plan 05-19, D-05,
+// UI-SPEC 4c): the four parts in the real layout, each card marked Demo, the
+// Demo strip first, no Updates part, no queue strip, no account, the Demo's API
+// base and pretend position on the page root, and only the scripts the Demo may
+// load.
+func TestDemoActivityPageMarkup(t *testing.T) {
+	page := p13ReadTemplate(t, "demo_activity.html.tmpl")
+	real := p13ReadTemplate(t, "profile.html.tmpl")
+
+	p13Ordered(t, page, "demo activity page",
+		`<body`, `{{template "demo_strip" .}}`, `<div class="top-chrome">`, `{{template "app_topbar" .}}`,
+		`class="profile-page"`, `class="activity-hub"`, `{{range .Parts}}`, `class="activity-part activity-part--{{.Key}}"`,
+		`id="ended-nearby"`, `{{template "app_bottombar" .}}`)
+
+	root := dm13OpenTag(t, page, `class="profile-page"`)
+	p13MustContain(t, "main.profile-page", root,
+		`data-demo="1"`, `data-visit="{{.Visit}}"`, `data-api-base="{{.APIBase}}"`, `data-fixed-lat="{{.FixedLat}}"`,
+		`data-fixed-lon="{{.FixedLon}}"`, `data-part="{{.CurrentPart}}"`, `data-default-radius-km="{{.DefaultRadiusKm}}"`)
+
+	// The real layout: the same hub row, part section, column heads, card cells
+	// and empty state markup as the real page, so the same stylesheet and the
+	// same scripts apply.
+	for _, shape := range []string{
+		`class="activity-hub__row" href="{{.Href}}" data-part-link="{{.Key}}"`,
+		`class="activity-part__head"`, `class="activity-part__title"`, `class="activity-part__line"`,
+		`class="activity-box"`, `class="activity-cols"`, `class="profile-report-list"`,
+		`class="report-row activity-card activity-card--{{.Kind}}`, `class="activity-card__report"`,
+		`class="activity-card__status"`, `class="activity-chip"`, `class="activity-card__what"`,
+		`class="activity-card__when"`, `class="activity-card__distance"`,
+		`class="empty-state profile-empty-state activity-empty"`, `id="ended-empty"`, `id="ended-resolved-list"`,
+		`id="ended-faded-list"`, `id="ended-skeleton"`, `id="ended-error"`,
+	} {
+		if !strings.Contains(real, shape) {
+			t.Errorf("profile.html.tmpl no longer holds %q: this check would drift", shape)
+		}
+		if !strings.Contains(page, shape) {
+			t.Errorf("demo_activity.html.tmpl lacks the real layout piece %q", shape)
+		}
+	}
+
+	// Every card is a Demo card: the tag is in the status cell, next to the chip.
+	card := page[strings.Index(page, `class="report-row activity-card`):]
+	card = card[:strings.Index(card, `</li>`)]
+	p13MustContain(t, "a Demo activity card", card, `class="demo-tag"`, ">Demo</span>")
+
+	// What the Demo leaves out.
+	p13MustNotContain(t, "demo activity page", page,
+		"data-account-id", "AccountID", ".Email", "queue-strip", "UpdatesFailed", "urow", "updates-rows", ".Record",
+		"profile-record", `template "app_head"`, "manifest", "serviceWorker", "tel:", `href="/profile`, `href="/alerts"`,
+		`href="/settings`, "bell-", "PolicyPointer", "ContactEmail", "data-resend-page")
+
+	names := dm13Scripts(page)
+	want := []string{"api-base.js", "app.js", "votes.js", "visibility.js", "trust.js", "ended-cards.js",
+		"ended-nearby.js", "activity.js", "app-bar.js", "demo.js"}
+	var local []string
+	for _, n := range names {
+		if n != "theme.js" {
+			local = append(local, n)
+		}
+	}
+	if strings.Join(local, ",") != strings.Join(want, ",") {
+		t.Errorf("the Demo activity page loads %v, want %v in this order", local, want)
+	}
+	for _, banned := range []string{"notify.js", "queue.js", "updates.js", "account-menu.js", "position.js",
+		"flag.js", "mute.js", "reader.js", "settings-alerts.js"} {
+		if dm13Index(names, banned) != -1 {
+			t.Errorf("the Demo activity page must not load %s", banned)
+		}
+	}
+	p13MustContain(t, "demo activity page", page, "/static/css/activity.css", "/static/css/demo.css")
+
+	// ended-nearby.js reads the page's fixed position before any stored one.
+	ended := dm13Code(p13ReadStatic(t, "static/js/ended-nearby.js"))
+	p13MustContain(t, "ended-nearby.js", ended, "data-fixed-lat", "data-fixed-lon")
 }

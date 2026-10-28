@@ -214,7 +214,10 @@ func TestDemoPageRendersWhatItPromises(t *testing.T) {
 		`data-fixed-lat="` + strconv.FormatFloat(demo.PretendLat, 'f', -1, 64) + `"`,
 		`data-fixed-lon="` + strconv.FormatFloat(demo.PretendLon, 'f', -1, 64) + `"`,
 		`data-fixed-place="` + demo.PretendPlace + `"`,
-		`href="/demo"`, `href="/demo/alerts"`, `href="/demo/activity"`,
+		// Amended 2026-10-29 by plan 05-19: the places of the Demo bars carry the
+		// visit (?v=<visit>), so the three places of one visit show one world.
+		// The wordmark still points at the bare /demo.
+		`href="/demo"`, `href="/demo/alerts?v=`, `href="/demo/activity?v=`,
 		`<h1 class="app-topbar__title">Pinalert</h1>`, `href="/demo?post=1"`,
 		`aria-label="Exit the demo"`, `id="theme-toggle"`, `/static/js/api-base.js`,
 	} {

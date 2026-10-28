@@ -114,6 +114,9 @@ type OfficialBannerResponse struct {
 	// More is how many other eligible rows there are.
 	More    int   `json:"more" example:"2"`
 	AlertID int64 `json:"alert_id" example:"41"`
+	// Demo is true on the Demo's sample alert (plan 05-19) and false on every
+	// real one. The banner then draws the Demo tag.
+	Demo bool `json:"demo" example:"false"`
 }
 
 // OfficialAlerts handles GET /api/official/alerts.
@@ -255,6 +258,7 @@ func officialViewToResponse(v official.View) OfficialAlertsResponse {
 			Area:        b.Area,
 			More:        b.More,
 			AlertID:     b.AlertID,
+			Demo:        b.Demo,
 		}
 	}
 	return out

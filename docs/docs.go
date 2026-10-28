@@ -2470,6 +2470,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "Krishna district"
                 },
+                "demo": {
+                    "description": "Demo is true on the Demo's sample alert (plan 05-19) and false on every\nreal one. The banner then draws the Demo tag.",
+                    "type": "boolean",
+                    "example": false
+                },
                 "event_phrase": {
                     "type": "string",
                     "example": "Cyclone warning"

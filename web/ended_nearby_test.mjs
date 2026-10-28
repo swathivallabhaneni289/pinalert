@@ -132,7 +132,10 @@ const IDS = {
 // none (every case written before this plan) the page has no such value and the
 // scripts use the default '/api', so the pins on /api/reports below are the
 // default base cases; the Demo base cases follow them.
-function load({ search = '', position = null, radius = '12', answers = [], cells = [], pageAccount = '7', savedBy = '7', apiBase = null } = {}) {
+// Amended 2026-10-29 by plan 05-19: load takes an optional fixed pair, the
+// data-fixed-lat and data-fixed-lon the Demo's My activity writes on its page
+// root. Without it the page has none, as before, so every older case is as it was.
+function load({ search = '', position = null, radius = '12', answers = [], cells = [], pageAccount = '7', savedBy = '7', apiBase = null, fixed = null } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -151,6 +154,10 @@ function load({ search = '', position = null, radius = '12', answers = [], cells
   doc.page = new FakeEl(doc, 'main');
   doc.page.setAttribute('data-default-radius-km', radius);
   if (pageAccount !== null) { doc.page.setAttribute('data-account-id', pageAccount); }
+  if (fixed !== null) {
+    if (fixed[0] !== undefined) { doc.page.setAttribute('data-fixed-lat', String(fixed[0])); }
+    if (fixed[1] !== undefined) { doc.page.setAttribute('data-fixed-lon', String(fixed[1])); }
+  }
   const region = new FakeEl(doc, 'div');
   region.overflowY = 'auto';
   region.scrollHeight = 2000;
@@ -288,6 +295,44 @@ test('Demo base: the part read goes to the Demo API, and a take back posts there
   assert.equal(m.fetches.length, 3);
   assert.equal(new URL(m.fetches[1].url, 'http://x').pathname, base + '/reports/31/unresolve');
   assert.equal(new URL(m.fetches[2].url, 'http://x').pathname, base + '/reports');
+});
+
+// Amended 2026-10-29 by plan 05-19 (D-05): the Demo's fixed position cases. The
+// Demo's My activity writes the pretend position on the page root; the part
+// reads from it, the Distance cells measure from it, and no stored position is
+// read or written. The cases before these are the pre-existing ones, unchanged.
+test('Demo position: data-fixed-lat and data-fixed-lon are the position, with no kept position and nothing written', async () => {
+  const cells = [new FakeEl(null, 'p')];
+  cells[0].setAttribute('data-lat', '16.5424');
+  cells[0].setAttribute('data-lon', '80.6386');
+  cells[0].own = 'old';
+  const m = load({ fixed: [16.5424, 80.6386], pageAccount: null, apiBase: '/demo/api/v/abc_DEF-123', cells, answers: [answer([])] });
+  m.start();
+  assert.equal(m.fetches.length, 1, 'the part is asked for without any stored position');
+  const sent = new URL(m.fetches[0].url, 'http://x');
+  assert.equal(sent.pathname, '/demo/api/v/abc_DEF-123/reports');
+  assert.equal(sent.searchParams.get('lat'), '16.5424');
+  assert.equal(sent.searchParams.get('lon'), '80.6386');
+  assert.equal(sent.searchParams.get('view'), 'past');
+  await settle();
+  assert.equal(shown(m.by('ended-location')), false, 'the Demo never asks for a location');
+  assert.equal(m.writes.length, 0, 'nothing is written to the browser');
+  assert.notEqual(cells[0].textContent, 'Unknown', 'the Distance cell is measured from the pretend position');
+});
+
+test('Demo position: the fixed position wins over a kept one, and a half or bad pair is ignored', async () => {
+  const both = load({ position: [12.97, 77.59], fixed: [16.5424, 80.6386], answers: [answer([])] });
+  both.start();
+  assert.equal(new URL(both.fetches[0].url, 'http://x').searchParams.get('lat'), '16.5424');
+
+  for (const fixed of [[16.5424], [undefined, 80.6386], ['x', 'y'], ['', ''], [95, 80], [16.5, 181]]) {
+    const m = load({ fixed, position: [12.97, 77.59], answers: [answer([])] });
+    m.start();
+    assert.equal(new URL(m.fetches[0].url, 'http://x').searchParams.get('lat'), '12.97', JSON.stringify(fixed) + ' is ignored');
+  }
+  const none = load({ fixed: [16.5424], answers: [] });
+  none.start();
+  assert.equal(none.fetches.length, 0, 'a half pair with no kept position asks for nothing');
 });
 
 test('Demo base: an empty base value is ignored and the read goes to /api/reports', async () => {

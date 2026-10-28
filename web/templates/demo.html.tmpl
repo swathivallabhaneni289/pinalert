@@ -14,8 +14,11 @@
     - no app_head (it would register the service worker), no offline queue, no
       geocoder search, no bell, no Settings, no person menu, no Flag, no Mute, no
       reader window and no first-post pop-up;
-    - the list pane has no alert banner (plan 05-19 adds it) and no item for
-      reliable reporters, because the Demo has no real people to rate.
+    - the list pane carries the banner of the real page for the Demo's sample
+      Extreme alert (plan 05-19): the same link and spans, with a Demo tag right
+      after the level icon and an address that opens the Demo's own Official
+      alerts for this visit; it has no item for reliable reporters, because the
+      Demo has no real people to rate.
 
   The post window is the real window with the practice flow of plan 05-17. It
   has no place search and no location notice: the Demo never calls the geocoder
@@ -39,6 +42,7 @@
   <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/app-bar.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/window.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/official.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/phone.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/demo.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -58,6 +62,7 @@
   <div id="notice-live" class="visually-hidden" role="status" aria-live="polite"></div>
   <div class="app-shell" id="app-shell"
        data-demo="1"
+       data-visit="{{.Visit}}"
        data-api-base="{{.APIBase}}"
        data-fixed-lat="{{.FixedLat}}"
        data-fixed-lon="{{.FixedLon}}"
@@ -91,6 +96,19 @@
           <span class="sheet__grabber" aria-hidden="true"></span>
         </button>
       </div>
+      <a class="alert-banner" id="alert-banner" href="{{.AlertsHref}}" hidden>
+        <span class="visually-hidden" id="alert-banner-level"></span>
+        <span class="alert-banner__icon" aria-hidden="true"></span>
+        <span class="demo-tag alert-banner__demo" id="alert-banner-demo" hidden>Demo</span>
+        <span class="alert-banner__event" id="alert-banner-event"></span>
+        <span class="alert-banner__sep" aria-hidden="true">&middot;</span>
+        <span class="visually-hidden">, </span>
+        <span class="alert-banner__area" id="alert-banner-area"></span>
+        <span class="visually-hidden">. </span>
+        <span class="alert-banner__more" id="alert-banner-more" aria-hidden="true" hidden></span>
+        <span class="visually-hidden" id="alert-banner-more-sr"></span>
+        <span class="app-icon app-icon--chevron-right alert-banner__chevron" aria-hidden="true"></span>
+      </a>
       <div class="list-head">
         <p class="list-head__count" id="feed-count"></p>
         <div class="show-control">
@@ -213,6 +231,7 @@
           crossorigin="anonymous"></script>
   <script src="/static/js/api-base.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/app.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/official-banner.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/votes.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/visibility.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/trust.js?v={{.AssetVersion}}" defer></script>

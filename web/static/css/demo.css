@@ -135,6 +135,19 @@
   white-space: nowrap;
 }
 
+/* The Demo tag in the Nearby banner (plan 05-19, UI-SPEC 2a In the Demo): right
+   after the level icon, inside the same 44px row, and never squeezed or
+   wrapped, so only the area shortens as it does without the tag. The tag's own
+   display rule is stronger than the hidden attribute, so a hidden tag is hidden
+   by a rule of its own. */
+.alert-banner__demo {
+  flex: none;
+}
+
+.alert-banner__demo[hidden] {
+  display: none;
+}
+
 /* ---- The Demo pin ------------------------------------------------------------ */
 
 /* Every pin on the Demo map has a 2px dashed ring in the text colour, 2px
