@@ -375,7 +375,7 @@ func TestWelcomeStep3And4Privacy(t *testing.T) {
 	// (the address is pinned once above) and neither reads the device position.
 	w10Count(t, "welcome.js", js, "makeSearch({", 2)
 	w10Count(t, "welcome.js", js, "url: STEP4_SEARCH_URL", 2)
-	notNow :=jsFunctionBody(t, js, "notNow()")
+	notNow := jsFunctionBody(t, js, "notNow()")
 	p13MustContain(t, "notNow", notNow, "goTo(4)")
 	p13MustNotContain(t, "notNow", notNow, "geolocation", "PinalertPosition", "request(", "fetch(", "homeInput", "homePick")
 
@@ -609,7 +609,9 @@ func TestWelcomeAlertsAsk(t *testing.T) {
 	}
 	p13MustNotContain(t, "welcome.css", css,
 		`data-step="5"`, ".welcome__example", ".welcome__alerts-part", ".welcome__status", ".btn[hidden]")
-	// auth.css carries the whole look of the pop-up, so welcome.css adds nothing.
+	// auth.css carries the look of the box (plan 03.3-19 adds only layout rules
+	// for the search block and the tick box, scoped by id), so welcome.css never
+	// names the Log out box class.
 	p13MustNotContain(t, "welcome.css", css, "logout-confirm")
 }
 
