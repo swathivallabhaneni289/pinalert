@@ -563,9 +563,24 @@
           if (typeof CustomEvent === 'function') {
             document.dispatchEvent(new CustomEvent('pinalert:updates-refresh'));
           }
+          if (action === 'confirm' || action === 'dispute') {
+            offerChangesAsk();
+          }
           return body;
         });
       });
+    }
+  }
+
+  // 03.3-UAT test 4: a saved confirm or dispute offers the first-time alerts
+  // pop-up (P-2: not resolve, reopen or take back). Never changes the vote.
+  function offerChangesAsk() {
+    try {
+      if (window.PinalertChangesAsk) {
+        window.PinalertChangesAsk.offer();
+      }
+    } catch (err) {
+      // The pop-up never changes a vote's result.
     }
   }
 
