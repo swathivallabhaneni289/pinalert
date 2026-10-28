@@ -47,6 +47,9 @@ type lowViewModel struct {
 	// partial). It is false when the Changes switch is already on, when push is
 	// off, or when the settings read failed.
 	ChangesAsk bool
+	// Demo is read by the shared report form and is always false here: only the
+	// Demo page sets it (plan 05-17, T-05-95).
+	Demo bool
 }
 
 // requestIsHTTPS reports whether the request reached the host over TLS, either

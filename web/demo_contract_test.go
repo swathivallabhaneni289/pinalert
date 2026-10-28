@@ -333,3 +333,61 @@ func TestRealPageUnchangedByDemoSeams(t *testing.T) {
 	low := p13ReadTemplate(t, "low.html.tmpl")
 	p13MustNotContain(t, "low.html.tmpl", low, "api-base.js", "data-fixed-lat")
 }
+
+// This part is plan 05-17, the Demo's practice posting (D-01, D-05, UI-SPEC 4d,
+// T-05-91 to T-05-95). The rendered pages are pinned in
+// internal/api/handlers/demo_practice_e2e_test.go; here the shipped source is
+// read. Every helper carries the dm17 prefix.
+
+// dm17Sentence is the toast after a practice post, word for word (UI-SPEC 4d step 2).
+const dm17Sentence = "Practice report posted. Pretend neighbours will confirm it in a few seconds."
+
+// TestDemoPracticeFlowSource pins the shape of the practice flow: the poll
+// length, the toast, the announcement prefix, the event the app raises and the
+// rule that the page never types a trust sentence of the server's (T-05-92).
+func TestDemoPracticeFlowSource(t *testing.T) {
+	demo := p13ReadStatic(t, "static/js/demo.js")
+	p13MustContain(t, "demo.js", demo, "PRACTICE_POLL_MS = 3000", dm17Sentence, "'Practice report confirmed. '",
+		"pinalert:report-posted", "Pinalert.subscribe(", "openReport(", "function onPosted(", "function watchPractice(",
+		"function stopWatching(", "function announceConfirmed(", "function onEndedVisit(", "confirmed_by_people")
+	// The page reads the sentences from the server's trust object and types none.
+	code := dm13Code(demo)
+	p13MustNotContain(t, "demo.js code", code, "Needs 1 more person", "Needs 2 people", "Confirmed by ",
+		"at different spots")
+
+	app := p13ReadStatic(t, "static/js/app.js")
+	p13MustContain(t, "app.js", app, "REPORT_POSTED_EVENT = 'pinalert:report-posted'", "PinalertDemoEnded", "'visit'")
+}
+
+// TestDemoFormGuardSource pins the Demo mode of the shared report form: the Call
+// 112 box and the What is happening picks sit under one Demo guard, and the
+// Demo's post window has no address search, no location notice and no tel link.
+func TestDemoFormGuardSource(t *testing.T) {
+	form := p13ReadTemplate(t, "report_form.html.tmpl")
+	for _, needle := range []string{`id="call-112-box"`, `id="happening-fields"`} {
+		guarded := false
+		for _, g := range dm13GuardsOf(t, form, needle) {
+			if g == "{{if not .Demo}}" {
+				guarded = true
+			}
+		}
+		if !guarded {
+			t.Errorf("%s in report_form.html.tmpl is not under {{if not .Demo}}", needle)
+		}
+	}
+	demoPage := p13ReadTemplate(t, "demo.html.tmpl")
+	p13MustContain(t, "demo.html.tmpl", demoPage, "data-pretend-place=", `id="near-place"`)
+	p13MustNotContain(t, "demo.html.tmpl", demoPage, `id="location-search"`, `id="location-search-results"`,
+		`id="location-search-status"`, `id="location-notice"`, "location-search-field", "tel:")
+}
+
+// TestReportFormToleratesNoSearch pins that the form scripts accept a window
+// without the address search and the location notice (the Demo's post window),
+// and that the Demo's success toast is the practice sentence.
+func TestReportFormToleratesNoSearch(t *testing.T) {
+	form := p13ReadStatic(t, "static/js/report-form.js")
+	p13MustContain(t, "report-form.js", form, "PinalertDemoPage")
+	modal := p13ReadStatic(t, "static/js/modal.js")
+	p13MustMatch(t, "modal.js", modal, `if \(locationNotice\)`)
+	p13MustContain(t, "modal.js", modal, "data-pretend-place")
+}

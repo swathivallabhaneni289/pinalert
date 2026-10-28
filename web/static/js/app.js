@@ -110,6 +110,30 @@ window.Pinalert = (function () {
     document.dispatchEvent(new CustomEvent(FEED_CENTRE_EVENT, { detail: { lat: lat, lon: lon } }));
   }
 
+  // REPORT_POSTED_EVENT is announced on the document once a report the server
+  // accepted is in the store (after the refetch that follows the write), with
+  // the created report as {report}. The Demo's practice flow (plan 05-17)
+  // listens for it; nothing on a real page does.
+  var REPORT_POSTED_EVENT = 'pinalert:report-posted';
+
+  function announceReportPosted(report) {
+    if (!report || typeof CustomEvent !== 'function' || typeof document.dispatchEvent !== 'function') {
+      return;
+    }
+    document.dispatchEvent(new CustomEvent(REPORT_POSTED_EVENT, { detail: { report: report } }));
+  }
+
+  // noteDemoEnded tells the Demo page its visit is gone: the Demo API answers
+  // 404 with the field visit once the world was dropped (plan 05-10). Only the
+  // Demo page defines window.PinalertDemoEnded (demo.js), so on every real page
+  // this does nothing, whatever a 404 says.
+  function noteDemoEnded(status, field) {
+    if (status === 404 && field === 'visit' && window.PinalertDemoPage === true &&
+        typeof window.PinalertDemoEnded === 'function') {
+      window.PinalertDemoEnded();
+    }
+  }
+
   function readNumberAttr(name, fallback) {
     if (!shellEl) {
       return fallback;
@@ -626,6 +650,15 @@ window.Pinalert = (function () {
     var answered = fetch(url)
       .then(function (res) {
         if (!res.ok) {
+          // A Demo visit that ended answers 404 with the field visit: the body
+          // is read for that only, on the Demo page (plan 05-17).
+          if (res.status === 404 && window.PinalertDemoPage === true && typeof res.json === 'function') {
+            return res.json().then(function (body) {
+              noteDemoEnded(res.status, body && body.error && body.error.field);
+            }, function () {}).then(function () {
+              throw new Error('fetchReports: HTTP ' + res.status);
+            });
+          }
           throw new Error('fetchReports: HTTP ' + res.status);
         }
         noteServerClock(res.headers && res.headers.get('Date'));
@@ -797,6 +830,7 @@ window.Pinalert = (function () {
           err.fieldMessage = fieldError.message;
           err.status = res.status;
           err.queueable = QUEUEABLE_STATUSES.indexOf(res.status) !== -1;
+          noteDemoEnded(res.status, err.field);
           if (res.status === 429) {
             var wait = body && body.retry_after_seconds;
             if (typeof wait !== 'number' || !isFinite(wait) || wait < 0) {
@@ -821,8 +855,10 @@ window.Pinalert = (function () {
       throw err;
     }).then(function (report) {
       return fetchReports({ afterWrite: true }).then(function () {
+        announceReportPosted(report);
         return report;
       }, function () {
+        announceReportPosted(report);
         return report;
       });
     });

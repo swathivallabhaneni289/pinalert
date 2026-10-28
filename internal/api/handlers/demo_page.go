@@ -50,9 +50,13 @@ const demoFromWelcome = "welcome"
 // demoViewModel is exactly what demo.html.tmpl and demo_strip.html.tmpl read.
 type demoViewModel struct {
 	AssetVersion string
-	// Chrome is the shared bar data. DemoPage is true on it, so the shared
-	// report form leaves out the Call 112 box and the What is happening picks.
+	// Chrome is the shared bar data. DemoPage is true on it. Since plan 05-17
+	// the shared report form reads the Demo field below instead.
 	Chrome Chrome
+	// Demo is true on this page only. The shared report form reads it and
+	// leaves out the Call 112 box and the What is happening picks (plan 05-17,
+	// T-05-91).
+	Demo bool
 	// Nav is the data of the two app bars, built by demoNavFor: the Demo's
 	// places, and no search, bell, gear or person menu.
 	Nav NavView
@@ -103,6 +107,7 @@ func DemoPage(tmpl *template.Template, store *demo.Store, cfg PageConfig) http.H
 		vm := demoViewModel{
 			AssetVersion:    cfg.AssetVersion,
 			Chrome:          chrome,
+			Demo:            true,
 			Nav:             demoNavFor(NavNearby, navTitle(demoWordmark)),
 			Visit:           world.ID,
 			APIBase:         "/demo/api/v/" + world.ID,

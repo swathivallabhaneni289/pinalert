@@ -173,6 +173,9 @@ func TestReportFormPartialKeepsMainFormOrder(t *testing.T) {
 	// Amended 2026-10-29 by plan 05-13 (UI-SPEC 4c, T-05-73): the window branch
 	// wraps the Call 112 box and the What is happening picks in
 	// {{if not .Chrome.DemoPage}} ... {{end}}, so the Demo page draws neither
+	// (Amended 2026-10-29 by plan 05-17: the guard now reads the Demo field of
+	// the page view models, {{if not .Demo}}, still one if and one end, so the
+	// count of actions below is unchanged)
 	// (a tel link in a sandbox could dial real emergency services). That is two
 	// more actions, an if and its end, and neither reads a view model field the
 	// check above refuses: the old four are all still counted.

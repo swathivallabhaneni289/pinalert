@@ -163,6 +163,11 @@ type pageViewModel struct {
 	// partial). It is false when the Changes switch is already on, when push is
 	// off, or when the settings read failed.
 	ChangesAsk bool
+	// Demo is read by the shared report form (report_form.html.tmpl): when true
+	// the form leaves out the Call 112 box and the What is happening picks. It
+	// is always false on the real page; only the Demo page sets it (plan 05-17,
+	// T-05-91, T-05-95).
+	Demo bool
 }
 
 // EndedNearbyPath is where the finished reports live since Phase 3.4: My

@@ -1121,6 +1121,18 @@
     locationSearchInput = document.getElementById('location-search');
     locationSearchResults = document.getElementById('location-search-results');
     locationSearchStatus = document.getElementById('location-search-status');
+    // The Demo's post window has no address search (plan 05-17): the Demo never
+    // calls the geocoder. The search code below keeps working on elements that
+    // are not on the page, so it needs no check at each use and draws nothing.
+    if (!locationSearchInput) {
+      locationSearchInput = document.createElement('input');
+    }
+    if (!locationSearchResults) {
+      locationSearchResults = document.createElement('div');
+    }
+    if (!locationSearchStatus) {
+      locationSearchStatus = document.createElement('p');
+    }
     shelterFields = document.getElementById('shelter-fields');
     shelterCapacityStatus = document.getElementById('shelter-capacity-status');
     shelterHeadcount = document.getElementById('shelter-headcount');
@@ -1416,11 +1428,17 @@
       if (sent.resendRequestId && window.PinalertQueue) {
         window.PinalertQueue.discard(sent.resendRequestId);
       }
+      // On the Demo page the practice toast comes from demo.js, which listens
+      // for the post itself (plan 05-17), so this file adds no second one for a
+      // report that was posted. A held report keeps its own sentence.
+      var practicePost = window.PinalertDemoPage === true && !(report && report.held === true);
       if (sent.session !== formSession) {
         // The form was closed while the post was out: tell the outcome and
         // leave any form open now alone.
-        Pinalert.showToast(report && report.held === true ? EARLIER_HELD_TOAST : EARLIER_POSTED_TOAST,
-          null, LONG_TOAST_MS);
+        if (!practicePost) {
+          Pinalert.showToast(report && report.held === true ? EARLIER_HELD_TOAST : EARLIER_POSTED_TOAST,
+            null, LONG_TOAST_MS);
+        }
         offerChangesAsk();
         return;
       }
@@ -1429,7 +1447,7 @@
       closeForm();
       if (report && report.held === true) {
         Pinalert.showToast(HELD_TOAST_MESSAGE, null, LONG_TOAST_MS);
-      } else {
+      } else if (!practicePost) {
         Pinalert.showToast('Report posted.');
       }
       offerChangesAsk();
