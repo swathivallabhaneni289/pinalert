@@ -271,6 +271,81 @@ func TestRefreshEndpointDeadline(t *testing.T) {
 	}
 }
 
+// slowRefresher takes d to answer, as a refresh against a slow upstream does.
+type slowRefresher struct {
+	d   time.Duration
+	out []official.Result
+}
+
+func (f *slowRefresher) RefreshAll(ctx context.Context) []official.Result {
+	select {
+	case <-time.After(f.d):
+	case <-ctx.Done():
+	}
+	return f.out
+}
+
+// TestOfficialRefreshOutlivesServerWriteTimeout (quick 261029-6wb): the
+// production server sets a 10 s WriteTimeout while the door may wait up to 55 s
+// for a refresh. A refresh that outlives the server's write timeout must still
+// be answered, so the door gives its own write a longer deadline once the token
+// has passed. A caller with a wrong token gets its 401 at once, with no longer
+// deadline granted.
+func TestOfficialRefreshOutlivesServerWriteTimeout(t *testing.T) {
+	svc := &slowRefresher{d: 800 * time.Millisecond, out: []official.Result{
+		{Feed: official.FeedSachet, ItemsSeen: 4, Stored: 1},
+		{Feed: official.FeedGdacs, ItemsSeen: 2},
+	}}
+	srv := httptest.NewUnstartedServer(officialRefresh(svc, refreshToken, 2*time.Second))
+	srv.Config.WriteTimeout = 300 * time.Millisecond
+	srv.Start()
+	defer srv.Close()
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	t.Run("an authorised refresh longer than the write timeout is answered", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodPost, srv.URL, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+refreshToken)
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("no answer came back after the server's write timeout: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200", resp.StatusCode)
+		}
+		var sum RefreshSummary
+		if err := json.NewDecoder(resp.Body).Decode(&sum); err != nil {
+			t.Fatalf("body is not the summary JSON: %v", err)
+		}
+		if len(sum.Feeds) != 2 || sum.Feeds[0].Feed != "sachet" || sum.Feeds[0].Items != 4 || sum.Feeds[1].Feed != "gdacs" || sum.Feeds[1].Items != 2 {
+			t.Errorf("summary = %+v, want the sachet and gdacs entries", sum)
+		}
+	})
+
+	t.Run("a wrong token still gets its 401 at once", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodPost, srv.URL, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer wrong")
+		begin := time.Now()
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("no answer: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("status = %d, want 401", resp.StatusCode)
+		}
+		if took := time.Since(begin); took > 250*time.Millisecond {
+			t.Errorf("the refusal took %v, want it at once", took)
+		}
+	})
+}
+
 // TestValidateRefreshToken: empty is allowed (the route is off), under 32
 // characters is refused with a message that never holds the value.
 func TestValidateRefreshToken(t *testing.T) {
