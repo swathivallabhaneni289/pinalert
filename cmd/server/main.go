@@ -26,6 +26,7 @@ import (
 	"pinalert/internal/geocode"
 	"pinalert/internal/mailer"
 	"pinalert/internal/moderation"
+	"pinalert/internal/official"
 	"pinalert/internal/push"
 	"pinalert/internal/service"
 	"pinalert/internal/session"
@@ -341,7 +342,18 @@ func main() {
 		}
 	}
 
+	// The official alerts service (plan 05-08): reads the stored NDMA SACHET
+	// alerts for a reader and refreshes them lazily. It is built once here, and
+	// the later Phase 5 plans add their hooks and feeds to it through options.
+	// The address passed is BASE_URL as set, not the localhost fallback above,
+	// because it only goes into the User-Agent NDMA sees.
+	officialSvc := official.NewService(pool, queries, official.Config{
+		ContactEmail: contactEmail,
+		BaseURL:      os.Getenv("BASE_URL"),
+	})
+
 	deps := api.Deps{
+		Official:    officialSvc,
 		Session:     sessionMgr,
 		Sessions:    queries,
 		Reports:     reportService,

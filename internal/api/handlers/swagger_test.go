@@ -844,3 +844,68 @@ func TestSwaggerCategoryEnumsSplitPostableFromStored(t *testing.T) {
 		t.Error("GET /reports documents no category query parameter")
 	}
 }
+
+// TestSwaggerOfficialAlerts is plan 05-08's drift guard: GET /official/alerts
+// is documented with its two optional position parameters and its refusals, and
+// the response definitions carry exactly the fields the pages read, with the
+// nullable ones marked and the state enum closed.
+func TestSwaggerOfficialAlerts(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "docs", "swagger.json"))
+	if err != nil {
+		t.Fatalf("reading docs/swagger.json: %v", err)
+	}
+	var spec struct {
+		Paths map[string]map[string]struct {
+			Parameters []struct {
+				Name     string `json:"name"`
+				In       string `json:"in"`
+				Type     string `json:"type"`
+				Required bool   `json:"required"`
+			} `json:"parameters"`
+			Responses map[string]json.RawMessage `json:"responses"`
+		} `json:"paths"`
+		Definitions map[string]json.RawMessage `json:"definitions"`
+	}
+	if err := json.Unmarshal(raw, &spec); err != nil {
+		t.Fatalf("parsing docs/swagger.json: %v", err)
+	}
+
+	op, ok := spec.Paths["/official/alerts"]["get"]
+	if !ok {
+		t.Fatal("docs/swagger.json is missing the GET /official/alerts operation")
+	}
+	for _, code := range []string{"200", "400", "401", "503"} {
+		if _, ok := op.Responses[code]; !ok {
+			t.Errorf("GET /official/alerts documents no %s response", code)
+		}
+	}
+	params := map[string]bool{}
+	for _, p := range op.Parameters {
+		if p.In == "query" && p.Type == "number" && !p.Required {
+			params[p.Name] = true
+		}
+	}
+	if !params["lat"] || !params["lon"] || len(op.Parameters) != 2 {
+		t.Errorf("GET /official/alerts parameters = %+v, want optional number query parameters lat and lon", op.Parameters)
+	}
+
+	_, props := p07WalkSwaggerDefinitions(t, spec.Definitions, []string{"handlers.OfficialAlertsResponse"})
+	p14AssertPropKeys(t, props, "handlers.OfficialAlertsResponse",
+		[]string{"state", "age_seconds", "last_success_at", "area_known", "groups", "count", "districts_line", "banner"})
+	p14AssertPropKeys(t, props, "handlers.OfficialGroupResponse", []string{"kind", "label", "rows"})
+	p14AssertPropKeys(t, props, "handlers.OfficialRowResponse",
+		[]string{"id", "source", "level", "level_word", "badge", "demo", "headline", "original_language_only", "area_text",
+			"issuer", "issued_at", "expires_at", "expires_inferred", "grouped_count", "details"})
+	p14AssertPropKeys(t, props, "handlers.OfficialDetailsResponse",
+		[]string{"description", "instruction", "original_headline", "original_description", "original_lang_label",
+			"original_lang_code", "areas", "source_line"})
+	p14AssertPropKeys(t, props, "handlers.OfficialBannerResponse",
+		[]string{"level", "level_word", "event_phrase", "area", "more", "alert_id"})
+	p14AssertEnum(t, p14SwaggerProp(t, props, "handlers.OfficialAlertsResponse", "state"), []string{"fresh", "stale", "unavailable"})
+	p14AssertEnum(t, p14SwaggerProp(t, props, "handlers.OfficialGroupResponse", "kind"), []string{"reader", "home", "state", "unplaced"})
+	for _, key := range []string{"age_seconds", "last_success_at", "banner"} {
+		if v, _ := p14SwaggerProp(t, props, "handlers.OfficialAlertsResponse", key)["x-nullable"].(bool); !v {
+			t.Errorf("handlers.OfficialAlertsResponse %q must carry x-nullable true", key)
+		}
+	}
+}

@@ -148,6 +148,15 @@ type Deps struct {
 	// cmd/server/main.go builds it from BASE_URL and CONTACT_EMAIL. Empty sends
 	// Go's stock agent, which only a test harness gives.
 	GlobeUserAgent string
+	// Official backs GET /api/official/alerts (plan 05-08): the reader's
+	// official alerts and whether the answer can be trusted right now. Typed as
+	// the handlers.OfficialReader interface so this file needs no import of
+	// internal/official and a test can substitute a stub. cmd/server/main.go
+	// builds the one official.Service. Additive, as the fields above were: a
+	// Deps{} literal that omits it still compiles and still serves every other
+	// route, and a request against a nil value is answered 503 with a plain
+	// message rather than a panic (the handler guards it).
+	Official handlers.OfficialReader
 }
 
 // requestLogger returns the access log middleware. It replaces chi's
@@ -682,6 +691,12 @@ func NewRouter(deps Deps) *chi.Mux {
 		// app, and both pass the onboarding middleware like every page above.
 		// They serve text/html, so they carry no swag annotation.
 		r.Get("/alerts", handlers.AlertsPage(deps.Template, page))
+		// Plan 05-08: the data behind that page and the Nearby banner. Gated
+		// because the reader's position travels in its query and the answer is
+		// for the signed in app only. A read also starts the lazy SACHET
+		// refresh inside the handler; there is no rate gate here because the
+		// refresher's own gap and single flight bound what reaches NDMA.
+		r.Get("/api/official/alerts", handlers.OfficialAlerts(deps.Official))
 		r.Get("/settings", handlers.SettingsPage(deps.Template, accounts, mutes, page))
 		// Phase 3.4 (D-27, plan 10): the first-time flow. It sits in this gated
 		// group because it belongs to the signed in account, and the onboarding
