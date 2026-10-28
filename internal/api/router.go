@@ -18,6 +18,7 @@ import (
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 
 	"pinalert/internal/api/handlers"
+	"pinalert/internal/demo"
 	"pinalert/internal/push"
 	"pinalert/internal/ratelimit"
 	"pinalert/internal/service"
@@ -157,6 +158,11 @@ type Deps struct {
 	// route, and a request against a nil value is answered 503 with a plain
 	// message rather than a panic (the handler guards it).
 	Official handlers.OfficialReader
+	// Demo is the store of Demo worlds behind everything under /demo (plan
+	// 05-10, D-04, D-05). Each visit is one in memory world running the real
+	// services, so the Demo writes no table and no session. Left nil, which every
+	// Deps{} literal gives, NewRouter builds a store seeded with demo.SeedSetup.
+	Demo *demo.Store
 }
 
 // requestLogger returns the access log middleware. It replaces chi's
