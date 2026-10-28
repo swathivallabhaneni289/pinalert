@@ -369,8 +369,13 @@ func TestWelcomeStep3And4Privacy(t *testing.T) {
 	// form's address search is a different script.
 	p13MustNotContain(t, "welcome.js", js,
 		"'/api/geocode?q='", "/api/geocode?", "step3", "Step3", "STEP3", "welcome-search", "enterStep4", "homePrefilled", "lastPrefill", "homeTouched")
-	w10Count(t, "welcome.js", js, "makeSearch({", 1)
-	notNow := jsFunctionBody(t, js, "notNow()")
+	// Amended 2026-10-28 by plan 03.3-19 (03.3-UAT gap for test 4): the alerts
+	// pop-up has the same areas-mode search for an account with no home area, so
+	// there are two instances, step 4's and the pop-up's. Both use STEP4_SEARCH_URL
+	// (the address is pinned once above) and neither reads the device position.
+	w10Count(t, "welcome.js", js, "makeSearch({", 2)
+	w10Count(t, "welcome.js", js, "url: STEP4_SEARCH_URL", 2)
+	notNow :=jsFunctionBody(t, js, "notNow()")
 	p13MustContain(t, "notNow", notNow, "goTo(4)")
 	p13MustNotContain(t, "notNow", notNow, "geolocation", "PinalertPosition", "request(", "fetch(", "homeInput", "homePick")
 
