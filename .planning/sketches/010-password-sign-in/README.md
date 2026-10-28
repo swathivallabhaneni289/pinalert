@@ -93,8 +93,8 @@ from `auth.css` (as it is on disk now, not 009's older copy: the field border is
 colour), `.btn` and `.inline-error` from `chrome.css`, step 4 and the
 laptop window from `welcome.css`, the edit windows from `window.css`, and the Settings list from `places.css`. The Light and
 Dark switch works through `?theme=` and `prefers-color-scheme`, as in 009. Icons are the project's own shapes drawn as inline
-SVG masks; the new `lock` is the Lucide shape. The globe is 009's loader (placement A, the realistic Earth), unchanged in
-size, speed and credit. The row under the card is the built outlined button look (44px, 8px corner, 1px border, Label 14px, weight 400, no underline, padding 0 12px) drawn as the UI-SPEC section 1e says: the old grey box and `.login-column` background are gone, so the globe shows between the buttons. The sign in panels swap in place with the `hidden` attribute so the globe element is never touched.
+SVG masks; the new `lock` is the Lucide shape. The globe is 009's loader (placement A, the realistic Earth), with its speed and credit unchanged. Owner change, 2026-10-29: the Earth shows at full strength (no dimming), on a phone it is whole and centred above the card (its box reserved in CSS, 140px to 300px, sized so the main button stays on the first screen) with the card overlapping only its lower fifth, no longer twice the width behind the card, and the card and the row of buttons under it are frosted glass while the globe is on (the surface or background colour at 65 percent with a 4px blur, solid without backdrop-filter support or with reduced transparency; at 65 percent the text stays at least 5 to 1 even over pure black or pure white, and measured over the Earth it was 5.6 to 1 or more). The laptop globe keeps its
+size. The row under the card is the built outlined button look (44px, 8px corner, 1px border, Label 14px, weight 400, no underline, padding 0 12px) drawn as the UI-SPEC section 1e says: the old grey box and `.login-column` background are gone, so the globe shows between the buttons. The sign in panels swap in place with the `hidden` attribute so the globe element is never touched.
 
 ## Defaults to look at
 

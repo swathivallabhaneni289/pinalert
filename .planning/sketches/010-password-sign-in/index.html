@@ -32,7 +32,7 @@
   --color-severity-low: #2F9E64; --color-severity-critical: #C0392B; --color-severity-critical-bg: #FBE9E7;
   --color-tone-good: #3A7B4D; --color-tone-bad: var(--color-severity-critical);
   /* Sketch 009: how strongly the globe shows. Set on the wrapper only. */
-  --globe-dim: 0.5;
+  --globe-dim: 1;
   --icon-mail: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7'/%3E%3Crect x='2' y='4' width='20' height='16' rx='2'/%3E%3C/svg%3E");
   --icon-shield-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E");
   --icon-circle-x: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='m15 9-6 6'/%3E%3Cpath d='m9 9 6 6'/%3E%3C/svg%3E");
@@ -53,7 +53,7 @@
     --color-text: #F3F4F6; --color-text-muted: #9CA3AF; --color-focus-ring: #F3F4F6;
     --color-severity-low: #34D399; --color-severity-critical: #E5695C; --color-severity-critical-bg: #3A1512;
     --color-tone-good: #34D399;
-    --globe-dim: 0.4;
+    --globe-dim: 1;
   }
 }
 :root[data-theme="dark"] {
@@ -62,7 +62,7 @@
   --color-text: #F3F4F6; --color-text-muted: #9CA3AF; --color-focus-ring: #F3F4F6;
   --color-severity-low: #34D399; --color-severity-critical: #E5695C; --color-severity-critical-bg: #3A1512;
   --color-tone-good: #34D399;
-  --globe-dim: 0.4;
+  --globe-dim: 1;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -230,6 +230,38 @@ body {
   .login-gate.has-globe .globe-area:not([hidden]) { position: static; align-self: center; width: 100%; max-width: 420px;
     display: flex; justify-content: flex-end; }
   .login-gate.has-globe .globe-credit { position: relative; z-index: 1; right: auto; bottom: auto; }
+}
+/* Owner, 2026-10-29: the boxes over the Earth are frosted glass, so they never hide it. Only while the
+   globe is on (has-globe); the solid colour stays first for browsers without color-mix, and a browser
+   without backdrop-filter, or a person who asks for less transparency, keeps the solid box. */
+.login-gate.has-globe .login-card {
+  background: var(--color-surface);
+  background: color-mix(in srgb, var(--color-surface) 65%, transparent);
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+.login-gate.has-globe .login-ways__btn:not(:hover) {
+  background: var(--color-bg);
+  background: color-mix(in srgb, var(--color-bg) 65%, transparent);
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .login-gate.has-globe .login-card { background: var(--color-surface); }
+  .login-gate.has-globe .login-ways__btn:not(:hover) { background: var(--color-bg); }
+}
+/* Owner, 2026-10-29: on a phone the whole Earth shows in full, centred above the card, and the glass card
+   overlaps only its lower edge. Its box is reserved here from the first paint, so the card never moves when
+   the Earth arrives or if it never does; the size keeps the card's main button on the first screen. */
+@media (max-width: 899.98px) {
+  .login-gate.has-globe:not([hidden]) { --g: clamp(140px, min(100vw - 48px, (100vh - 404px) * 1.28), 300px);
+    --g: clamp(140px, min(100vw - 48px, (100svh - 404px) * 1.28), 300px); justify-content: flex-start; }
+  .login-gate.has-globe .globe-area:not([hidden]) { display: contents; }
+  .login-gate.has-globe .globe-bg { position: relative; inset: auto; order: -1; flex: none; align-self: center;
+    width: var(--g); height: var(--g); }
+  .login-gate.has-globe .globe-box { left: 0; top: 0; width: 100%; height: 100%; }
+  .login-gate.has-globe .login-column { margin-top: calc(var(--g) * -0.22); }
+  .login-gate.has-globe .globe-credit { order: 1; align-self: center; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .login-gate.has-globe .login-card { background: var(--color-surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .login-gate.has-globe .login-ways__btn:not(:hover) { background: var(--color-bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 
 /* ---- The first-time flow, step 4: web/static/css/welcome.css and window.css ---- */
@@ -2014,8 +2046,10 @@ body.mode-direct .mock-show { display: none; }
     if (!w || gate.hidden) return;
     var h = Math.max(240, window.innerHeight - gate.offsetTop);
     var laptop = w >= 900;
-    diameter = laptop ? Math.min(h * 0.92, 900) : Math.min(w * 2, h * 0.92);
-    var bw = Math.min(diameter * BOX, w), bh = Math.min(diameter * BOX, h);
+    // Owner, 2026-10-29: a phone reads the box the stylesheet reserved above the card; the sphere fills it.
+    var phoneBox = laptop ? 0 : globeArea.querySelector(".globe-bg").clientWidth;
+    diameter = laptop ? Math.min(h * 0.92, 900) : phoneBox / BOX;
+    var bw = laptop ? Math.min(diameter * BOX, w) : phoneBox, bh = laptop ? Math.min(diameter * BOX, h) : phoneBox;
     gate.style.setProperty('--globe-x', Math.round((w - bw) / 2) + 'px');
     gate.style.setProperty('--globe-y', Math.round((h - bh) / 2) + 'px');
     boxH = Math.round(bh);
