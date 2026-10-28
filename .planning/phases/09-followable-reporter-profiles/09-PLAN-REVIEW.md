@@ -76,3 +76,7 @@ Phase 8 was planned after Phase 9 (commit 2d2f10b). All ten assumptions A-P8-1 t
   - "Now disputed" goes only after a confirmation.
   - All three are built in the 3.3 gap fix for test 8. Plan 09-26 now waits for that fix, puts the follow kind through its checks without copying them, and adds TestFollowPushAppleFirstOnly and TestFollowPushNeverHoldsBackCritical.
   - Plan 09-27's docs/PUSH.md text says the same. Plan 09-25 (the dispatcher) is unchanged, because the rule applies per device in the worker.
+- **2026-10-28, the 3.3 gap fix is planned** as 03.3-16 to 03.3-22 (commits a79be64 and ede9419, not built yet).
+  - 09-26 now names deviceSkipsRepeatPush, AccountPushSentAboutReport and heldByHourlyCap.
+  - 09-17 has a rule 11 for the first post or vote pop-up (changes-ask.js, PinalertChangesAsk.settled). That pop-up never follows Mark resolved. The rate box is inline in the card, not a dialog, and it still waits on settled() when the pop-up script is present.
+  - This replaces the "dialog[open]" wording of the earlier note for 09-17.
