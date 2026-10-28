@@ -303,9 +303,50 @@ type pushRowRun struct {
 	wasConfirmed bool
 }
 
-// reportWasConfirmed is a stub for the RED commit of plan 03.3-18.
+// reportWasConfirmed says whether people nearby had confirmed a report at some
+// point in its vote history. It serves the now disputed phone note (03.3-UAT gap
+// for test 8, owner 2026-10-28): the owner wants phone notifications few, so a
+// report nobody confirmed that is then disputed stays in the bell, and only a
+// report that was confirmed before reaches the lock screen.
+//
+// history is the report's whole vote log, oldest first (VoteLogForReport). The
+// function walks it in order and keeps, for each account and vote kind, the
+// latest row seen so far, which is what CurrentVotesForReports would have
+// answered at that moment. After every row it builds the tally with
+// BuildVoteTally, asks Resolve for the visibility with the report's current
+// meta, and returns true as soon as ConfirmedByPeople says the report was
+// confirmed. Because it replays the existing rules and holds no confirmation
+// rule of its own, push cannot drift from the feed or from the Not confirmed yet
+// words (D-07, TRUST-02); it is exact for votes, so disputes that came first give
+// no false yes, and a confirming vote later changed by the same person gives no
+// false no. Moderation history is not replayed: meta carries the state now, and a
+// Withheld report is never pushed anyway. There is no I/O, no clock read and no
+// log line; now is passed to Resolve only because its signature takes it.
 func reportWasConfirmed(meta ReportMeta, history []sqlcgen.CurrentVotesForReportsRow, reportID int64, reporter *int64, now time.Time) bool {
-	return true
+	type voteKey struct {
+		account int64
+		kind    string
+	}
+	// The resolver input is written out field by field, moderation state included,
+	// like every other Resolve caller (R-01, TestResolveCallersMentionModeration).
+	replayMeta := ReportMeta{Severity: meta.Severity, Category: meta.Category, Moderation: meta.Moderation}
+	standing := make(map[voteKey]sqlcgen.CurrentVotesForReportsRow, len(history))
+	for _, row := range history {
+		if row.ReportID != reportID {
+			continue
+		}
+		standing[voteKey{account: row.AccountID, kind: row.Kind}] = row
+		rows := make([]sqlcgen.CurrentVotesForReportsRow, 0, len(standing))
+		for _, r := range standing {
+			rows = append(rows, r)
+		}
+		tally := BuildVoteTally(rows, reportID, reporter)
+		vis, _ := Resolve(replayMeta, tally, now)
+		if ConfirmedByPeople(vis, FeedViewActive, tally) {
+			return true
+		}
+	}
+	return false
 }
 
 // pushDevice is one live subscription that passed the policy, with the host the
@@ -361,6 +402,21 @@ func (w *PushWorker) sendRow(ctx context.Context, claim sqlcgen.ClaimDuePushesRo
 	remaining := facts.ExpiresAt.Sub(run.now)
 	if remaining < time.Second || !run.now.Before(claim.ExpiresAt) {
 		return w.skip(ctx, run, pushSkipStale)
+	}
+
+	// A now disputed note reaches a phone only for a report people had confirmed
+	// before, replayed from the report's own vote log. Only a changed row whose
+	// event is hidden reads the log; every other row reads nothing new.
+	if run.kind == PushKindChanged && claim.UpdateKind != nil && UpdateKind(*claim.UpdateKind) == UpdateHidden {
+		logRows, err := w.q.VoteLogForReport(ctx, claim.ReportID)
+		if err != nil {
+			return w.rowErr(claim.ID, err)
+		}
+		history := make([]sqlcgen.CurrentVotesForReportsRow, 0, len(logRows))
+		for _, v := range logRows {
+			history = append(history, sqlcgen.CurrentVotesForReportsRow(v))
+		}
+		run.wasConfirmed = reportWasConfirmed(facts.Meta, history, claim.ReportID, facts.ReporterAccountID, run.now)
 	}
 
 	// 3. The kind's predicate, the one the feed and the bell use.
@@ -546,7 +602,7 @@ func (w *PushWorker) stillHolds(run *pushRowRun) bool {
 	case PushKindConfirmedUpdate:
 		return f.Confirmed && f.View == FeedViewActive
 	case PushKindChanged:
-		return run.claim.UpdateKind != nil && w.eventStillHolds(UpdateKind(*run.claim.UpdateKind), f, run.now)
+		return run.claim.UpdateKind != nil && w.eventStillHolds(UpdateKind(*run.claim.UpdateKind), f, run.now, run.wasConfirmed)
 	}
 	return false
 }
@@ -566,7 +622,14 @@ func (w *PushWorker) stillHolds(run *pushRowRun) bool {
 // never reaches a lock screen. The hidden and resolved notes announce a report
 // leaving the feed and cannot use the predicate, whose view check is false for
 // them by design.
-func (w *PushWorker) eventStillHolds(event UpdateKind, f pushReportFacts, now time.Time) bool {
+//
+// The now disputed note announces a report leaving the feed, and since
+// 2026-10-28 it reaches a phone only when people had confirmed the report before
+// (reportWasConfirmed, filled on the run by sendRow and passed in as
+// wasConfirmed so this function stays free of I/O). A report nobody confirmed
+// that is then disputed stays in the bell, because the owner wants phone
+// notifications few.
+func (w *PushWorker) eventStillHolds(event UpdateKind, f pushReportFacts, now time.Time, wasConfirmed bool) bool {
 	if f.Vis == VisibilityWithheld {
 		return false
 	}
@@ -574,7 +637,7 @@ func (w *PushWorker) eventStillHolds(event UpdateKind, f pushReportFacts, now ti
 	case UpdateReachedLive:
 		return f.Confirmed
 	case UpdateHidden:
-		return f.Vis == VisibilityHidden
+		return f.Vis == VisibilityHidden && wasConfirmed
 	case UpdateResolved:
 		return f.Vis == VisibilityRetracted
 	case UpdateFading:
