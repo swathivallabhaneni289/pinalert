@@ -45,13 +45,20 @@ import (
 // was about 581000, so the earlier Phase 3.4 plans had already used most of the
 // headroom the 2026-10-16 measurement left.
 //
+// Re-measured on 2026-10-28 by Phase 3.3 plan 21, which added changes-ask.js
+// and the changes pop-up to the Low data view, after plans 17 and 20 grew
+// notify.js, votes.js and report-form.js (the figure above was last set before
+// the Phase 3.3 plans). 684597 raw bytes (html 11838, css 229635, js 429339,
+// icons 13785, other 0; gzip level 5 total 204179 bytes); budget 787456, the
+// measured total plus 15 percent rounded up to the next 1024 bytes.
+//
 // To change the budget after an intended change: re-measure with
 // go test ./web/ -run TestLowDataByteBudget -v, set both constants together in
 // one commit and update the Low data view size budget section of
 // docs/MODERATION.md.
 const (
-	lowDataMeasuredBytes = 590992
-	lowDataByteBudget    = 679936
+	lowDataMeasuredBytes = 684597
+	lowDataByteBudget    = 787456
 )
 
 type p427Rule struct {

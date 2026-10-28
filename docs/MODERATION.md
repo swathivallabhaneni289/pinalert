@@ -287,6 +287,17 @@ figures now are:
 - budget: 679936 bytes, the new measured total plus 15 percent, rounded up to the next 1024
   bytes.
 
+Re-measured on 2026-10-28 by Phase 3.3 plan 21. The Low data view now links `changes-ask.js` and
+renders the changes pop-up for an account whose Changes switch is off. Phase 3.3 plans 17 and 20
+had already grown `notify.js`, `votes.js` and `report-form.js` since the figures above. The
+figures now are:
+
+- measured total: 684597 bytes raw, made of 11838 bytes of HTML, 229635 bytes of stylesheets,
+  429339 bytes of scripts and 13785 bytes of icons;
+- gzip level 5 for the same files: 204179 bytes, informational only;
+- budget: 787456 bytes, the new measured total plus 15 percent, rounded up to the next 1024
+  bytes. Nothing was dropped or split to meet it.
+
 Raw bytes are tested although the first design described a compressed budget (orchestrator
 decision 2). The router now compresses text, but the transfer size depends on the client, so raw
 bytes are the conservative bound.
