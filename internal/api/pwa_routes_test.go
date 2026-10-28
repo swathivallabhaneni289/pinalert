@@ -123,6 +123,11 @@ func TestSkipSessionFor(t *testing.T) {
 //
 // Amended 2026-10-29 by plan 05-10 (D-04, D-05): the prefix list is now asserted
 // to be exactly ["/demo"]; the POST set is still asserted empty until plan 05-12.
+//
+// Amended 2026-10-29 by plan 05-12 (D-15): the POST set is no longer asserted
+// empty. It is asserted to be exactly ["/internal/official/refresh"], and that
+// path must be a registered route of the router. The prefixes stay exactly
+// ["/demo"] and every GET assertion is unchanged.
 func TestPWASkipSetMatchesRoutes(t *testing.T) {
 	mgr, err := session.NewManager([]byte("pwa-routes-test-secret-not-for-production"), false)
 	if err != nil {
@@ -163,8 +168,18 @@ func TestPWASkipSetMatchesRoutes(t *testing.T) {
 			t.Errorf("%s is a globe tile path but is not a registered GET route", p)
 		}
 	}
-	if len(skip.post) != 0 {
-		t.Errorf("sessionSkipSet has POST paths %v, want none until plan 05-12", skip.post)
+	// Amended 2026-10-29 by plan 05-12 (D-15): it was asserted empty; it is now
+	// exactly the one refresh endpoint, which is also a registered route.
+	if len(skip.post) != 1 || !skip.post["/internal/official/refresh"] {
+		t.Errorf("sessionSkipSet has POST paths %v, want exactly [/internal/official/refresh]", skip.post)
+	}
+	postRoutes := map[string]bool{}
+	_ = chi.Walk(router, func(_, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		postRoutes[route] = true
+		return nil
+	})
+	if !postRoutes["/internal/official/refresh"] {
+		t.Errorf("/internal/official/refresh is in the POST skip set but is not a registered route")
 	}
 	// Amended 2026-10-29 by plan 05-10 (D-04, D-05): the prefix list was asserted
 	// empty; it is now exactly the Demo prefix. The POST set assertion above is
