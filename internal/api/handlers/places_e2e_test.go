@@ -28,10 +28,18 @@ func getPlacePage(t *testing.T, client *http.Client, baseURL, path string) (*htt
 }
 
 // TestAlertsPageRenders proves D-22 and T-34-17: /alerts renders for a verified
-// account with the not connected heading and body, no claim that nothing is in
-// force, Official alerts as the one current place, no notice strip, and the
-// stylesheet order that ends with phone.css. A visitor without a session never
-// gets the page (T-34-19).
+// account with the filled shell (the status line, the blocks the script fills,
+// the attribution and the noscript line), no claim that nothing is in force,
+// Official alerts as the one current place, no notice strip, and the stylesheet
+// order that ends with phone.css. A visitor without a session never gets the
+// page (T-34-19).
+//
+// Amended 2026-10-29 by plan 05-09 (ALERT-04): the page is filled; the honesty
+// sentences live in official-alerts.js and are pinned by
+// web/official_alerts_test.mjs against every state. The two "not connected"
+// wants are replaced by the shell, the noscript line and the attribution line;
+// the title, the headings, the no-store header, the claim bans, the stylesheet
+// order and the T-34-19 redirect are kept.
 func TestAlertsPageRenders(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
 	client := newVerifiedClient(t, srv, mailer, "places-alerts@example.com")
@@ -48,8 +56,11 @@ func TestAlertsPageRenders(t *testing.T) {
 	}
 	for _, want := range []string{
 		"<title>Pinalert: Official alerts</title>",
-		"Official alerts are not connected yet",
-		"Pinalert does not show government warnings yet. Check your state disaster management authority for official warnings.",
+		"Turn on JavaScript to see official alerts, or check your state disaster management authority.",
+		"Alerts are copied from NDMA SACHET. Pinalert is not an official channel. Hazard events come from the Global Disaster Alert and Coordination System, GDACS.",
+		`id="official-status"`,
+		`id="official-list"`,
+		`/static/js/official-alerts.js`,
 		`<h1 class="place-head">Official alerts</h1>`,
 		`<h1 class="app-topbar__title">Official alerts</h1>`,
 	} {
@@ -82,8 +93,12 @@ func TestAlertsPageRenders(t *testing.T) {
 
 	phone := strings.LastIndex(body, "/static/css/phone.css")
 	places := strings.Index(body, "/static/css/places.css")
+	official := strings.Index(body, "/static/css/official.css")
 	if places == -1 || phone < places || strings.Count(body, "/static/css/phone.css") != 1 {
 		t.Errorf("/alerts must link places.css and then phone.css once, last")
+	}
+	if official == -1 || official < places || official > phone {
+		t.Errorf("/alerts must link official.css after places.css and before phone.css")
 	}
 
 	anon := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
