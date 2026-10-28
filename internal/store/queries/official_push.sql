@@ -263,3 +263,57 @@ SELECT EXISTS (
 -- like the updates and the Phase 3.3 push copy.
 DELETE FROM official_push_outbox
 WHERE account_id = sqlc.arg(account_id)::bigint;
+
+-- name: OfficialAlertSeries :many
+-- The alert series of one stored alert (plan 05-16, amended 2026-10-29): the
+-- alert itself plus every stored alert it names through references_text, and
+-- every one those name in turn, followed back step by step. SACHET sends an
+-- Update under a new guid that names the earlier message, and the refresher
+-- stores it as a new row, so the series is the link between those rows.
+-- references_text is a space separated list of full CAP identifiers, matched to
+-- cap_identifier. The walk uses UNION and stops at depth 20, so a references
+-- cycle ends; the final select collapses the walk to one row per alert. A row
+-- reports names_member when it names another member of the series: the root is
+-- the member that names none. Rows come back oldest first.
+WITH RECURSIVE walk(id, depth) AS (
+    SELECT a.id, 0
+    FROM official_alerts a
+    WHERE a.id = sqlc.arg(alert_id)::bigint
+    UNION
+    SELECT p.id, w.depth + 1
+    FROM walk w
+    JOIN official_alerts n ON n.id = w.id
+    JOIN official_alerts p
+      ON p.cap_identifier = ANY(string_to_array(n.references_text, ' '))
+     AND p.id <> n.id
+    WHERE w.depth < 20
+),
+members AS (
+    SELECT DISTINCT id FROM walk
+)
+SELECT a.id,
+       a.guid,
+       a.sent_at,
+       EXISTS (
+           SELECT 1
+           FROM official_alerts b
+           WHERE b.id IN (SELECT id FROM members)
+             AND b.id <> a.id
+             AND b.cap_identifier = ANY(string_to_array(a.references_text, ' '))
+       )::boolean AS names_member
+FROM official_alerts a
+WHERE a.id IN (SELECT id FROM members)
+ORDER BY a.sent_at, a.id;
+
+-- name: OfficialPushSentForSeries :one
+-- Serves plan 05-16's Apple rule per alert series (amended 2026-10-29): whether
+-- any official push about any alert of the series was already sent to this
+-- account. Only sent rows count, so a skipped or failed row never makes a later
+-- push look like a repeat. OfficialPushSentForAlert stays as it is.
+SELECT EXISTS (
+    SELECT 1
+    FROM official_push_outbox
+    WHERE account_id = sqlc.arg(account_id)::bigint
+      AND alert_id = ANY(sqlc.arg(alert_ids)::bigint[])
+      AND state = 'sent'
+)::boolean;

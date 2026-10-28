@@ -361,6 +361,80 @@ func (q *Queries) OfficialAlertForPush(ctx context.Context, id int64) (OfficialA
 	return i, err
 }
 
+const officialAlertSeries = `-- name: OfficialAlertSeries :many
+WITH RECURSIVE walk(id, depth) AS (
+    SELECT a.id, 0
+    FROM official_alerts a
+    WHERE a.id = $1::bigint
+    UNION
+    SELECT p.id, w.depth + 1
+    FROM walk w
+    JOIN official_alerts n ON n.id = w.id
+    JOIN official_alerts p
+      ON p.cap_identifier = ANY(string_to_array(n.references_text, ' '))
+     AND p.id <> n.id
+    WHERE w.depth < 20
+),
+members AS (
+    SELECT DISTINCT id FROM walk
+)
+SELECT a.id,
+       a.guid,
+       a.sent_at,
+       EXISTS (
+           SELECT 1
+           FROM official_alerts b
+           WHERE b.id IN (SELECT id FROM members)
+             AND b.id <> a.id
+             AND b.cap_identifier = ANY(string_to_array(a.references_text, ' '))
+       )::boolean AS names_member
+FROM official_alerts a
+WHERE a.id IN (SELECT id FROM members)
+ORDER BY a.sent_at, a.id
+`
+
+type OfficialAlertSeriesRow struct {
+	ID          int64
+	Guid        string
+	SentAt      time.Time
+	NamesMember bool
+}
+
+// The alert series of one stored alert (plan 05-16, amended 2026-10-29): the
+// alert itself plus every stored alert it names through references_text, and
+// every one those name in turn, followed back step by step. SACHET sends an
+// Update under a new guid that names the earlier message, and the refresher
+// stores it as a new row, so the series is the link between those rows.
+// references_text is a space separated list of full CAP identifiers, matched to
+// cap_identifier. The walk uses UNION and stops at depth 20, so a references
+// cycle ends; the final select collapses the walk to one row per alert. A row
+// reports names_member when it names another member of the series: the root is
+// the member that names none. Rows come back oldest first.
+func (q *Queries) OfficialAlertSeries(ctx context.Context, alertID int64) ([]OfficialAlertSeriesRow, error) {
+	rows, err := q.db.Query(ctx, officialAlertSeries, alertID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OfficialAlertSeriesRow
+	for rows.Next() {
+		var i OfficialAlertSeriesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Guid,
+			&i.SentAt,
+			&i.NamesMember,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const officialAlertWithdrawnByStored = `-- name: OfficialAlertWithdrawnByStored :one
 SELECT EXISTS (
     SELECT 1
@@ -513,6 +587,32 @@ type OfficialPushSentForAlertParams struct {
 // makes a later push look like a repeat.
 func (q *Queries) OfficialPushSentForAlert(ctx context.Context, arg OfficialPushSentForAlertParams) (bool, error) {
 	row := q.db.QueryRow(ctx, officialPushSentForAlert, arg.AccountID, arg.AlertID)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const officialPushSentForSeries = `-- name: OfficialPushSentForSeries :one
+SELECT EXISTS (
+    SELECT 1
+    FROM official_push_outbox
+    WHERE account_id = $1::bigint
+      AND alert_id = ANY($2::bigint[])
+      AND state = 'sent'
+)::boolean
+`
+
+type OfficialPushSentForSeriesParams struct {
+	AccountID int64
+	AlertIds  []int64
+}
+
+// Serves plan 05-16's Apple rule per alert series (amended 2026-10-29): whether
+// any official push about any alert of the series was already sent to this
+// account. Only sent rows count, so a skipped or failed row never makes a later
+// push look like a repeat. OfficialPushSentForAlert stays as it is.
+func (q *Queries) OfficialPushSentForSeries(ctx context.Context, arg OfficialPushSentForSeriesParams) (bool, error) {
+	row := q.db.QueryRow(ctx, officialPushSentForSeries, arg.AccountID, arg.AlertIds)
 	var column_1 bool
 	err := row.Scan(&column_1)
 	return column_1, err

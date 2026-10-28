@@ -14,7 +14,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"net/url"
 	"sort"
@@ -1039,5 +1038,3 @@ func TestOfficialWorkerConstants(t *testing.T) {
 
 // compile time check that the fake satisfies the interface the worker takes.
 var _ OfficialPushWorkerQuerier = (*owQuerier)(nil)
-
-var _ = fmt.Sprintf

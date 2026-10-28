@@ -747,6 +747,14 @@ func (w *PushWorker) buildMessage(kind PushKind, reportID int64, text PushText, 
 // write happens inside a goroutine. A send error is reduced to a class word at
 // once and the error value is dropped (W3).
 func (w *PushWorker) fanOut(ctx context.Context, devices []pushDevice, msg push.Message) []pushDeviceResult {
+	return fanOutSend(ctx, w.sender, devices, msg)
+}
+
+// fanOutSend is the body of PushWorker.fanOut as a function of the sender, so the
+// official lane (pushworker_official.go) sends with exactly the same bounds and
+// the same reduction of an error to a class word (plan 05-16, a move with no
+// change of behaviour).
+func fanOutSend(ctx context.Context, sender push.Sender, devices []pushDevice, msg push.Message) []pushDeviceResult {
 	// A shutdown signal must not abort a request already on the wire: the push
 	// service may have accepted it, and the row would be sent again after the
 	// restart. The send is still bounded by PushSendTimeout, which the shutdown
@@ -764,7 +772,7 @@ func (w *PushWorker) fanOut(ctx context.Context, devices []pushDevice, msg push.
 			defer wg.Done()
 			defer func() { <-sem }()
 			res := pushDeviceResult{dev: d}
-			answer, err := w.sender.Send(sendCtx, d.sub, msg)
+			answer, err := sender.Send(sendCtx, d.sub, msg)
 			if err != nil {
 				res.class = sendErrorClass(err)
 			} else {
@@ -837,19 +845,30 @@ func judge(r pushDeviceResult) (v answerVerdict, bump, drop bool) {
 	return verdictPermanent, false, false
 }
 
-// settle handles every device's answer, then marks the row. Database errors are
-// collected, each tagged with the row id.
-func (w *PushWorker) settle(ctx context.Context, run *pushRowRun, results []pushDeviceResult, unconfirmed bool) []error {
-	var errs []error
-	accepted, retry := false, false
-	var retryAfter time.Duration
+// deviceQuerier is the part of the queries the per device answer handling uses.
+// Both workers (3.3's and the official lane) satisfy it, so a device is judged,
+// counted and deleted by one set of rules (plan 05-16).
+type deviceQuerier interface {
+	MarkPushSubscriptionOK(ctx context.Context, arg sqlcgen.MarkPushSubscriptionOKParams) error
+	DeletePushSubscriptionByID(ctx context.Context, id int64) error
+	BumpPushSubscriptionFailure(ctx context.Context, id int64) (sqlcgen.BumpPushSubscriptionFailureRow, error)
+}
+
+// handleDeviceAnswers applies every device's answer: a 2xx marks the device fine,
+// a gone subscription deletes it, an answer that points at the device counts one
+// failure, and an answer that says nothing about the device changes nothing. It
+// returns whether any device accepted, whether any answer asks for a retry and the
+// longest Retry-After. The errors are database errors, untagged: the caller tags
+// them with its row id. logf receives a line without the row prefix; the caller
+// adds its own prefix and the row id, so the line never holds an endpoint (W3).
+func handleDeviceAnswers(ctx context.Context, q deviceQuerier, now time.Time, results []pushDeviceResult, logf func(format string, args ...any)) (accepted, retry bool, retryAfter time.Duration, errs []error) {
 	for _, res := range results {
 		verdict, bump, drop := judge(res)
 		switch verdict {
 		case verdictAccepted:
 			accepted = true
-			if err := w.q.MarkPushSubscriptionOK(ctx, sqlcgen.MarkPushSubscriptionOKParams{Now: run.now, ID: res.dev.id}); err != nil {
-				errs = append(errs, w.rowErr(run.claim.ID, err))
+			if err := q.MarkPushSubscriptionOK(ctx, sqlcgen.MarkPushSubscriptionOKParams{Now: now, ID: res.dev.id}); err != nil {
+				errs = append(errs, err)
 			}
 			continue
 		case verdictRetry:
@@ -862,17 +881,47 @@ func (w *PushWorker) settle(ctx context.Context, run *pushRowRun, results []push
 		if word == "" {
 			word = pushClassHTTP
 		}
-		log.Printf("push worker: row %d device %d host %s status %d class %s", run.claim.ID, res.dev.id, res.dev.host, res.status, word)
+		logf("device %d host %s status %d class %s", res.dev.id, res.dev.host, res.status, word)
 		if drop {
-			if err := w.q.DeletePushSubscriptionByID(ctx, res.dev.id); err != nil {
-				errs = append(errs, w.rowErr(run.claim.ID, err))
-			}
-		}
-		if bump {
-			if err := w.countFailure(ctx, run, res.dev.id, res.dev.host); err != nil {
+			if err := q.DeletePushSubscriptionByID(ctx, res.dev.id); err != nil {
 				errs = append(errs, err)
 			}
 		}
+		if bump {
+			if err := countDeviceFailure(ctx, q, now, res.dev.id, res.dev.host, logf); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+	return accepted, retry, retryAfter, errs
+}
+
+// countDeviceFailure adds one to a device's failure count and deletes the device
+// only when the count reached the limit and its last success is missing or older
+// than the stale window (W6). host may be empty when the endpoint did not pass the
+// policy.
+func countDeviceFailure(ctx context.Context, q deviceQuerier, now time.Time, deviceID int64, host string, logf func(format string, args ...any)) error {
+	r, err := q.BumpPushSubscriptionFailure(ctx, deviceID)
+	if err != nil {
+		return err
+	}
+	stale := !r.LastOkAt.Valid || r.LastOkAt.Time.Before(now.Add(-PushDeviceStaleAfter))
+	if int(r.Failures) >= PushDeviceFailureLimit && stale {
+		if err := q.DeletePushSubscriptionByID(ctx, deviceID); err != nil {
+			return err
+		}
+		logf("device %d host %s: removed after %d failures", deviceID, host, r.Failures)
+	}
+	return nil
+}
+
+// settle handles every device's answer, then marks the row. Database errors are
+// collected, each tagged with the row id.
+func (w *PushWorker) settle(ctx context.Context, run *pushRowRun, results []pushDeviceResult, unconfirmed bool) []error {
+	var errs []error
+	accepted, retry, retryAfter, derrs := handleDeviceAnswers(ctx, w.q, run.now, results, w.rowLogf(run.claim.ID))
+	for _, err := range derrs {
+		errs = append(errs, w.rowErr(run.claim.ID, err))
 	}
 
 	switch {
@@ -915,18 +964,18 @@ func (w *PushWorker) settle(ctx context.Context, run *pushRowRun, results []push
 // than the stale window (W6). host may be empty when the endpoint did not pass
 // the policy.
 func (w *PushWorker) countFailure(ctx context.Context, run *pushRowRun, deviceID int64, host string) error {
-	r, err := w.q.BumpPushSubscriptionFailure(ctx, deviceID)
-	if err != nil {
+	if err := countDeviceFailure(ctx, w.q, run.now, deviceID, host, w.rowLogf(run.claim.ID)); err != nil {
 		return w.rowErr(run.claim.ID, err)
 	}
-	stale := !r.LastOkAt.Valid || r.LastOkAt.Time.Before(run.now.Add(-PushDeviceStaleAfter))
-	if int(r.Failures) >= PushDeviceFailureLimit && stale {
-		if err := w.q.DeletePushSubscriptionByID(ctx, deviceID); err != nil {
-			return w.rowErr(run.claim.ID, err)
-		}
-		log.Printf("push worker: row %d device %d host %s: removed after %d failures", run.claim.ID, deviceID, host, r.Failures)
-	}
 	return nil
+}
+
+// rowLogf is the log function the shared answer handling writes through: each
+// line starts with the worker's prefix and the row id.
+func (w *PushWorker) rowLogf(rowID int64) func(format string, args ...any) {
+	return func(format string, args ...any) {
+		log.Printf("push worker: row %d "+format, append([]any{rowID}, args...)...)
+	}
 }
 
 // skip marks the row skipped with a reason from the closed list.
