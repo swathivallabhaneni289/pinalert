@@ -657,6 +657,31 @@ definitions:
         items:
           $ref: '#/definitions/handlers.OfficialGroupResponse'
         type: array
+      hazards_age_seconds:
+        description: |-
+          HazardsAgeSeconds is the time since the last good GDACS check. Null when it
+          was never checked.
+        example: 600
+        type: integer
+        x-nullable: true
+      hazards_last_success_at:
+        description: |-
+          HazardsLastSuccessAt is the time of the last good GDACS check. Null when
+          never checked.
+        example: "2026-10-29T06:20:00Z"
+        type: string
+        x-nullable: true
+      hazards_state:
+        description: |-
+          HazardsState is the same fresh, stale or unavailable word for the GDACS
+          feed, which is checked on its own schedule (plan 05-21). GDACS rows are
+          listed only while it is fresh.
+        enum:
+        - fresh
+        - stale
+        - unavailable
+        example: fresh
+        type: string
       last_success_at:
         description: LastSuccessAt is the time of the last good check. Null when never
           checked.
@@ -749,6 +774,86 @@ definitions:
           $ref: '#/definitions/handlers.OfficialRowResponse'
         type: array
     type: object
+  handlers.OfficialPinResponse:
+    properties:
+      alert_level:
+        description: |-
+          AlertLevel is red, orange or green. LevelWord is the same as Red, Orange or
+          Green.
+        enum:
+        - red
+        - orange
+        - green
+        example: red
+        type: string
+      event_type:
+        description: 'EventType is GDACS''s two letter type: EQ, TC, FL, VO or WF.'
+        example: TC
+        type: string
+      from_date:
+        description: |-
+          FromDate and ToDate are the event's start and end by GDACS. Null when GDACS
+          sent none.
+        example: "2026-10-26T00:00:00Z"
+        type: string
+        x-nullable: true
+      hazard_word:
+        example: Cyclone
+        type: string
+      id:
+        example: 7
+        type: integer
+      lat:
+        example: 16.4
+        type: number
+      level_word:
+        example: Red
+        type: string
+      lon:
+        example: 81.8
+        type: number
+      name:
+        example: Tropical Cyclone ARNAB-26
+        type: string
+      report_url:
+        description: |-
+          ReportURL is a GDACS page link, and is empty unless it starts with
+          https://www.gdacs.org/.
+        example: https://www.gdacs.org/report.aspx?eventid=1001345&episodeid=10&eventtype=TC
+        type: string
+      severity_text:
+        example: Tropical Storm (maximum wind speed of 222 km/h)
+        type: string
+      to_date:
+        example: "2026-10-28T06:00:00Z"
+        type: string
+        x-nullable: true
+    type: object
+  handlers.OfficialPinsResponse:
+    properties:
+      age_seconds:
+        description: |-
+          AgeSeconds is the time since the last good GDACS check. Null when never
+          checked.
+        example: 600
+        type: integer
+        x-nullable: true
+      pins:
+        description: Pins are the current hazards, never nil.
+        items:
+          $ref: '#/definitions/handlers.OfficialPinResponse'
+        type: array
+      state:
+        description: |-
+          State is fresh (last good GDACS check within 30 minutes), stale (up to 6
+          hours) or unavailable (never checked, or over 6 hours).
+        enum:
+        - fresh
+        - stale
+        - unavailable
+        example: fresh
+        type: string
+    type: object
   handlers.OfficialRowResponse:
     properties:
       area_text:
@@ -791,12 +896,16 @@ definitions:
         example: IMD Chennai
         type: string
       level:
+        description: |-
+          Level drives the chip colour. A GDACS Red is extreme, Orange is severe and
+          Green is neutral (plan 05-21).
         enum:
         - extreme
         - severe
         - moderate
         - minor
         - unknown
+        - neutral
         example: severe
         type: string
       level_word:
@@ -1990,6 +2099,32 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       summary: Official alerts for the reader's area
+      tags:
+      - official
+  /official/pins:
+    get:
+      description: |-
+        Returns the current GDACS (Global Disaster Alert and Coordination System) hazard events for the map layer: cyclones, floods, earthquakes, volcanoes and wildfires, each with its hazard word, its Red, Orange or Green level word, its point, its dates and GDACS's severity text.
+        A pin is an automatic estimate from GDACS, not an official warning and not a Pinalert report: it has no votes and no reliability tag, and it is never counted as a report. Follow your state disaster management authority.
+        Current means GDACS marks the event current and it ended no more than 2 days ago. state is the GDACS feed's own freshness (fresh within 30 minutes of the last good check, stale up to 6 hours, unavailable after that or never). Unless the state is fresh, pins is empty: an old hazard is never drawn as current.
+        report_url is a GDACS page link and is empty unless it starts with https://www.gdacs.org/. All text is GDACS text and must be drawn with textContent only.
+        A read also starts a background refresh of the feeds that are due; it never delays the answer.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.OfficialPinsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: GDACS hazard pins for the map
       tags:
       - official
   /reports:

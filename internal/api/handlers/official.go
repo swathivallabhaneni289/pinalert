@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"pinalert/internal/account"
@@ -54,6 +55,16 @@ type OfficialAlertsResponse struct {
 	// Banner is the Nearby banner pick, or null. Only for a fresh answer and
 	// the reader's own area.
 	Banner *OfficialBannerResponse `json:"banner" extensions:"x-nullable"`
+	// HazardsState is the same fresh, stale or unavailable word for the GDACS
+	// feed, which is checked on its own schedule (plan 05-21). GDACS rows are
+	// listed only while it is fresh.
+	HazardsState string `json:"hazards_state" enums:"fresh,stale,unavailable" example:"fresh"`
+	// HazardsAgeSeconds is the time since the last good GDACS check. Null when it
+	// was never checked.
+	HazardsAgeSeconds *int64 `json:"hazards_age_seconds" extensions:"x-nullable" example:"600"`
+	// HazardsLastSuccessAt is the time of the last good GDACS check. Null when
+	// never checked.
+	HazardsLastSuccessAt *time.Time `json:"hazards_last_success_at" extensions:"x-nullable" example:"2026-10-29T06:20:00Z"`
 }
 
 // OfficialGroupResponse is one labelled section of rows.
@@ -66,9 +77,11 @@ type OfficialGroupResponse struct {
 // OfficialRowResponse is one alert, or a run of near identical alerts shown as
 // the newest with grouped_count above 1.
 type OfficialRowResponse struct {
-	ID        int64  `json:"id" example:"41"`
-	Source    string `json:"source" enums:"sachet,gdacs" example:"sachet"`
-	Level     string `json:"level" enums:"extreme,severe,moderate,minor,unknown" example:"severe"`
+	ID     int64  `json:"id" example:"41"`
+	Source string `json:"source" enums:"sachet,gdacs" example:"sachet"`
+	// Level drives the chip colour. A GDACS Red is extreme, Orange is severe and
+	// Green is neutral (plan 05-21).
+	Level     string `json:"level" enums:"extreme,severe,moderate,minor,unknown,neutral" example:"severe"`
 	LevelWord string `json:"level_word" example:"Severe"`
 	// Badge is "Official" for NDMA SACHET, "GDACS" for GDACS, and empty for a
 	// Demo sample.
@@ -207,16 +220,26 @@ func officialErrorClass(err error) string {
 // Slices are never nil, so the JSON holds [] and not null.
 func officialViewToResponse(v official.View) OfficialAlertsResponse {
 	out := OfficialAlertsResponse{
-		State:         string(v.State),
-		AgeSeconds:    v.AgeSeconds,
-		AreaKnown:     v.AreaKnown,
-		Groups:        make([]OfficialGroupResponse, 0, len(v.Groups)),
-		Count:         v.Count,
-		DistrictsLine: v.DistrictsLine,
+		State:             string(v.State),
+		AgeSeconds:        v.AgeSeconds,
+		AreaKnown:         v.AreaKnown,
+		Groups:            make([]OfficialGroupResponse, 0, len(v.Groups)),
+		Count:             v.Count,
+		DistrictsLine:     v.DistrictsLine,
+		HazardsState:      string(v.HazardState),
+		HazardsAgeSeconds: v.HazardAgeSeconds,
+	}
+	if out.HazardsState == "" {
+		// A view built by hand with no GDACS status says the honest thing: not known.
+		out.HazardsState = string(official.StateUnavailable)
 	}
 	if v.LastSuccessAt != nil {
 		t := v.LastSuccessAt.UTC()
 		out.LastSuccessAt = &t
+	}
+	if v.HazardLastSuccessAt != nil {
+		t := v.HazardLastSuccessAt.UTC()
+		out.HazardsLastSuccessAt = &t
 	}
 	for _, g := range v.Groups {
 		gr := OfficialGroupResponse{Kind: g.Kind, Label: g.Label, Rows: make([]OfficialRowResponse, 0, len(g.Rows))}
@@ -260,6 +283,138 @@ func officialViewToResponse(v official.View) OfficialAlertsResponse {
 			AlertID:     b.AlertID,
 			Demo:        b.Demo,
 		}
+	}
+	return out
+}
+
+// OfficialPinsReader is what GET /api/official/pins needs of the official alerts
+// service. *official.Service satisfies it; the router finds it on Deps.Official
+// by a type assertion so the OfficialReader interface and every stub of it stay
+// as they were.
+type OfficialPinsReader interface {
+	// Pins answers which GDACS hazards the map may draw, with the GDACS feed's
+	// state. The list is empty unless the state is fresh.
+	Pins(ctx context.Context) (official.PinsView, error)
+	// Kick starts a non blocking refresh of the feeds that are due.
+	Kick()
+}
+
+// OfficialPinsResponse is the answer of GET /api/official/pins. pins is empty
+// unless state is fresh, so an old hazard is never drawn as current.
+type OfficialPinsResponse struct {
+	// State is fresh (last good GDACS check within 30 minutes), stale (up to 6
+	// hours) or unavailable (never checked, or over 6 hours).
+	State string `json:"state" enums:"fresh,stale,unavailable" example:"fresh"`
+	// AgeSeconds is the time since the last good GDACS check. Null when never
+	// checked.
+	AgeSeconds *int64 `json:"age_seconds" extensions:"x-nullable" example:"600"`
+	// Pins are the current hazards, never nil.
+	Pins []OfficialPinResponse `json:"pins"`
+}
+
+// OfficialPinResponse is one GDACS hazard for the map. Every text field is GDACS
+// text and must be drawn with textContent only. A pin is an automatic estimate:
+// it has no votes, no count and no reliability tag.
+type OfficialPinResponse struct {
+	ID int64 `json:"id" example:"7"`
+	// EventType is GDACS's two letter type: EQ, TC, FL, VO or WF.
+	EventType  string `json:"event_type" example:"TC"`
+	HazardWord string `json:"hazard_word" example:"Cyclone"`
+	Name       string `json:"name" example:"Tropical Cyclone ARNAB-26"`
+	// AlertLevel is red, orange or green. LevelWord is the same as Red, Orange or
+	// Green.
+	AlertLevel string  `json:"alert_level" enums:"red,orange,green" example:"red"`
+	LevelWord  string  `json:"level_word" example:"Red"`
+	Lat        float64 `json:"lat" example:"16.4"`
+	Lon        float64 `json:"lon" example:"81.8"`
+	// FromDate and ToDate are the event's start and end by GDACS. Null when GDACS
+	// sent none.
+	FromDate     *time.Time `json:"from_date" extensions:"x-nullable" example:"2026-10-26T00:00:00Z"`
+	ToDate       *time.Time `json:"to_date" extensions:"x-nullable" example:"2026-10-28T06:00:00Z"`
+	SeverityText string     `json:"severity_text" example:"Tropical Storm (maximum wind speed of 222 km/h)"`
+	// ReportURL is a GDACS page link, and is empty unless it starts with
+	// https://www.gdacs.org/.
+	ReportURL string `json:"report_url" example:"https://www.gdacs.org/report.aspx?eventid=1001345&episodeid=10&eventtype=TC"`
+}
+
+// OfficialPins handles GET /api/official/pins.
+//
+// @Summary GDACS hazard pins for the map
+// @Description Returns the current GDACS (Global Disaster Alert and Coordination System) hazard events for the map layer: cyclones, floods, earthquakes, volcanoes and wildfires, each with its hazard word, its Red, Orange or Green level word, its point, its dates and GDACS's severity text.
+// @Description A pin is an automatic estimate from GDACS, not an official warning and not a Pinalert report: it has no votes and no reliability tag, and it is never counted as a report. Follow your state disaster management authority.
+// @Description Current means GDACS marks the event current and it ended no more than 2 days ago. state is the GDACS feed's own freshness (fresh within 30 minutes of the last good check, stale up to 6 hours, unavailable after that or never). Unless the state is fresh, pins is empty: an old hazard is never drawn as current.
+// @Description report_url is a GDACS page link and is empty unless it starts with https://www.gdacs.org/. All text is GDACS text and must be drawn with textContent only.
+// @Description A read also starts a background refresh of the feeds that are due; it never delays the answer.
+// @Tags official
+// @Produce json
+// @Success 200 {object} OfficialPinsResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
+// @Router /official/pins [get]
+func OfficialPins(svc OfficialPinsReader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// A request with no verified account is a routing bug (a route mounted
+		// outside the gated group), the same shape OfficialAlerts uses.
+		if _, ok := account.FromContext(r.Context()); !ok {
+			log.Printf("handlers: OfficialPins: no verified account in request context: the gate should have made this impossible")
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if svc == nil {
+			log.Printf("handlers: OfficialPins: no official alerts service")
+			writeFieldError(w, http.StatusServiceUnavailable, "official", officialUnavailableMessage)
+			return
+		}
+		view, err := svc.Pins(r.Context())
+		if err != nil {
+			log.Printf("handlers: OfficialPins: read failed (%s)", officialErrorClass(err))
+			writeFieldError(w, http.StatusServiceUnavailable, "official", officialUnavailableMessage)
+			return
+		}
+		svc.Kick()
+
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, http.StatusOK, officialPinsToResponse(view))
+	}
+}
+
+// officialPinsToResponse is the one conversion from the pins view to the wire
+// shape. The list is never nil, and is empty unless the state is fresh whatever
+// the view holds, so a service that forgot the rule still cannot draw an old pin.
+func officialPinsToResponse(v official.PinsView) OfficialPinsResponse {
+	out := OfficialPinsResponse{
+		State:      string(v.State),
+		AgeSeconds: v.AgeSeconds,
+		Pins:       make([]OfficialPinResponse, 0, len(v.Pins)),
+	}
+	if out.State == "" {
+		out.State = string(official.StateUnavailable)
+	}
+	if v.State != official.StateFresh {
+		return out
+	}
+	for _, h := range v.Pins {
+		pin := OfficialPinResponse{
+			ID:           h.ID,
+			EventType:    h.EventType,
+			HazardWord:   official.HazardWord(h.EventType),
+			Name:         h.Name,
+			AlertLevel:   strings.ToLower(official.GdacsLevelWord(h.AlertLevel)),
+			LevelWord:    official.GdacsLevelWord(h.AlertLevel),
+			Lat:          h.Lat,
+			Lon:          h.Lon,
+			SeverityText: h.SeverityText,
+			ReportURL:    official.SafeGdacsURL(h.ReportURL),
+		}
+		if !h.FromDate.IsZero() {
+			t := h.FromDate.UTC()
+			pin.FromDate = &t
+		}
+		if !h.ToDate.IsZero() {
+			t := h.ToDate.UTC()
+			pin.ToDate = &t
+		}
+		out.Pins = append(out.Pins, pin)
 	}
 	return out
 }

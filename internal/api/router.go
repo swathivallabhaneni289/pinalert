@@ -772,6 +772,12 @@ func NewRouter(deps Deps) *chi.Mux {
 		// refresh inside the handler; there is no rate gate here because the
 		// refresher's own gap and single flight bound what reaches NDMA.
 		r.Get("/api/official/alerts", handlers.OfficialAlerts(deps.Official))
+		// Plan 05-21: the GDACS hazard pins for the map, gated like the alerts
+		// above and so not in the session skip set. The pins reader is found on
+		// the same Deps.Official value, so Deps and main.go are unchanged; a value
+		// that does not offer it leaves the handler a nil reader and a plain 503.
+		pinsReader, _ := deps.Official.(handlers.OfficialPinsReader)
+		r.Get("/api/official/pins", handlers.OfficialPins(pinsReader))
 		r.Get("/settings", handlers.SettingsPage(deps.Template, accounts, mutes, page))
 		// Phase 3.4 (D-27, plan 10): the first-time flow. It sits in this gated
 		// group because it belongs to the signed in account, and the onboarding
