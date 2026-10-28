@@ -9,7 +9,9 @@
 //     'unsupported', 'needs-install', 'blocked', 'on' and 'ready'.
 //   - Turns this device on (enable) and off (disable), in the order browsers
 //     require, and quietly re-registers a subscription the server lost
-//     (reconcile).
+//     (reconcile). Once at page load it does that by itself, under the same
+//     guards and never prompting, so a sign in to the same account after Log
+//     out brings the device back (03.3-UAT test 7, owner 2026-10-28).
 //
 // Every 'on' is confirmed by the server for this account and this endpoint. The
 // local subscription alone never makes a device 'on', so a browser that someone
@@ -26,8 +28,9 @@
 //
 // What it never does:
 //   - It sends no position, writes no text to the page, builds no markup and
-//     adds no listener on the window or the document. It reacts only to calls
-//     from welcome.js and settings-alerts.js, which draw every word on screen.
+//     adds no listener on the window or the document. Apart from that one load
+//     time check it reacts only to calls from the page scripts, which draw
+//     every word on screen.
 //   - It does not touch the browser's own install prompt. Android and laptop
 //     browsers keep their own install control; there is no custom Install
 //     button (decision 5, UI-SPEC 4c).
@@ -81,6 +84,15 @@
     } catch (err) {
       return false;
     }
+  }
+
+  // isMacDockApp: an installed app on a Mac (Safari Add to Dock, or a browser's
+  // own install). The Mac's browser already holds this Mac's subscription, so the
+  // alerts pop-ups never ask here; a second one would notify twice (07.1 D-18).
+  function isMacDockApp() {
+    var agent = typeof navigator !== 'undefined' && navigator && typeof navigator.userAgent === 'string' ?
+      navigator.userAgent : '';
+    return isInstalled() && !isAppleMobile() && /Macintosh/.test(agent);
   }
 
   // baseState is what the browser alone can say, with no request:
@@ -465,7 +477,7 @@
   // reconcile resolves to the device state, and first re-registers the browser's
   // subscription when the server lost it and this account had turned the device
   // on here. It never asks the browser for anything.
-  function reconcile(key) {
+  function runReconcile(key) {
     return inspect(key).then(function (found) {
       if (found.state !== 'ready' || !found.sub || found.known !== true || !intentIsSet()) {
         return found.state;
@@ -482,7 +494,42 @@
     });
   }
 
+  // The page load check runs once; reconcile with the same key during it shares
+  // its answer, so Settings sends no second status request.
+  var pending = null;
+  var pendingKey = '';
+
+  function reconcile(key) {
+    return pending !== null && pendingKey === key ? pending : runReconcile(key);
+  }
+
+  // reconnectAtLoad: cheap guards first, so a page of someone who never turned
+  // the device on sends nothing. runReconcile keeps the rest and never prompts.
+  function reconnectAtLoad() {
+    try {
+      var node = typeof document !== 'undefined' && document && typeof document.querySelector === 'function' ?
+        document.querySelector('[data-push-key]') : null;
+      var key = node ? node.getAttribute('data-push-key') : '';
+      if (!hasText(key) || !intentIsSet() || baseState() !== 'maybe' ||
+          window.Notification.permission !== 'granted') {
+        return;
+      }
+      var run = runReconcile(key);
+      var done = function () {
+        if (pending === run) {
+          pending = null;
+        }
+      };
+      pending = run;
+      pendingKey = key;
+      run.then(done, done);
+    } catch (err) {
+      pending = null;
+    }
+  }
+
   register();
+  reconnectAtLoad();
 
   window.PinalertNotify = {
     SUBSCRIPTION_URL: SUBSCRIPTION_URL,
@@ -499,6 +546,7 @@
     reconcile: reconcile,
     isAppleMobile: isAppleMobile,
     isInstalled: isInstalled,
+    isMacDockApp: isMacDockApp,
     keyBytes: keyBytes
   };
 }());
