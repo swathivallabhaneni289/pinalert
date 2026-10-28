@@ -202,6 +202,7 @@ func TestDemoPageRendersWhatItPromises(t *testing.T) {
 		`data-fixed-lon="` + strconv.FormatFloat(demo.PretendLon, 'f', -1, 64) + `"`,
 		`data-fixed-place="` + demo.PretendPlace + `"`,
 		`href="/demo"`, `href="/demo/alerts"`, `href="/demo/activity"`,
+		`<h1 class="app-topbar__title">Pinalert</h1>`, `href="/demo?post=1"`,
 		`aria-label="Exit the demo"`, `id="theme-toggle"`, `/static/js/api-base.js`,
 	} {
 		if !strings.Contains(body, want) {

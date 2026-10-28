@@ -37,6 +37,11 @@ const demoBusyMessage = "The Demo is busy. Try again in a minute."
 // that has started too many visits in a short time.
 const demoTooManyVisitsMessage = "Too many visits. Try again in a minute."
 
+// demoWordmark is the phone top bar's title on the Demo's Nearby: the wordmark
+// and nothing else (UI-SPEC 4c). The real Nearby shows Search a place there, so
+// its title is left out; the Demo has no search, so the bar draws the wordmark.
+const demoWordmark = "Pinalert"
+
 // demoFromWelcome is the one value of the from parameter that sends Exit demo
 // to the first-time flow (UI-SPEC 4a). Every other value, or none, sends it to
 // the sign in page.
@@ -98,7 +103,7 @@ func DemoPage(tmpl *template.Template, store *demo.Store, cfg PageConfig) http.H
 		vm := demoViewModel{
 			AssetVersion:    cfg.AssetVersion,
 			Chrome:          chrome,
-			Nav:             demoNavFor(NavNearby),
+			Nav:             demoNavFor(NavNearby, navTitle(demoWordmark)),
 			Visit:           world.ID,
 			APIBase:         "/demo/api/v/" + world.ID,
 			ExitHref:        demoExitHref(r.URL.Query().Get("from")),
