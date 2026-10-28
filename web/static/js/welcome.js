@@ -114,6 +114,7 @@
   var MESSAGE_AGREE_FAILED = 'Could not save your agreement. Try again in a moment.';
   var MESSAGE_AGREE_FIRST = 'Please agree to the Disclaimer and policy to continue.';
   var MESSAGE_SAVE_FAILED = 'Could not save. Try again in a moment.';
+  var MESSAGE_HOME_NOT_SAVED = 'Could not save your home area. Try again in a moment.';
   var MESSAGE_SESSION_ENDED = 'Your session has ended. Reload the page and log in again.';
   // The search wording is the same as Settings and the map search, so one
   // sentence means one thing across the app.
@@ -183,6 +184,8 @@
   var askStatus = el('welcome-alerts-home-status');
   var askResults = el('welcome-alerts-home-results');
   var askReliable = el('welcome-alerts-reliable');
+  // The pop-up's error line: the home area picked in it was not saved (WR-05).
+  var askError = el('welcome-alerts-ask-error');
   var pushKey = root.getAttribute('data-push-key') || '';
 
   // The step a person must agree on, and the highest step an address may name
@@ -202,6 +205,9 @@
   // askBusy is true from the moment it is answered until the answer is handled.
   var asked = false;
   var askBusy = false;
+  // True once Allow has called enable in this visit, so a second Allow after a
+  // failed home area save tries the save again and never prompts twice.
+  var askEnabled = false;
   // The step 4 button that finished the flow, so focus can go back to it.
   var askOpener = null;
 
@@ -1133,8 +1139,10 @@
   }
 
   // saveAskHome saves the place picked in the pop-up as the home area (the same
-  // request step 4 sends). It always resolves; on an ok answer the pop-up's home
-  // area becomes that place, so the Reliable save below knows one exists.
+  // request step 4 sends). It always resolves: to '' on an ok answer, when the
+  // pop-up's home area becomes that place, so the Reliable save below knows one
+  // exists; otherwise to the one line the pop-up shows (WR-05): the server's own
+  // sentence for a 400, the session line for a 401, else MESSAGE_HOME_NOT_SAVED.
   function saveAskHome(place) {
     return request(PROFILE_URL, {
       method: 'PATCH',
@@ -1144,10 +1152,24 @@
     }, SAVE_TIMEOUT_MS).promise.then(function (answer) {
       if (answer.ok) {
         homeName = place.name;
+        return '';
       }
+      var sent = answer.status === 400 ? serverSentence(answer.body) : '';
+      if (sent !== '') {
+        return sent;
+      }
+      return answer.status === 401 ? MESSAGE_SESSION_ENDED : MESSAGE_HOME_NOT_SAVED;
     }, function () {
-      // Settings shows what was saved; nothing is retried.
+      return MESSAGE_HOME_NOT_SAVED;
     });
+  }
+
+  // homeNotSaved keeps the pop-up open after a failed home area save, frees it
+  // (Allow follows the home area rule, the pick is kept) and shows the line.
+  function homeNotSaved(message) {
+    askBusy = false;
+    setAskDisabled(false);
+    showLine(askError, message);
   }
 
   // saveReliable is the one place the Reliable reporter request is built: a PATCH
@@ -1164,14 +1186,19 @@
   }
 
   // onAskAllow is the only place the browser's notification prompt can run.
-  // enable is the first real statement of the click (after the two checks that
+  // enable is the first real statement of the click (after the checks that
   // send nothing), before anything is awaited, so the browser counts the tap as
   // the person's own. Then, whatever enable answers (a refusal, an offline answer,
   // a failure, a rejection or a throw), the saves run one after another: the home
   // area picked in the pop-up, then the Reliable switch if it was ticked and a
-  // home area exists, then the flow is recorded as done. Every save swallows its
-  // own failure, so nothing about alerts can stop sign up; Settings shows the
-  // result and nothing is retried.
+  // home area exists, then the flow is recorded as done.
+  //
+  // A home area that was not saved stops the chain before Reliable (WR-05): the
+  // pop-up stays open with one error line, Allow tries the save again without a
+  // second enable (enable runs once per visit, so the prompt is never asked in
+  // a loop), and Not now still finishes sign up. A page without the error line
+  // finishes as before. The Reliable save swallows its own failure; Settings
+  // shows the result.
   function onAskAllow() {
     if (askBusy) {
       return;
@@ -1180,22 +1207,34 @@
       return;
     }
     var pending = null;
-    try {
-      pending = window.PinalertNotify.enable(pushKey);
-    } catch (err) {
-      pending = null;
+    if (!askEnabled) {
+      try {
+        pending = window.PinalertNotify.enable(pushKey);
+      } catch (err) {
+        pending = null;
+      }
+      askEnabled = true;
     }
     var place = askPick;
     var wantReliable = !!(askReliable && askReliable.checked);
     asked = true;
     askBusy = true;
     setAskDisabled(true);
+    if (askError) {
+      hideLine(askError);
+    }
     Promise.resolve(pending).then(function () {}, function () {}).then(function () {
-      return place !== null ? saveAskHome(place) : null;
-    }).then(function () {
+      return place !== null ? saveAskHome(place) : '';
+    }).then(function (problem) {
+      if (problem && askError) {
+        homeNotSaved(problem);
+        return false;
+      }
       return wantReliable && homeName !== '' ? saveReliable() : null;
-    }).then(function () {
-      postDone();
+    }).then(function (go) {
+      if (go !== false) {
+        postDone();
+      }
     }, function () {
       postDone();
     });

@@ -46,6 +46,7 @@ const source = fs.readFileSync(path.join(here, 'static', 'js', 'welcome.js'), 'u
 const KEY = 'test-public-key-placeholder';
 const AGREE_FIRST = 'Please agree to the Disclaimer and policy to continue.';
 const SAVE_FAILED = 'Could not save. Try again in a moment.';
+const HOME_NOT_SAVED = 'Could not save your home area. Try again in a moment.';
 
 class FakeEl {
   constructor(doc, tag, id) {
@@ -126,7 +127,8 @@ const STEP_NAMES = ['Welcome', 'Disclaimer and policy', 'Your location', 'About 
 // askHome is the home area the server stored for the account (data-home-area on
 // the dialog); it defaults to a stored area so the earlier cases, which are about
 // the answers and not the home area, find Allow enabled.
-function buildPage({ start = 1, name = '', home = '', key = KEY, dialogSupport = true, askHome = 'Benz Circle' } = {}) {
+// askErrorLine false draws the pop-up as it was before WR-05, without its error line.
+function buildPage({ start = 1, name = '', home = '', key = KEY, dialogSupport = true, askHome = 'Benz Circle', askErrorLine = true } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -218,6 +220,9 @@ function buildPage({ start = 1, name = '', home = '', key = KEY, dialogSupport =
   make('p', 'welcome-alerts-home-status', askHomeBlock).hidden = true;
   make('ul', 'welcome-alerts-home-results', askHomeBlock).hidden = true;
   make('input', 'welcome-alerts-reliable', dialog).checked = false;
+  if (askErrorLine) {
+    make('p', 'welcome-alerts-ask-error', dialog, 'inline-error').hidden = true;
+  }
   make('button', 'welcome-alerts-later', dialog);
   make('button', 'welcome-alerts-allow', dialog);
 
@@ -781,8 +786,82 @@ for (const [label, fail] of [
   ['a 400', (req) => answer(req, 400, { error: { message: 'Pick a place.' } })],
   ['a network failure', (req) => req.reject(new Error('offline'))]
 ]) {
-  test('named pop-up: when the home area save fails (' + label + ') there is no Reliable request, and first-run-done still goes out once', async () => {
+  // WR-05 (03.3-REVIEW): a home area that was not saved is said in the pop-up,
+  // which stays open. Allow tries the save again without a second enable, and
+  // Not now still finishes sign up. Reliable is saved only after the home area.
+  test('named pop-up: when the home area save fails (' + label + ') the pop-up stays open with one error line, and no Reliable or first-run-done request goes out', async () => {
     const page = atStep4({ askHome: '' });
+    click(page, 'welcome-continue-4');
+    await pickInAsk(page);
+    reliableBox(page).checked = true;
+    const before = page.requests.length;
+    click(page, 'welcome-alerts-allow');
+    await flush();
+    fail(page.requests[before]);
+    await flush();
+    assert.equal(page.requests.length, before + 1, 'nothing more is sent');
+    assert.equal(page.requests.filter((r) => r.url === ALERTS_ADDRESS).length, 0);
+    assert.equal(doneRequests(page).length, 0);
+    assert.equal(page.dialog.open, true, 'the pop-up stays open');
+    const line = byId(page, 'welcome-alerts-ask-error');
+    assert.equal(line.hidden, false);
+    assert.equal(line.textContent, label === 'a 400' ? 'Pick a place.' : HOME_NOT_SAVED);
+    assert.equal(page.dialog.getAttribute('aria-busy'), null);
+    assert.equal(byId(page, 'welcome-alerts-allow').disabled, false, 'Allow can try again');
+    assert.equal(byId(page, 'welcome-alerts-later').disabled, false);
+    assert.equal(reliableBox(page).checked, true, 'the tick is kept for the next try');
+    assert.deepEqual(page.replaced, []);
+  });
+
+  test('named pop-up: after a failed home area save (' + label + ') Allow saves it again without a second enable, then Reliable, then first-run-done', async () => {
+    const page = atStep4({ askHome: '' });
+    click(page, 'welcome-continue-4');
+    await pickInAsk(page);
+    reliableBox(page).checked = true;
+    const before = page.requests.length;
+    click(page, 'welcome-alerts-allow');
+    await flush();
+    fail(page.requests[before]);
+    await flush();
+    click(page, 'welcome-alerts-allow');
+    assert.equal(page.notify.calls.enable.length, 1, 'enable, and so the prompt, runs once');
+    assert.equal(page.permissionCalls.length, 0);
+    assert.equal(byId(page, 'welcome-alerts-ask-error').hidden, true, 'the line goes while it tries again');
+    await flush();
+    assert.equal(page.requests[before + 1].url, PROFILE_ADDRESS);
+    assert.deepEqual(bodyOf(page.requests[before + 1]), { home_area: { name: 'Hebbal', lat: 13.0358, lon: 77.597 } });
+    answer(page.requests[before + 1], 200);
+    await flush();
+    assert.deepEqual(sent(page).slice(before), ['PATCH ' + PROFILE_ADDRESS, 'PATCH ' + PROFILE_ADDRESS, 'PATCH ' + ALERTS_ADDRESS]);
+    answer(page.requests[before + 2], 200);
+    await flush();
+    assert.equal(doneRequests(page).length, 1);
+    answer(doneRequests(page)[0], 204);
+    await flush();
+    assert.deepEqual(page.replaced, ['/']);
+  });
+
+  test('named pop-up: after a failed home area save (' + label + ') Not now still finishes sign up and saves nothing more', async () => {
+    const page = atStep4({ askHome: '' });
+    click(page, 'welcome-continue-4');
+    await pickInAsk(page);
+    reliableBox(page).checked = true;
+    const before = page.requests.length;
+    click(page, 'welcome-alerts-allow');
+    await flush();
+    fail(page.requests[before]);
+    await flush();
+    click(page, 'welcome-alerts-later');
+    await flush();
+    assert.deepEqual(sent(page).slice(before), ['PATCH ' + PROFILE_ADDRESS, 'POST ' + DONE_ADDRESS]);
+    assert.equal(page.notify.calls.enable.length, 1);
+    answer(doneRequests(page)[0], 204);
+    await flush();
+    assert.deepEqual(page.replaced, ['/']);
+  });
+
+  test('named pop-up: a page without the error line (' + label + ') finishes as before, with no Reliable request', async () => {
+    const page = atStep4({ askHome: '', askErrorLine: false });
     click(page, 'welcome-continue-4');
     await pickInAsk(page);
     reliableBox(page).checked = true;
@@ -793,9 +872,6 @@ for (const [label, fail] of [
     await flush();
     assert.equal(page.requests.filter((r) => r.url === ALERTS_ADDRESS).length, 0);
     assert.equal(doneRequests(page).length, 1);
-    answer(doneRequests(page)[0], 204);
-    await flush();
-    assert.deepEqual(page.replaced, ['/']);
   });
 
   test('named pop-up: when the Reliable save fails (' + label + ') first-run-done still goes out once', async () => {

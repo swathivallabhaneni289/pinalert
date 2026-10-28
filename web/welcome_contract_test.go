@@ -551,14 +551,19 @@ func TestWelcomeAlertsAsk(t *testing.T) {
 	p13MustContain(t, "alerts pop-up", ask,
 		`<label class="welcome-ask__check"><input type="checkbox" id="welcome-alerts-reliable"><span>A Reliable reporter posts near me</span></label>`)
 
-	p13Ordered(t, ask, "alerts pop-up", `id="welcome-alerts-ask-title"`, `id="welcome-alerts-home"`, `id="welcome-alerts-reliable"`, `class="logout-confirm__actions"`, `id="welcome-alerts-later"`, `id="welcome-alerts-allow"`)
-	// Nothing is chosen on open, there is no supporting line (the only paragraph
-	// is the search status line), and no link.
+	// Amended by the 03.3-REVIEW fix WR-05: one hidden error line, in the look of
+	// the step 4 error line, says when the home area picked here was not saved.
+	// It sits after the tick box and before the buttons.
+	p13MustContain(t, "alerts pop-up", ask,
+		`<p class="inline-error" id="welcome-alerts-ask-error" role="alert" hidden></p>`)
+	p13Ordered(t, ask, "alerts pop-up", `id="welcome-alerts-ask-title"`, `id="welcome-alerts-home"`, `id="welcome-alerts-reliable"`, `id="welcome-alerts-ask-error"`, `class="logout-confirm__actions"`, `id="welcome-alerts-later"`, `id="welcome-alerts-allow"`)
+	// Nothing is chosen on open, there is no supporting line (the paragraphs are
+	// the search status line and the hidden error line), and no link.
 	p13MustNotContain(t, "alerts pop-up", ask, "autofocus", "<a ")
-	w10Count(t, "alerts pop-up", ask, "<p", 1)
+	w10Count(t, "alerts pop-up", ask, "<p", 2)
 	w10Count(t, "alerts pop-up", ask, "<button", 2)
 	w10Count(t, "alerts pop-up", ask, "<input", 2)
-	for _, id := range []string{"welcome-alerts-ask-title", "welcome-alerts-later", "welcome-alerts-allow", "welcome-alerts-home", "welcome-alerts-home-form", "welcome-alerts-home-input", "welcome-alerts-home-status", "welcome-alerts-home-results", "welcome-alerts-reliable"} {
+	for _, id := range []string{"welcome-alerts-ask-title", "welcome-alerts-later", "welcome-alerts-allow", "welcome-alerts-home", "welcome-alerts-home-form", "welcome-alerts-home-input", "welcome-alerts-home-status", "welcome-alerts-home-results", "welcome-alerts-reliable", "welcome-alerts-ask-error"} {
 		w10Count(t, "welcome.html.tmpl", page, `id="`+id+`"`, 1)
 	}
 
