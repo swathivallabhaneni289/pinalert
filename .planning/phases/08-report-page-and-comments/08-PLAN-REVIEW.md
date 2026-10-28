@@ -42,3 +42,9 @@ Every round 1 item CLOSED with a named test; structure clean across 20 plans in 
 |----|-------|---------|-----|
 | R2-W1 | 09 | Allowing U+200C and U+200D let a comment made only of joiners pass the empty check and show blank. | Trim joiners with whitespace from both ends, require at least one letter, mark, number, punctuation or symbol, refuse a joiner not after a letter, mark or symbol; four new TestCleanCommentBody rows. |
 | R2-I1 | 09 | IsReporter false on your own comments had no stated reason. | UI-SPEC 7a: your own comments show only your username. |
+
+# Execution notes added after planning
+
+- **2026-10-28, Nearby gains an alerts ask in 7.1** (plan 13c, owner decision 07.1 D-17). index.html.tmpl includes `{{template "installed_alerts_ask" .}}` under a condition on `.PushPublicKey` and `.HomeAreaName`, and loads installed-ask.js. page.go gains `PageConfig.Profiles`, `pageViewModel.HomeAreaName` and `pageViewModel.PushPublicKey`.
+  - Plans that edit index.html.tmpl or page.go (08-05, 08-06, 08-07, 08-16, 08-17) keep all of these.
+  - The ask opens only inside the installed iPhone app and only when no other dialog is open, so no Phase 8 box needs to change for it.

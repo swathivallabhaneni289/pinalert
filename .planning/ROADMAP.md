@@ -828,7 +828,7 @@ Phases execute in the owner's build order (2026-10-16): 1 → 1.1 → 2 → 3 �
 | 5. Official Feed & Demo Mode | 0/22 | Planned | - |
 | 6. Coordination (removed 2026-10-16, share card moved to Phase 8) | - | Removed | - |
 | 7. Address search box for report location | 4/4 | Complete | 2026-09-29 |
-| 7.1 Password sign in and usernames | 0/21 | Planned | - |
+| 7.1 Password sign in and usernames | 0/23 | Planned | - |
 | 8. Report page and comments | 0/20 | Planned | - |
 | 9. Followable reporter profiles | 0/29 | Planned | - |
 
@@ -1059,12 +1059,13 @@ Plans:
   4. Step 4 requires Username (unique, public, checked live for available, taken, wrong characters or kept for official use such as police, ndma, imd, govt, and screened like other free text), Name and Home area (a town or area, never a street), with no Skip; the Username can be changed later in Settings with the same live check.
   5. An account made with the old link sets a password and fills in any missing step 4 field once, at its next sign in, in a single pass, so nobody is stopped twice.
   6. The Phase 5 globe, the Low data panel and the "Try the demo · Disclaimer · Policy" row keep working on the new sign in card.
+  7. On an iPhone or iPad Safari tab, sign up ends with a small box showing how to add Pinalert to the Home Screen; once Pinalert is opened from the Home Screen and signed in, it asks about alerts once, so nobody has to find Settings (owner, 2026-10-28, D-17).
 
-**Plans:** 21 plans
+**Plans:** 23 plans
 
 Plans:
 
-**Execution waits for:** Phase 5 merged on main, and the owner's look at the clickable sign in mockup `.planning/sketches/010-password-sign-in/` (scope note 6). Changes from that viewing come in as a plan revision.
+**Execution waits for:** Phase 5 merged on main, and the owner's look at the clickable sign in mockup `.planning/sketches/010-password-sign-in/` (scope note 6). Changes from that viewing come in as a plan revision. Plans 13b and 13c also wait for the 3.3 gap fix for test 4 (alerts asked in the flow) to be merged.
 
 **Wave 1**
 
@@ -1102,6 +1103,7 @@ Plans:
 **Wave 7** *(blocked on Wave 6 completion)*
 
 - [ ] 07.1-14b-PLAN.md: The link half of the auth service, tokens and the link email removed (wave 7)
+- [ ] 07.1-13b-PLAN.md: iPhone or iPad Safari tab: sign up ends with the Home Screen install steps; guide step 3 says sign in and tap Allow (owner, 2026-10-28) (wave 7)
 - [ ] 07.1-15-PLAN.md: Settings, About you: the Username row and window; Name and Home area cannot be emptied (wave 7)
 
 **Wave 8** *(blocked on Wave 7 completion)*
@@ -1112,6 +1114,7 @@ Plans:
 **Wave 9** *(blocked on Wave 8 completion)*
 
 - [ ] 07.1-14d-PLAN.md: API reference wording without the link (wave 9)
+- [ ] 07.1-13c-PLAN.md: The installed iPhone app asks about alerts once on Nearby, with the sign up words (owner, 2026-10-28) (wave 9)
 
 **Wave 10** *(blocked on Wave 9 completion)*
 
