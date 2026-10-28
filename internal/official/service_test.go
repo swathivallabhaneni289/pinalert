@@ -170,6 +170,58 @@ func TestKickIsNonBlocking(t *testing.T) {
 			t.Fatalf("fetcher ran %d times, want 2", n)
 		}
 	})
+
+	// Amended 2026-10-29 by plan 05-21 (D-15): the lazy kick covers every
+	// registered feed, GDACS too, each behind its own LazyKickAfter gate on its
+	// own last attempt and one run at a time per feed. The rows above are
+	// unchanged; they run with SACHET registered alone.
+	t.Run("two feeds: each has its own gate and its own single flight", func(t *testing.T) {
+		clk := &clock{t: refreshT0}
+		feeds := newFakeFeeds(0)
+		sachetAt := refreshT0.Add(-11 * time.Minute) // due
+		gdacsAt := refreshT0.Add(-3 * time.Minute)   // attempted too recently
+		feeds.rows[FeedSachet].LastAttemptAt = &sachetAt
+		feeds.rows[FeedGdacs].LastAttemptAt = &gdacsAt
+		r := NewRefresher(nil, nil, withStores(feeds, newFakeAlerts()), WithRefresherClock(clk.now))
+		sachet := &fakeFetcher{release: make(chan struct{}), started: make(chan struct{}, 4)}
+		gdacs := &fakeFetcher{}
+		r.Register(FeedSachet, sachet, 0)
+		r.Register(FeedGdacs, gdacs, 0)
+		s := newService(r, nil, areas.Default())
+		s.now = clk.now
+
+		begin := time.Now()
+		s.Kick()
+		if took := time.Since(begin); took > 200*time.Millisecond {
+			t.Fatalf("Kick took %v while a fetcher was blocked", took)
+		}
+		select {
+		case <-sachet.started:
+		case <-time.After(2 * time.Second):
+			t.Fatal("the due feed never started")
+		}
+		s.Kick() // SACHET is still running and GDACS is not due
+		time.Sleep(50 * time.Millisecond)
+		if sachet.calls.Load() != 1 || gdacs.calls.Load() != 0 {
+			t.Fatalf("sachet ran %d times and gdacs %d; want 1 and 0 (gdacs was attempted 3 minutes ago)", sachet.calls.Load(), gdacs.calls.Load())
+		}
+
+		// Past GDACS's own gate it runs while SACHET is still blocked.
+		clk.set(refreshT0.Add(8 * time.Minute)) // gdacs attempt is now 11 minutes old
+		s.Kick()
+		deadline := time.Now().Add(2 * time.Second)
+		for gdacs.calls.Load() < 1 {
+			if time.Now().After(deadline) {
+				t.Fatal("gdacs never ran while sachet was blocked: the feeds share one flag")
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		close(sachet.release)
+		waitKickDone(t, s)
+		if sachet.calls.Load() != 1 || gdacs.calls.Load() != 1 {
+			t.Errorf("sachet ran %d times and gdacs %d, want 1 each", sachet.calls.Load(), gdacs.calls.Load())
+		}
+	})
 }
 
 // waitCalls waits until the fetcher has run n times.

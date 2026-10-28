@@ -703,3 +703,186 @@ func TestBuildViewDemoBanner(t *testing.T) {
 		t.Errorf("a real row's source line = %q, want NDMA SACHET", got)
 	}
 }
+
+// ---- GDACS hazards (plan 05-21) ----
+
+func hazardStatus(ago time.Duration) FeedStatus {
+	last := viewNow.Add(-ago)
+	return FeedStatus{Feed: FeedGdacs, LastSuccessAt: &last}
+}
+
+// testHazard is a Red earthquake whose point is in district 749 unless mut
+// changes it.
+func testHazard(id int64, mut func(*StoredHazard)) StoredHazard {
+	h := StoredHazard{
+		ID:           id,
+		EventType:    "EQ",
+		EventID:      1000 + id,
+		Name:         "Earthquake in India",
+		AlertLevel:   "Red",
+		Country:      "India",
+		Lat:          16.5,
+		Lon:          80.6,
+		FromDate:     viewNow.Add(-3 * time.Hour),
+		ToDate:       viewNow.Add(-time.Hour),
+		SeverityText: "Magnitude 6.1M, Depth:10km",
+		ReportURL:    "https://www.gdacs.org/report.aspx?eventid=1&eventtype=EQ",
+		DistrictCode: 749,
+	}
+	if mut != nil {
+		mut(&h)
+	}
+	return h
+}
+
+func TestBuildViewHazardRows(t *testing.T) {
+	in := ViewInput{
+		Now:          viewNow,
+		Status:       viewStatus(4 * time.Minute),
+		HazardStatus: hazardStatus(5 * time.Minute),
+		Reader:       readerArea(),
+		Home:         homeAreaGuntur(),
+		Hazards: []StoredHazard{
+			testHazard(1, nil),
+			testHazard(2, func(h *StoredHazard) { h.AlertLevel, h.EventType, h.Name = "Orange", "TC", "Tropical Cyclone ARNAB-26"; h.DistrictCode = 506 }),
+			testHazard(3, func(h *StoredHazard) { h.AlertLevel, h.EventType, h.Name = "Green", "FL", "Flood in India"; h.DistrictCode = 749 }),
+			testHazard(4, func(h *StoredHazard) { h.DistrictCode = 600 }), // another district
+			testHazard(5, func(h *StoredHazard) { h.DistrictCode = 0 }),   // outside every district
+		},
+	}
+	v := BuildView(in)
+	if v.HazardState != StateFresh || v.HazardAgeSeconds == nil || *v.HazardAgeSeconds != 300 || v.HazardLastSuccessAt == nil {
+		t.Fatalf("hazard state %q age %v last %v, want fresh at 300 seconds", v.HazardState, v.HazardAgeSeconds, v.HazardLastSuccessAt)
+	}
+	if got := strings.Join(groupKinds(v), ","); got != "reader,home" {
+		t.Fatalf("groups = %s, want reader and home only", got)
+	}
+	if got := rowIDs(v.Groups[0]); fmt.Sprint(got) != "[1 3]" {
+		t.Errorf("reader rows = %v, want the Red earthquake then the Green flood", got)
+	}
+	if got := rowIDs(v.Groups[1]); fmt.Sprint(got) != "[2]" {
+		t.Errorf("home rows = %v, want the Orange cyclone", got)
+	}
+	if v.Count != 3 {
+		t.Errorf("Count = %d, want 3 (the two elsewhere are not listed)", v.Count)
+	}
+
+	red := v.Groups[0].Rows[0]
+	if red.Source != "gdacs" || red.Badge != "GDACS" || red.Level != "extreme" || red.LevelWord != "Red" || red.Issuer != "GDACS" {
+		t.Errorf("red row = %+v", red)
+	}
+	if red.Details.SourceLine != "GDACS. Automatic estimate. Follow your state disaster management authority." {
+		t.Errorf("source line = %q", red.Details.SourceLine)
+	}
+	if red.Headline != "Earthquake in India" || red.AreaText != "India" || red.Details.Areas != "India" ||
+		red.Details.Description != "Magnitude 6.1M, Depth:10km" || red.Demo || red.GroupedCount != 1 {
+		t.Errorf("red row = %+v", red)
+	}
+	if !red.IssuedAt.Equal(in.Hazards[0].FromDate) || !red.ExpiresAt.Equal(in.Hazards[0].ToDate) {
+		t.Errorf("red row times = %v to %v", red.IssuedAt, red.ExpiresAt)
+	}
+	green := v.Groups[0].Rows[1]
+	if green.Level != "neutral" || green.LevelWord != "Green" || green.Badge != "GDACS" {
+		t.Errorf("green row = %+v", green)
+	}
+	if orange := v.Groups[1].Rows[0]; orange.Level != "severe" || orange.LevelWord != "Orange" || orange.Source != "gdacs" {
+		t.Errorf("orange row = %+v", orange)
+	}
+
+	t.Run("a hazard with no name still has a headline", func(t *testing.T) {
+		in2 := in
+		in2.Hazards = []StoredHazard{testHazard(1, func(h *StoredHazard) { h.Name = "" })}
+		if got := BuildView(in2).Groups[0].Rows[0].Headline; got != "Earthquake" {
+			t.Errorf("headline = %q, want the hazard word", got)
+		}
+	})
+
+	t.Run("hazard rows come only with a fresh hazard feed", func(t *testing.T) {
+		for name, st := range map[string]FeedStatus{
+			"stale":       hazardStatus(2 * time.Hour),
+			"unavailable": hazardStatus(7 * time.Hour),
+			"never":       {Feed: FeedGdacs},
+		} {
+			in2 := in
+			in2.HazardStatus = st
+			v2 := BuildView(in2)
+			if v2.Count != 0 || len(v2.Groups) != 0 {
+				t.Errorf("%s: %d rows in %v, want none: an old hazard is not listed as current", name, v2.Count, groupKinds(v2))
+			}
+		}
+		in2 := in
+		in2.HazardStatus = hazardStatus(2 * time.Hour)
+		if v2 := BuildView(in2); v2.HazardState != StateStale || v2.State != StateFresh {
+			t.Errorf("hazard state %q alerts state %q, want stale and fresh: the two feeds are told apart", v2.HazardState, v2.State)
+		}
+		in2.HazardStatus = FeedStatus{Feed: FeedGdacs}
+		if v2 := BuildView(in2); v2.HazardState != StateUnavailable || v2.HazardAgeSeconds != nil || v2.HazardLastSuccessAt != nil {
+			t.Errorf("never checked: state %q age %v last %v", v2.HazardState, v2.HazardAgeSeconds, v2.HazardLastSuccessAt)
+		}
+	})
+
+	t.Run("a hazard in the home district is the reader's row when they match", func(t *testing.T) {
+		in2 := in
+		in2.Home = &Area{DistrictCodes: []int{749}, DistrictName: "Ntr", StateCode: 28, StateName: "Andhra Pradesh"}
+		v2 := BuildView(in2)
+		if got := strings.Join(groupKinds(v2), ","); got != "reader" {
+			t.Errorf("groups = %s, want reader only", got)
+		}
+	})
+
+	t.Run("no area known means no rows", func(t *testing.T) {
+		in2 := in
+		in2.Reader, in2.Home = nil, nil
+		if v2 := BuildView(in2); len(v2.Groups) != 0 || v2.AreaKnown {
+			t.Errorf("groups %v areaKnown %v", groupKinds(v2), v2.AreaKnown)
+		}
+	})
+
+	t.Run("hazards sort among the alerts by their level", func(t *testing.T) {
+		in2 := in
+		in2.Alerts = []StoredAlert{
+			testAlert(21, withSeverity("Extreme")),
+			testAlert(22, withSeverity("Moderate")),
+		}
+		v2 := BuildView(in2)
+		// Extreme alert 21 was sent an hour ago; the Red hazard started three
+		// hours ago, so the alert is first among the rank 0 rows.
+		if got := rowIDs(v2.Groups[0]); fmt.Sprint(got) != "[21 1 22 3]" {
+			t.Errorf("reader rows = %v, want [21 1 22 3]", got)
+		}
+	})
+}
+
+// TestHazardsNeverRaiseBanner: a GDACS event is an automatic estimate, so
+// however serious its level it is never the Nearby banner and never counts as
+// one of the "more" rows (D-12, T-05-111).
+func TestHazardsNeverRaiseBanner(t *testing.T) {
+	in := ViewInput{
+		Now:          viewNow,
+		Status:       viewStatus(4 * time.Minute),
+		HazardStatus: hazardStatus(5 * time.Minute),
+		Reader:       readerArea(),
+		Hazards:      []StoredHazard{testHazard(1, nil), testHazard(2, func(h *StoredHazard) { h.AlertLevel = "Orange" })},
+	}
+	v := BuildView(in)
+	if v.Count != 2 {
+		t.Fatalf("Count = %d, want the two hazard rows listed", v.Count)
+	}
+	if v.Banner != nil {
+		t.Fatalf("banner = %+v, want none for GDACS rows alone", *v.Banner)
+	}
+
+	in.Alerts = []StoredAlert{testAlert(9, withSeverity("Severe"))}
+	v = BuildView(in)
+	if v.Banner == nil || v.Banner.AlertID != 9 || v.Banner.More != 0 {
+		t.Fatalf("banner = %+v, want the SACHET alert 9 with no more rows", v.Banner)
+	}
+
+	// A hazard can never be the picked row, even with the same rank and newer.
+	in.Alerts = []StoredAlert{testAlert(9, withSeverity("Extreme"))}
+	in.Hazards = []StoredHazard{testHazard(1, func(h *StoredHazard) { h.FromDate = viewNow.Add(-time.Minute) })}
+	v = BuildView(in)
+	if v.Banner == nil || v.Banner.AlertID != 9 {
+		t.Fatalf("banner = %+v, want the SACHET alert even when the hazard is newer", v.Banner)
+	}
+}
