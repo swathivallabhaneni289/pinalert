@@ -30,8 +30,9 @@ type PageConfig struct {
 	VoteRadiusKm float64
 	// PushPublicKey is the VAPID public key, set once in cmd/server/main.go
 	// (plan 11). It is empty when push is off. It is public by design and is
-	// rendered by the welcome and settings templates as data-push-key (plans
-	// 13 and 14); it is never served by a route.
+	// rendered by the welcome, settings, Nearby and Low data templates as
+	// data-push-key (plans 13 and 14, and 03.3-17 for the last two); it is never
+	// served by a route.
 	PushPublicKey string
 	// AssetVersion is appended as a "?v=" query string to every local
 	// static asset the template links (CSS, JS — not the third-party CDN
@@ -109,6 +110,10 @@ type pageViewModel struct {
 	// reports to this account (D-20, T-04-14). It is never shown and never the
 	// email.
 	AccountID int64
+	// PushPublicKey is rendered as data-push-key on the shell so notify.js can
+	// register this device again after a sign in (03.3-UAT test 7). It is public
+	// by design and empty when push is off.
+	PushPublicKey string
 	// Chrome is the shared bar data, already defaulted.
 	Chrome Chrome
 	// Nav is the data of the two app bars (Phase 3.4, D-10): the main places
@@ -236,6 +241,7 @@ func Page(tmpl *template.Template, cfg PageConfig) http.HandlerFunc {
 			AssetVersion:    cfg.AssetVersion,
 			Email:           acc.Email,
 			AccountID:       acc.ID,
+			PushPublicKey:   cfg.PushPublicKey,
 			Chrome:          chrome,
 			Nav:             navFor(NavNearby),
 			Legal:           legalTextFor(chrome),

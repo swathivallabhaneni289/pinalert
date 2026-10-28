@@ -39,7 +39,10 @@ type lowViewModel struct {
 	// (DEC-P). The id is rendered as a number, never the address.
 	Email     string
 	AccountID int64
-	Chrome    Chrome
+	// PushPublicKey is rendered as data-push-key on the shell, like Nearby does
+	// (03.3-UAT test 7). Public by design; empty when push is off.
+	PushPublicKey string
+	Chrome        Chrome
 }
 
 // requestIsHTTPS reports whether the request reached the host over TLS, either
@@ -104,6 +107,7 @@ func LowPage(tmpl *template.Template, cfg PageConfig) http.HandlerFunc {
 			AssetVersion:    cfg.AssetVersion,
 			Email:           acc.Email,
 			AccountID:       acc.ID,
+			PushPublicKey:   cfg.PushPublicKey,
 			Chrome:          chrome,
 		}
 		setLowDataCookie(w, r)

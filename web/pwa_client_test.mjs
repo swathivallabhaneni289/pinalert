@@ -39,6 +39,7 @@ const KEY = Buffer.from(KEY_BYTES).toString('base64url');
 //   notification (false removes it), permission, nextPermission,
 //   subscribed (an existing browser subscription), subscribedKey (the bytes it
 //   was made with; omitted means it does not report a key), account (data-account-id),
+//   pushKey (data-push-key on the page; omitted means the page has none),
 //   stored (initial local storage), routes (url -> function(body) -> {status, body}).
 function makeEnv(options = {}) {
   const o = {
@@ -173,9 +174,15 @@ function makeEnv(options = {}) {
 
   const document = {
     addEventListener: (name) => { env.listeners.push('document:' + name); },
-    querySelector: (selector) => (selector === '[data-account-id]' && o.account !== ''
-      ? { getAttribute: (name) => (name === 'data-account-id' ? o.account : null) }
-      : null)
+    querySelector: (selector) => {
+      if (selector === '[data-account-id]' && o.account !== '') {
+        return { getAttribute: (name) => (name === 'data-account-id' ? o.account : null) };
+      }
+      if (selector === '[data-push-key]' && typeof o.pushKey === 'string') {
+        return { getAttribute: (name) => (name === 'data-push-key' ? o.pushKey : null) };
+      }
+      return null;
+    }
   };
 
   async function fetchFake(address, init = {}) {
@@ -694,4 +701,141 @@ test('keyBytes decodes base64url, with or without padding', () => {
   const env = makeEnv();
   assert.deepEqual(Array.from(env.Notify.keyBytes(KEY)), KEY_BYTES);
   assert.deepEqual(Array.from(env.Notify.keyBytes('-_8')), [251, 255]);
+});
+
+// ---- 03.3-UAT test 7 (plan 17): the first page registers the device again ----
+
+// settle lets every pending promise step run. The sandbox has no real waits, so
+// one turn of the event loop is enough.
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+function reconnectEnv(extra = {}) {
+  let registered = false;
+  return makeEnv({
+    permission: 'granted',
+    subscribed: true,
+    subscribedKey: KEY_BYTES,
+    pushKey: KEY,
+    stored: { 'pinalert.pushIntent': '7' },
+    routes: {
+      [STATUS_URL]: () => ({ status: 200, body: { registered } }),
+      [SUBSCRIPTION_URL]: () => { registered = true; return { status: 204 }; }
+    },
+    ...extra
+  });
+}
+
+test('reconnect: the same account back on the first page registers the device again, without a prompt', async () => {
+  const env = reconnectEnv();
+  await settle();
+  assert.deepEqual(env.requests.map((r) => r.url), [STATUS_URL, SUBSCRIPTION_URL]);
+  assert.equal(env.requests[0].body.endpoint, ENDPOINT);
+  assert.equal(env.requests[1].body.endpoint, ENDPOINT);
+  assert.equal(env.requests[1].body.keys.p256dh, 'p256dh-value');
+  assert.ok(!env.calls.includes('requestPermission'), 'a page load never prompts');
+  assertEndpointOnlyInBodies(env);
+});
+
+test('reconnect: another account\'s intent flag sends no request at all', async () => {
+  const env = reconnectEnv({ stored: { 'pinalert.pushIntent': '8' } });
+  await settle();
+  assert.deepEqual(env.requests, []);
+});
+
+test('reconnect: a cleared intent flag sends no request at all', async () => {
+  const env = reconnectEnv({ stored: {} });
+  await settle();
+  assert.deepEqual(env.requests, []);
+});
+
+test('reconnect: permission not granted sends no request and does not prompt', async () => {
+  for (const permission of ['default', 'denied']) {
+    const env = reconnectEnv({ permission });
+    await settle();
+    assert.deepEqual(env.requests, [], permission);
+    assert.ok(!env.calls.includes('requestPermission'), permission);
+  }
+});
+
+test('reconnect: a kept subscription made with another key is never posted', async () => {
+  const env = reconnectEnv({ subscribedKey: OLD_KEY_BYTES });
+  await settle();
+  assert.ok(!env.requests.some((r) => r.url === SUBSCRIPTION_URL), 'no subscription post on a key mismatch');
+  assert.ok(!env.calls.includes('requestPermission'));
+});
+
+test('reconnect: a page without a key, with an empty key or without an account sends nothing and throws nothing', async () => {
+  const noKey = reconnectEnv({ pushKey: undefined });
+  const emptyKey = reconnectEnv({ pushKey: '' });
+  const noAccount = reconnectEnv({ account: '' });
+  await settle();
+  assert.deepEqual(noKey.requests, []);
+  assert.deepEqual(emptyKey.requests, []);
+  assert.deepEqual(noAccount.requests, []);
+});
+
+test('reconnect: nothing is sent where the browser cannot do alerts', async () => {
+  const noPush = reconnectEnv({ pushManager: false });
+  const insecure = reconnectEnv({ secure: false });
+  await settle();
+  assert.deepEqual(noPush.requests, []);
+  assert.deepEqual(insecure.requests, []);
+});
+
+test('reconnect: an endpoint the server already knows costs one status request and no subscription post', async () => {
+  const env = reconnectEnv({
+    routes: { [STATUS_URL]: () => ({ status: 200, body: { registered: true } }), [SUBSCRIPTION_URL]: ok204 }
+  });
+  await settle();
+  assert.deepEqual(env.requests.map((r) => r.url), [STATUS_URL]);
+});
+
+test('reconnect: a failing request is swallowed', async () => {
+  const env = reconnectEnv({ routes: { [STATUS_URL]: () => new Error('network down') } });
+  await settle();
+  assert.deepEqual(env.requests.map((r) => r.url), [STATUS_URL]);
+});
+
+test('reconnect: Settings calling reconcile during the load check reuses it, and a later call checks afresh', async () => {
+  const env = reconnectEnv();
+  const during = env.Notify.reconcile(KEY);
+  assert.equal(await during, 'on');
+  await settle();
+  assert.deepEqual(env.requests.map((r) => r.url), [STATUS_URL, SUBSCRIPTION_URL],
+    'the Settings call added no second status request');
+  assert.equal(await env.Notify.reconcile(KEY), 'on');
+  assert.deepEqual(env.requests.map((r) => r.url), [STATUS_URL, SUBSCRIPTION_URL, STATUS_URL],
+    'after the load check settled, reconcile asks the server again');
+});
+
+test('reconnect: a reconcile with another key during the load check is its own check', async () => {
+  const env = reconnectEnv();
+  const other = Buffer.from(OLD_KEY_BYTES).toString('base64url');
+  await env.Notify.reconcile(other);
+  await settle();
+  assert.equal(env.requests.filter((r) => r.url === STATUS_URL).length, 2);
+});
+
+const MAC_TOUCHLESS = { userAgent: MAC_UA, maxTouchPoints: 0 };
+
+test('isMacDockApp: an installed app on a Mac is true', () => {
+  assert.equal(makeEnv({ ...MAC_TOUCHLESS, displayStandalone: true }).Notify.isMacDockApp(), true);
+});
+
+test('isMacDockApp: a Safari tab on a Mac is false', () => {
+  assert.equal(makeEnv({ ...MAC_TOUCHLESS }).Notify.isMacDockApp(), false);
+});
+
+test('isMacDockApp: an installed iPhone app is false', () => {
+  assert.equal(makeEnv({ userAgent: IPHONE_UA, standalone: true, displayStandalone: true }).Notify.isMacDockApp(), false);
+});
+
+test('isMacDockApp: an installed iPad that says Macintosh, with touch points, is false', () => {
+  assert.equal(makeEnv({ userAgent: MAC_UA, maxTouchPoints: 5, standalone: true, displayStandalone: true }).Notify.isMacDockApp(), false);
+});
+
+test('isMacDockApp: an installed app with a Windows or Android user agent is false', () => {
+  const windows = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+  assert.equal(makeEnv({ userAgent: windows, maxTouchPoints: 0, displayStandalone: true }).Notify.isMacDockApp(), false);
+  assert.equal(makeEnv({ userAgent: ANDROID_UA, displayStandalone: true }).Notify.isMacDockApp(), false);
 });
