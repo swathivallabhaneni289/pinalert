@@ -242,6 +242,33 @@ func TestAccessGateBlocksUnverified(t *testing.T) {
 		t.Fatalf("GET /api/reports error field = %q, want %q", errBody.Error.Field, "auth")
 	}
 
+	// Amended 2026-10-29 by plan 05-08: a new row. The official alerts route
+	// sits behind the same gate, and an unverified caller gets the 401
+	// envelope, never a list that could be read as "no alerts".
+	officialResp, err := client.Get(srv.URL + "/api/official/alerts?lat=16.5062&lon=80.6480")
+	if err != nil {
+		t.Fatalf("GET /api/official/alerts: %v", err)
+	}
+	defer officialResp.Body.Close()
+	officialBody, err := io.ReadAll(officialResp.Body)
+	if err != nil {
+		t.Fatalf("reading GET /api/official/alerts body: %v", err)
+	}
+	if officialResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("GET /api/official/alerts status = %d, want 401: %s", officialResp.StatusCode, officialBody)
+	}
+	var officialErr struct {
+		Error struct {
+			Field string `json:"field"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(officialBody, &officialErr); err != nil || officialErr.Error.Field != "auth" {
+		t.Fatalf("GET /api/official/alerts error body = %s (%v), want the auth envelope", officialBody, err)
+	}
+	if strings.Contains(string(officialBody), "groups") {
+		t.Fatalf("an unverified GET /api/official/alerts body must carry no alert data: %s", officialBody)
+	}
+
 	postResp, err := client.Post(srv.URL+"/api/reports", "application/json", bytes.NewReader([]byte(`{
 		"category": "flood",
 		"severity": "low",
