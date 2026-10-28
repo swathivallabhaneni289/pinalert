@@ -54,9 +54,13 @@ type settingsViewModel struct {
 	// is the VAPID public key. Plan 14 draws the rows from these and renders the key
 	// as data-push-key. The key is public by design; the home cell and every
 	// coordinate stay out of this model (T-03.2-14). There is no value here for
-	// Severe official alerts (Phase 5) or Someone I follow posts (Phase 9).
+	// Someone I follow posts (Phase 9).
+	//
+	// OfficialPushOn is Phase 5's switch "Severe official alerts for my area"
+	// (D-11), on by default; a boolean only, like the two above.
 	CriticalPushOn bool
 	ChangesPushOn  bool
+	OfficialPushOn bool
 	PushPublicKey  string
 }
 
@@ -121,6 +125,7 @@ func SettingsPage(tmpl *template.Template, accounts *service.AccountService, mut
 			// key only.
 			CriticalPushOn: alerts.CriticalPushOn,
 			ChangesPushOn:  alerts.ChangesPushOn,
+			OfficialPushOn: alerts.OfficialPushOn,
 			PushPublicKey:  cfg.PushPublicKey,
 			AssetVersion:   cfg.AssetVersion,
 			Chrome:         chrome,
