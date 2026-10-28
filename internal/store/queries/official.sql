@@ -167,3 +167,57 @@ WHERE a.expires_at > sqlc.arg(now)::timestamptz
   )
 GROUP BY a.id
 ORDER BY a.sent_at DESC, a.id DESC;
+
+-- name: UpsertOfficialHazard :exec
+-- Stores one GDACS hazard event by (event_type, event_id) (plan 05-21, research
+-- G4). A later answer replaces the row in place and keeps first_seen_at. This
+-- table is the only home of GDACS events: they are never reports, never votes
+-- and never alerts, so no vote path, banner or phone alert can see them.
+INSERT INTO official_hazards (
+    event_type, event_id, episode_id, name, alert_level, country, latitude, longitude,
+    from_date, to_date, is_current, severity_text, report_url, date_modified,
+    first_seen_at, last_seen_at
+) VALUES (
+    sqlc.arg(event_type)::text, sqlc.arg(event_id)::bigint, sqlc.narg(episode_id)::bigint,
+    sqlc.arg(name)::text, sqlc.arg(alert_level)::text, sqlc.arg(country)::text,
+    sqlc.arg(latitude)::float8, sqlc.arg(longitude)::float8,
+    sqlc.narg(from_date)::timestamptz, sqlc.narg(to_date)::timestamptz,
+    sqlc.arg(is_current)::boolean, sqlc.arg(severity_text)::text, sqlc.arg(report_url)::text,
+    sqlc.narg(date_modified)::timestamptz, sqlc.arg(now)::timestamptz, sqlc.arg(now)::timestamptz
+)
+ON CONFLICT (event_type, event_id) DO UPDATE
+SET episode_id = EXCLUDED.episode_id,
+    name = EXCLUDED.name,
+    alert_level = EXCLUDED.alert_level,
+    country = EXCLUDED.country,
+    latitude = EXCLUDED.latitude,
+    longitude = EXCLUDED.longitude,
+    from_date = EXCLUDED.from_date,
+    to_date = EXCLUDED.to_date,
+    is_current = EXCLUDED.is_current,
+    severity_text = EXCLUDED.severity_text,
+    report_url = EXCLUDED.report_url,
+    date_modified = EXCLUDED.date_modified,
+    last_seen_at = EXCLUDED.last_seen_at;
+
+-- name: CurrentOfficialHazards :many
+-- The hazards a pin may be drawn for: marked current by GDACS and not ended
+-- before ended_after (the caller passes now minus the 48 hour keep). A hazard
+-- with no end date counts as ended when it was last seen before ended_after,
+-- so a row GDACS stopped mentioning cannot stay on the map for ever.
+SELECT *
+FROM official_hazards
+WHERE is_current
+  AND COALESCE(to_date, last_seen_at) > sqlc.arg(ended_after)::timestamptz
+ORDER BY id;
+
+-- name: OfficialHazardsInBox :many
+-- The same current hazards whose point lies inside a bounding box. The view
+-- then tests the district in Go, so the box only has to be a cheap first cut.
+SELECT *
+FROM official_hazards
+WHERE is_current
+  AND COALESCE(to_date, last_seen_at) > sqlc.arg(ended_after)::timestamptz
+  AND latitude BETWEEN sqlc.arg(min_lat)::float8 AND sqlc.arg(max_lat)::float8
+  AND longitude BETWEEN sqlc.arg(min_lon)::float8 AND sqlc.arg(max_lon)::float8
+ORDER BY id;

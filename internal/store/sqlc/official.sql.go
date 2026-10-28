@@ -34,6 +34,56 @@ func (q *Queries) CancelOfficialAlertsByIdentifier(ctx context.Context, arg Canc
 	return result.RowsAffected(), nil
 }
 
+const currentOfficialHazards = `-- name: CurrentOfficialHazards :many
+SELECT id, event_type, event_id, episode_id, name, alert_level, country, latitude, longitude, from_date, to_date, is_current, severity_text, report_url, date_modified, first_seen_at, last_seen_at
+FROM official_hazards
+WHERE is_current
+  AND COALESCE(to_date, last_seen_at) > $1::timestamptz
+ORDER BY id
+`
+
+// The hazards a pin may be drawn for: marked current by GDACS and not ended
+// before ended_after (the caller passes now minus the 48 hour keep). A hazard
+// with no end date counts as ended when it was last seen before ended_after,
+// so a row GDACS stopped mentioning cannot stay on the map for ever.
+func (q *Queries) CurrentOfficialHazards(ctx context.Context, endedAfter time.Time) ([]OfficialHazard, error) {
+	rows, err := q.db.Query(ctx, currentOfficialHazards, endedAfter)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OfficialHazard
+	for rows.Next() {
+		var i OfficialHazard
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventType,
+			&i.EventID,
+			&i.EpisodeID,
+			&i.Name,
+			&i.AlertLevel,
+			&i.Country,
+			&i.Latitude,
+			&i.Longitude,
+			&i.FromDate,
+			&i.ToDate,
+			&i.IsCurrent,
+			&i.SeverityText,
+			&i.ReportUrl,
+			&i.DateModified,
+			&i.FirstSeenAt,
+			&i.LastSeenAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deleteOfficialAlertAreas = `-- name: DeleteOfficialAlertAreas :exec
 DELETE FROM official_alert_areas
 WHERE alert_id = $1::bigint
@@ -366,6 +416,70 @@ func (q *Queries) OfficialAlertsInForce(ctx context.Context, arg OfficialAlertsI
 	return items, nil
 }
 
+const officialHazardsInBox = `-- name: OfficialHazardsInBox :many
+SELECT id, event_type, event_id, episode_id, name, alert_level, country, latitude, longitude, from_date, to_date, is_current, severity_text, report_url, date_modified, first_seen_at, last_seen_at
+FROM official_hazards
+WHERE is_current
+  AND COALESCE(to_date, last_seen_at) > $1::timestamptz
+  AND latitude BETWEEN $2::float8 AND $3::float8
+  AND longitude BETWEEN $4::float8 AND $5::float8
+ORDER BY id
+`
+
+type OfficialHazardsInBoxParams struct {
+	EndedAfter time.Time
+	MinLat     float64
+	MaxLat     float64
+	MinLon     float64
+	MaxLon     float64
+}
+
+// The same current hazards whose point lies inside a bounding box. The view
+// then tests the district in Go, so the box only has to be a cheap first cut.
+func (q *Queries) OfficialHazardsInBox(ctx context.Context, arg OfficialHazardsInBoxParams) ([]OfficialHazard, error) {
+	rows, err := q.db.Query(ctx, officialHazardsInBox,
+		arg.EndedAfter,
+		arg.MinLat,
+		arg.MaxLat,
+		arg.MinLon,
+		arg.MaxLon,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OfficialHazard
+	for rows.Next() {
+		var i OfficialHazard
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventType,
+			&i.EventID,
+			&i.EpisodeID,
+			&i.Name,
+			&i.AlertLevel,
+			&i.Country,
+			&i.Latitude,
+			&i.Longitude,
+			&i.FromDate,
+			&i.ToDate,
+			&i.IsCurrent,
+			&i.SeverityText,
+			&i.ReportUrl,
+			&i.DateModified,
+			&i.FirstSeenAt,
+			&i.LastSeenAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const storedPubDates = `-- name: StoredPubDates :many
 SELECT guid, source_pubdate
 FROM official_alerts
@@ -567,4 +681,76 @@ func (q *Queries) UpsertOfficialAlert(ctx context.Context, arg UpsertOfficialAle
 		&i.LastSeenAt,
 	)
 	return i, err
+}
+
+const upsertOfficialHazard = `-- name: UpsertOfficialHazard :exec
+INSERT INTO official_hazards (
+    event_type, event_id, episode_id, name, alert_level, country, latitude, longitude,
+    from_date, to_date, is_current, severity_text, report_url, date_modified,
+    first_seen_at, last_seen_at
+) VALUES (
+    $1::text, $2::bigint, $3::bigint,
+    $4::text, $5::text, $6::text,
+    $7::float8, $8::float8,
+    $9::timestamptz, $10::timestamptz,
+    $11::boolean, $12::text, $13::text,
+    $14::timestamptz, $15::timestamptz, $15::timestamptz
+)
+ON CONFLICT (event_type, event_id) DO UPDATE
+SET episode_id = EXCLUDED.episode_id,
+    name = EXCLUDED.name,
+    alert_level = EXCLUDED.alert_level,
+    country = EXCLUDED.country,
+    latitude = EXCLUDED.latitude,
+    longitude = EXCLUDED.longitude,
+    from_date = EXCLUDED.from_date,
+    to_date = EXCLUDED.to_date,
+    is_current = EXCLUDED.is_current,
+    severity_text = EXCLUDED.severity_text,
+    report_url = EXCLUDED.report_url,
+    date_modified = EXCLUDED.date_modified,
+    last_seen_at = EXCLUDED.last_seen_at
+`
+
+type UpsertOfficialHazardParams struct {
+	EventType    string
+	EventID      int64
+	EpisodeID    *int64
+	Name         string
+	AlertLevel   string
+	Country      string
+	Latitude     float64
+	Longitude    float64
+	FromDate     pgtype.Timestamptz
+	ToDate       pgtype.Timestamptz
+	IsCurrent    bool
+	SeverityText string
+	ReportUrl    string
+	DateModified pgtype.Timestamptz
+	Now          time.Time
+}
+
+// Stores one GDACS hazard event by (event_type, event_id) (plan 05-21, research
+// G4). A later answer replaces the row in place and keeps first_seen_at. This
+// table is the only home of GDACS events: they are never reports, never votes
+// and never alerts, so no vote path, banner or phone alert can see them.
+func (q *Queries) UpsertOfficialHazard(ctx context.Context, arg UpsertOfficialHazardParams) error {
+	_, err := q.db.Exec(ctx, upsertOfficialHazard,
+		arg.EventType,
+		arg.EventID,
+		arg.EpisodeID,
+		arg.Name,
+		arg.AlertLevel,
+		arg.Country,
+		arg.Latitude,
+		arg.Longitude,
+		arg.FromDate,
+		arg.ToDate,
+		arg.IsCurrent,
+		arg.SeverityText,
+		arg.ReportUrl,
+		arg.DateModified,
+		arg.Now,
+	)
+	return err
 }
