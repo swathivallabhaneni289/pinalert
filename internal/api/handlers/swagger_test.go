@@ -900,8 +900,11 @@ func TestSwaggerOfficialAlerts(t *testing.T) {
 	p14AssertPropKeys(t, props, "handlers.OfficialDetailsResponse",
 		[]string{"description", "instruction", "original_headline", "original_description", "original_lang_label",
 			"original_lang_code", "areas", "source_line"})
+	// Amended 2026-10-29 by plan 05-19: the banner carries a demo flag, true only
+	// on the Demo's sample alert, so the Nearby banner can draw the Demo tag. The
+	// six keys written before are all still required.
 	p14AssertPropKeys(t, props, "handlers.OfficialBannerResponse",
-		[]string{"level", "level_word", "event_phrase", "area", "more", "alert_id"})
+		[]string{"level", "level_word", "event_phrase", "area", "more", "alert_id", "demo"})
 	p14AssertEnum(t, p14SwaggerProp(t, props, "handlers.OfficialAlertsResponse", "state"), []string{"fresh", "stale", "unavailable"})
 	p14AssertEnum(t, p14SwaggerProp(t, props, "handlers.OfficialGroupResponse", "kind"), []string{"reader", "home", "state", "unplaced"})
 	for _, key := range []string{"age_seconds", "last_success_at", "banner"} {
