@@ -60,6 +60,10 @@ function fakeEl(id, extra = {}) {
 //   patch              200 | 400 | 500 | 'reject' | 'hang'
 //   showModal          false for a dialog with no showModal
 //   otherDialog        true for another open dialog on the page
+//   modalOpen          true for a page locked by another box (data-modal-open
+//                      on the root, set by Pinalert.lockPage for the report
+//                      form, the Flag box and the reader window)
+//   inert              true for a dialog the page lock made inert
 //   stored             what pinalert.changesAsked holds before
 //   readThrows, writeThrows   a storage that fails
 //   noDialog           true for a page without the partial
@@ -67,18 +71,24 @@ function load(o = {}) {
   const opts = {
     key: 'BPUSHKEY', account: '7', base: 'maybe', macDock: false, notify: true, enable: 'resolve',
     patch: 200, showModal: true, otherDialog: false, stored: null, readThrows: false, writeThrows: false,
-    noDialog: false, ...o
+    noDialog: false, modalOpen: false, inert: false, ...o
   };
   const source = fs.readFileSync(scriptPath, 'utf8');
   const log = [];
   const doc = { activeElement: null };
+  doc.documentElement = {
+    attrs: opts.modalOpen ? { 'data-modal-open': 'true' } : {},
+    hasAttribute(name) { return Object.hasOwn(this.attrs, name); },
+    removeAttribute(name) { delete this.attrs[name]; }
+  };
   const make = (id, extra) => fakeEl(id, { doc, log, ...extra });
 
   const dialog = make('changes-ask', {
     open: false,
     showCalls: 0,
     closeCalls: 0,
-    close() { if (this.open) { this.open = false; this.closeCalls += 1; log.push('close'); this.fire('close'); } }
+    close() { if (this.open) { this.open = false; this.closeCalls += 1; log.push('close'); this.fire('close'); } },
+    closest(sel) { return sel === '[inert]' && opts.inert ? { id: 'locked' } : null; }
   });
   if (opts.showModal) {
     dialog.showModal = function () { this.open = true; this.showCalls += 1; log.push('showModal'); };
@@ -179,8 +189,8 @@ test(NAME + 'opens on the first offer: key written first, title focused, no butt
   const pending = m.ask.offer();
   assert.equal(m.dialog.showCalls, 1);
   assert.equal(m.dialog.open, true);
-  assert.equal(m.store.get('pinalert.changesAsked'), '7');
-  assert.deepEqual(m.log, ['write:pinalert.changesAsked=7', 'showModal', 'focus:changes-ask-title']);
+  assert.equal(m.store.get('pinalert.changesAsked'), '["7"]');
+  assert.deepEqual(m.log, ['write:pinalert.changesAsked=["7"]', 'showModal', 'focus:changes-ask-title']);
   assert.equal(m.title.focused, 1);
   assert.equal(m.allow.focused, 0);
   assert.equal(m.later.focused, 0);
@@ -209,17 +219,69 @@ test(NAME + 'asks once per account: a second offer after the answer does not ope
   assert.equal(m.dialog.showCalls, 1);
 });
 
-test(NAME + 'storage holding another account id opens for this one and writes this one', () => {
+// WR-04 (03.3-REVIEW): the key holds a small JSON list of the account ids asked
+// on this browser, so a shared phone does not ask account A again after B. An
+// old value, one plain id, is read as a list of one.
+test(NAME + 'an old single id of another account is kept as one entry, and this account is added', () => {
   const m = load({ stored: 8 });
   m.ask.offer();
   assert.equal(m.dialog.showCalls, 1);
-  assert.equal(m.store.get('pinalert.changesAsked'), '7');
+  assert.equal(m.store.get('pinalert.changesAsked'), '["8","7"]');
 });
 
-test(NAME + 'storage holding this account id does not open', () => {
+test(NAME + 'an old single id of this account does not open', () => {
   const m = load({ stored: 7 });
   m.ask.offer();
   assert.equal(m.dialog.showCalls, 0);
+});
+
+test(NAME + 'a list holding this account id does not open and leaves the list as it was', () => {
+  const m = load({ stored: '["8","7","12"]' });
+  m.ask.offer();
+  assert.equal(m.dialog.showCalls, 0);
+  assert.equal(m.store.get('pinalert.changesAsked'), '["8","7","12"]');
+});
+
+test(NAME + 'a shared phone: A asked, then B asked, then A is not asked again', async () => {
+  const a = load({ account: '7' });
+  a.ask.offer();
+  a.later.click();
+  await settle();
+  const afterA = a.store.get('pinalert.changesAsked');
+  const b = load({ account: '8', stored: afterA });
+  b.ask.offer();
+  assert.equal(b.dialog.showCalls, 1, 'B is asked once');
+  const afterB = b.store.get('pinalert.changesAsked');
+  assert.equal(afterB, '["7","8"]');
+  const aAgain = load({ account: '7', stored: afterB });
+  aAgain.ask.offer();
+  assert.equal(aAgain.dialog.showCalls, 0, 'A is not asked again');
+  const bAgain = load({ account: '8', stored: afterB });
+  bAgain.ask.offer();
+  assert.equal(bAgain.dialog.showCalls, 0, 'B is not asked again');
+});
+
+test(NAME + 'the list keeps the last 8 ids: a ninth account drops the oldest', () => {
+  const m = load({ account: '9', stored: JSON.stringify(['1', '2', '3', '4', '5', '6', '7', '8']) });
+  m.ask.offer();
+  assert.equal(m.dialog.showCalls, 1);
+  assert.deepEqual(JSON.parse(m.store.get('pinalert.changesAsked')), ['2', '3', '4', '5', '6', '7', '8', '9']);
+});
+
+test(NAME + 'a long account id is kept as text, not as a rounded number', () => {
+  const big = '9007199254740993123';
+  const m = load({ account: big, stored: big });
+  m.ask.offer();
+  assert.equal(m.dialog.showCalls, 0);
+});
+
+test(NAME + 'a stored value that is neither an id nor a list does not open and is left alone', () => {
+  for (const stored of ['not json', '{"a":1}', '"7"', '[', 'null']) {
+    const m = load({ stored });
+    m.ask.offer();
+    assert.equal(m.dialog.showCalls, 0, stored);
+    assert.equal(m.store.get('pinalert.changesAsked'), stored, stored);
+  }
 });
 
 test(NAME + 'storage that cannot be read or written does not open', () => {
@@ -272,6 +334,37 @@ test(NAME + 'never opens on a dialog with no showModal or a page without the par
 test(NAME + 'does not open while another dialog is open, and then writes no key', () => {
   const m = load({ otherDialog: true });
   m.ask.offer();
+  assert.equal(m.dialog.showCalls, 0);
+  assert.equal(m.store.has('pinalert.changesAsked'), false);
+});
+
+// CR-01 (03.3-REVIEW): the report form, the Flag box and the reader window are
+// not native dialogs. They lock the page with data-modal-open on the root and
+// make the rest of it inert, this dialog included, so a pop-up opened then
+// could not be answered.
+test(NAME + 'does not open while the page is locked by another box (data-modal-open), writes no key, and offers again later', async () => {
+  const m = load({ modalOpen: true });
+  let done = false;
+  m.ask.offer().then(() => { done = true; });
+  await settle();
+  assert.equal(done, true, 'offer resolves at once');
+  assert.equal(m.dialog.showCalls, 0);
+  assert.equal(m.dialog.open, false);
+  assert.equal(m.store.has('pinalert.changesAsked'), false, 'no key, so the next post or vote can ask');
+  let quiet = false;
+  m.ask.settled().then(() => { quiet = true; });
+  await settle();
+  assert.equal(quiet, true, 'settled resolves');
+  // The other box closes: the next offer opens.
+  m.doc.documentElement.removeAttribute('data-modal-open');
+  m.ask.offer();
+  assert.equal(m.dialog.showCalls, 1);
+  assert.equal(m.store.has('pinalert.changesAsked'), true);
+});
+
+test(NAME + 'does not open while the dialog itself sits inside an inert part of the page, and writes no key', async () => {
+  const m = load({ inert: true });
+  await m.ask.offer();
   assert.equal(m.dialog.showCalls, 0);
   assert.equal(m.store.has('pinalert.changesAsked'), false);
 });
@@ -409,6 +502,47 @@ test(NAME + 'Allow then Escape gives one request, and Not now while busy is igno
   await pending;
   assert.equal(m.fetches.length, 1);
   assert.equal(m.enables.length, 1);
+});
+
+// IN-03 (03.3-REVIEW): a browser can close a modal dialog by itself, without a
+// cancel event the script can prevent (Chrome's close watcher on a second
+// Escape). browserClose does that: the dialog is shut and only close fires.
+const browserClose = (m) => { m.dialog.open = false; m.dialog.fire('close'); };
+
+test(NAME + 'a dialog the browser closes by itself settles the wait and sends nothing', async () => {
+  const m = load();
+  const pending = m.ask.offer();
+  browserClose(m);
+  await pending;
+  let done = false;
+  m.ask.settled().then(() => { done = true; });
+  await settle();
+  assert.equal(done, true);
+  assert.equal(m.fetches.length, 0);
+  assert.equal(m.enables.length, 0);
+});
+
+test(NAME + 'a dialog the browser closes while Allow is busy settles at once, clears busy, and a late answer touches nothing', async () => {
+  const m = load({ enable: 'pending' });
+  const pending = m.ask.offer();
+  m.allow.click();
+  assert.equal(m.allow.disabled, true);
+  browserClose(m);
+  let done = false;
+  m.ask.settled().then(() => { done = true; });
+  await pending;
+  await settle();
+  assert.equal(done, true, 'settled resolves although enable has not answered');
+  assert.equal(m.allow.disabled, false);
+  assert.equal(m.later.disabled, false);
+  assert.equal(m.dialog.getAttribute('aria-busy'), null);
+  const focusBefore = m.log.filter((l) => l.startsWith('focus:')).length;
+  m.releaseEnable({ ok: true });
+  await settle();
+  await settle();
+  assert.equal(m.fetches.length, 1, 'the Allow answer still turns Changes on');
+  assert.equal(m.dialog.closeCalls, 0, 'the script never closes a dialog the browser already closed');
+  assert.equal(m.log.filter((l) => l.startsWith('focus:')).length, focusBefore, 'the late answer moves no focus');
 });
 
 // ---- settled and offer while open ------------------------------------------

@@ -410,16 +410,19 @@
       return readyRegistration().then(function (registration) {
         // A subscription made with another server key (the operator changed
         // the key pair) makes subscribe fail for good, so drop it first.
-        return Promise.resolve(registration.pushManager.getSubscription()).then(function (existing) {
+        // Each browser call starts at once and races a time limit, so a push
+        // service that never answers ends as a failure (CR-02). The prompt
+        // above has no limit: that wait is the person's own choice.
+        return withTimeout(Promise.resolve(registration.pushManager.getSubscription())).then(function (existing) {
           if (existing && !sameKey(existing, key)) {
-            return existing.unsubscribe();
+            return withTimeout(Promise.resolve(existing.unsubscribe()));
           }
           return null;
         }).then(function () {
-          return registration.pushManager.subscribe({
+          return withTimeout(Promise.resolve(registration.pushManager.subscribe({
             userVisibleOnly: true,
             applicationServerKey: keyBytes(key)
-          });
+          })));
         });
       }).then(function (subscription) {
         return post(SUBSCRIPTION_URL, subscription.toJSON());
@@ -444,11 +447,18 @@
   // the browser unsubscribes. The browser permission is kept, so turning on
   // again asks nothing. A failed server call keeps the browser subscription, so
   // the device and the server never disagree about it.
+  //
+  // It first waits for the page load check when that is still out, so a
+  // re-register posted by the check can never reach the server after this
+  // Off and bring the endpoint back (WR-02). enable never waits like this:
+  // Safari needs its first call inside the tap.
   function disable() {
     if (isOffline()) {
       return Promise.resolve({ ok: false, state: 'on', reason: 'offline' });
     }
-    return currentSubscription().then(function (subscription) {
+    var quiet = function () {};
+    var before = pending !== null ? pending.then(quiet, quiet) : Promise.resolve();
+    return before.then(currentSubscription).then(function (subscription) {
       if (!subscription) {
         clearIntent();
         return { ok: true, state: 'ready' };
@@ -479,11 +489,16 @@
   // on here. It never asks the browser for anything.
   function runReconcile(key) {
     return inspect(key).then(function (found) {
-      if (found.state !== 'ready' || !found.sub || found.known !== true || !intentIsSet()) {
+      if (found.state !== 'ready' || !found.sub || found.known !== true) {
         return found.state;
       }
       // A subscription made with another server key could never be sent to.
       if (!sameKey(found.sub, key)) {
+        return found.state;
+      }
+      // The intent is read again right before the post, after the status
+      // answer: an Off that cleared it meanwhile stops the re-register (WR-02).
+      if (!intentIsSet()) {
         return found.state;
       }
       return post(SUBSCRIPTION_URL, found.sub.toJSON()).then(function (answer) {

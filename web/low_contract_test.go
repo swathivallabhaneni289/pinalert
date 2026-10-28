@@ -193,6 +193,13 @@ func TestLowDataAssetPolicy(t *testing.T) {
 			t.Errorf("script %s is not allowed on the Low data page", s)
 			continue
 		}
+		// Amended by the 03.3-REVIEW fix WR-03: changes-ask.js sits inside the
+		// {{if .ChangesAsk}} block with its pop-up, before the other body
+		// scripts, so only an account that can see the pop-up loads it. Its
+		// place is pinned by TestChangesAskOnLowDataContract.
+		if s == "/static/js/changes-ask.js" {
+			continue
+		}
 		if index[s] < index["/static/js/trust.js"] || index[s] > index["/static/js/low.js"] {
 			t.Errorf("script %s must sit between trust.js and low.js", s)
 		}

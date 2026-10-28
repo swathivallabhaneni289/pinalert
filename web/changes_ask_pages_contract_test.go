@@ -15,9 +15,16 @@ const c33p21Script = `/static/js/changes-ask.js?v={{.AssetVersion}}`
 
 // c33p21Check pins the include and the script tag of one page template.
 // afterMarker is a snippet that must come before the include (the end of the
-// page shell), and scriptAfter is the script tag the changes-ask.js tag must
-// directly follow, or "" when its place is not pinned that tightly.
-func c33p21Check(t *testing.T, name, afterMarker, scriptAfter string) {
+// page shell).
+//
+// Amended by the 03.3-REVIEW fix WR-03: the changes-ask.js tag sits inside the
+// same {{if .ChangesAsk}} block as the partial, right after it, so an account
+// that can never see the pop-up does not load the script. It used to follow
+// report-form.js for every account. The callers in votes.js and report-form.js
+// check window.PinalertChangesAsk before they use it, and the script reads
+// window.PinalertNotify only when it is offered, so its place among the
+// deferred scripts does not matter.
+func c33p21Check(t *testing.T, name, afterMarker string) {
 	t.Helper()
 	src := templateCopy(stripReadTemplate(t, name))
 
@@ -62,22 +69,18 @@ func c33p21Check(t *testing.T, name, afterMarker, scriptAfter string) {
 	if n := strings.Count(src, tag); n != 1 {
 		t.Errorf("%s: want exactly one %s", name, tag)
 	}
-	if scriptAfter != "" {
-		if !strings.Contains(src, scriptAfter+"\n  "+tag) {
-			t.Errorf("%s: the changes-ask.js tag must directly follow %s", name, scriptAfter)
-		}
+	block := `{{if .ChangesAsk}}{{template "changes_ask"}}` + "\n  " + tag + `{{end}}`
+	if !strings.Contains(src, block) {
+		t.Errorf("%s: the changes-ask.js tag must sit inside the {{if .ChangesAsk}} block, right after the partial: want %q", name, block)
 	}
 }
 
 // TestChangesAskOnNearbyContract pins the include and the script tag on Nearby.
 func TestChangesAskOnNearbyContract(t *testing.T) {
-	c33p21Check(t, "index.html.tmpl", `{{template "app_bottombar" .}}`,
-		`<script src="/static/js/report-form.js?v={{.AssetVersion}}" defer></script>`)
+	c33p21Check(t, "index.html.tmpl", `{{template "app_bottombar" .}}`)
 }
 
-// TestChangesAskOnLowDataContract pins them on Low data, where the script sits
-// right after report-form.js, so between trust.js and low.js.
+// TestChangesAskOnLowDataContract pins them on Low data.
 func TestChangesAskOnLowDataContract(t *testing.T) {
-	c33p21Check(t, "low.html.tmpl", `<div id="toast"`,
-		`<script src="/static/js/report-form.js?v={{.AssetVersion}}" defer></script>`)
+	c33p21Check(t, "low.html.tmpl", `<div id="toast"`)
 }

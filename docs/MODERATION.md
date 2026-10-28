@@ -287,16 +287,38 @@ figures now are:
 - budget: 679936 bytes, the new measured total plus 15 percent, rounded up to the next 1024
   bytes.
 
-Re-measured on 2026-10-28 by Phase 3.3 plan 21. The Low data view now links `changes-ask.js` and
-renders the changes pop-up for an account whose Changes switch is off. Phase 3.3 plans 17 and 20
-had already grown `notify.js`, `votes.js` and `report-form.js` since the figures above. The
-figures now are:
+Re-measured on 2026-10-28 by Phase 3.3 plan 21, when the Low data view started to link
+`changes-ask.js` and render the changes pop-up for an account whose Changes switch is off. Most of
+the growth since the figures above did not come from that plan. Measured at the commit before the
+Phase 3.3 gap fix (3bf9e2a), the total was already 673066 bytes: about 82 KB (82074 bytes, 13.9
+percent) had come from earlier work since 2026-10-17 that was never re-measured or looked at
+here. The gap fix itself (Phase 3.3 plans 17, 20 and 21) added about 11.5 KB (11531 bytes:
+`changes-ask.js` 8595, `notify.js` about 1937, `votes.js` 473, `report-form.js` 429 and the page
+97). That made 684597 bytes, 4661 over the budget of 679936, and the budget was set again from
+it:
 
 - measured total: 684597 bytes raw, made of 11838 bytes of HTML, 229635 bytes of stylesheets,
   429339 bytes of scripts and 13785 bytes of icons;
 - gzip level 5 for the same files: 204179 bytes, informational only;
 - budget: 787456 bytes, the new measured total plus 15 percent, rounded up to the next 1024
   bytes. Nothing was dropped or split to meet it.
+
+Setting the budget from 684597 also gave the 15 percent headroom to the earlier 82074 bytes,
+which nobody had examined. Whether that earlier growth was intended is still for the owner to
+decide.
+
+Re-measured on 2026-10-28 by the Phase 3.3 code review fixes. `changes-ask.js` now loads only
+with the changes pop-up, inside the same `{{if .ChangesAsk}}` as the partial (fix WR-03), so an
+account whose Changes switch is on no longer loads it. The test page has no push key, so it
+renders no pop-up and no longer counts `changes-ask.js`; fixes CR-02 and WR-02 grew `notify.js`.
+The figures now are:
+
+- measured total: 676839 bytes raw, made of 11773 bytes of HTML, 229635 bytes of stylesheets,
+  421646 bytes of scripts and 13785 bytes of icons;
+- gzip level 5 for the same files: 201292 bytes, informational only;
+- budget: 779264 bytes, the new measured total plus 15 percent, rounded up to the next 1024
+  bytes. A page that shows the pop-up adds `changes-ask.js` (11108 bytes) and the partial, about
+  12 KB in all, which stays inside it.
 
 Raw bytes are tested although the first design described a compressed budget (orchestrator
 decision 2). The router now compresses text, but the transfer size depends on the client, so raw

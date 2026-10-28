@@ -19,14 +19,19 @@
 //     (never needs-install, blocked or unsupported, so never an iPhone Safari
 //     tab), and this is not a Mac Dock app, whose browser already holds this
 //     Mac's subscription (07.1 D-18);
-//   - no other dialog is open, so it never stacks on another box;
+//   - no other dialog is open and the page is not locked by another box
+//     (data-modal-open on the root, or this dialog made inert), so it never
+//     stacks on another box;
 //   - this account has not been asked in this browser (see the key below).
 // Any probe that throws counts as "do not open".
 //
-// ONCE PER ACCOUNT ON A BROWSER (P-1). The key pinalert.changesAsked holds the
-// account id and is written just before the pop-up opens, so a tab closed
-// mid-question does not ask again. A server side flag would need a migration.
-// Storage that cannot be read or written means no pop-up. Plan 21 renders the
+// ONCE PER ACCOUNT ON A BROWSER (P-1). The key pinalert.changesAsked holds a
+// small JSON list of the account ids asked here, the last 8, so a shared phone
+// does not ask account A again after B (WR-04). An older value, one plain id,
+// reads as a list of one. The list is written just before the pop-up opens, so
+// a tab closed mid-question does not ask again. A server side flag would need a
+// migration. Storage that cannot be read or written, or a value that is neither
+// an id nor a list, means no pop-up. Plan 21 renders the
 // dialog only while the account's Changes switch is off, so an account that
 // already said yes is never asked.
 //
@@ -50,6 +55,8 @@
   var REQUEST_TIMEOUT_MS = 10000;
   // The shape of an account id, the one notify.js uses.
   var ACCOUNT_ID_PATTERN = /^[1-9][0-9]{0,18}$/;
+  // How many account ids the asked list keeps on one browser.
+  var ASKED_KEEP = 8;
 
   var dialog = document.getElementById('changes-ask');
   var title = document.getElementById('changes-ask-title');
@@ -62,11 +69,33 @@
   var busy = false;
   var current = null;
   var release = null;
+  // Counts finished pop-ups, so a late Allow answer can tell its own has gone.
+  var finished = 0;
 
   function attr(selector, name) {
     var node = document.querySelector(selector);
     var value = node ? node.getAttribute(name) : '';
     return typeof value === 'string' ? value : '';
+  }
+
+  // askedList reads the account ids asked on this browser, as text. Nothing
+  // stored is an empty list, an older single id is a list of one, and a value
+  // that is neither is null (do not open). The caller holds the try.
+  function askedList() {
+    var raw = localStorage.getItem(ASKED_KEY);
+    if (raw === null) {
+      return [];
+    }
+    if (ACCOUNT_ID_PATTERN.test(raw)) {
+      return [raw];
+    }
+    var list = JSON.parse(raw);
+    if (!Array.isArray(list)) {
+      return null;
+    }
+    return list.filter(function (id) {
+      return typeof id === 'string' && ACCOUNT_ID_PATTERN.test(id);
+    });
   }
 
   // canOffer returns the push key when the pop-up may open now, else ''.
@@ -93,10 +122,17 @@
       if (notify.isMacDockApp() === true) {
         return '';
       }
-      if (localStorage.getItem(ASKED_KEY) === account) {
+      var asked = askedList();
+      if (asked === null || asked.indexOf(account) !== -1) {
         return '';
       }
-      if (document.querySelector('dialog[open]')) {
+      // Another box is open: a native dialog, or a box that locked the page
+      // (the report form, the Flag box, the reader window). The lock makes
+      // this dialog inert, so it could not be answered (CR-01). The key is not
+      // written, so the next post or vote can ask.
+      if (document.querySelector('dialog[open]') ||
+          document.documentElement.hasAttribute('data-modal-open') ||
+          (typeof dialog.closest === 'function' && dialog.closest('[inert]'))) {
         return '';
       }
       return key;
@@ -115,7 +151,9 @@
     }
     opener = document.activeElement || null;
     try {
-      localStorage.setItem(ASKED_KEY, attr('[data-account-id]', 'data-account-id'));
+      var list = askedList();
+      list.push(attr('[data-account-id]', 'data-account-id'));
+      localStorage.setItem(ASKED_KEY, JSON.stringify(list.slice(-ASKED_KEEP)));
       dialog.showModal();
     } catch (err) {
       opener = null;
@@ -183,7 +221,14 @@
   // finish closes the pop-up, gives focus back to the element that had it when
   // that element is still on the page (P-6), and resolves the wait. Nothing is
   // sent from the close event, so one answer can never produce two requests.
+  // The wait is taken first and the open count moves on, so the close event
+  // this raises finds nothing to settle, and a late Allow answer of this
+  // pop-up (see onAllow) no longer touches the page.
   function finish() {
+    var resolve = release;
+    current = null;
+    release = null;
+    finished += 1;
     try {
       if (dialog.open && typeof dialog.close === 'function') {
         dialog.close();
@@ -198,9 +243,6 @@
     if (back && back.isConnected !== false && typeof back.focus === 'function') {
       back.focus();
     }
-    var resolve = release;
-    current = null;
-    release = null;
     if (resolve) {
       resolve();
     }
@@ -218,6 +260,7 @@
     }
     busy = true;
     setBusy(true);
+    var mine = finished;
     function save() {
       try {
         return saveChanges();
@@ -225,7 +268,14 @@
         return Promise.resolve();
       }
     }
-    Promise.resolve(pending).then(save, save).then(finish, finish);
+    // The answer still turns Changes on, but it closes the pop-up only while
+    // this pop-up is the one open (the browser may have closed it already).
+    function done() {
+      if (mine === finished) {
+        finish();
+      }
+    }
+    Promise.resolve(pending).then(save, save).then(done, done);
   }
 
   function onLater() {
@@ -242,10 +292,20 @@
     onLater();
   }
 
+  // A browser can close the dialog by itself, without a cancel event that can be
+  // prevented (IN-03). Then the wait is settled and busy cleared, so settled()
+  // always resolves. Nothing is sent from here.
+  function onClose() {
+    if (current) {
+      finish();
+    }
+  }
+
   if (wired) {
     allowButton.addEventListener('click', onAllow);
     laterButton.addEventListener('click', onLater);
     dialog.addEventListener('cancel', onCancel);
+    dialog.addEventListener('close', onClose);
   }
 
   window.PinalertChangesAsk = {

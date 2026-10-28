@@ -222,8 +222,9 @@
 
   {{template "app_bottombar" .}}
 
-  {{/* Phase 3.3 plan 21: the first post or vote pop-up, a direct child of body, drawn only while this account's Changes switch is off. */}}
-  {{if .ChangesAsk}}{{template "changes_ask"}}{{end}}
+  {{/* Phase 3.3 plan 21: the first post or vote pop-up, a direct child of body, drawn only while this account's Changes switch is off. Its script comes with it and only with it (03.3-REVIEW fix WR-03). */}}
+  {{if .ChangesAsk}}{{template "changes_ask"}}
+  <script src="/static/js/changes-ask.js?v={{.AssetVersion}}" defer></script>{{end}}
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
@@ -242,7 +243,6 @@
   <script src="/static/js/flag.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/mute.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/report-form.js?v={{.AssetVersion}}" defer></script>
-  <script src="/static/js/changes-ask.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/position.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/sheet.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/map.js?v={{.AssetVersion}}" defer></script>

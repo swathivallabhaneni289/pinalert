@@ -40,9 +40,15 @@ const KEY = Buffer.from(KEY_BYTES).toString('base64url');
 //   subscribed (an existing browser subscription), subscribedKey (the bytes it
 //   was made with; omitted means it does not report a key), account (data-account-id),
 //   pushKey (data-push-key on the page; omitted means the page has none),
-//   stored (initial local storage), routes (url -> function(body) -> {status, body}).
+//   stored (initial local storage), routes (url -> function(body) -> {status, body},
+//   or a promise of one, so a test can hold an answer back),
+//   manualTimers (true keeps every timer in env.timers until fireTimers runs it),
+//   hang ('getSubscription', 'unsubscribe' or 'subscribe': that browser call
+//   starts and never settles), nextPermission 'hang' (the prompt never answers).
 function makeEnv(options = {}) {
   const o = {
+    manualTimers: false,
+    hang: '',
     secure: true,
     userAgent: ANDROID_UA,
     maxTouchPoints: 5,
@@ -68,8 +74,10 @@ function makeEnv(options = {}) {
     store: new Map(Object.entries(o.stored)),
     permission: o.permission,
     sub: null,
-    listeners: []
+    listeners: [],
+    timers: []
   };
+  const never = () => new Promise(() => {});
 
   // keyOf turns bytes into the ArrayBuffer a real subscription reports in
   // options.applicationServerKey.
@@ -85,6 +93,9 @@ function makeEnv(options = {}) {
       },
       unsubscribe() {
         env.calls.push('unsubscribe');
+        if (o.hang === 'unsubscribe') {
+          return never();
+        }
         env.sub = null;
         return Promise.resolve(true);
       }
@@ -103,6 +114,9 @@ function makeEnv(options = {}) {
       subscribe(opts) {
         env.calls.push('subscribe');
         env.subscribeOptions.push(opts);
+        if (o.hang === 'subscribe') {
+          return never();
+        }
         // Like Chrome and Firefox: a subscription made with another key makes
         // subscribe fail until it is dropped.
         if (env.sub && env.sub.options && env.sub.options.applicationServerKey) {
@@ -116,6 +130,9 @@ function makeEnv(options = {}) {
       },
       getSubscription() {
         env.calls.push('getSubscription');
+        if (o.hang === 'getSubscription') {
+          return never();
+        }
         return Promise.resolve(env.sub);
       }
     }
@@ -144,8 +161,15 @@ function makeEnv(options = {}) {
 
   const window = {
     isSecureContext: o.secure,
-    setTimeout,
-    clearTimeout,
+    setTimeout: o.manualTimers ? (fn, ms) => {
+      env.timers.push({ fn, ms, live: true });
+      return env.timers.length;
+    } : setTimeout,
+    clearTimeout: o.manualTimers ? (id) => {
+      if (env.timers[id - 1]) {
+        env.timers[id - 1].live = false;
+      }
+    } : clearTimeout,
     addEventListener: (name) => { env.listeners.push('window:' + name); },
     matchMedia: (query) => ({ matches: o.displayStandalone && query === '(display-mode: standalone)' }),
     localStorage: {
@@ -164,6 +188,9 @@ function makeEnv(options = {}) {
       },
       requestPermission() {
         env.calls.push('requestPermission');
+        if (o.nextPermission === 'hang') {
+          return never();
+        }
         return Promise.resolve(o.nextPermission).then((answer) => {
           env.permission = answer;
           return answer;
@@ -193,7 +220,7 @@ function makeEnv(options = {}) {
     if (!route) {
       return { ok: false, status: 404, json: () => Promise.resolve({}) };
     }
-    const answer = route(body);
+    const answer = await route(body);
     if (answer instanceof Error) {
       throw answer;
     }
@@ -838,4 +865,133 @@ test('isMacDockApp: an installed app with a Windows or Android user agent is fal
   const windows = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
   assert.equal(makeEnv({ userAgent: windows, maxTouchPoints: 0, displayStandalone: true }).Notify.isMacDockApp(), false);
   assert.equal(makeEnv({ userAgent: ANDROID_UA, displayStandalone: true }).Notify.isMacDockApp(), false);
+});
+
+// ---- WR-02 (03.3-REVIEW): Off in Settings is never undone by the load check ----
+
+// serverEnv is a page whose fake server keeps one row: a subscription post
+// adds it when the post arrives, an unsubscribe removes it. The subscription
+// post can be held back, so a test can put the load check between its status
+// answer and the arrival of its post.
+function serverEnv(extra = {}) {
+  const server = { registered: false };
+  server.held = new Promise((resolve) => { server.release = resolve; });
+  const env = makeEnv({
+    permission: 'granted',
+    subscribed: true,
+    subscribedKey: KEY_BYTES,
+    pushKey: KEY,
+    stored: { 'pinalert.pushIntent': '7' },
+    routes: {
+      [STATUS_URL]: () => ({ status: 200, body: { registered: server.registered } }),
+      [SUBSCRIPTION_URL]: () => server.held.then(() => { server.registered = true; return { status: 204 }; }),
+      [UNSUBSCRIBE_URL]: () => { server.registered = false; return { status: 204 }; }
+    },
+    ...extra
+  });
+  return { env, server };
+}
+
+test('disable: Off tapped while the load check is posting waits for it, so the endpoint stays off (WR-02)', async () => {
+  const { env, server } = serverEnv();
+  await settle();
+  assert.deepEqual(env.requests.map((r) => r.url), [STATUS_URL, SUBSCRIPTION_URL], 'the load check is posting');
+  let result = null;
+  env.Notify.disable().then((r) => { result = r; });
+  await settle();
+  assert.deepEqual(env.requests.map((r) => r.url), [STATUS_URL, SUBSCRIPTION_URL],
+    'disable sends nothing while the load check is out');
+  server.release();
+  await settle();
+  await settle();
+  assert.ok(result, 'disable answered');
+  assert.equal(result.ok, true);
+  assert.deepEqual(env.requests.map((r) => r.url), [STATUS_URL, SUBSCRIPTION_URL, UNSUBSCRIBE_URL]);
+  assert.equal(server.registered, false, 'the server ends with no row for this endpoint');
+  assert.equal(env.store.has('pinalert.pushIntent'), false);
+});
+
+test('reconnect: an intent flag cleared while the status request is out stops the re-register (WR-02)', async () => {
+  const env = makeEnv({
+    permission: 'granted',
+    subscribed: true,
+    subscribedKey: KEY_BYTES,
+    pushKey: KEY,
+    stored: { 'pinalert.pushIntent': '7' },
+    routes: {
+      [STATUS_URL]: () => { env.store.delete('pinalert.pushIntent'); return { status: 200, body: { registered: false } }; },
+      [SUBSCRIPTION_URL]: ok204
+    }
+  });
+  await settle();
+  assert.deepEqual(env.requests.map((r) => r.url), [STATUS_URL], 'no subscription post after the flag was cleared');
+});
+
+test('enable: never waits for the load check before its first browser call (WR-02)', async () => {
+  const { env, server } = serverEnv({ permission: 'default' });
+  await settle();
+  const before = env.calls.length;
+  env.Notify.enable(KEY);
+  assert.deepEqual(env.calls.slice(before), ['requestPermission'], 'the prompt is asked in the tap');
+  server.release();
+  await settle();
+});
+
+// ---- CR-02 (03.3-REVIEW): every browser push call inside enable has a time limit ----
+
+// fireTimers runs every timer still set once, the way time passing would.
+function fireTimers(env) {
+  const live = env.timers.filter((t) => t.live);
+  live.forEach((t) => { t.live = false; t.fn(); });
+  return live;
+}
+
+for (const hang of ['getSubscription', 'unsubscribe', 'subscribe']) {
+  test('enable: a ' + hang + ' that never settles ends in a failure after the time limit (CR-02)', async () => {
+    const env = makeEnv({
+      permission: 'granted',
+      manualTimers: true,
+      hang,
+      // Only a subscription made with another key is unsubscribed.
+      subscribed: hang === 'unsubscribe',
+      subscribedKey: hang === 'unsubscribe' ? OLD_KEY_BYTES : undefined,
+      routes: { [SUBSCRIPTION_URL]: ok204 }
+    });
+    let result = null;
+    env.Notify.enable(KEY).then((r) => { result = r; });
+    await settle();
+    assert.ok(env.calls.includes(hang), hang + ' was started');
+    assert.equal(result, null, 'still waiting for the browser');
+    const fired = fireTimers(env);
+    assert.ok(fired.some((t) => t.ms === env.Notify.REQUEST_TIMEOUT_MS), 'a time limit was running');
+    await settle();
+    assert.ok(result, 'enable answered');
+    assert.deepEqual({ ok: result.ok, state: result.state, reason: result.reason }, { ok: false, state: 'ready', reason: 'failed' });
+    assert.equal(env.requests.length, 0, 'no subscription was posted');
+    assert.equal(env.store.has('pinalert.pushIntent'), false);
+  });
+}
+
+test('enable: the permission prompt has no time limit, it is the person\'s own choice (CR-02)', async () => {
+  const env = makeEnv({ permission: 'default', nextPermission: 'hang', manualTimers: true });
+  let result = null;
+  env.Notify.enable(KEY).then((r) => { result = r; });
+  await settle();
+  assert.deepEqual(env.calls, ['requestPermission']);
+  assert.equal(env.timers.filter((t) => t.live).length, 0, 'no timer races the prompt');
+  assert.equal(result, null);
+});
+
+test('enable: with time limits in place the browser calls still start at once and in order (CR-02)', async () => {
+  const env = makeEnv({
+    permission: 'granted',
+    manualTimers: true,
+    subscribed: true,
+    subscribedKey: OLD_KEY_BYTES,
+    routes: { [SUBSCRIPTION_URL]: ok204 }
+  });
+  const result = await env.Notify.enable(KEY);
+  assert.equal(result.ok, true);
+  assert.deepEqual(env.calls.filter((c) => c !== 'fetch'), ['ready', 'getSubscription', 'unsubscribe', 'subscribe']);
+  assert.equal(env.timers.filter((t) => t.live).length, 0, 'every limit was cleared once its call answered');
 });
