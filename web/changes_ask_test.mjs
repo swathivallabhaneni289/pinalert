@@ -189,8 +189,8 @@ test(NAME + 'opens on the first offer: key written first, title focused, no butt
   const pending = m.ask.offer();
   assert.equal(m.dialog.showCalls, 1);
   assert.equal(m.dialog.open, true);
-  assert.equal(m.store.get('pinalert.changesAsked'), '7');
-  assert.deepEqual(m.log, ['write:pinalert.changesAsked=7', 'showModal', 'focus:changes-ask-title']);
+  assert.equal(m.store.get('pinalert.changesAsked'), '["7"]');
+  assert.deepEqual(m.log, ['write:pinalert.changesAsked=["7"]', 'showModal', 'focus:changes-ask-title']);
   assert.equal(m.title.focused, 1);
   assert.equal(m.allow.focused, 0);
   assert.equal(m.later.focused, 0);
@@ -219,17 +219,69 @@ test(NAME + 'asks once per account: a second offer after the answer does not ope
   assert.equal(m.dialog.showCalls, 1);
 });
 
-test(NAME + 'storage holding another account id opens for this one and writes this one', () => {
+// WR-04 (03.3-REVIEW): the key holds a small JSON list of the account ids asked
+// on this browser, so a shared phone does not ask account A again after B. An
+// old value, one plain id, is read as a list of one.
+test(NAME + 'an old single id of another account is kept as one entry, and this account is added', () => {
   const m = load({ stored: 8 });
   m.ask.offer();
   assert.equal(m.dialog.showCalls, 1);
-  assert.equal(m.store.get('pinalert.changesAsked'), '7');
+  assert.equal(m.store.get('pinalert.changesAsked'), '["8","7"]');
 });
 
-test(NAME + 'storage holding this account id does not open', () => {
+test(NAME + 'an old single id of this account does not open', () => {
   const m = load({ stored: 7 });
   m.ask.offer();
   assert.equal(m.dialog.showCalls, 0);
+});
+
+test(NAME + 'a list holding this account id does not open and leaves the list as it was', () => {
+  const m = load({ stored: '["8","7","12"]' });
+  m.ask.offer();
+  assert.equal(m.dialog.showCalls, 0);
+  assert.equal(m.store.get('pinalert.changesAsked'), '["8","7","12"]');
+});
+
+test(NAME + 'a shared phone: A asked, then B asked, then A is not asked again', async () => {
+  const a = load({ account: '7' });
+  a.ask.offer();
+  a.later.click();
+  await settle();
+  const afterA = a.store.get('pinalert.changesAsked');
+  const b = load({ account: '8', stored: afterA });
+  b.ask.offer();
+  assert.equal(b.dialog.showCalls, 1, 'B is asked once');
+  const afterB = b.store.get('pinalert.changesAsked');
+  assert.equal(afterB, '["7","8"]');
+  const aAgain = load({ account: '7', stored: afterB });
+  aAgain.ask.offer();
+  assert.equal(aAgain.dialog.showCalls, 0, 'A is not asked again');
+  const bAgain = load({ account: '8', stored: afterB });
+  bAgain.ask.offer();
+  assert.equal(bAgain.dialog.showCalls, 0, 'B is not asked again');
+});
+
+test(NAME + 'the list keeps the last 8 ids: a ninth account drops the oldest', () => {
+  const m = load({ account: '9', stored: JSON.stringify(['1', '2', '3', '4', '5', '6', '7', '8']) });
+  m.ask.offer();
+  assert.equal(m.dialog.showCalls, 1);
+  assert.deepEqual(JSON.parse(m.store.get('pinalert.changesAsked')), ['2', '3', '4', '5', '6', '7', '8', '9']);
+});
+
+test(NAME + 'a long account id is kept as text, not as a rounded number', () => {
+  const big = '9007199254740993123';
+  const m = load({ account: big, stored: big });
+  m.ask.offer();
+  assert.equal(m.dialog.showCalls, 0);
+});
+
+test(NAME + 'a stored value that is neither an id nor a list does not open and is left alone', () => {
+  for (const stored of ['not json', '{"a":1}', '"7"', '[', 'null']) {
+    const m = load({ stored });
+    m.ask.offer();
+    assert.equal(m.dialog.showCalls, 0, stored);
+    assert.equal(m.store.get('pinalert.changesAsked'), stored, stored);
+  }
 });
 
 test(NAME + 'storage that cannot be read or written does not open', () => {

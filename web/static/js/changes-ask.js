@@ -25,10 +25,13 @@
 //   - this account has not been asked in this browser (see the key below).
 // Any probe that throws counts as "do not open".
 //
-// ONCE PER ACCOUNT ON A BROWSER (P-1). The key pinalert.changesAsked holds the
-// account id and is written just before the pop-up opens, so a tab closed
-// mid-question does not ask again. A server side flag would need a migration.
-// Storage that cannot be read or written means no pop-up. Plan 21 renders the
+// ONCE PER ACCOUNT ON A BROWSER (P-1). The key pinalert.changesAsked holds a
+// small JSON list of the account ids asked here, the last 8, so a shared phone
+// does not ask account A again after B (WR-04). An older value, one plain id,
+// reads as a list of one. The list is written just before the pop-up opens, so
+// a tab closed mid-question does not ask again. A server side flag would need a
+// migration. Storage that cannot be read or written, or a value that is neither
+// an id nor a list, means no pop-up. Plan 21 renders the
 // dialog only while the account's Changes switch is off, so an account that
 // already said yes is never asked.
 //
@@ -52,6 +55,8 @@
   var REQUEST_TIMEOUT_MS = 10000;
   // The shape of an account id, the one notify.js uses.
   var ACCOUNT_ID_PATTERN = /^[1-9][0-9]{0,18}$/;
+  // How many account ids the asked list keeps on one browser.
+  var ASKED_KEEP = 8;
 
   var dialog = document.getElementById('changes-ask');
   var title = document.getElementById('changes-ask-title');
@@ -71,6 +76,26 @@
     var node = document.querySelector(selector);
     var value = node ? node.getAttribute(name) : '';
     return typeof value === 'string' ? value : '';
+  }
+
+  // askedList reads the account ids asked on this browser, as text. Nothing
+  // stored is an empty list, an older single id is a list of one, and a value
+  // that is neither is null (do not open). The caller holds the try.
+  function askedList() {
+    var raw = localStorage.getItem(ASKED_KEY);
+    if (raw === null) {
+      return [];
+    }
+    if (ACCOUNT_ID_PATTERN.test(raw)) {
+      return [raw];
+    }
+    var list = JSON.parse(raw);
+    if (!Array.isArray(list)) {
+      return null;
+    }
+    return list.filter(function (id) {
+      return typeof id === 'string' && ACCOUNT_ID_PATTERN.test(id);
+    });
   }
 
   // canOffer returns the push key when the pop-up may open now, else ''.
@@ -97,7 +122,8 @@
       if (notify.isMacDockApp() === true) {
         return '';
       }
-      if (localStorage.getItem(ASKED_KEY) === account) {
+      var asked = askedList();
+      if (asked === null || asked.indexOf(account) !== -1) {
         return '';
       }
       // Another box is open: a native dialog, or a box that locked the page
@@ -125,7 +151,9 @@
     }
     opener = document.activeElement || null;
     try {
-      localStorage.setItem(ASKED_KEY, attr('[data-account-id]', 'data-account-id'));
+      var list = askedList();
+      list.push(attr('[data-account-id]', 'data-account-id'));
+      localStorage.setItem(ASKED_KEY, JSON.stringify(list.slice(-ASKED_KEEP)));
       dialog.showModal();
     } catch (err) {
       opener = null;
