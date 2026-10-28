@@ -112,6 +112,14 @@ window.PinalertEndedNearby = (function () {
     return id;
   }
 
+  // apiBase is where the report read goes: '/api' on every real page, the
+  // visit's sandbox path on the Demo's My activity (plan 05-13, api-base.js).
+  // The same rule as app.js.
+  function apiBase() {
+    var base = window.PinalertApiBase;
+    return typeof base === 'string' && base !== '' ? base : '/api';
+  }
+
   function readRadius() {
     var page = document.querySelector('.profile-page');
     var raw = page ? parseFloat(page.getAttribute('data-default-radius-km')) : NaN;
@@ -413,7 +421,7 @@ window.PinalertEndedNearby = (function () {
     }
     var position = kept || fallbackCentre();
 
-    var url = '/api/reports' +
+    var url = apiBase() + '/reports' +
       '?lat=' + encodeURIComponent(position.lat) +
       '&lon=' + encodeURIComponent(position.lon) +
       '&radius_km=' + encodeURIComponent(readRadius()) +

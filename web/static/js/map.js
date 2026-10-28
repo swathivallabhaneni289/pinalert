@@ -505,11 +505,36 @@ window.PinalertMap = (function () {
     }
   }
 
+  // fixedPosition is the Demo page's pretend position, from data-fixed-lat and
+  // data-fixed-lon on the page shell, or null when the page has no such pair
+  // (every real page) or either half is not a number.
+  function fixedPosition() {
+    var shell = document.getElementById('app-shell');
+    if (!shell) {
+      return null;
+    }
+    var lat = parseFloat(shell.getAttribute('data-fixed-lat'));
+    var lon = parseFloat(shell.getAttribute('data-fixed-lon'));
+    if (!isFinite(lat) || !isFinite(lon)) {
+      return null;
+    }
+    return { lat: lat, lon: lon };
+  }
+
   // locateReader asks the browser for the reader's position once. A missing
   // geolocation API, a refusal and a timeout all answer through onFail, so the
   // caller has one fallback branch. The first centring and the return to the
   // reader share this step.
   function locateReader(onFix, onFail) {
+    // The Demo page (plan 05-13, D-05) carries one pretend position on its
+    // shell, and the map uses it as the reader's own fix instead of asking the
+    // browser. A real page has no such pair, so this finds none and the browser
+    // is asked as before.
+    var fixed = fixedPosition();
+    if (fixed !== null) {
+      onFix({ coords: { latitude: fixed.lat, longitude: fixed.lon } });
+      return;
+    }
     if (!navigator.geolocation) {
       onFail();
       return;
@@ -707,6 +732,12 @@ window.PinalertMap = (function () {
     if (report.view === 'disputed') {
       badge.classList.add('icon-badge--disputed');
     }
+    // Every pin on the Demo page is a pretend report: demo.css draws a 2px
+    // dashed ring around it, so it can never be read as a crowd pin or an
+    // official one (plan 05-13, D-02, ROBUST-06). A fixed class name.
+    if (window.PinalertDemoPage === true) {
+      badge.classList.add('icon-badge--demo');
+    }
 
     // On this surface the state class goes on the badge element itself,
     // because there is no row ancestor — the same split main.css's own
@@ -798,6 +829,14 @@ window.PinalertMap = (function () {
     var tag = PinalertVisibility.createVisibilityTag();
     pills.appendChild(badge);
     pills.appendChild(severity);
+    // The Demo tag in the badge row of the popup and the detail sheet (plan
+    // 05-13, D-02): every report on the Demo page is a pretend one.
+    if (window.PinalertDemoPage === true) {
+      var demoTag = document.createElement('span');
+      demoTag.className = 'demo-tag';
+      Pinalert.setText(demoTag, 'Demo');
+      pills.appendChild(demoTag);
+    }
     header.appendChild(pills);
 
     var titleEl = document.createElement('p');
@@ -857,7 +896,9 @@ window.PinalertMap = (function () {
     // both at the bottom of the report on a phone). It is hidden for
     // a reader who neither follows the report nor muted it. A failed mute.js
     // load leaves the card without it.
-    var muteControl = window.PinalertMute ? PinalertMute.createMuteControl(report) : null;
+    // The Demo page draws neither Mute nor Flag, whatever scripts loaded: the
+    // Demo has no routes for them (plan 05-10, 05-13).
+    var muteControl = window.PinalertMute && !window.PinalertDemoPage ? PinalertMute.createMuteControl(report) : null;
     if (muteControl) {
       actions.appendChild(muteControl.el);
       actions.appendChild(muteControl.error);
@@ -866,7 +907,7 @@ window.PinalertMap = (function () {
     // vote controls. Phase 3.1 moved it off the list row into the opened report.
     // A failed flag.js load leaves the card without it rather than stopping
     // the map after its first pin (WR-W04).
-    var flagControl = window.PinalertFlag ? PinalertFlag.createFlagControl(report) : null;
+    var flagControl = window.PinalertFlag && !window.PinalertDemoPage ? PinalertFlag.createFlagControl(report) : null;
     if (flagControl) {
       actions.appendChild(flagControl.el);
     }
@@ -1160,7 +1201,8 @@ window.PinalertMap = (function () {
     if (report.approximate === true) {
       parts.push('approximate location');
     }
-    return parts.join(', ');
+    // On the Demo page every pin name starts with Demo (plan 05-13, UI-SPEC 4b).
+    return (window.PinalertDemoPage === true ? 'Demo. ' : '') + parts.join(', ');
   }
 
   // applyPinName writes the name as an attribute, never as markup.

@@ -126,6 +126,24 @@
     }
   }
 
+  // fixedPosition is the Demo page's pretend position, from data-fixed-lat and
+  // data-fixed-lon on the page shell (and data-fixed-place for its name), or
+  // null when the page has no such pair (every real page) or either half is not
+  // a number.
+  function fixedPosition() {
+    var shell = document.getElementById('app-shell');
+    if (!shell) {
+      return null;
+    }
+    var lat = parseFloat(shell.getAttribute('data-fixed-lat'));
+    var lon = parseFloat(shell.getAttribute('data-fixed-lon'));
+    if (!isFinite(lat) || !isFinite(lon)) {
+      return null;
+    }
+    var place = shell.getAttribute('data-fixed-place');
+    return { lat: lat, lon: lon, place: typeof place === 'string' && place !== '' ? place : undefined };
+  }
+
   // initLocation centres the modal's own Leaflet instance on the visitor's
   // GPS position at zoom 16 with a draggable marker (D-02). Submission is
   // never blocked on geolocation: a denied prompt during an emergency must
@@ -188,6 +206,23 @@
     }
 
     locationNotice.hidden = true;
+
+    // The Demo page (plan 05-13, D-05) carries one pretend position on its
+    // shell. The pin starts there and the browser is never asked, so no
+    // location prompt and no location notice appear in the Demo. The place name
+    // on the page, when there is one, is the bold part of the line under the
+    // map ("Near Singh Nagar."). A real page has no such pair and asks as before.
+    var fixed = fixedPosition();
+    if (fixed !== null) {
+      if (!hasMarker()) {
+        modalMap.setView([fixed.lat, fixed.lon], 16);
+        placeMarker(fixed.lat, fixed.lon, fixed.place);
+      }
+      window.setTimeout(function () {
+        modalMap.invalidateSize();
+      }, 0);
+      return;
+    }
 
     var fallbackLat = Pinalert.config.fallbackLat;
     var fallbackLon = Pinalert.config.fallbackLon;

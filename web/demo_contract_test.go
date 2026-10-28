@@ -301,7 +301,9 @@ func TestFixedPositionSeam(t *testing.T) {
 func TestDemoMarksInFeedAndMap(t *testing.T) {
 	feed := dm13Code(p13ReadStatic(t, "static/js/feed.js"))
 	create := jsFunctionBody(t, feed, "createRow(id)")
-	p13MustContain(t, "feed.js createRow", create, "PinalertDemoPage", "demo-tag")
+	p13MustContain(t, "feed.js createRow", create, "PinalertDemoPage", "addDemoRowMarks(body)")
+	marks := jsFunctionBody(t, feed, "addDemoRowMarks(body)")
+	p13MustContain(t, "feed.js addDemoRowMarks", marks, "demo-tag", "'Demo'", "'Demo. '", "report-row__stateline")
 	if strings.Contains(create, "PinalertFlag") || strings.Contains(create, "PinalertMute") {
 		t.Error("feed.js createRow draws a Flag or Mute control")
 	}
