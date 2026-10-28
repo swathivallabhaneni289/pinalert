@@ -42,6 +42,15 @@
 // enable answers, then records the flow as done, so nothing about alerts can stop
 // anyone finishing. The words are in the template.
 //
+// Plan 03.3-19 (the 03.3-UAT gap for test 4, owner, 2026-10-27): the pop-up
+// names the home area in its title, asks for it when none is known (the step 4
+// place search, a picked place only, never the device fix; Allow stays off until
+// one is picked) and offers an unticked Reliable reporter tick box. After Allow
+// calls enable, the saves run one after another: the home area picked in the
+// pop-up, then the Reliable switch if it was ticked and a home area exists, then
+// first-run-done; any failure still reaches first-run-done. Not now and Escape
+// save nothing. The pop-up never opens inside a Mac Dock app.
+//
 // What it never does:
 //   - It never runs the browser's notification prompt except from the Allow
 //     tap: enable is called inside that click handler with nothing awaited
@@ -69,6 +78,15 @@
   var CONSENT_URL = '/api/me/consent';
   var PROFILE_URL = '/api/me/profile';
   var DONE_URL = '/api/me/first-run-done';
+  var ALERTS_URL = '/api/me/alerts';
+  // The pop-up title is these three pieces, written with textContent: the words,
+  // the home area (the stored one, the one saved at step 4 or the one picked in the
+  // pop-up) or ASK_TITLE_NO_HOME, and the question mark. ASK_TITLE_START is the
+  // words welcome.html.tmpl writes before the home area, pinned equal by
+  // TestWelcomeAlertsScript. Phase 7.1 plan 13b copies these words.
+  var ASK_TITLE_START = 'Get alerts for critical reports near ';
+  var ASK_TITLE_NO_HOME = 'your home area';
+  var ASK_TITLE_END = '?';
   // Step 4 uses the place search of Settings, asking for areas only (kind=area:
   // neighbourhoods, localities, towns, cities, districts, never a street or a
   // building, since the stored home area is a cell about 5 km wide). It has its
@@ -155,6 +173,16 @@
   var askTitle = el('welcome-alerts-ask-title');
   var askAllow = el('welcome-alerts-allow');
   var askLater = el('welcome-alerts-later');
+  // The home area search block of the pop-up (the step 4 search, shown only when
+  // no home area is known) and the Reliable tick box. Each is read once; a page
+  // without them (an older page, a test fake) gets the pop-up as it was before
+  // plan 03.3-19.
+  var askHome = el('welcome-alerts-home');
+  var askForm = el('welcome-alerts-home-form');
+  var askInput = el('welcome-alerts-home-input');
+  var askStatus = el('welcome-alerts-home-status');
+  var askResults = el('welcome-alerts-home-results');
+  var askReliable = el('welcome-alerts-reliable');
   var pushKey = root.getAttribute('data-push-key') || '';
 
   // The step a person must agree on, and the highest step an address may name
@@ -183,6 +211,14 @@
   // The place picked for the home area from step 4's own search. Only a picked
   // place is ever sent as a home area.
   var homePick = null;
+
+  // The home area the pop-up names: the one the server stored for the account
+  // (data-home-area, rendered by html/template), replaced by the place saved at
+  // step 4 in this visit. It is never read from the step 4 field, which can hold
+  // typed text that was never picked. askPick is the place picked in the pop-up
+  // itself, saved only when Allow is tapped.
+  var homeName = askDialog ? (askDialog.getAttribute('data-home-area') || '').trim() : '';
+  var askPick = null;
 
   // ---- Small helpers --------------------------------------------------------
 
@@ -898,6 +934,24 @@
     });
   }
 
+  // The same search inside the alerts pop-up, for an account with no home area.
+  // Like step 4's it sends typed text only and a pick is a result of the search;
+  // the device fix is never used. A pick or a change after one refreshes the title
+  // and Allow.
+  var askSearch = null;
+  if (askHome && askForm && askInput && askStatus && askResults) {
+    askSearch = makeSearch({
+      input: askInput,
+      form: askForm,
+      status: askStatus,
+      results: askResults,
+      url: STEP4_SEARCH_URL,
+      typing: true,
+      onPick: function (place) { askPick = place; refreshAsk(); },
+      onClear: function () { askPick = null; refreshAsk(); }
+    });
+  }
+
   // ---- Step 4: finishing ----------------------------------------------------
 
   function setFinishing(on) {
@@ -980,6 +1034,9 @@
   // this visit, without dialog support, without a key, without notify.js, and on
   // every device that cannot turn alerts on (needs-install, blocked,
   // unsupported or a state this script does not know).
+  //
+  // Inside a Mac Dock app (notify.js isMacDockApp, plan 03.3-17) it is false too:
+  // a second subscription on the same Mac would make every report notify twice.
   function canAsk() {
     if (asked || !askDialog || typeof askDialog.showModal !== 'function' || pushKey === '') {
       return false;
@@ -987,6 +1044,15 @@
     var notify = window.PinalertNotify;
     if (!notify || typeof notify.baseState !== 'function' || typeof notify.enable !== 'function') {
       return false;
+    }
+    if (typeof notify.isMacDockApp === 'function') {
+      try {
+        if (notify.isMacDockApp()) {
+          return false;
+        }
+      } catch (err) {
+        // An answer that cannot be read is treated as a browser tab.
+      }
     }
     try {
       var base = notify.baseState();
@@ -996,13 +1062,40 @@
     }
   }
 
+  // needsHome says Allow must wait: the pop-up has its home area search, and no
+  // home area is known (stored, saved at step 4) or picked yet. Without the
+  // search block (an older page) nothing waits.
+  function needsHome() {
+    return askHome !== null && homeName === '' && askPick === null;
+  }
+
+  // refreshAsk redraws what depends on the home area: the title (textContent
+  // only), the search block (hidden once an area is stored) and Allow.
+  function refreshAsk() {
+    if (askHome !== null) {
+      var area = homeName !== '' ? homeName : (askPick !== null ? askPick.name : ASK_TITLE_NO_HOME);
+      setText(askTitle, ASK_TITLE_START + area + ASK_TITLE_END);
+      askHome.hidden = homeName !== '';
+    }
+    askAllow.disabled = askBusy || needsHome();
+  }
+
+  // setAskDisabled(true) freezes the whole pop-up while an answer is handled;
+  // setAskDisabled(false) frees it, and Allow then follows the home area rule.
   function setAskDisabled(on) {
-    askAllow.disabled = on;
     askLater.disabled = on;
+    if (askInput) {
+      askInput.disabled = on;
+    }
+    if (askReliable) {
+      askReliable.disabled = on;
+    }
     if (on) {
+      askAllow.disabled = true;
       askDialog.setAttribute('aria-busy', 'true');
     } else {
       askDialog.removeAttribute('aria-busy');
+      refreshAsk();
     }
   }
 
@@ -1018,6 +1111,7 @@
   // title takes focus, so no button looks chosen. A dialog that will not open
   // sends the flow on without asking.
   function openAsk() {
+    refreshAsk();
     try {
       askDialog.showModal();
     } catch (err) {
@@ -1038,13 +1132,51 @@
     postDone();
   }
 
+  // saveAskHome saves the place picked in the pop-up as the home area (the same
+  // request step 4 sends). It always resolves; on an ok answer the pop-up's home
+  // area becomes that place, so the Reliable save below knows one exists.
+  function saveAskHome(place) {
+    return request(PROFILE_URL, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ home_area: { name: place.name, lat: place.lat, lon: place.lon } })
+    }, SAVE_TIMEOUT_MS).promise.then(function (answer) {
+      if (answer.ok) {
+        homeName = place.name;
+      }
+    }, function () {
+      // Settings shows what was saved; nothing is retried.
+    });
+  }
+
+  // saveReliable is the one place the Reliable reporter request is built: a PATCH
+  // to the alerts address that turns the Reliable switch on, bounded by
+  // SAVE_TIMEOUT_MS. It always resolves, whatever the answer. Phase 7.1 plan 13c
+  // copies this request and the tick box words.
+  function saveReliable() {
+    return request(ALERTS_URL, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reliable_alerts: true })
+    }, SAVE_TIMEOUT_MS).promise.then(function () {}, function () {});
+  }
+
   // onAskAllow is the only place the browser's notification prompt can run.
-  // enable is the first real statement of the click, before anything is awaited,
-  // so the browser counts the tap as the person's own. Whatever enable answers
-  // (a refusal, an offline answer, a failure, a rejection or a throw), the flow
-  // is then recorded as done: nothing about alerts can stop sign up.
+  // enable is the first real statement of the click (after the two checks that
+  // send nothing), before anything is awaited, so the browser counts the tap as
+  // the person's own. Then, whatever enable answers (a refusal, an offline answer,
+  // a failure, a rejection or a throw), the saves run one after another: the home
+  // area picked in the pop-up, then the Reliable switch if it was ticked and a
+  // home area exists, then the flow is recorded as done. Every save swallows its
+  // own failure, so nothing about alerts can stop sign up; Settings shows the
+  // result and nothing is retried.
   function onAskAllow() {
     if (askBusy) {
+      return;
+    }
+    if (needsHome()) {
       return;
     }
     var pending = null;
@@ -1053,10 +1185,16 @@
     } catch (err) {
       pending = null;
     }
+    var place = askPick;
+    var wantReliable = !!(askReliable && askReliable.checked);
     asked = true;
     askBusy = true;
     setAskDisabled(true);
-    Promise.resolve(pending).then(function () {
+    Promise.resolve(pending).then(function () {}, function () {}).then(function () {
+      return place !== null ? saveAskHome(place) : null;
+    }).then(function () {
+      return wantReliable && homeName !== '' ? saveReliable() : null;
+    }).then(function () {
       postDone();
     }, function () {
       postDone();
@@ -1126,6 +1264,8 @@
         storedName = body.display_name;
       }
       if (body.home_area) {
+        // The pop-up names the place just saved (homePick is cleared next).
+        homeName = body.home_area.name;
         homePick = null;
       }
       endFlow();
