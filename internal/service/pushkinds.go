@@ -9,13 +9,15 @@ import "time"
 
 // PushKind is the closed set of things a phone notification can be.
 //
-// Four kinds are built in this phase. Two more names are reserved so a later
-// phase has a place to land without renaming anything: official arrives with
-// Phase 5 (05-CONTEXT D-11) and follow with Phase 9's per person Notify me
-// bell (09-CONTEXT D-08 to D-11), each with its own migration. Neither gets a
-// Settings row from Phase 3.3, and Valid refuses both until that phase widens
-// the list and its test. There is no rolled up kind: a push dropped by a cap
-// shows nothing extra.
+// Four kinds were built in Phase 3.3. One more name is reserved so a later
+// phase has a place to land without renaming anything: follow arrives with
+// Phase 9's per person Notify me bell (09-CONTEXT D-08 to D-11), with its own
+// migration. It gets no Settings row until that phase, and Valid refuses it
+// until that phase widens the list and its test. The official kind arrived
+// with Phase 5 plan 05-11 (D-11); its rows live in official_push_outbox, never
+// in push_outbox, and its words are built by BuildOfficialPushText, not by
+// BuildPushText. There is no rolled up kind: a push dropped by a cap shows
+// nothing extra.
 type PushKind string
 
 const (
@@ -32,20 +34,23 @@ const (
 	// words are built from the original kind with Confirmed set.
 	PushKindConfirmedUpdate PushKind = "confirmed_update"
 
-	// PushKindOfficial is reserved for Phase 5. It has no switch and no storage.
+	// PushKindOfficial is a Severe or Extreme official alert for the home area
+	// (Phase 5, D-11 and D-16). Its rows are in official_push_outbox and its
+	// words come from BuildOfficialPushText.
 	PushKindOfficial PushKind = "official"
+
 	// PushKindFollow is reserved for Phase 9. It has no switch and no storage.
 	PushKindFollow PushKind = "follow"
 )
 
-// PushKinds is the four built kinds, in the order the sender considers them
+// PushKinds is the five built kinds, in the order the sender considers them
 // for display and storage.
-var PushKinds = []PushKind{PushKindCritical, PushKindReliable, PushKindChanged, PushKindConfirmedUpdate}
+var PushKinds = []PushKind{PushKindCritical, PushKindReliable, PushKindChanged, PushKindConfirmedUpdate, PushKindOfficial}
 
-// ReservedPushKinds is the two names held for later phases.
-var ReservedPushKinds = []PushKind{PushKindOfficial, PushKindFollow}
+// ReservedPushKinds is the one name held for a later phase.
+var ReservedPushKinds = []PushKind{PushKindFollow}
 
-// Valid reports whether k is one of the four built kinds. The reserved names,
+// Valid reports whether k is one of the five built kinds. The reserved name,
 // the empty string and anything else are refused. Comparison is exact.
 func (k PushKind) Valid() bool {
 	for _, x := range PushKinds {
@@ -99,6 +104,37 @@ const (
 	// PushOutboxRetention is how long a sent or dropped push row is kept.
 	PushOutboxRetention = 7 * 24 * time.Hour
 )
+
+// The caps and windows of the official alert push (plan 05-11, D-11 and D-16),
+// pinned by TestOfficialPushCapsAreNamed so a change is a deliberate edit. The
+// official rows are in their own table and never count toward
+// PushPerAccountPerHour (heldByHourlyCap), and a push dropped by a cap shows
+// nothing extra.
+const (
+	// OfficialPushPerAccountPer6Hours is how many official pushes one person
+	// gets in OfficialPushCapWindow. It is checked at send time (plan 05-16).
+	OfficialPushPerAccountPer6Hours = 3
+	// OfficialPushCapWindow is the rolling window of that cap.
+	OfficialPushCapWindow = 6 * time.Hour
+	// OfficialPushRecipientsPerAlert is the most people one alert version is
+	// queued for.
+	OfficialPushRecipientsPerAlert = 2000
+	// OfficialPushTTL is the longest an official push waits for a device that is
+	// offline.
+	OfficialPushTTL = 2 * time.Hour
+	// OfficialPushSentWindow is how long after an alert was sent it may still be
+	// queued as a push.
+	OfficialPushSentWindow = time.Hour
+	// OfficialPushExpiryMargin is how close to its end an alert may be and still
+	// be queued: an alert ending within this margin is not pushed.
+	OfficialPushExpiryMargin = 10 * time.Minute
+)
+
+// DefaultOfficialPushOn is on: Severe and Extreme official alerts for the home
+// area are the point of the feature (D-11). The SQL COALESCE in
+// official_push.sql uses the same value, and TestOfficialPushDefaultMatchesSQL
+// pins both.
+const DefaultOfficialPushOn = true
 
 // Defaults of the two switches. The SQL COALESCE in push.sql uses the same
 // values, and a test in plan 12 pins both.
