@@ -145,8 +145,9 @@ var opacityAllowed = []layoutAllow{
 	// from auth.css .globe-bg (a flat mask picture at 35%) to login-globe.css
 	// .globe-bg, the wrapper of the NASA Blue Marble globe, dimmed through
 	// --globe-dim: 0.5 in light and 0.4 in dark. Still one wrapper, still no text.
+	// Amended 2026-10-29 by quick 261029-47j (owner): the Earth shows at full strength, --globe-dim is 1 in both themes; the wrapper keeps the opacity so a later dim is one token change.
 	{"static/css/login-globe.css", ".globe-bg",
-		"the decorative NASA Blue Marble Earth behind the login screen: a canvas picture with no text, dimmed to 0.5 in the light theme and 0.4 in the dark theme (--globe-dim) so it stays a quiet background. The credit line is a sibling outside the wrapper and is not faded. It is not text, a row, a card or a pin."},
+		"the decorative NASA Blue Marble Earth behind the login screen: a canvas picture with no text, shown at full strength (--globe-dim is 1 in both themes since the owner's change of 2026-10-29) and kept on the wrapper so a later dim is one token change. The credit line is a sibling outside the wrapper and is not faded. It is not text, a row, a card or a pin."},
 }
 
 // TestNoOpacityText pins D-07 and UI-SPEC R7: nothing is faded. No rule

@@ -28,6 +28,9 @@
   var FRAME_MS = 33;            // about 30 frames a second is plenty at 3 degrees a second
   var BOX = 1.06;               // room around the sphere so its edge is never clipped
   var DEG_PER_MS = 360 / (TURN_SECONDS * 1000);
+  // The stylesheet's phone query, word for word (login-globe.css reserves the
+  // phone box under it). Keep the two in step.
+  var PHONE_QUERY = '(max-width: 899.98px)';
 
   var script = document.getElementById('login-globe-script');
   var wrapper = document.getElementById('login-globe');
@@ -83,14 +86,39 @@
     return Math.log2(r * 2 * Math.PI * Math.cos(START_CENTRE[1] * Math.PI / 180) / 512);
   }
 
-  // sizeGlobe sizes the sphere from the sign in area: its width and the height
-  // of the first screen below its top. Neither changes when the card swaps for
-  // Check your inbox, so the globe never moves. Never a bare viewport height.
+  // isPhone asks the stylesheet's own query, so the script and the stylesheet
+  // always agree on phone or laptop. The gate's width excludes a classic
+  // scrollbar and would disagree between about 900 and 917px wide, so it is only
+  // the fallback for a browser with no matchMedia.
+  function isPhone() {
+    if (typeof window.matchMedia === 'function') {
+      return window.matchMedia(PHONE_QUERY).matches;
+    }
+    return gate.clientWidth < 900;
+  }
+
+  // sizeGlobe sizes the sphere. On a phone it reads the box the stylesheet
+  // reserved (the wrapper's width) and the sphere is that box divided by BOX, so
+  // the whole Earth shows; the stylesheet alone places the box, so no --globe
+  // variable is written. On a laptop it reads the sign in area: its width and
+  // the height of the first screen below its top. Neither changes when the card
+  // swaps for Check your inbox, so the globe never moves. Never a bare viewport
+  // height. A box of 0 (the stylesheet did not apply) gives a diameter of 0.
   function sizeGlobe() {
+    if (isPhone()) {
+      var box = wrapper.clientWidth;
+      if (!(box > 0)) {
+        return { diameter: 0, boxW: 0, boxH: 0 };
+      }
+      var pd = box / BOX;
+      if (map) {
+        map.setZoom(zoomFor(pd, Math.round(box)));
+      }
+      return { diameter: pd, boxW: box, boxH: box };
+    }
     var w = gate.clientWidth;
     var h = Math.max(240, window.innerHeight - gate.offsetTop);
-    var laptop = w >= 900;
-    var d = laptop ? Math.min(h * 0.92, 900) : Math.min(w * 2, h * 0.92);
+    var d = Math.min(h * 0.92, 900);
     var bw = Math.min(d * BOX, w);
     var bh = Math.min(d * BOX, h);
     wrapper.style.setProperty('--globe-x', Math.round((w - bw) / 2) + 'px');
@@ -218,6 +246,10 @@
       return;
     }
     var size = sizeGlobe();
+    if (!(size.diameter > 0)) {
+      giveUp('the reserved box has no size');
+      return;
+    }
     try {
       map = new maplibregl.Map({
         container: host,
@@ -305,8 +337,10 @@
     if (!canDrawWebGL2()) {
       return;
     }
+    if (!(sizeGlobe().diameter > 0)) {
+      return;
+    }
     armGiveUp();
-    sizeGlobe();
     if (typeof window.matchMedia === 'function') {
       reduceQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
       if (typeof reduceQuery.addEventListener === 'function') {
