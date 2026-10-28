@@ -352,6 +352,18 @@ func main() {
 		BaseURL:      os.Getenv("BASE_URL"),
 	})
 
+	// OFFICIAL_REFRESH_TOKEN is the bearer secret of the external cron's refresh
+	// endpoint (plan 05-12, D-15). Unset leaves the endpoint a 404, so official
+	// alerts refresh only while the server is awake. A value under 32 characters
+	// stops startup; the message never holds the value.
+	officialRefreshToken := strings.TrimSpace(os.Getenv("OFFICIAL_REFRESH_TOKEN"))
+	if err := handlers.ValidateRefreshToken(officialRefreshToken); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if officialRefreshToken == "" {
+		log.Println("WARNING: OFFICIAL_REFRESH_TOKEN unset; the external refresh endpoint is off and official alerts refresh only while the server is awake")
+	}
+
 	deps := api.Deps{
 		Official:    officialSvc,
 		Session:     sessionMgr,
@@ -411,6 +423,9 @@ func main() {
 		ClientIPHeader: clientIPHeader,
 		// Sent to NASA GIBS when a sign in globe tile is fetched (plan 05-04).
 		GlobeUserAgent: globeUserAgent,
+		// The bearer secret of the external cron's refresh endpoint, read above;
+		// empty keeps the endpoint a 404 (plan 05-12).
+		OfficialRefreshToken: officialRefreshToken,
 		// The first-time flow gate is on (D-27, orchestrator decision 5). Every
 		// account that has not agreed to the current terms version or not
 		// finished the flow is sent to /welcome for page requests; existing
@@ -440,6 +455,13 @@ func main() {
 	// claim's row lock and lease keep a second instance from double screening.
 	moderationWorker := service.NewModerationWorker(queries, screener)
 	go moderationWorker.Run(context.Background())
+
+	// The official feeds refresh while the host is awake: one sweep at boot
+	// because the free host cold starts, then one every five minutes (plan 05-12,
+	// D-15). Each feed goes through RefreshIfDue, so its minimum gap and single
+	// flight still hold. A sleeping host refreshes only when a request, usually the
+	// external cron's call to the refresh endpoint, wakes it.
+	go officialSvc.Run(context.Background())
 
 	// The phone alert dispatcher queues notifications and the worker sends them.
 	// Each sweeps once at boot because the free host cold starts. The claim
