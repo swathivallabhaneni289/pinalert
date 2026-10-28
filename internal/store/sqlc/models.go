@@ -32,6 +32,7 @@ type AccountAlertSetting struct {
 	CriticalPushOn   bool
 	ChangesPushOn    bool
 	ChangesEnabledAt pgtype.Timestamptz
+	OfficialPushOn   bool
 }
 
 type EmailCooldown struct {
@@ -139,6 +140,22 @@ type OfficialHazard struct {
 	DateModified pgtype.Timestamptz
 	FirstSeenAt  time.Time
 	LastSeenAt   time.Time
+}
+
+type OfficialPushOutbox struct {
+	ID            int64
+	AccountID     int64
+	AlertID       int64
+	CapIdentifier string
+	Reason        string
+	State         string
+	SkipReason    *string
+	Attempts      int32
+	NextAttemptAt time.Time
+	LeaseUntil    pgtype.Timestamptz
+	CreatedAt     time.Time
+	ExpiresAt     time.Time
+	SentAt        pgtype.Timestamptz
 }
 
 type PushOutbox struct {
