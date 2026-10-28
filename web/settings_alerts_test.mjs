@@ -108,7 +108,7 @@ class FakeEl {
 
 // The markup of settings.html.tmpl, as the ids and nesting settings-alerts.js
 // reads. withMarkup false builds a page that has none of the new rows.
-function buildPage({ count = 0, withMarkup = true, home = true, on = false, radius = 5, dialog = true, critical = false, changes = false, key = 'BPUBLICKEY' } = {}) {
+function buildPage({ count = 0, withMarkup = true, home = true, on = false, radius = 5, dialog = true, critical = false, changes = false, official = false, key = 'BPUBLICKEY' } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -221,6 +221,16 @@ function buildPage({ count = 0, withMarkup = true, home = true, on = false, radi
   criticalSwitch.checked = critical;
   const criticalNoHome = make('button', 'settings-critical-nohome', criticalRow);
   criticalNoHome.hidden = home;
+  // Amended 2026-10-29 by plan 05-14 (D-11): Phase 5 draws the official row
+  // between Critical and Changes. The fixture default is off, so every older case
+  // keeps its meaning; the new cases pass official: true.
+  const officialRow = make('div', 'settings-official-row', main);
+  const officialOn = make('label', 'settings-official-on', officialRow);
+  officialOn.hidden = !home;
+  const officialSwitch = make('input', 'settings-official-switch', officialOn);
+  officialSwitch.checked = official;
+  const officialNoHome = make('button', 'settings-official-nohome', officialRow);
+  officialNoHome.hidden = home;
   const changesRow = make('label', 'settings-changes-row', main);
   const changesSwitch = make('input', 'settings-changes-switch', changesRow);
   changesSwitch.checked = changes;
@@ -241,7 +251,7 @@ function buildPage({ count = 0, withMarkup = true, home = true, on = false, radi
   homeRow.setAttribute('data-value', home ? 'Kochi' : '');
   const homeWin = make('div', 'settings-home-window', doc.body);
   homeWin.hidden = true;
-  make('p', 'settings-home-alerts-note', homeWin).hidden = !(home && (on || critical));
+  make('p', 'settings-home-alerts-note', homeWin).hidden = !(home && (on || critical || official));
 
   // Phase 3.3 plan 14: the install guide window.
   const guide = make('div', 'device-guide-window', doc.body);
@@ -253,7 +263,7 @@ function buildPage({ count = 0, withMarkup = true, home = true, on = false, radi
 
   return {
     doc, bar, main, bottom, muted, logout, del, alertsOn, alertsOff, sw, select, homeRow, homeWin,
-    radiusRow, criticalOn, criticalNoHome, criticalSwitch, changesSwitch, deviceOn, deviceSwitch,
+    radiusRow, criticalOn, criticalNoHome, criticalSwitch, officialOn, officialNoHome, officialSwitch, changesSwitch, deviceOn, deviceSwitch,
     deviceInstall, deviceBlocked, deviceUnsupported, guide
   };
 }
@@ -1553,6 +1563,138 @@ test('the Home area note shows while Critical or Reliable is on and a home area 
 
 test('the Home area note stays hidden without a home area even when Critical reads on', () => {
   const page = loadAlerts({ home: false, critical: true });
+  assert.equal(note(page).hidden, true);
+});
+
+// ---- Plan 05-14 (D-11, UI-SPEC 6a): Severe official alerts for my area ----
+
+test('the official switch sends official_push at once, locks itself and keeps the answer', async () => {
+  const page = loadAlerts({ official: true });
+  page.officialSwitch.checked = false;
+  fire(page.officialSwitch, 'change');
+  await flush();
+  assert.equal(page.requests.length, 1);
+  assert.match(page.requests[0].url, /\/api\/me\/alerts$/);
+  assert.equal(page.requests[0].init.method, 'PATCH');
+  assert.equal(page.requests[0].init.body, '{"official_push":false}');
+  assert.equal(page.officialSwitch.disabled, true);
+  assert.equal(page.criticalSwitch.disabled, false);
+  answer(page.requests[0], 200, { ...ok(false, 5), critical_push: false, changes_push: false, official_push: false });
+  await flush();
+  assert.equal(page.officialSwitch.checked, false);
+  assert.equal(page.officialSwitch.disabled, false);
+  assert.equal(errorLine(page).hidden, true);
+});
+
+test('a failed official save puts the old value back with the save sentence', async () => {
+  const page = loadAlerts({ official: true });
+  page.officialSwitch.checked = false;
+  fire(page.officialSwitch, 'change');
+  await flush();
+  answer(page.requests[0], 500, {});
+  await flush();
+  assert.equal(page.officialSwitch.checked, true);
+  assert.equal(page.officialSwitch.disabled, false);
+  assert.equal(errorLine(page).textContent, SAVE_FAILED);
+});
+
+test('an official save refused with a 400 puts the old value back', async () => {
+  const page = loadAlerts();
+  page.officialSwitch.checked = true;
+  fire(page.officialSwitch, 'change');
+  await flush();
+  answer(page.requests[0], 400, { field: 'official_push', error: 'Add a home area first.' });
+  await flush();
+  assert.equal(page.officialSwitch.checked, false);
+  assert.equal(errorLine(page).textContent, SAVE_FAILED);
+});
+
+test('an official save offline sends nothing and shows the offline sentence', async () => {
+  const page = loadAlerts({ official: true });
+  page.sandbox.navigator.onLine = false;
+  page.officialSwitch.checked = false;
+  fire(page.officialSwitch, 'change');
+  await flush();
+  assert.equal(page.requests.length, 0);
+  assert.equal(page.officialSwitch.checked, true);
+  assert.equal(errorLine(page).textContent, OFFLINE);
+});
+
+test('saveKind carries official_push too', async () => {
+  const page = loadAlerts();
+  const pending = page.api.saveKind('official_push', false, page.officialSwitch);
+  await flush();
+  assert.equal(page.requests[0].init.body, '{"official_push":false}');
+  answer(page.requests[0], 200, { ...ok(false, 5), critical_push: true, changes_push: false, official_push: false });
+  assert.equal(await pending, true);
+});
+
+test('with no home area the official no home row shows and opens the Home area window', async () => {
+  const page = loadAlerts({ home: false, official: true });
+  assert.equal(page.officialOn.hidden, true);
+  assert.equal(page.officialNoHome.hidden, false);
+  fire(page.officialNoHome, 'click');
+  assert.deepEqual(page.opened, ['home']);
+  assert.equal(page.requests.length, 0);
+});
+
+test('after a home area is saved the official switch shows with its stored value', async () => {
+  const page = loadAlerts({ home: false, official: true });
+  fire(page.officialNoHome, 'click');
+  page.homeWin.hidden = false;
+  await flush();
+  page.homeRow.setAttribute('data-value', 'Kochi');
+  page.homeWin.hidden = true;
+  await flush();
+  assert.equal(page.officialOn.hidden, false);
+  assert.equal(page.officialNoHome.hidden, true);
+  assert.equal(page.officialSwitch.checked, true, 'the stored value comes back');
+  assert.equal(page.doc.activeElement, page.officialSwitch);
+  assert.equal(page.requests.length, 0);
+});
+
+test('closing the Home area window opened from the official row with no area puts focus back on that row', async () => {
+  const page = loadAlerts({ home: false });
+  fire(page.officialNoHome, 'click');
+  page.homeWin.hidden = false;
+  await flush();
+  page.homeWin.hidden = true;
+  await flush();
+  assert.equal(page.doc.activeElement, page.officialNoHome);
+});
+
+test('removing the home area keeps the official value, shows the no home row and says so once', async () => {
+  const page = loadAlerts({ home: true, official: true });
+  page.homeRow.setAttribute('data-value', '');
+  await flush();
+  assert.equal(page.officialOn.hidden, true);
+  assert.equal(page.officialNoHome.hidden, false);
+  assert.equal(page.officialSwitch.checked, true, 'the stored official value is not touched');
+  assert.equal(live(page).textContent, HOME_REMOVED);
+  assert.equal(page.requests.length, 0);
+});
+
+test('the Home area note shows while the official switch alone is on and a home area exists', async () => {
+  const page = loadAlerts({ home: true, official: false });
+  assert.equal(note(page).hidden, true);
+  page.officialSwitch.checked = true;
+  fire(page.officialSwitch, 'change');
+  await flush();
+  assert.equal(note(page).hidden, false);
+  answer(page.requests[0], 200, { ...ok(false, 5), critical_push: false, changes_push: false, official_push: true });
+  await flush();
+  assert.equal(note(page).hidden, false);
+  page.officialSwitch.checked = false;
+  fire(page.officialSwitch, 'change');
+  await flush();
+  assert.equal(note(page).hidden, true);
+  answer(page.requests[1], 200, { ...ok(false, 5), critical_push: false, changes_push: false, official_push: false });
+  await flush();
+  assert.equal(note(page).hidden, true);
+});
+
+test('the Home area note stays hidden without a home area even when official reads on', () => {
+  const page = loadAlerts({ home: false, official: true });
   assert.equal(note(page).hidden, true);
 });
 

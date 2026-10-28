@@ -189,9 +189,12 @@ func TestAlertsNeverSaysNoAlerts(t *testing.T) {
 // left it too: the owner moved that choice to Phase 9's per person Notify me
 // bell on 2026-10-18, so it never comes to Settings (TestNotificationsNoFollowOrOfficialRow
 // pins its absence). "Severe official alerts for my area" stays for Phase 5.
+//
+// Amended 2026-10-29 by plan 05-14 (D-11): Phase 5 draws the official row, so
+// "Severe official alerts for my area" left this list. TestNotificationsOfficialRow
+// pins the row itself and the welcome banned list still bans the words.
 var waitingSettingsLabels = []string{
 	"View my profile", "My profile",
-	"Severe official alerts for my area",
 	"Let others follow me", "Following", "Followers", "Blocked people",
 }
 
@@ -242,8 +245,11 @@ func TestSettingsShowsOnlyExistingRows(t *testing.T) {
 	// Amended 2026-10-18 by Phase 3.3 plan 14 (D-12, UI-SPEC Surface 2): two more
 	// rows draw a chevron, the On this device row that opens the install guide
 	// and the Critical reports "Add a home area first" row, so eleven.
-	if got := strings.Count(page, "app-icon--chevron-right"); got != 11 {
-		t.Errorf("settings.html.tmpl draws %d chevrons, want one on each of the eleven rows that open something", got)
+	//
+	// Amended 2026-10-29 by plan 05-14 (D-11): Phase 5 draws the official row, whose
+	// no home variant "Add a home area first" opens the Home area window, so twelve.
+	if got := strings.Count(page, "app-icon--chevron-right"); got != 12 {
+		t.Errorf("settings.html.tmpl draws %d chevrons, want one on each of the twelve rows that open something", got)
 	}
 	header := p421ReadTemplate(t, "account_header.html.tmpl")
 	for _, label := range waitingSettingsLabels {
