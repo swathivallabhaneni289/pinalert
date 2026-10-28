@@ -104,10 +104,11 @@ function load({ demoPage = true, search = '' } = {}) {
 test('demo.js: a practice post shows the toast, opens the report and polls every 3 seconds', () => {
   const m = load();
   m.post(report(41));
-  assert.deepEqual(m.calls.toast, ['Practice report posted. Pretend neighbours will confirm it in a few seconds.']);
-  // The open waits one tick, so the post window has closed by then.
+  // The toast and the open wait one tick, so the post window has closed by then.
   assert.equal(m.calls.open.length, 0);
+  assert.equal(m.calls.toast.length, 0);
   m.flush();
+  assert.deepEqual(m.calls.toast, ['Practice report posted. Pretend neighbours will confirm it in a few seconds.']);
   assert.deepEqual(m.calls.open, [['PinalertMap', 41]]);
   assert.equal(m.calls.intervals.length, 1);
   assert.equal(m.calls.intervals[0].ms, 3000);

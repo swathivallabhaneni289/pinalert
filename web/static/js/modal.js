@@ -140,7 +140,9 @@
     if (!isFinite(lat) || !isFinite(lon)) {
       return null;
     }
-    var place = shell.getAttribute('data-fixed-place');
+    // The Demo shell names the pretend place for the line under the map in
+    // data-pretend-place (plan 05-17); data-fixed-place is its older name.
+    var place = shell.getAttribute('data-pretend-place') || shell.getAttribute('data-fixed-place');
     return { lat: lat, lon: lon, place: typeof place === 'string' && place !== '' ? place : undefined };
   }
 
@@ -205,7 +207,10 @@
       modalMap.on('click', placeMarkerAtTap);
     }
 
-    locationNotice.hidden = true;
+    // The Demo's post window has no location notice (plan 05-17).
+    if (locationNotice) {
+      locationNotice.hidden = true;
+    }
 
     // The Demo page (plan 05-13, D-05) carries one pretend position on its
     // shell. The pin starts there and the browser is never asked, so no
@@ -257,7 +262,9 @@
   }
 
   function showLocationDenied(fallbackLat, fallbackLon) {
-    locationNotice.hidden = false;
+    if (locationNotice) {
+      locationNotice.hidden = false;
+    }
     modalMap.setView([fallbackLat, fallbackLon], 11);
     window.setTimeout(function () {
       modalMap.invalidateSize();

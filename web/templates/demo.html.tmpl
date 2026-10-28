@@ -17,9 +17,11 @@
     - the list pane has no alert banner (plan 05-19 adds it) and no item for
       reliable reporters, because the Demo has no real people to rate.
 
-  The post window is the real window; plan 05-17 finishes the practice flow. Its
-  place search is kept in the markup because report-form.js binds to it, and it
-  is hidden: the Demo never calls the geocoder, a tap on the map places the pin.
+  The post window is the real window with the practice flow of plan 05-17. It
+  has no place search and no location notice: the Demo never calls the geocoder
+  or asks for a location, so the pin starts at the pretend position and a tap on
+  the map moves it. report-form.js and modal.js accept the missing elements. The
+  line under the map reads "Near " plus data-pretend-place plus ".".
 */}}
 <!DOCTYPE html>
 <html lang="en">
@@ -60,6 +62,7 @@
        data-fixed-lat="{{.FixedLat}}"
        data-fixed-lon="{{.FixedLon}}"
        data-fixed-place="{{.PretendPlace}}"
+       data-pretend-place="{{.PretendPlace}}"
        data-fallback-lat="{{.FixedLat}}"
        data-fallback-lon="{{.FixedLon}}"
        data-fallback-zoom="13"
@@ -176,22 +179,9 @@
 
         <div class="post-window__body">
           <div class="post-window__map">
-            <div class="location-search-field" hidden>
-              <input type="search" id="location-search" name="location_search" autocomplete="off"
-                     autocapitalize="off" spellcheck="false" role="combobox" aria-expanded="false"
-                     aria-autocomplete="list" aria-controls="location-search-results"
-                     aria-label="Search an address or a landmark"
-                     placeholder="Search an address or a landmark" tabindex="-1">
-              <div id="location-search-results" role="listbox" aria-label="Place suggestions" hidden></div>
-            </div>
-            <p id="location-search-status" role="status" aria-live="polite" hidden></p>
-
             <div id="modal-map"></div>
             <p id="near-line"><strong id="near-place"></strong> Drag the pin or tap the map to move it.</p>
             <p id="coord-readout" class="visually-hidden"></p>
-            <p id="location-notice" hidden>
-              Location access is off. Drag the map to your area, or tap the map to drop a pin.
-            </p>
           </div>
 
           <div class="post-window__form">
