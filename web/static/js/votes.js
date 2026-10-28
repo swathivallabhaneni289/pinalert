@@ -247,6 +247,30 @@
     });
   }
 
+  // The Demo page's pretend position, from data-fixed-lat and data-fixed-lon on
+  // the page shell, or null when the page has no such pair (every real page) or
+  // either half is not a number. Both halves are needed.
+  function fixedPosition() {
+    var shell = document.getElementById('app-shell');
+    if (!shell) {
+      return null;
+    }
+    var lat = parseFloat(shell.getAttribute('data-fixed-lat'));
+    var lon = parseFloat(shell.getAttribute('data-fixed-lon'));
+    if (!isFinite(lat) || !isFinite(lon)) {
+      return null;
+    }
+    return { lat: lat, lon: lon };
+  }
+
+  // The base of the report calls: '/api' on every real page, the visit's sandbox
+  // path on the Demo page (api-base.js sets window.PinalertApiBase). The same
+  // rule as app.js.
+  function apiBase() {
+    var base = window.PinalertApiBase;
+    return typeof base === 'string' && base !== '' ? base : '/api';
+  }
+
   // Resolves a Promise of latitude and longitude only. The capture time is
   // never resolved. The rules, in order (D-02, builds on D-17 and D-18):
   //  1. A cached fix younger than VOTER_LOCATION_FRESH_MS is reused without
@@ -265,6 +289,15 @@
   // handles a denied prompt and a server refusal identically. No rejection
   // is ever turned into a substitute position (D-18).
   function getVoterLocation(opts) {
+    // The Demo page (plan 05-13, D-05) gives every vote the one pretend
+    // position on its shell. It is not a fallback for a refused prompt: the page
+    // never asks, reads and writes no stored fix, and the Demo server judges the
+    // 1 km rule from the same pretend position whatever is sent. A real page has
+    // no such attributes, so this returns null there and the rules below apply.
+    var fixed = fixedPosition();
+    if (fixed !== null) {
+      return Promise.resolve({ latitude: fixed.lat, longitude: fixed.lon });
+    }
     var fresh = !!(opts && opts.fresh);
     return new Promise(function (resolve, reject) {
       var cached = null;
@@ -522,7 +555,7 @@
     });
 
     function postVote(coords) {
-      return fetch('/api/reports/' + encodeURIComponent(String(reportId)) + '/' + action, {
+      return fetch(apiBase() + '/reports/' + encodeURIComponent(String(reportId)) + '/' + action, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // Exactly the two fields the server's decoder declares. That
@@ -980,6 +1013,13 @@
   // never writes the cache: the silent refresh of the vote path keeps the
   // cache current. A browser that throws on storage access gives no fix.
   function peekVoterLocation() {
+    // On the Demo page the pretend position is always known and always current,
+    // so the too far hint judges every report from it (plan 05-13). No storage
+    // is read.
+    var fixed = fixedPosition();
+    if (fixed !== null) {
+      return { latitude: fixed.lat, longitude: fixed.lon, at: Date.now() };
+    }
     try {
       return parseVoterLocation(sessionStorage.getItem(VOTER_LOCATION_CACHE_KEY));
     } catch (e) {

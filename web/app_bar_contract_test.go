@@ -76,8 +76,12 @@ func TestAppBarReportNeverCurrent(t *testing.T) {
 		t.Fatalf("%s has %d data-open-report links, want the Report link and the Post a report link", appBarTemplate, len(links))
 	}
 	for _, link := range links {
-		if !strings.Contains(link, `href="/?post=1"`) {
-			t.Errorf("%s must link to /?post=1, so it works without script", link)
+		// Amended 2026-10-29 by plan 05-13: the address is an expression whose
+		// else branch is the real /?post=1 and whose Demo branch is /demo?post=1,
+		// so the Demo's bars stay inside the Demo. The real address is still
+		// required, and the Demo branch is pinned beside it.
+		if !strings.Contains(link, `href="{{if .Nav.Demo}}/demo?post=1{{else}}/?post=1{{end}}"`) {
+			t.Errorf("%s must link to /?post=1 (and to /demo?post=1 in the Demo), so it works without script", link)
 		}
 		if strings.Contains(link, "aria-current") {
 			t.Errorf("%s is current; Report and Post a report open a window and are never a place", link)
@@ -255,11 +259,16 @@ type searchBarNavItem struct {
 	Current                bool
 }
 
+// Amended 2026-10-29 by plan 05-13: the app bar partial reads .Nav.Demo (the
+// Demo's bars leave out the search, the bell, the gear and the person menu), so
+// the rebuilt shape gains the field, false for every real place. Every old case
+// is kept and still draws the real bar.
 type searchBarNav struct {
 	Items    []searchBarNavItem
 	Current  string
 	Title    string
 	BackHref string
+	Demo     bool
 }
 
 func (v searchBarNav) ShowGear() bool { return v.Current != "settings" }

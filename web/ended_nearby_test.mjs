@@ -127,7 +127,12 @@ const IDS = {
 // load evaluates the scripts against a My activity page. position is what the
 // browser has kept ('none' for nothing). answers is a list of functions or
 // objects, one per read: an object is the JSON answer, an Error rejects.
-function load({ search = '', position = null, radius = '12', answers = [], cells = [], pageAccount = '7', savedBy = '7' } = {}) {
+// Amended 2026-10-29 by plan 05-13: load takes an optional apiBase, the value
+// api-base.js would set as window.PinalertApiBase on the Demo's My activity. With
+// none (every case written before this plan) the page has no such value and the
+// scripts use the default '/api', so the pins on /api/reports below are the
+// default base cases; the Demo base cases follow them.
+function load({ search = '', position = null, radius = '12', answers = [], cells = [], pageAccount = '7', savedBy = '7', apiBase = null } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -208,6 +213,7 @@ function load({ search = '', position = null, radius = '12', answers = [], cells
     Event: class Event {}
   };
   sandbox.window = sandbox;
+  if (apiBase !== null) { sandbox.PinalertApiBase = apiBase; }
   vm.createContext(sandbox);
   vm.runInContext(read('app.js'), sandbox);
   vm.runInContext(read('trust.js'), sandbox);
@@ -258,6 +264,36 @@ test('with no kept position nothing is requested and the location state shows', 
   assert.equal(shown(m.by('ended-empty')), false);
   assert.equal(m.by('ended-hub-count').hidden, true, 'the hub count stays empty');
   cells.forEach((c) => assert.equal(c.textContent, 'Unknown'));
+});
+
+// Amended 2026-10-29 by plan 05-13 (D-05): the Demo base case. The pins on
+// /api/reports in this file are the default base cases, unchanged; these two
+// prove that with window.PinalertApiBase set, as api-base.js sets it on the
+// Demo's My activity, the part read and the take back go to the Demo's API.
+test('Demo base: the part read goes to the Demo API, and a take back posts there and reads the part from there', async () => {
+  const base = '/demo/api/v/abc_DEF-123';
+  const m = load({
+    position: [12.97, 77.59],
+    apiBase: base,
+    answers: [answer([resolvedReport(31, MARKED(2)), resolvedReport(32)]), { visibility: 'live', undos_left: 1 },
+      answer([resolvedReport(32)])]
+  });
+  m.start();
+  await settle();
+  const first = new URL(m.fetches[0].url, 'http://x');
+  assert.equal(first.pathname, base + '/reports');
+  assert.equal(first.searchParams.get('view'), 'past');
+  undoButton(rowsOf(m, 'ended-resolved-list')[0]).click();
+  await settle();
+  assert.equal(m.fetches.length, 3);
+  assert.equal(new URL(m.fetches[1].url, 'http://x').pathname, base + '/reports/31/unresolve');
+  assert.equal(new URL(m.fetches[2].url, 'http://x').pathname, base + '/reports');
+});
+
+test('Demo base: an empty base value is ignored and the read goes to /api/reports', async () => {
+  const m = load({ position: [12.97, 77.59], apiBase: '', answers: [answer([])] });
+  m.start();
+  assert.equal(new URL(m.fetches[0].url, 'http://x').pathname, '/api/reports');
 });
 
 test('with a position one read is sent with the position, the page radius and view=past, and the skeleton shows meanwhile', async () => {

@@ -298,7 +298,12 @@ func TestQueueSubmitReportClassifiesQueueable(t *testing.T) {
 		// The WebKit hung post: the post and its body read race the page's
 		// own timer, so a post whose aborted request never ends still fails
 		// at the limit (the hung post cases of web/queue_logic_test.mjs run it).
-		"return Promise.race([fetch('/api/reports', {",
+		// Amended 2026-10-29 by plan 05-13: the post address is built from the page's
+		// API base ('/api' on every real page, the visit's sandbox path on the
+		// Demo), so the call is fetch(apiBase() + '/reports', ...). On a real page
+		// that is still POST /api/reports (web/queue_logic_test.mjs runs it and
+		// reads the address).
+		"return Promise.race([fetch(apiBase() + '/reports', {",
 		"}), timeout.expired]).then(function (res) {",
 		"return Promise.race([res.json(), timeout.expired]).catch(function () {",
 		"err.status = res.status",

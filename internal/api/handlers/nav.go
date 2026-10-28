@@ -44,6 +44,10 @@ type NavView struct {
 	// BackHref is the address of the phone back arrow. Empty means the page
 	// draws no back arrow (D-11).
 	BackHref string
+	// Demo is true on the Demo's pages (plan 05-13). The bars then draw no
+	// Search a place field, no bell, no gear and no person menu, and the
+	// wordmark and the Post a report links point at the Demo.
+	Demo bool
 }
 
 // ShowGear reports whether the phone top bar draws the Settings gear. The gear
@@ -94,4 +98,32 @@ func navFor(current string, opts ...navOption) NavView {
 // main places, such as Settings.
 func navTitle(title string) navOption {
 	return func(v *NavView) { v.Title = title }
+}
+
+// demoNavHrefs are the addresses of the main places inside the Demo (plan
+// 05-13, D-05). The Demo has its own page for each place, so a visitor never
+// leaves the sandbox through the bar. The pages for /demo/alerts and
+// /demo/activity come with plan 05-19; until then those two addresses answer
+// with the Demo's not found page.
+var demoNavHrefs = map[string]string{
+	NavNearby:   "/demo",
+	NavAlerts:   "/demo/alerts",
+	NavActivity: "/demo/activity",
+}
+
+// demoNavFor builds the bar data for a Demo page. The places and their order
+// are the real list (mainNavItems), so a place added or renamed there appears
+// in the Demo too; only the addresses change. Demo is true, which makes
+// app_bar.html.tmpl leave out the Search a place field, the bell, the gear and
+// the person menu, and point the wordmark and the Post a report links at the
+// Demo. Every word and address comes from this file's constants (T-34-13).
+func demoNavFor(current string, opts ...navOption) NavView {
+	v := navFor(current, opts...)
+	v.Demo = true
+	for i := range v.Items {
+		if href, ok := demoNavHrefs[v.Items[i].Key]; ok {
+			v.Items[i].Href = href
+		}
+	}
+	return v
 }

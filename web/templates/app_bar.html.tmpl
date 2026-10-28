@@ -18,7 +18,7 @@
 */}}
 {{define "app_topbar"}}
 <header class="app-topbar">
-  <a class="app-topbar__brand" href="/">Pinalert</a>
+  {{if .Nav.Demo}}<a class="app-topbar__brand" href="/demo">Pinalert</a>{{else}}<a class="app-topbar__brand" href="/">Pinalert</a>{{end}}
   <nav class="app-topbar__nav" aria-label="Main">
     {{range .Nav.Items}}
     <a class="app-topbar__link" href="{{.Href}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a>
@@ -29,10 +29,13 @@
   {{end}}
   <h1 class="app-topbar__title">{{.Nav.Title}}</h1>
   <span class="app-topbar__spacer"></span>
-  <a class="app-topbar__post" href="/?post=1" data-open-report><span class="app-icon app-icon--plus" aria-hidden="true"></span><span class="app-topbar__post-label">Post a report</span></a>
+  <a class="app-topbar__post" href="{{if .Nav.Demo}}/demo?post=1{{else}}/?post=1{{end}}" data-open-report><span class="app-icon app-icon--plus" aria-hidden="true"></span><span class="app-topbar__post-label">Post a report</span></a>
+  {{if not .Nav.Demo}}
   {{if eq .Nav.Current "nearby"}}
   {{template "place_search.html.tmpl" .}}
   {{end}}
+  {{end}}
+  {{if not .Nav.Demo}}
   <button type="button" id="bell-trigger" class="app-topbar__bell" aria-label="Updates" aria-haspopup="dialog" aria-expanded="false" aria-controls="bell-list" data-poll-interval-ms="30000"><span class="app-icon app-icon--bell" aria-hidden="true"></span><span class="app-topbar__count" id="bell-count" aria-hidden="true" hidden></span></button>
   <div id="bell-list" class="bell-list" role="dialog" aria-label="Updates" hidden>
     <div class="bell-list__head">
@@ -56,11 +59,14 @@
     </div>
     <a class="bell-list__all" href="/profile?part=updates">See all updates</a>
   </div>
+  {{end}}
   {{template "theme_toggle.html.tmpl" .}}
+  {{if not .Nav.Demo}}
   {{if .Nav.ShowGear}}
   <a class="app-topbar__gear" href="/settings" aria-label="Settings"><span class="app-icon app-icon--settings" aria-hidden="true"></span></a>
   {{end}}
   <div class="app-header">{{template "account_header_menu" .}}</div>
+  {{end}}
 </header>
 {{end}}
 
@@ -69,6 +75,6 @@
   {{range .Nav.Items}}
   <a class="app-bar__item" href="{{.Href}}"{{if .Current}} aria-current="page"{{end}}><span class="app-icon app-icon--{{.Icon}}" aria-hidden="true"></span><span class="app-bar__label">{{.Label}}</span></a>
   {{end}}
-  <a class="app-bar__item app-bar__item--report" href="/?post=1" data-open-report><span class="app-icon app-icon--circle-plus" aria-hidden="true"></span><span class="app-bar__label">Report</span></a>
+  <a class="app-bar__item app-bar__item--report" href="{{if .Nav.Demo}}/demo?post=1{{else}}/?post=1{{end}}" data-open-report><span class="app-icon app-icon--circle-plus" aria-hidden="true"></span><span class="app-bar__label">Report</span></a>
 </nav>
 {{end}}

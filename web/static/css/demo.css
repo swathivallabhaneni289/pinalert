@@ -1,0 +1,171 @@
+/*
+ * Pinalert demo.css (Phase 5, plan 13, UI-SPEC Surface 4a and 4b)
+ *
+ * The Demo's own look, on top of the real Nearby page's styles: the strip that
+ * is the first element of every Demo screen, the Exit demo button, the Demo tag
+ * on rows and popups, and the dashed ring on every Demo pin. Together they make
+ * sure a pretend report can never be read as a crowd report or an official one,
+ * and never by colour alone.
+ *
+ * Tokens only: no new hue. The strip's 52px floor, 4px by 16px padding and 12px
+ * gap, the 24px tag height and the 2px ring are the named literals of the
+ * UI-SPEC table. This file loads last, after phone.css, because the ring has to
+ * win over the phone dot's disputed rule. Every display rule on an element that
+ * can carry hidden says :not([hidden]).
+ */
+
+/* ---- The Demo strip -------------------------------------------------------- */
+
+.demo-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  min-height: 52px;
+  padding: 4px 16px;
+  background: var(--color-surface);
+  border-bottom: 2px solid var(--color-text);
+  color: var(--color-text);
+}
+
+.demo-strip__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Exit demo is a link because it leaves the page, and a button to look at: the
+   built outlined 44px control, never an underlined link (owner, 2026-10-21). */
+.demo-strip__exit {
+  flex: none;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding-block: 0;
+  padding-inline: 16px;
+  border: 1px solid var(--color-text);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.demo-strip__exit:hover {
+  background: var(--color-surface);
+}
+
+/* On a phone several parts of Nearby are fixed to the top of the page, because
+   the real page draws no strip there: the top bar, which lies over the map, the
+   report view and its Back arrow, and the not available view with its Back and
+   title. The Demo strip is drawn on a phone too and sits above the shell, so
+   each of them starts below it instead, by the strip's measured height
+   (--disclaimer-bar-height, written by demo.js). Each head repeats phone.css's
+   own, so the specificity is equal and this later file wins. The report view
+   keeps the same 160px of map above it. */
+@media (max-width: 899.98px) {
+  body.has-app-bar:has(> .app-shell) > .top-chrome {
+    top: var(--disclaimer-bar-height);
+  }
+
+  .leaflet-container .leaflet-detail-pane .leaflet-popup {
+    top: calc(var(--disclaimer-bar-height) + var(--space-3xl) * 2.5);
+  }
+
+  .leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden]) {
+    top: calc(var(--disclaimer-bar-height) + var(--space-sm));
+  }
+
+  .app-shell > .report-gone:not([hidden]) {
+    top: calc(var(--disclaimer-bar-height) + var(--app-topbar-height));
+  }
+
+  .app-shell > .report-gone > .report-gone__back,
+  .app-shell > .report-gone > .report-gone__title {
+    top: calc(var(--disclaimer-bar-height) + var(--space-sm));
+  }
+
+  /* The real Nearby draws Search a place where the phone bar would show its
+     title, so the title is hidden there. The Demo has no search, so the bar
+     shows the wordmark (UI-SPEC 4c). It floats over the map like the controls
+     do, so it carries the same solid page colour and soft shadow, and it steps
+     aside while a report is open, where Back takes the left of the row. */
+  body.has-app-bar:has(> .app-shell) > .top-chrome .app-topbar__title {
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    min-height: var(--touch-target-min);
+    padding: 0 var(--space-12);
+    border-radius: 8px;
+    background: var(--color-bg);
+    box-shadow: var(--shadow-menu);
+  }
+
+  body:has(.leaflet-detail-pane .leaflet-popup[data-popup-open="true"]) > .top-chrome .app-topbar__title {
+    visibility: hidden;
+  }
+}
+
+/* ---- The Demo tag ----------------------------------------------------------- */
+
+/* The same neutral tag as the Demo tag of the Official alerts page (official.css
+   draws it there): word and shape carry the meaning, so it never competes with
+   the severity colour. First item of a row's state position, and in the badge
+   row of a popup. */
+.demo-tag {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 24px;
+  margin-inline-end: var(--space-xs);
+  padding: 0 8px;
+  border: 1px solid var(--color-text);
+  border-radius: 4px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+/* ---- The Demo pin ------------------------------------------------------------ */
+
+/* Every pin on the Demo map has a 2px dashed ring in the text colour, 2px
+   outside the pin, always drawn (it is not the selection ring). The outline
+   follows the round badge, takes no room, and leaves the 44px marker box as it
+   was. The selection growth (map-pin--chosen) is a transform and a shadow, so
+   the two do not fight. The id keeps this above phone.css's disputed rule,
+   which sets outline 0 for a grey dot. */
+#map .icon-badge--pin.icon-badge--demo {
+  outline: 2px dashed var(--color-text);
+  outline-offset: 2px;
+}
+
+/* ---- Forced colours ----------------------------------------------------------- */
+
+@media (forced-colors: active) {
+  .demo-strip {
+    border-bottom-color: CanvasText;
+    color: CanvasText;
+  }
+
+  .demo-strip__exit {
+    border-color: LinkText;
+    color: LinkText;
+  }
+
+  .demo-tag {
+    border-color: CanvasText;
+  }
+
+  #map .icon-badge--pin.icon-badge--demo {
+    outline-color: CanvasText;
+  }
+}

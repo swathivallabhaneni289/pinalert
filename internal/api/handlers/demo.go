@@ -32,6 +32,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"html/template"
 	"log"
 	"net/http"
 	"time"
@@ -59,13 +60,19 @@ type DemoLimit struct {
 }
 
 // DemoConfig configures DemoRoutes. Store holds the worlds. VisitLimit is the
-// per IP limit on starting a visit (a new world); the page that starts a visit
-// (plan 05-13) reads it, DemoRoutes does not. WriteLimit is the per IP limit on
-// the Demo's POST routes. A zero limit takes its default below.
+// per IP limit on starting a visit (a new world), read by the Demo page (plan
+// 05-13). WriteLimit is the per IP limit on the Demo's POST routes. A zero
+// limit takes its default below. Template and Page are what the Demo page
+// renders with: the parsed page templates and the same page configuration the
+// real Nearby page uses (the fallback centre, the radii, the asset version). A
+// nil Template mounts no page, so a router built for the API alone, as the
+// plan 05-10 tests do, keeps answering 404 on /demo.
 type DemoConfig struct {
 	Store      *demo.Store
 	VisitLimit DemoLimit
 	WriteLimit DemoLimit
+	Template   *template.Template
+	Page       PageConfig
 }
 
 // The defaults are generous because carrier NAT puts many phones behind one
@@ -117,6 +124,17 @@ func DemoRoutes(cfg DemoConfig) chi.Router {
 			next.ServeHTTP(w, req)
 		})
 	})
+	// The page that starts a visit (plan 05-13): GET /demo and /demo/. It sits
+	// inside this router because chi's Mount("/demo") claims the whole prefix,
+	// so a second top level route for it would be shadowed. It is behind the
+	// per IP visit limit, and a router given no template mounts no page.
+	if cfg.Template != nil {
+		visit := cfg.VisitLimit
+		if visit == (DemoLimit{}) {
+			visit = DemoVisitLimitDefault
+		}
+		r.With(demoVisitLimiter(visit)).Get("/", DemoPage(cfg.Template, store, cfg.Page))
+	}
 	r.Get("/api/v/{visit}/reports", demoNearby(store))
 	r.With(limiter.Middleware()).Post("/api/v/{visit}/reports", demoSubmit(store))
 	for _, v := range demoVoteRoutes {

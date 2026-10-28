@@ -88,6 +88,28 @@ window.Pinalert = (function () {
 
   var shellEl = document.getElementById('app-shell');
 
+  // apiBase is where the report calls go: '/api' on every real page. The Demo
+  // page (plan 05-13, D-05) loads api-base.js first, which sets
+  // window.PinalertApiBase to the visit's own sandbox path, so the same code
+  // reads and posts reports there with no second copy of any rule in JavaScript
+  // (TRUST-02). The value is a path api-base.js has already checked.
+  function apiBase() {
+    var base = window.PinalertApiBase;
+    return typeof base === 'string' && base !== '' ? base : '/api';
+  }
+
+  // FEED_CENTRE_EVENT is announced on the document after each report list that
+  // was applied, with the centre it was loaded for as {lat, lon}. The alert
+  // banner (plan 05-15) follows the same place the reader is looking at (D-09).
+  var FEED_CENTRE_EVENT = 'pinalert:feed-centre';
+
+  function announceFeedCentre(lat, lon) {
+    if (typeof CustomEvent !== 'function' || typeof document.dispatchEvent !== 'function') {
+      return;
+    }
+    document.dispatchEvent(new CustomEvent(FEED_CENTRE_EVENT, { detail: { lat: lat, lon: lon } }));
+  }
+
   function readNumberAttr(name, fallback) {
     if (!shellEl) {
       return fallback;
@@ -557,7 +579,7 @@ window.Pinalert = (function () {
     // the rows belong to (a tab pressed and pressed back) shows them again.
     markListLoading(isBackgroundRefresh && !rowsMatchStore());
 
-    var url = '/api/reports' +
+    var url = apiBase() + '/reports' +
       '?lat=' + encodeURIComponent(state.center.lat) +
       '&lon=' + encodeURIComponent(state.center.lon) +
       '&radius_km=' + encodeURIComponent(config.defaultRadiusKm);
@@ -644,6 +666,9 @@ window.Pinalert = (function () {
         state.error = null;
         state.hasLoaded = true;
         state.lastUpdatedAt = Date.now();
+        // The centre this list was loaded for is announced once the store holds
+        // it, in the same step as the render below (plan 05-13, D-09).
+        announceFeedCentre(sentLat, sentLon);
         markListLoading(false);
         notify();
       })
@@ -752,7 +777,7 @@ window.Pinalert = (function () {
   // have made the report already.
   function submitReport(payload) {
     var timeout = requestTimeout(SUBMIT_TIMEOUT_MS, 'submitReport');
-    return Promise.race([fetch('/api/reports', {
+    return Promise.race([fetch(apiBase() + '/reports', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

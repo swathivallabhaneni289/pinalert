@@ -227,6 +227,27 @@
     }
   }
 
+  // addDemoRowMarks puts the Demo tag first in the state position of a row on
+  // the Demo page and makes the row's accessible name start "Demo." (plan 05-13,
+  // D-02, UI-SPEC 4b, ROBUST-06): a screen reader hears that word before
+  // anything else, then the state, and the visible tag is hidden from it so the
+  // word is not said twice. body is the row body createRow built, with its state
+  // line already in it. Fixed words only.
+  function addDemoRowMarks(body) {
+    var stateLine = body.querySelector('.report-row__stateline');
+    if (stateLine) {
+      var demoTag = document.createElement('span');
+      demoTag.className = 'demo-tag';
+      demoTag.setAttribute('aria-hidden', 'true');
+      Pinalert.setText(demoTag, 'Demo');
+      stateLine.insertBefore(demoTag, stateLine.firstChild);
+    }
+    var demoLead = document.createElement('span');
+    demoLead.className = 'report-row__demo-lead visually-hidden';
+    Pinalert.setText(demoLead, 'Demo. ');
+    body.insertBefore(demoLead, body.firstChild);
+  }
+
   function createRow(id) {
     var li = document.createElement('li');
     li.className = 'report-row';
@@ -311,6 +332,10 @@
     // state line.
     var trust = PinalertTrust.createTrustLine();
     body.appendChild(PinalertTrust.createStateLine('report-row__stateline', tag, trust));
+    // On the Demo page every row carries the Demo tag (plan 05-13, D-02).
+    if (window.PinalertDemoPage === true) {
+      addDemoRowMarks(body);
+    }
     body.appendChild(meta);
     body.appendChild(written);
     body.appendChild(away);

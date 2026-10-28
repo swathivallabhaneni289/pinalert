@@ -1,4 +1,4 @@
-{{/* The shared report form fields, used by the main page and the Low data view. Each page supplies the dialog shell and its own location block before including this partial. The Low data view (Chrome.LowDataPage) keeps the form it was built with. The Post a report window on the main page gets the second branch; its Post report button, its error line and its Send after the wait button sit in the window's own pinned footer in index.html.tmpl. */}}
+{{/* The shared report form fields, used by the main page and the Low data view. Each page supplies the dialog shell and its own location block before including this partial. The Low data view (Chrome.LowDataPage) keeps the form it was built with. The Post a report window on the main page gets the second branch; its Post report button, its error line and its Send after the wait button sit in the window's own pinned footer in index.html.tmpl. Plan 05-13: the Demo page (Chrome.DemoPage) leaves out the Call 112 box and the What is happening picks, because a tel link inside a sandbox could dial real emergency services (UI-SPEC 4c, T-05-73). */}}
 {{if .Chrome.LowDataPage}}
         <div id="category-grid" role="radiogroup" aria-label="Category"></div>
 
@@ -63,6 +63,7 @@
           <input type="number" id="shelter-headcount" name="shelter_headcount" min="0">
         </fieldset>
 
+        {{if not .Chrome.DemoPage}}
         <a id="call-112-box" class="call-box" href="{{.Chrome.Numbers.TelHref}}" aria-labelledby="call-112-action call-112-title call-112-line" hidden>
           <span class="call-box__disc" aria-hidden="true"><span class="app-icon app-icon--phone"></span></span>
           <span class="call-box__text">
@@ -76,6 +77,7 @@
           <legend class="post-group__legend" id="happening-legend">What is happening?</legend>
           <div id="happening-group" role="radiogroup" aria-labelledby="happening-legend"></div>
         </fieldset>
+        {{end}}
 
         <div class="post-group">
           <label for="description" class="post-group__legend">Describe it</label>

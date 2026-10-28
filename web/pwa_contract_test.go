@@ -38,6 +38,15 @@ func TestEveryPageIncludesAppHead(t *testing.T) {
 		if !strings.Contains(text, "<head>") {
 			return nil
 		}
+		// Amended 2026-10-29 by plan 05-13 (D-05, research G5 gotcha 6): the Demo
+		// page is the one page that must not carry the app head. The partial
+		// loads notify.js, which registers the service worker and the phone
+		// alert subscription, and the Demo registers nothing and stores nothing.
+		// The exemption is this one named file, and the Demo page is pinned to
+		// hold no app head and no notify.js by TestDemoPageLoadsNoForbiddenScripts.
+		if path == "templates/demo.html.tmpl" {
+			return nil
+		}
 		checked++
 
 		if got := strings.Count(text, appHeadInclude); got != 1 {

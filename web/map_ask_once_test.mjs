@@ -46,7 +46,14 @@ const HOME = { lat: 17.4, lon: 78.45, zoom: 13 };
 
 // run builds the sandbox. permission is 'granted', 'prompt', 'denied' or null
 // (no Permissions API). storage holds the starting local storage values.
-function run({ permission = 'prompt', storage = {}, fallback = FALLBACK, geolocation = true, throwingStorage = false, account = '7' } = {}) {
+//
+// Amended 2026-10-29 by plan 05-13: the fake document gains getElementById,
+// because the first centring and the return to the reader now look for the
+// Demo page's pretend position (data-fixed-lat and data-fixed-lon on the page
+// shell) before they ask the browser. It answers null, as every real page does,
+// so every case written before this plan runs unchanged; the fixed option gives
+// the Demo's shell, and the two cases at the end run the Demo page.
+function run({ permission = 'prompt', storage = {}, fallback = FALLBACK, geolocation = true, throwingStorage = false, account = '7', fixed = null } = {}) {
   const data = new Map(Object.entries(storage));
   const local = throwingStorage
     ? { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); }, removeItem() { throw new Error('blocked'); } }
@@ -78,6 +85,11 @@ function run({ permission = 'prompt', storage = {}, fallback = FALLBACK, geoloca
     isFinite,
     Math,
     document: {
+      getElementById(id) {
+        if (id !== 'app-shell' || fixed === null) { return null; }
+        const attrs = { 'data-fixed-lat': String(fixed.lat), 'data-fixed-lon': String(fixed.lon) };
+        return { getAttribute: (name) => (Object.hasOwn(attrs, name) ? attrs[name] : null) };
+      },
       querySelector(selector) {
         if (selector !== '[data-account-id]' || account === null) { return null; }
         return { getAttribute: (name) => (name === 'data-account-id' ? account : null) };
@@ -240,4 +252,30 @@ test('a browser with no location API starts at the fallback without throwing', a
   await page.settle();
   same(page.views[0], FALLBACK);
   assert.equal(page.centres[0].own, false);
+});
+
+// Plan 05-13 (D-05): the Demo page carries one pretend position on its shell.
+// The map starts there as the reader's own position and the browser is never
+// asked: no location question, no marker, no kept fix. The page has no
+// data-account-id (account: null), so even the real position.js, which the Demo
+// page does not load at all, would write nothing.
+test('Demo page: the map starts at the pretend position as the reader own fix and never asks the browser', async () => {
+  const page = run({ permission: 'prompt', account: null, fixed: { lat: 16.5424, lon: 80.6386 } });
+  page.start();
+  await page.settle();
+  assert.equal(page.asks.length, 0, 'the browser is not asked');
+  same(page.views[0], { lat: 16.5424, lon: 80.6386, zoom: 13 });
+  same(page.centres[0], { lat: 16.5424, lon: 80.6386, own: true });
+  assert.equal(page.data.has(ASKED), false, 'no marker is written');
+  assert.equal(page.data.has(KEY), false, 'no fix is kept');
+  assert.equal(page.calls.fetch, 1);
+  assert.equal(page.calls.poll, 1);
+});
+
+test('Demo page: Back to my location returns to the pretend position without asking', async () => {
+  const page = run({ permission: 'prompt', account: null, fixed: { lat: 16.5424, lon: 80.6386 } });
+  await page.back();
+  assert.equal(page.asks.length, 0, 'the browser is not asked');
+  same(page.moves[0], { lat: 16.5424, lon: 80.6386, zoom: 13 });
+  assert.equal(page.data.has(KEY), false, 'no fix is kept');
 });
