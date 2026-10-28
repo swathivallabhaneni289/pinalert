@@ -1,0 +1,42 @@
+# Keeps the official alerts current while the free host sleeps (D-15, D-11).
+# Every 10 minutes this calls the protected refresh endpoint; the call itself
+# wakes the host, which then refreshes both feeds through their minimum gaps and
+# sends any phone alerts that are due, with nobody on the site.
+#
+# Best effort only. GitHub may delay a scheduled run, and it switches a schedule
+# off after 60 days of no repository activity in a public repository. The pages
+# stay honest without it: when calls stop, the last good check simply ages and
+# the pages move to stale and then unavailable (ALERT-04).
+#
+# 10 minutes is about 744 of Render's 750 free instance hours a month, so the host
+# stays awake. If other free services share those hours, change the minute field
+# to */30 (a one line edit below).
+#
+# The owner adds the secret and the variable; nothing here is a credential:
+#   secret   OFFICIAL_REFRESH_TOKEN  the same value as the host's variable of that name
+#   variable PINALERT_BASE_URL       the deployed https address, no trailing path
+# While the variable is unset the job is skipped, so a fork or an unconfigured
+# copy of this repository stays quiet. No checkout is needed: the job only calls
+# a URL.
+name: Official feed refresh
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+permissions: {}
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    if: ${{ vars.PINALERT_BASE_URL != '' }}
+    timeout-minutes: 5
+    steps:
+      - name: Call the refresh endpoint
+        env:
+          BASE_URL: ${{ vars.PINALERT_BASE_URL }}
+          TOKEN: ${{ secrets.OFFICIAL_REFRESH_TOKEN }}
+        run: |
+          curl --fail --silent --show-error \
+            --retry 3 --retry-delay 30 --max-time 120 \
+            -X POST \
+            -H "Authorization: Bearer ${TOKEN}" \
+            "${BASE_URL%/}/internal/official/refresh"

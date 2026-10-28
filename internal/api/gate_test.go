@@ -355,6 +355,13 @@ func TestAccessGateAllowsVerified(t *testing.T) {
 // answered 200 from a Demo store created in the test, and a negative loop at the
 // end proves /api/reports, /alerts and /api/official/alerts stay gated for a
 // caller with no session (401, 302 and 401). Every older row is unchanged.
+//
+// Amended 2026-10-29 by plan 05-12 (D-15): the external cron's door joins the
+// exempt list. With a token configured and a fake refresher, POST
+// /internal/official/refresh with the bearer token must answer 200 for a caller
+// with no session (no redirect to /login, and the 401 the endpoint gives a wrong
+// token is its own, checked separately), a GET of it is a 404, and on a server
+// with no token it is a 404. Every older row and loop is unchanged.
 func TestAccessGateExemptRoutes(t *testing.T) {
 	globeUp := fakeGlobeUpstream(t)
 	demoStore := demo.NewStore(demo.WithWorldSetup(demo.SeedSetup))
@@ -366,6 +373,9 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 	srv, _, _ := newGateTestServerWith(t, func(d *Deps, _ *sqlcgen.Queries) {
 		d.GlobeUpstream = globeUp.URL
 		d.Demo = demoStore
+		// Amended 2026-10-29 by plan 05-12: the refresh door for the rows below.
+		d.Official = &refreshStub{}
+		d.OfficialRefreshToken = routeRefreshToken
 	})
 
 	appAssets := []string{
@@ -499,6 +509,48 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 			}
 		})
 	}
+
+	// Amended 2026-10-29 by plan 05-12 (D-15): the cron's door is outside the gate
+	// and guarded by its own token. A cookieless POST with the token is a 200, not
+	// a redirect or the gate's 401; without the token it is the endpoint's own 401;
+	// a GET is a 404; and a server with no token configured answers 404.
+	refresh := func(t *testing.T, base, method, auth string) *http.Response {
+		t.Helper()
+		req, err := http.NewRequest(method, base+"/internal/official/refresh", nil)
+		if err != nil {
+			t.Fatalf("building request: %v", err)
+		}
+		if auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		resp, err := newGateJarClient(t).Do(req)
+		if err != nil {
+			t.Fatalf("%s /internal/official/refresh: %v", method, err)
+		}
+		t.Cleanup(func() { resp.Body.Close() })
+		return resp
+	}
+	t.Run("official refresh with the token", func(t *testing.T) {
+		if resp := refresh(t, srv.URL, http.MethodPost, "Bearer "+routeRefreshToken); resp.StatusCode != http.StatusOK {
+			t.Fatalf("POST with the token = %d, want 200 without a session", resp.StatusCode)
+		}
+	})
+	t.Run("official refresh without the token", func(t *testing.T) {
+		if resp := refresh(t, srv.URL, http.MethodPost, ""); resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("POST with no token = %d, want the endpoint's own 401", resp.StatusCode)
+		}
+	})
+	t.Run("official refresh by GET", func(t *testing.T) {
+		if resp := refresh(t, srv.URL, http.MethodGet, "Bearer "+routeRefreshToken); resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("GET = %d, want 404", resp.StatusCode)
+		}
+	})
+	t.Run("official refresh with no token configured", func(t *testing.T) {
+		off, _, _ := newGateTestServer(t)
+		if resp := refresh(t, off.URL, http.MethodPost, "Bearer "+routeRefreshToken); resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("POST with no token configured = %d, want 404", resp.StatusCode)
+		}
+	})
 }
 
 // TestAccessGateBlocksUnverifiedGeocode is this plan's V4 Access Control

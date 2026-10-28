@@ -163,6 +163,13 @@ type Deps struct {
 	// services, so the Demo writes no table and no session. Left nil, which every
 	// Deps{} literal gives, NewRouter builds a store seeded with demo.SeedSetup.
 	Demo *demo.Store
+	// OfficialRefreshToken is the bearer secret of POST /internal/official/refresh,
+	// the door the external cron uses to refresh the official feed (plan 05-12,
+	// D-15). Empty, which every Deps{} literal gives, keeps the route a plain 404.
+	// cmd/server/main.go reads it from OFFICIAL_REFRESH_TOKEN and refuses a value
+	// under handlers.RefreshTokenMinLen characters. The value never appears in a
+	// log or a page.
+	OfficialRefreshToken string
 }
 
 // requestLogger returns the access log middleware. It replaces chi's
@@ -293,6 +300,12 @@ const (
 type BucketLimit = handlers.BucketLimit
 type RateLimits = handlers.RateLimits
 
+// OfficialRefreshLimit is the per IP budget of POST /internal/official/refresh
+// (plan 05-12): a burst of 6, then one call every 10 seconds. The cron calls once
+// in ten minutes, so this only slows a caller guessing the token or hammering the
+// route; a refused call runs no refresh.
+var OfficialRefreshLimit = BucketLimit{Every: 10 * time.Second, Burst: 6}
+
 // RateLimitsDefault mirrors the D-11 constants block in cmd/server/main.go, the
 // one named place. It is used for any field a Deps literal leaves zero, the
 // RequestLinkRateLimitDefault precedent.
@@ -410,6 +423,16 @@ var compressibleContentTypes = []string{"text/html", "text/css", "text/javascrip
 // slash and another case are not Demo routes, and /api/reports, /alerts and
 // /api/official/alerts stay behind the gate.
 //
+// Amended 2026-10-29 by Phase 5 plan 05-12 (D-15): one exact POST path joins the
+// exempt set, /internal/official/refresh, the door of the external cron that
+// keeps official alerts current while the host sleeps. It is protected by its own
+// bearer token (Deps.OfficialRefreshToken), skips the session middleware (the
+// first entry of the rule set's POST paths, so about 4,300 calls a month write no
+// sessions row), and answers a plain 404 when no token is set and for every
+// method but POST, registered with r.Handle so chi never answers 405. A per IP
+// limiter wraps only the POST path of a configured route, so the limiter never
+// shows a hidden route.
+//
 // The route table has a third part, the moderator group (D-08), which is the
 // one exception to "every other route" above. It sits outside the access gate
 // and answers a plain 404 that is byte equal to an unknown route to everyone
@@ -459,7 +482,8 @@ func NewRouter(deps Deps) *chi.Mux {
 	// The session middleware runs for every request except the public sessionless
 	// routes in sessionSkipSet: the exact public app asset paths (plan 03.3-04, a
 	// launcher or manifest fetch without a cookie must not create a session) and
-	// the 85 globe tile paths (plan 05-04) and everything under /demo (plan 05-10).
+	// the 85 globe tile paths (plan 05-04), everything under /demo (plan 05-10) and
+	// the cron's refresh POST (plan 05-12).
 	r.Use(skipSessionFor(sessionSkipSet(), deps.Session.Middleware(deps.persistSession)))
 
 	// Local copies of the page and auth configs that carry the shared Chrome
@@ -595,6 +619,28 @@ func NewRouter(deps Deps) *chi.Mux {
 	}
 	requestLinkLimiter := ratelimit.NewPerIP(requestLinkLimit.Every, requestLinkLimit.Burst)
 	r.With(requestLinkLimiter.Middleware()).Post("/api/auth/request-link", handlers.RequestLink(deps.AuthService))
+
+	// The external cron's door (plan 05-12, D-15, research G1). Outside the gate,
+	// because the cron has no account; its own bearer token is the guard, and the
+	// exact path is in sessionSkipSet's POST set, so a call writes no sessions row.
+	// Registered with r.Handle and always present, so a wrong method reaches the
+	// handler's 404 and never chi's 405. The handler answers the 404 for an unset
+	// token and for any method but POST; only a POST to a configured route is
+	// counted by the per IP limiter, so a flood of GETs or of calls to an unset
+	// route never turns the 404 into a 429 that shows the route exists. A wrong
+	// token spends the budget too, which slows guessing. The official service is
+	// the refresher when it implements RefreshAll; otherwise the handler answers
+	// 503 for a right token.
+	refresher, _ := deps.Official.(handlers.OfficialRefresher)
+	refreshDoor := handlers.OfficialRefresh(refresher, deps.OfficialRefreshToken)
+	refreshLimited := ratelimit.NewPerIP(OfficialRefreshLimit.Every, OfficialRefreshLimit.Burst).Middleware()(refreshDoor)
+	r.Handle("/internal/official/refresh", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if deps.OfficialRefreshToken == "" || req.Method != http.MethodPost {
+			refreshDoor.ServeHTTP(w, req)
+			return
+		}
+		refreshLimited.ServeHTTP(w, req)
+	}))
 
 	// --- Gated: requires a verified account (D-05). ---
 
@@ -886,9 +932,9 @@ func (s sessionSkip) matches(r *http.Request) bool {
 
 // sessionSkipSet builds the rule set the router uses, from the same lists the
 // routes are registered from: the exact GET paths are handlers.PWAPublicPaths
-// (plan 03.3-04) and handlers.GlobeTilePaths() (plan 05-04). The POST paths start
-// empty and plan 05-12 adds the refresh endpoint there. The one prefix is /demo
-// (plan 05-10).
+// (plan 03.3-04) and handlers.GlobeTilePaths() (plan 05-04). The one exact POST
+// path is the external cron's refresh endpoint (plan 05-12). The one prefix is
+// /demo (plan 05-10).
 func sessionSkipSet() sessionSkip {
 	tiles := handlers.GlobeTilePaths()
 	get := make(map[string]bool, len(handlers.PWAPublicPaths)+len(tiles))
@@ -899,7 +945,10 @@ func sessionSkipSet() sessionSkip {
 		get[path] = true
 	}
 	// "/demo" covers GET and POST under it: the Demo's sandbox API (plan 05-10).
-	return sessionSkip{get: get, post: map[string]bool{}, prefixes: []string{"/demo"}}
+	// The cron's refresh door: an exact POST path, so a call neither sets a cookie
+	// nor writes a sessions row (plan 05-12, research G1, Pitfall 2).
+	post := map[string]bool{"/internal/official/refresh": true}
+	return sessionSkip{get: get, post: post, prefixes: []string{"/demo"}}
 }
 
 // skipSessionFor wraps the session middleware so a request goes straight to the

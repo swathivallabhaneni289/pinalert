@@ -171,3 +171,129 @@ func TestKickIsNonBlocking(t *testing.T) {
 		}
 	})
 }
+
+// waitCalls waits until the fetcher has run n times.
+func waitCalls(t *testing.T, f *fakeFetcher, n int32) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for f.calls.Load() < n {
+		if time.Now().After(deadline) {
+			t.Fatalf("the fetcher ran %d times, want %d", f.calls.Load(), n)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
+// TestServiceRunTicks: Run sweeps once at start and once per tick, and returns
+// when its context ends. The ticker is a channel the test drives, so nothing
+// sleeps for a real interval (plan 05-12).
+func TestServiceRunTicks(t *testing.T) {
+	if TickerInterval != 5*time.Minute {
+		t.Fatalf("TickerInterval = %v, want 5m", TickerInterval)
+	}
+	f := &fakeFetcher{res: Result{ItemsSeen: 3}}
+	s, _ := kickService(0, f) // the gap is 0, so every sweep fetches
+	ticks := make(chan time.Time)
+	var gotEvery time.Duration
+	stopped := make(chan struct{})
+	s.newTicker = func(d time.Duration) (<-chan time.Time, func()) {
+		gotEvery = d
+		return ticks, func() { close(stopped) }
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { s.Run(ctx); close(done) }()
+
+	waitCalls(t, f, 1) // the sweep at boot
+	ticks <- refreshT0
+	waitCalls(t, f, 2)
+	ticks <- refreshT0
+	waitCalls(t, f, 3)
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after its context ended")
+	}
+	select {
+	case <-stopped:
+	default:
+		t.Error("Run left its ticker running")
+	}
+	if gotEvery != TickerInterval {
+		t.Errorf("the ticker ran every %v, want %v", gotEvery, TickerInterval)
+	}
+	if n := f.calls.Load(); n != 3 {
+		t.Errorf("%d fetches, want 3 (boot and two ticks)", n)
+	}
+
+	// A context that is already over starts nothing.
+	cancelled, stop := context.WithCancel(context.Background())
+	stop()
+	s.Run(cancelled)
+	if n := f.calls.Load(); n != 3 {
+		t.Errorf("Run on a finished context fetched: %d fetches, want 3", n)
+	}
+}
+
+// TestRefreshAllRespectsGap: two RefreshAll calls a minute apart fetch once per
+// feed, because each feed goes through RefreshIfDue and its minimum gap. A call
+// past the gap fetches again. Feeds run in a fixed order.
+func TestRefreshAllRespectsGap(t *testing.T) {
+	clk := &clock{t: refreshT0}
+	r := NewRefresher(nil, nil, withStores(newFakeFeeds(0), newFakeAlerts()), WithRefresherClock(clk.now))
+	sachet := &fakeFetcher{res: Result{ItemsSeen: 5, Stored: 2}}
+	gdacs := &fakeFetcher{res: Result{ItemsSeen: 1}}
+	r.Register(FeedGdacs, gdacs, MinRefreshGap) // registered first on purpose
+	r.Register(FeedSachet, sachet, MinRefreshGap)
+	s := newService(r, nil, areas.Default())
+
+	first := s.RefreshAll(context.Background())
+	if len(first) != 2 || first[0].Feed != FeedSachet || first[1].Feed != FeedGdacs {
+		t.Fatalf("first call = %+v, want sachet then gdacs", first)
+	}
+	if first[0].Skipped || first[0].Stored != 2 || first[0].ItemsSeen != 5 {
+		t.Errorf("sachet result = %+v", first[0])
+	}
+
+	clk.set(refreshT0.Add(time.Minute))
+	second := s.RefreshAll(context.Background())
+	for _, res := range second {
+		if !res.Skipped {
+			t.Errorf("%s was fetched again a minute later: %+v", res.Feed, res)
+		}
+	}
+	if sachet.calls.Load() != 1 || gdacs.calls.Load() != 1 {
+		t.Fatalf("fetches after two calls: sachet %d, gdacs %d, want 1 each", sachet.calls.Load(), gdacs.calls.Load())
+	}
+
+	clk.set(refreshT0.Add(MinRefreshGap))
+	s.RefreshAll(context.Background())
+	if sachet.calls.Load() != 2 || gdacs.calls.Load() != 2 {
+		t.Fatalf("fetches after the gap: sachet %d, gdacs %d, want 2 each", sachet.calls.Load(), gdacs.calls.Load())
+	}
+}
+
+// TestRefreshAllReportsFailures: a failed feed carries its closed word, and the
+// other feed still runs.
+func TestRefreshAllReportsFailures(t *testing.T) {
+	clk := &clock{t: refreshT0}
+	r := NewRefresher(nil, nil, withStores(newFakeFeeds(0), newFakeAlerts()), WithRefresherClock(clk.now))
+	r.Register(FeedSachet, &fakeFetcher{err: context.DeadlineExceeded}, MinRefreshGap)
+	gdacs := &fakeFetcher{res: Result{ItemsSeen: 1}}
+	r.Register(FeedGdacs, gdacs, MinRefreshGap)
+	s := newService(r, nil, areas.Default())
+
+	got := s.RefreshAll(context.Background())
+	if len(got) != 2 || got[0].ErrorClass != "timeout" || got[1].ErrorClass != "" {
+		t.Fatalf("results = %+v, want sachet timeout then gdacs clean", got)
+	}
+	if gdacs.calls.Load() != 1 {
+		t.Errorf("gdacs ran %d times after a sachet failure, want 1", gdacs.calls.Load())
+	}
+	if got := newService(NewRefresher(nil, nil), nil, areas.Default()).RefreshAll(context.Background()); len(got) != 0 {
+		t.Errorf("a service with no feed returned %+v, want none", got)
+	}
+}
