@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -627,6 +628,214 @@ func TestDemoActivityPageParts(t *testing.T) {
 	for _, query := range []string{"&part=updates", "&part=nonsense", "&tab=votes"} {
 		if got := get(query); !strings.Contains(got, `data-part=""`) {
 			t.Errorf("%s should read as the list (data-part is empty)", query)
+		}
+	}
+}
+
+// TestDemoPlacesWriteNothing (plan 05-19, D-02, D-05, T-05-100): the Demo's three
+// places, the sample alerts route and a practice post and vote write nothing to
+// any table and set no cookie. The count is taken first over every table; the
+// Official alerts page and route and the My activity page are opened for the
+// same visit, a practice report is posted and a report is voted on, and My
+// activity is opened again. Only pages and the API are fetched here: the static
+// files are covered by TestDemoPageWritesNothing.
+func TestDemoPlacesWriteNothing(t *testing.T) {
+	store := demo.NewStore(demo.WithWorldSetup(demo.SeedSetup))
+	srv, _, pool := newE2EServerWith(t, func(d *api.Deps, _ *sqlcgen.Queries) {
+		d.Demo = store
+	})
+	before := tableCounts(t, pool)
+	for _, must := range []string{"sessions", "reports", "votes", "accounts", "official_alerts"} {
+		if _, ok := before[must]; !ok {
+			t.Fatalf("the table list %v lacks %s: the count would prove nothing", before, must)
+		}
+	}
+
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	fetch := func(method, target string, body any) (int, string) {
+		t.Helper()
+		var rd io.Reader
+		if body != nil {
+			buf, err := json.Marshal(body)
+			if err != nil {
+				t.Fatalf("marshalling the body: %v", err)
+			}
+			rd = bytes.NewReader(buf)
+		}
+		req, err := http.NewRequest(method, srv.URL+target, rd)
+		if err != nil {
+			t.Fatalf("building %s %s: %v", method, target, err)
+		}
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, target, err)
+		}
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(resp.Body)
+		if got := resp.Header.Values("Set-Cookie"); len(got) != 0 {
+			t.Fatalf("%s %s set a cookie: %v", method, target, got)
+		}
+		return resp.StatusCode, string(raw)
+	}
+
+	status, nearby := fetch(http.MethodGet, "/demo", nil)
+	if status != http.StatusOK {
+		t.Fatalf("GET /demo = %d, want 200", status)
+	}
+	m := demoAPIBaseRe.FindStringSubmatch(nearby)
+	if m == nil {
+		t.Fatalf("GET /demo has no data-api-base")
+	}
+	visit := strings.TrimPrefix(m[1], "/demo/api/v/")
+	api := "/demo/api/v/" + visit
+
+	for _, place := range []string{"/demo/alerts", "/demo/activity", "/demo"} {
+		if status, body := fetch(http.MethodGet, place+"?v="+visit, nil); status != http.StatusOK {
+			t.Fatalf("GET %s = %d, want 200: %.200s", place, status, body)
+		}
+	}
+	if status, body := fetch(http.MethodGet, api+"/official/alerts?lat=16.5424&lon=80.6386", nil); status != http.StatusOK {
+		t.Fatalf("GET the sample alerts = %d, want 200: %s", status, body)
+	}
+
+	status, feedBody := fetch(http.MethodGet, api+demoFeedQuery, nil)
+	if status != http.StatusOK {
+		t.Fatalf("GET Demo feed = %d: %.200s", status, feedBody)
+	}
+	var feed struct {
+		Reports []map[string]any `json:"reports"`
+	}
+	if err := json.Unmarshal([]byte(feedBody), &feed); err != nil {
+		t.Fatalf("decoding the feed: %v", err)
+	}
+	near := nearSeedReports(feed.Reports)
+	if len(near) < 1 {
+		t.Fatal("no near seed report to vote on")
+	}
+	if status, body := fetch(http.MethodPost, api+"/reports", map[string]any{
+		"category": "flood", "severity": "low", "description": "Water rising near the bridge",
+		"latitude": demo.PretendLat, "longitude": demo.PretendLon,
+	}); status != http.StatusCreated {
+		t.Fatalf("practice post = %d: %s", status, body)
+	}
+	if status, body := fetch(http.MethodPost, api+"/reports/"+strconv.FormatInt(reportIDOf(near[0]), 10)+"/confirm",
+		map[string]float64{"latitude": demo.PretendLat, "longitude": demo.PretendLon}); status != http.StatusOK {
+		t.Fatalf("confirm = %d: %s", status, body)
+	}
+
+	status, activity := fetch(http.MethodGet, "/demo/activity?v="+visit, nil)
+	if status != http.StatusOK || strings.Count(activity, `class="report-row activity-card`) != 2 {
+		t.Fatalf("My activity = %d with %d cards, want 200 and the practice report and the confirm",
+			status, strings.Count(activity, `class="report-row activity-card`))
+	}
+
+	if got := tableCounts(t, pool); !reflect.DeepEqual(before, got) {
+		t.Fatalf("the Demo's places changed the table row counts\nbefore: %v\nafter:  %v", before, got)
+	}
+}
+
+// TestDemoNavKeepsVisit (plan 05-19, D-01, D-05, T-05-101, T-05-102): the three
+// places of one visit show the same world. The bars of each page link to the
+// other two with ?v=<visit>, a page opened with that visit shows the practice
+// report the visitor posted, and a missing, malformed or unknown visit starts a
+// new world instead of showing someone else's. from=welcome travels with the
+// visit so Exit demo goes to the same place on every page.
+func TestDemoNavKeepsVisit(t *testing.T) {
+	srv := demoPageServer(t, handlers.DemoLimit{})
+	client := &http.Client{}
+	visit := demoStartVisit(t, client, srv.URL)
+	api := srv.URL + "/demo/api/v/" + visit
+
+	status, raw := demoPostJSON(t, client, api+"/reports", map[string]any{
+		"category": "flood", "severity": "low", "description": "Water rising near the bridge",
+		"latitude": demo.PretendLat, "longitude": demo.PretendLon,
+	})
+	if status != http.StatusCreated {
+		t.Fatalf("practice post = %d: %s", status, raw)
+	}
+	var posted struct {
+		Report struct {
+			ID int64 `json:"id"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal(raw, &posted); err != nil {
+		t.Fatalf("decoding the practice post: %v", err)
+	}
+	postedAttr := `data-report-id="` + strconv.FormatInt(posted.Report.ID, 10) + `"`
+
+	// The page writes the address with its ampersand escaped, as html/template
+	// does in an attribute.
+	hrefs := func(visit, from string) []string {
+		q := "?v=" + visit
+		if from != "" {
+			q += "&amp;from=welcome"
+		}
+		return []string{`href="/demo` + q + `"`, `href="/demo/alerts` + q + `"`, `href="/demo/activity` + q + `"`}
+	}
+
+	for _, from := range []string{"", "welcome"} {
+		query := "?v=" + visit
+		if from != "" {
+			query += "&from=welcome"
+		}
+		wantExit := `href="/login"`
+		if from != "" {
+			wantExit = `href="/welcome"`
+		}
+		for _, place := range []string{"/demo", "/demo/alerts", "/demo/activity"} {
+			resp, body := demoPageGet(t, client, srv.URL+place+query)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("GET %s%s = %d, want 200", place, query, resp.StatusCode)
+			}
+			if m := demoAPIBaseRe.FindStringSubmatch(body); m == nil || m[1] != "/demo/api/v/"+visit {
+				t.Errorf("GET %s%s shows the world %v, want the visit %s", place, query, m, visit)
+			}
+			// The three place links in the bars come from the server. The wordmark
+			// and the Report links are completed by demo.js from the page's own
+			// data-visit.
+			for _, want := range hrefs(visit, from) {
+				if !strings.Contains(body, want) {
+					t.Errorf("GET %s%s: the bars lack %s", place, query, want)
+				}
+			}
+			if exit := demoExitRe.FindString(body); !strings.Contains(exit, wantExit) {
+				t.Errorf("GET %s%s: Exit demo is %s, want %s", place, query, exit, wantExit)
+			}
+		}
+	}
+
+	// The practice report shows in this visit's My activity, and not in another's.
+	_, mine := demoPageGet(t, client, srv.URL+"/demo/activity?v="+visit)
+	if !strings.Contains(mine, postedAttr) {
+		t.Errorf("My activity for the visit does not show the practice report %d", posted.Report.ID)
+	}
+	other := demoStartVisit(t, client, srv.URL)
+	_, theirs := demoPageGet(t, client, srv.URL+"/demo/activity?v="+other)
+	if other == visit || strings.Contains(theirs, postedAttr) {
+		t.Errorf("another visit (%s) shows this visit's practice report", other)
+	}
+
+	// A missing, malformed or unknown visit starts a new world.
+	for _, v := range []string{"", "garbage", "..%2F..%2Fetc", "<script>", visit[:21], strings.Repeat("A", 22)} {
+		for _, place := range []string{"/demo", "/demo/alerts", "/demo/activity"} {
+			resp, body := demoPageGet(t, client, srv.URL+place+"?v="+url.QueryEscape(v))
+			if resp.StatusCode != http.StatusOK {
+				t.Errorf("GET %s?v=%s = %d, want 200 (a new world)", place, v, resp.StatusCode)
+				continue
+			}
+			m := demoAPIBaseRe.FindStringSubmatch(body)
+			if m == nil || m[1] == "/demo/api/v/"+visit || !strings.HasPrefix(m[1], "/demo/api/v/") {
+				t.Errorf("GET %s?v=%s shows %v, want a new world", place, v, m)
+			}
+			if strings.Contains(body, postedAttr) {
+				t.Errorf("GET %s?v=%s shows the practice report of another visit", place, v)
+			}
+			if v != "" && strings.Contains(body, v) {
+				t.Errorf("GET %s?v=%s echoes the value into the page", place, v)
+			}
 		}
 	}
 }
