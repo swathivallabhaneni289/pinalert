@@ -310,6 +310,13 @@
   font-weight: var(--font-weight-semibold);
 }
 
+/* Plan 05-18 (UI-SPEC 4f): Try the demo is the third control. On the phone it
+   spans the full width of the box under Read again and Log out; on the laptop
+   (below) all three sit in one row. */
+#welcome-try-demo-2 {
+  grid-column: 1 / -1;
+}
+
 /* Step 4. */
 .welcome__field {
   display: flex;
@@ -350,6 +357,27 @@
    accessibility tree. No motion. */
 .welcome__actions--pair[data-unread] {
   visibility: hidden;
+}
+
+/* Plan 05-18 (D-03, UI-SPEC 4e): step 1 puts Try the demo (an outlined link)
+   beside Continue in the same equal width pair. The built 0 24px padding leaves
+   about 88px at 320px and Try the demo at 16px/600 needs about 96px, so this
+   step takes 0 16px and the label never wraps. */
+.welcome__actions--demo .btn {
+  padding: 0 var(--space-md);
+  white-space: nowrap;
+}
+
+/* Below 340px the pair stacks full width in source order: Try the demo above,
+   Continue at the bottom. Nothing is reordered. */
+@media (max-width: 339.98px) {
+  .welcome__actions--demo {
+    flex-direction: column;
+  }
+
+  .welcome__actions--demo .btn {
+    flex: 0 0 auto;
+  }
 }
 
 /* ---- Laptop ---------------------------------------------------------------- */
@@ -525,7 +553,11 @@
 
   /* The Disagree box buttons keep their natural width on a laptop, like the pair. */
   .welcome__notice-actions {
-    grid-template-columns: repeat(2, max-content);
+    grid-template-columns: repeat(3, max-content);
+  }
+
+  #welcome-try-demo-2 {
+    grid-column: auto;
   }
 
   .welcome__notice-actions .btn {
