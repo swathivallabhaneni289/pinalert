@@ -64,6 +64,8 @@
   var busy = false;
   var current = null;
   var release = null;
+  // Counts finished pop-ups, so a late Allow answer can tell its own has gone.
+  var finished = 0;
 
   function attr(selector, name) {
     var node = document.querySelector(selector);
@@ -191,7 +193,14 @@
   // finish closes the pop-up, gives focus back to the element that had it when
   // that element is still on the page (P-6), and resolves the wait. Nothing is
   // sent from the close event, so one answer can never produce two requests.
+  // The wait is taken first and the open count moves on, so the close event
+  // this raises finds nothing to settle, and a late Allow answer of this
+  // pop-up (see onAllow) no longer touches the page.
   function finish() {
+    var resolve = release;
+    current = null;
+    release = null;
+    finished += 1;
     try {
       if (dialog.open && typeof dialog.close === 'function') {
         dialog.close();
@@ -206,9 +215,6 @@
     if (back && back.isConnected !== false && typeof back.focus === 'function') {
       back.focus();
     }
-    var resolve = release;
-    current = null;
-    release = null;
     if (resolve) {
       resolve();
     }
@@ -226,6 +232,7 @@
     }
     busy = true;
     setBusy(true);
+    var mine = finished;
     function save() {
       try {
         return saveChanges();
@@ -233,7 +240,14 @@
         return Promise.resolve();
       }
     }
-    Promise.resolve(pending).then(save, save).then(finish, finish);
+    // The answer still turns Changes on, but it closes the pop-up only while
+    // this pop-up is the one open (the browser may have closed it already).
+    function done() {
+      if (mine === finished) {
+        finish();
+      }
+    }
+    Promise.resolve(pending).then(save, save).then(done, done);
   }
 
   function onLater() {
@@ -250,10 +264,20 @@
     onLater();
   }
 
+  // A browser can close the dialog by itself, without a cancel event that can be
+  // prevented (IN-03). Then the wait is settled and busy cleared, so settled()
+  // always resolves. Nothing is sent from here.
+  function onClose() {
+    if (current) {
+      finish();
+    }
+  }
+
   if (wired) {
     allowButton.addEventListener('click', onAllow);
     laterButton.addEventListener('click', onLater);
     dialog.addEventListener('cancel', onCancel);
+    dialog.addEventListener('close', onClose);
   }
 
   window.PinalertChangesAsk = {

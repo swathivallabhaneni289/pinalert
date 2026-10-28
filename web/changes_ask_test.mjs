@@ -452,6 +452,47 @@ test(NAME + 'Allow then Escape gives one request, and Not now while busy is igno
   assert.equal(m.enables.length, 1);
 });
 
+// IN-03 (03.3-REVIEW): a browser can close a modal dialog by itself, without a
+// cancel event the script can prevent (Chrome's close watcher on a second
+// Escape). browserClose does that: the dialog is shut and only close fires.
+const browserClose = (m) => { m.dialog.open = false; m.dialog.fire('close'); };
+
+test(NAME + 'a dialog the browser closes by itself settles the wait and sends nothing', async () => {
+  const m = load();
+  const pending = m.ask.offer();
+  browserClose(m);
+  await pending;
+  let done = false;
+  m.ask.settled().then(() => { done = true; });
+  await settle();
+  assert.equal(done, true);
+  assert.equal(m.fetches.length, 0);
+  assert.equal(m.enables.length, 0);
+});
+
+test(NAME + 'a dialog the browser closes while Allow is busy settles at once, clears busy, and a late answer touches nothing', async () => {
+  const m = load({ enable: 'pending' });
+  const pending = m.ask.offer();
+  m.allow.click();
+  assert.equal(m.allow.disabled, true);
+  browserClose(m);
+  let done = false;
+  m.ask.settled().then(() => { done = true; });
+  await pending;
+  await settle();
+  assert.equal(done, true, 'settled resolves although enable has not answered');
+  assert.equal(m.allow.disabled, false);
+  assert.equal(m.later.disabled, false);
+  assert.equal(m.dialog.getAttribute('aria-busy'), null);
+  const focusBefore = m.log.filter((l) => l.startsWith('focus:')).length;
+  m.releaseEnable({ ok: true });
+  await settle();
+  await settle();
+  assert.equal(m.fetches.length, 1, 'the Allow answer still turns Changes on');
+  assert.equal(m.dialog.closeCalls, 0, 'the script never closes a dialog the browser already closed');
+  assert.equal(m.log.filter((l) => l.startsWith('focus:')).length, focusBefore, 'the late answer moves no focus');
+});
+
 // ---- settled and offer while open ------------------------------------------
 
 test(NAME + 'settled resolves at once when no pop-up is open', async () => {
