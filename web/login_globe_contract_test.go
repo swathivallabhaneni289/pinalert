@@ -315,3 +315,416 @@ func TestLoginRefererPolicy(t *testing.T) {
 	// It is set before the body is written.
 	p421InOrder(t, "LoginGate header order", body, `"Referrer-Policy"`, "ExecuteTemplate(")
 }
+
+// ---------------------------------------------------------------------------
+// Added 2026-10-29 by quick 261029-47j, owner feedback: the phone globe was cut
+// off and the boxes hid the Earth. On a phone the whole Earth sits in a box the
+// stylesheet reserves above the card, the Earth shows at full strength, and
+// while the globe is on the sign in boxes are frosted glass with solid
+// fallbacks. The laptop globe is untouched.
+// ---------------------------------------------------------------------------
+
+// p47jItem is one block of a stylesheet: the whitespace collapsed text before
+// its opening brace, its body, and the offset of the prelude in the text.
+type p47jItem struct {
+	Prelude, Body string
+	Start         int
+}
+
+// p47jItems splits comment stripped CSS into its top level items, with
+// balanced braces. A nested block comes back as part of its parent's Body.
+func p47jItems(s string) []p47jItem {
+	var items []p47jItem
+	pos := 0
+	for {
+		open := strings.Index(s[pos:], "{")
+		if open == -1 {
+			return items
+		}
+		open += pos
+		depth := 1
+		end := open + 1
+		for end < len(s) && depth > 0 {
+			switch s[end] {
+			case '{':
+				depth++
+			case '}':
+				depth--
+			}
+			end++
+		}
+		items = append(items, p47jItem{
+			Prelude: strings.Join(strings.Fields(s[pos:open]), " "),
+			Body:    s[open+1 : end-1],
+			Start:   pos,
+		})
+		pos = end
+	}
+}
+
+// p47jFindBlock returns the first block, nested ones included, whose prelude
+// equals prelude exactly.
+func p47jFindBlock(s, prelude string) (p47jItem, bool) {
+	for _, it := range p47jItems(s) {
+		if it.Prelude == prelude {
+			return it, true
+		}
+		if strings.HasPrefix(it.Prelude, "@") {
+			if inner, ok := p47jFindBlock(it.Body, prelude); ok {
+				return inner, true
+			}
+		}
+	}
+	return p47jItem{}, false
+}
+
+// p47jRuleRaw returns the whitespace collapsed declaration text of the rule
+// whose head is exactly head, among the direct items of body.
+func p47jRuleRaw(t *testing.T, label, body, head string) string {
+	t.Helper()
+	for _, it := range p47jItems(body) {
+		if it.Prelude == head {
+			return strings.Join(strings.Fields(it.Body), " ")
+		}
+	}
+	t.Errorf("%s: no rule with head %q", label, head)
+	return ""
+}
+
+// p47jLeaves returns every rule without a nested block, at any depth.
+func p47jLeaves(s string) []p47jItem {
+	var out []p47jItem
+	for _, it := range p47jItems(s) {
+		if strings.Contains(it.Body, "{") {
+			out = append(out, p47jLeaves(it.Body)...)
+		} else {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+const (
+	p47jPhonePrelude = "@media (max-width: 899.98px)"
+	p47jCombined     = "@media (max-width: 899.98px), (max-width: 1199.98px) and (max-height: 799.98px)"
+	p47jPhoneQuery   = "(max-width: 899.98px)"
+	p47jGateHead     = ".login-gate.has-globe"
+	p47jClampVH      = "clamp(140px, min(100vw - 48px, (100vh - 404px) * 1.28), 300px)"
+	p47jClampSVH     = "clamp(140px, min(100vw - 48px, (100svh - 404px) * 1.28), 300px)"
+	p47jColumnHead   = ".login-gate.has-globe .login-column"
+	p47jErrorHead    = ".login-gate.has-globe .auth-error:not(:empty)"
+)
+
+// p47jBoxHeads are the three glass boxes; p47jButtonHeads are the buttons in
+// the Low data panel. Each is its own head, never a comma group.
+var p47jBoxHeads = []string{
+	".login-gate.has-globe .login-card",
+	".login-gate.has-globe #check-inbox",
+	".login-gate.has-globe .login-ways",
+}
+
+var p47jButtonHeads = []string{
+	".login-gate.has-globe .login-ways__low:not(:hover)",
+	".login-gate.has-globe .login-ways__off:not(:hover)",
+	".login-gate.has-globe .login-ways__links a:not(:hover)",
+}
+
+// TestLoginGlobePhoneBoxReserved pins the phone geometry: the whole Earth in a
+// box the stylesheet reserves from the first paint, the card overlapping its
+// lower fifth, and the script sizing the sphere from that box.
+func TestLoginGlobePhoneBoxReserved(t *testing.T) {
+	css := stripCSSComments(p421ReadStatic(t, "css/login-globe.css"))
+	phone, ok := p47jFindBlock(css, p47jPhonePrelude)
+	if !ok {
+		t.Fatalf("login-globe.css has no block with the prelude %q", p47jPhonePrelude)
+	}
+	combined, ok := p47jFindBlock(css, p47jCombined)
+	if !ok {
+		t.Fatalf("login-globe.css lost the combined media block")
+	}
+	if phone.Start < combined.Start {
+		t.Errorf("the phone block comes before the combined block; it must come after so it wins")
+	}
+
+	gate := p47jRuleRaw(t, "phone block", phone.Body, p47jGateHead)
+	for _, want := range []string{"--g: " + p47jClampVH + ";", "justify-content: flex-start;"} {
+		if !strings.Contains(gate, want) {
+			t.Errorf("phone block %s lacks %q (has %q)", p47jGateHead, want, gate)
+		}
+	}
+	supports, ok := p47jFindBlock(phone.Body, "@supports (height: 100svh)")
+	if !ok {
+		t.Fatalf("the phone block has no nested @supports (height: 100svh)")
+	}
+	svhGate := p47jRuleRaw(t, "phone svh", supports.Body, p47jGateHead)
+	if !strings.Contains(svhGate, "--g: "+p47jClampSVH+";") {
+		t.Errorf("the svh rule lacks the clamp with 100svh: %q", svhGate)
+	}
+	// A second --g line in the same rule would always win and collapse the box
+	// where svh is unknown, so the vh rule holds exactly one.
+	if n := strings.Count(gate, "--g:"); n != 1 {
+		t.Errorf("the vh rule declares --g %d times, want 1", n)
+	}
+
+	wants := map[string][]string{
+		".login-gate.has-globe .globe-area":    {"display: contents;"},
+		".login-gate.has-globe .globe-bg":      {"position: relative;", "inset: auto;", "order: -1;", "flex: none;", "align-self: center;", "width: var(--g);", "height: var(--g);"},
+		".login-gate.has-globe .globe-bg__map": {"left: 0;", "top: 0;", "width: 100%;", "height: 100%;"},
+		p47jColumnHead:                         {"margin-top: calc(var(--g) * -0.22);"},
+		".login-gate.has-globe .globe-credit":  {"order: 1;", "align-self: center;"},
+	}
+	for head, decls := range wants {
+		raw := p47jRuleRaw(t, "phone block", phone.Body, head)
+		for _, want := range decls {
+			if !strings.Contains(raw, want) {
+				t.Errorf("phone block %s lacks %q (has %q)", head, want, raw)
+			}
+		}
+	}
+
+	code := stripJSComments(p421ReadStatic(t, "js/login-globe.js"))
+	if !regexp.MustCompile(`var\s+BOX\s*=\s*1\.06\b`).MatchString(code) {
+		t.Errorf("login-globe.js lacks var BOX = 1.06")
+	}
+	m := regexp.MustCompile(`var\s+PHONE_QUERY\s*=\s*'([^']+)'`).FindStringSubmatch(code)
+	if m == nil {
+		t.Fatalf("login-globe.js lacks a PHONE_QUERY constant")
+	}
+	if m[1] != p47jPhoneQuery {
+		t.Errorf("PHONE_QUERY is %q, want %q", m[1], p47jPhoneQuery)
+	}
+	if "@media "+m[1] != p47jPhonePrelude {
+		t.Errorf("the script's query %q and the stylesheet's prelude %q disagree", m[1], p47jPhonePrelude)
+	}
+	size := jsFunctionBody(t, code, "sizeGlobe()")
+	for _, want := range []string{"isPhone()", "wrapper.clientWidth", "/ BOX"} {
+		if !strings.Contains(size, want) {
+			t.Errorf("sizeGlobe() lacks %q", want)
+		}
+	}
+	if !strings.Contains(jsFunctionBody(t, code, "isPhone()"), "matchMedia(PHONE_QUERY)") {
+		t.Errorf("isPhone() does not use matchMedia(PHONE_QUERY)")
+	}
+}
+
+// TestLoginGlassFallbacks pins the glass rules and the three ways back to a
+// solid box: no backdrop-filter, no color-mix, and reduced transparency.
+func TestLoginGlassFallbacks(t *testing.T) {
+	css := stripCSSComments(p421ReadStatic(t, "css/login-globe.css"))
+	top := p47jItems(css)
+	topRule := func(head string) (p47jItem, bool) {
+		for _, it := range top {
+			if it.Prelude == head {
+				return it, true
+			}
+		}
+		return p47jItem{}, false
+	}
+	collapse := func(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+	glassStart := -1
+	for _, head := range p47jBoxHeads {
+		it, ok := topRule(head)
+		if !ok {
+			t.Errorf("login-globe.css has no top level rule %s", head)
+			continue
+		}
+		if it.Start > glassStart {
+			glassStart = it.Start
+		}
+		p421InOrder(t, head, collapse(it.Body),
+			"background: var(--color-surface);",
+			"background: color-mix(in srgb, var(--color-surface) 65%, transparent);",
+			"-webkit-backdrop-filter: blur(4px);",
+			"backdrop-filter: blur(4px);")
+	}
+	for _, head := range p47jButtonHeads {
+		it, ok := topRule(head)
+		if !ok {
+			t.Errorf("login-globe.css has no top level rule %s", head)
+			continue
+		}
+		if it.Start > glassStart {
+			glassStart = it.Start
+		}
+		p421InOrder(t, head, collapse(it.Body),
+			"background: var(--color-bg);",
+			"background: color-mix(in srgb, var(--color-bg) 65%, transparent);")
+		if strings.Contains(it.Body, "backdrop-filter") {
+			t.Errorf("%s carries a blur of its own; the buttons sit inside the blurred panel", head)
+		}
+	}
+	if it, ok := topRule(p47jColumnHead); !ok {
+		t.Errorf("login-globe.css has no top level rule %s", p47jColumnHead)
+	} else if !strings.Contains(collapse(it.Body), "background: transparent;") {
+		t.Errorf("%s does not declare background: transparent", p47jColumnHead)
+	}
+	if it, ok := topRule(p47jErrorHead); !ok {
+		t.Errorf("login-globe.css has no top level rule %s", p47jErrorHead)
+	} else {
+		body := collapse(it.Body)
+		if !strings.Contains(body, "background: var(--color-surface);") {
+			t.Errorf("%s lacks the solid surface backing", p47jErrorHead)
+		}
+		if strings.Contains(body, "color-mix") || strings.Contains(body, "backdrop-filter") {
+			t.Errorf("%s must stay solid: %q", p47jErrorHead, body)
+		}
+	}
+
+	type fallback struct {
+		prelude string
+		noBlur  bool
+	}
+	for _, fb := range []fallback{
+		{"@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)))", false},
+		{"@supports not (background: color-mix(in srgb, currentColor 65%, transparent))", true},
+		{"@media (prefers-reduced-transparency: reduce)", true},
+	} {
+		block, ok := topRule(fb.prelude)
+		if !ok {
+			t.Errorf("login-globe.css lacks the fallback block %q", fb.prelude)
+			continue
+		}
+		if block.Start < glassStart {
+			t.Errorf("%q comes before the glass rules and would lose to them", fb.prelude)
+		}
+		for _, head := range p47jBoxHeads {
+			raw := p47jRuleRaw(t, fb.prelude, block.Body, head)
+			if !strings.Contains(raw, "background: var(--color-surface);") {
+				t.Errorf("%q: %s does not restore the solid surface", fb.prelude, head)
+			}
+			if fb.noBlur {
+				for _, want := range []string{"-webkit-backdrop-filter: none;", "backdrop-filter: none;"} {
+					if !strings.Contains(raw, want) {
+						t.Errorf("%q: %s lacks %q", fb.prelude, head, want)
+					}
+				}
+			}
+		}
+		for _, head := range append([]string{p47jColumnHead}, p47jButtonHeads...) {
+			raw := p47jRuleRaw(t, fb.prelude, block.Body, head)
+			if !strings.Contains(raw, "background: var(--color-bg);") {
+				t.Errorf("%q: %s does not restore the solid page colour", fb.prelude, head)
+			}
+		}
+	}
+	// The color-mix test value names no var(): a var() would make any browser
+	// pass an @supports test, which is the point of the guard.
+	if strings.Contains(css, "@supports not (background: color-mix(in srgb, var(") {
+		t.Errorf("the color-mix guard tests a value with var(), which every browser passes")
+	}
+}
+
+// TestLoginGlobeFullStrength pins the owner's change: the Earth shows at full
+// strength in every theme, and the wrapper keeps the one allowed opacity.
+func TestLoginGlobeFullStrength(t *testing.T) {
+	rules := p16ParseCSS("static/css/login-globe.css", p16ReadStatic(t, "static/css/login-globe.css"))
+	n := 0
+	for _, r := range rules {
+		if v, ok := r.Decls["--globe-dim"]; ok {
+			n++
+			if v != "1" {
+				t.Errorf("%s (%s) sets --globe-dim to %q, want 1", r.Head, r.Media, v)
+			}
+		}
+	}
+	if n < 4 {
+		t.Errorf("--globe-dim is declared %d times, want the four theme blocks", n)
+	}
+	for _, c := range []struct{ media, head string }{
+		{"", ":root"},
+		{"prefers-color-scheme: dark", ":root"},
+		{"", `:root[data-theme="dark"]`},
+		{"", `:root[data-theme="light"]`},
+	} {
+		r := p16Rule(t, rules, c.media, c.head)
+		if r.Decls["--globe-dim"] != "1" {
+			t.Errorf("%s (%q) does not declare --globe-dim: 1", c.head, c.media)
+		}
+	}
+	if got := p16Rule(t, rules, "", ".globe-bg").Decls["opacity"]; got != "var(--globe-dim)" {
+		t.Errorf(".globe-bg opacity is %q, want var(--globe-dim)", got)
+	}
+}
+
+var p47jBackdropRE = regexp.MustCompile(`backdrop-filter:\s*([^;]+)`)
+
+// TestLoginGlassOnlyWithGlobe pins that the glass exists only while the globe
+// is on: every color-mix or blur rule is scoped to .login-gate.has-globe, the
+// Low data page's stylesheet holds none, and that page writes no has-globe.
+func TestLoginGlassOnlyWithGlobe(t *testing.T) {
+	css := stripCSSComments(p421ReadStatic(t, "css/login-globe.css"))
+	glassRules := 0
+	for _, leaf := range p47jLeaves(css) {
+		glass := strings.Contains(leaf.Body, "color-mix(")
+		for _, m := range p47jBackdropRE.FindAllStringSubmatch(leaf.Body, -1) {
+			if strings.TrimSpace(m[1]) != "none" {
+				glass = true
+			}
+		}
+		if !glass {
+			continue
+		}
+		glassRules++
+		for _, part := range p16HeadParts(leaf.Prelude) {
+			if !strings.HasPrefix(part, ".login-gate.has-globe ") {
+				t.Errorf("glass rule %q is not scoped under .login-gate.has-globe", part)
+			}
+		}
+	}
+	if glassRules == 0 {
+		t.Errorf("login-globe.css holds no glass rule at all")
+	}
+	auth := p421ReadStatic(t, "css/auth.css")
+	for _, banned := range []string{"backdrop-filter", "color-mix("} {
+		if strings.Contains(auth, banned) {
+			t.Errorf("auth.css holds %q; the Low data page keeps a solid card", banned)
+		}
+	}
+	low := p507Render(t, true)
+	for _, banned := range []string{"has-globe", "login-globe.css"} {
+		if strings.Contains(low, banned) {
+			t.Errorf("the Low data sign in page holds %q", banned)
+		}
+	}
+}
+
+// TestLoginGlassTextContrast pins the owner's "5 to 1" claim for the text on
+// the glass, and the error line's backing. The glass is the surface or page
+// colour at 65 percent over the Earth, which is anything between black and
+// white; the 35 percent of the backdrop is checked at both ends. The computed
+// minimum is about 5.0 (the dark card over pure white), so the floor is AA 4.5,
+// because integer rounding in the mix can land at 4.99.
+func TestLoginGlassTextContrast(t *testing.T) {
+	main := p16ParseCSS("static/css/main.css", p16ReadStatic(t, "static/css/main.css"))
+	themes := map[string]map[string]string{
+		"light": p16Rule(t, main, "", ":root").Decls,
+		"dark":  p16Rule(t, main, "", `:root[data-theme="dark"]`).Decls,
+	}
+	for name, tok := range themes {
+		for _, glass := range []string{"--color-surface", "--color-bg"} {
+			for _, behind := range []string{"#000000", "#FFFFFF"} {
+				ctx := name + " " + glass + " over " + behind
+				mixed := mixHexSRGB(t, tok[glass], 65, behind, 35, ctx)
+				ratio := wcagContrastRatio(t, tok["--color-text"], mixed, ctx)
+				t.Logf("%s: %s gives %.2f to 1", ctx, mixed, ratio)
+				if ratio < 4.5 {
+					t.Errorf("%s: text contrast %.2f is under 4.5", ctx, ratio)
+				}
+			}
+		}
+		if got := wcagContrastRatio(t, tok["--color-severity-critical"], tok["--color-surface"], name+" error line"); got < 4.5 {
+			t.Errorf("%s: the error line on the solid surface is %.2f, want at least 4.5", name, got)
+		}
+	}
+	css := stripCSSComments(p421ReadStatic(t, "css/login-globe.css"))
+	found := false
+	for _, it := range p47jItems(css) {
+		if it.Prelude == p47jErrorHead && strings.Contains(it.Body, "background: var(--color-surface)") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no %s rule gives the error line a solid surface backing", p47jErrorHead)
+	}
+}

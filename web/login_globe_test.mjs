@@ -21,6 +21,10 @@
 //   - the turn speed is 360 degrees per 120 seconds, west to east;
 //   - sizeGlobe sizes the sphere from the sign in area (never a bare viewport
 //     height) and tells the map its new zoom.
+//   - Amended 2026-10-29 by quick 261029-47j (owner: the phone globe was cut
+//     off): on a phone (the stylesheet's own query) the sphere is the box the
+//     stylesheet reserved divided by 1.06, so the whole Earth shows; a box of
+//     0 downloads nothing; the laptop numbers are unchanged.
 //
 // Run it with: node --test web/login_globe_test.mjs
 // CI runs it with the other web/*.mjs files. It is not embedded in the server.
@@ -71,8 +75,11 @@ class FakeEl {
 function boot(opts = {}) {
   const o = {
     webgl: true, reduce: false, readyState: 'complete', idle: false, tiles: TILES,
-    elements: true, width: 1440, innerHeight: 900, offsetTop: 0, hidden: false, ...opts
+    elements: true, width: 1440, innerHeight: 900, offsetTop: 0, hidden: false, box: 0, ...opts
   };
+  // Amended 2026-10-29 by quick 261029-47j: phone is the stylesheet's own query
+  // (max-width: 899.98px) and box is the reserved box's width (clientWidth).
+  if (o.phone === undefined) { o.phone = o.width < 900; }
   let now = 0;
   let nextId = 1;
   const timers = new Map();
@@ -99,6 +106,7 @@ function boot(opts = {}) {
     scriptTag.attrs['data-lib-css'] = LIB_CSS;
     scriptTag.attrs['data-lib-css-sri'] = LIB_CSS_SRI;
     wrapper = mk('div', 'login-globe');
+    wrapper.clientWidth = o.box;
     mk('div', 'login-globe-map');
     credit = mk('p', 'globe-credit');
     const gate = mk('div', 'login-gate');
@@ -156,6 +164,8 @@ function boot(opts = {}) {
     requestAnimationFrame(fn) { const id = nextRaf++; rafs.set(id, fn); return id; },
     cancelAnimationFrame(id) { cancelled.push(id); rafs.delete(id); },
     matchMedia(q) {
+      // Amended 2026-10-29 by quick 261029-47j: the phone query is answered too.
+      if (q === '(max-width: 899.98px)') { return { matches: o.phone, addEventListener() {} }; }
       assert.equal(q, '(prefers-reduced-motion: reduce)');
       return reduceQuery;
     },
@@ -202,6 +212,8 @@ function boot(opts = {}) {
     fireWindow(type) { (winHandlers[type] || []).forEach((fn) => fn({ type })); },
     fireDocument(type) { (docHandlers[type] || []).forEach((fn) => fn({ type })); },
     setHidden(h) { documentFake.hidden = h; ctl.fireDocument('visibilitychange'); },
+    // Amended 2026-10-29 by quick 261029-47j: the reserved box changes size.
+    setBox(n) { wrapper.clientWidth = n; },
     setReduce(v) { reduceQuery.matches = v; reduceHandlers.forEach((fn) => fn({ matches: v })); },
     elementsOf(tag) { return head.children.filter((c) => c.tagName === tag.toUpperCase()); },
     // loadLibs makes the injected stylesheet and script arrive.
@@ -522,13 +534,68 @@ test('sizeGlobe sizes from the sign in area, 1440 by 900 laptop', () => {
   assert.equal(c.wrapper.styleVars['--globe-y'], '11px');
 });
 
-test('sizeGlobe on a 390 by 844 phone is wider than the screen on purpose', () => {
-  const c = boot({ width: 390, innerHeight: 844 });
+// Amended 2026-10-29 by quick 261029-47j (owner: the globe was too big for the
+// phone and cut off). The old case said the phone sphere is wider than the
+// screen on purpose; now the whole sphere shows, sized from the reserved box.
+test('sizeGlobe on a 390 by 844 phone shows the whole sphere: the reserved box divided by 1.06', () => {
+  const c = boot({ width: 390, innerHeight: 844, box: 300 });
   const size = c.sandbox.PinalertLoginGlobe.sizeGlobe();
-  assert.ok(size.diameter > 390, 'the sphere is wider than the screen');
-  assert.ok(size.diameter <= 844 * 0.92 + 0.01);
-  assert.equal(c.wrapper.styleVars['--globe-w'], '390px');
-  assert.equal(c.wrapper.styleVars['--globe-x'], '0px');
+  assert.ok(Math.abs(size.diameter - 300 / 1.06) < 1e-9, 'got ' + size.diameter);
+  assert.ok(size.diameter < 390, 'the sphere is narrower than the screen');
+  for (const v of ['--globe-w', '--globe-h', '--globe-x', '--globe-y']) {
+    assert.equal(Object.hasOwn(c.wrapper.styleVars, v), false, v + ' is written by the stylesheet on a phone, never the script');
+  }
+});
+
+test('a phone sphere follows the reserved box, not the area', () => {
+  const c = boot({ width: 390, innerHeight: 844, box: 300 });
+  const g = c.sandbox.PinalertLoginGlobe;
+  const first = g.sizeGlobe().diameter;
+  c.sandbox.innerHeight = 600;
+  c.documentFake.getElementById('login-gate').clientWidth = 375;
+  assert.equal(g.sizeGlobe().diameter, first, 'the area changed, the box did not');
+  c.setBox(184);
+  assert.ok(Math.abs(g.sizeGlobe().diameter - 184 / 1.06) < 1e-9);
+});
+
+test('a phone whose reserved box measures 0 downloads nothing and sizeGlobe gives 0', () => {
+  const c = boot({ width: 390, innerHeight: 844, box: 0 });
+  c.start();
+  assert.equal(c.head.children.length, 0);
+  assert.equal(c.maps.length, 0);
+  const size = c.sandbox.PinalertLoginGlobe.sizeGlobe();
+  assert.equal(size.diameter, 0);
+  assert.equal(size.boxW, 0);
+  assert.equal(size.boxH, 0);
+});
+
+test('a built phone map takes its zoom from the box, and a smaller box gives a smaller zoom', () => {
+  const c = ready({ width: 390, innerHeight: 844, box: 300 });
+  const map = c.maps[0];
+  const built = map.options.zoom;
+  assert.ok(Number.isFinite(built) && built > 0 && built < 3, 'build zoom ' + built);
+  c.setBox(184);
+  c.fireWindow('resize');
+  const last = map.zooms[map.zooms.length - 1];
+  assert.ok(Number.isFinite(last), 'the zoom after the resize is a number, got ' + last);
+  assert.ok(last < built, 'a smaller box gives a lower zoom: ' + last + ' against ' + built);
+});
+
+test('a window 890 wide that is not a phone takes the laptop branch', () => {
+  const c = boot({ width: 890, innerHeight: 900, phone: false });
+  const size = c.sandbox.PinalertLoginGlobe.sizeGlobe();
+  assert.equal(Math.round(size.diameter), 828);
+  assert.ok(Object.hasOwn(c.wrapper.styleVars, '--globe-w'), 'the laptop branch writes --globe-w');
+});
+
+test('sizeGlobe at 1470 by 830 laptop is unchanged: 764 sphere in a 809 box at 330, 10', () => {
+  const c = boot({ width: 1470, innerHeight: 830 });
+  const size = c.sandbox.PinalertLoginGlobe.sizeGlobe();
+  assert.equal(Math.round(size.diameter), 764);
+  assert.equal(c.wrapper.styleVars['--globe-w'], '809px');
+  assert.equal(c.wrapper.styleVars['--globe-h'], '809px');
+  assert.equal(c.wrapper.styleVars['--globe-x'], '330px');
+  assert.equal(c.wrapper.styleVars['--globe-y'], '10px');
 });
 
 test('sizeGlobe subtracts the area top and never reads a bare viewport height as the area', () => {
