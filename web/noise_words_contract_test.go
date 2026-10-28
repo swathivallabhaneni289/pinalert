@@ -39,6 +39,9 @@ var bannedNoiseWords = []string{
 // Amended 2026-10-27 by quick 261027-t5w (owner): the welcome copy now includes
 // the alerts pop-up after step 4 (it replaced step 5), so welcome.html.tmpl and
 // welcome.js stay listed and the pop-up's words are scanned too.
+//
+// Amended 2026-10-28 by Phase 3.3 plan 20 (03.3-UAT gap for test 4): the first
+// post or vote pop-up, changes_ask.html.tmpl and changes-ask.js, is listed.
 var noiseCheckedFiles = []string{
 	"templates/device_guide.html.tmpl",
 	"static/js/notify.js",
@@ -48,6 +51,8 @@ var noiseCheckedFiles = []string{
 	"static/js/welcome.js",
 	"templates/settings.html.tmpl",
 	"static/js/settings-alerts.js",
+	"templates/changes_ask.html.tmpl",
+	"static/js/changes-ask.js",
 }
 
 var (
