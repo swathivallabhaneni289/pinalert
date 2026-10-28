@@ -47,6 +47,7 @@ import vm from 'node:vm';
 const here = path.dirname(url.fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.join(here, 'static', 'js', 'official-banner.js'), 'utf8');
 const template = fs.readFileSync(path.join(here, 'templates', 'index.html.tmpl'), 'utf8');
+const demoTemplate = fs.readFileSync(path.join(here, 'templates', 'demo.html.tmpl'), 'utf8');
 
 class FakeEl {
   constructor(doc, tag) {
@@ -104,7 +105,7 @@ function accessibleName(el) {
 
 // buildPage makes the banner from the template's own markup: the opening tag
 // and every flat span inside it, so the script and the template cannot drift.
-function buildPage({ account = '7', withMarkup = true, dataApiBase } = {}) {
+function buildPage({ account = '7', withMarkup = true, dataApiBase, demoPage = false } = {}) {
   const doc = {
     byId: {},
     listeners: {},
@@ -126,11 +127,16 @@ function buildPage({ account = '7', withMarkup = true, dataApiBase } = {}) {
   if (dataApiBase !== undefined) { shell.setAttribute('data-api-base', dataApiBase); }
   if (!withMarkup) { return { doc, shell }; }
 
-  const block = template.match(/<a class="alert-banner" id="alert-banner" href="\/alerts" hidden>([\s\S]*?)<\/a>/);
-  assert.ok(block, 'index.html.tmpl has the banner link');
+  // Amended 2026-10-29 by plan 05-19: demoPage builds the banner from the Demo
+  // page's own markup (demo.html.tmpl), which holds the same inner spans plus the
+  // Demo tag. Without the option the real page's markup is used, as before.
+  const block = demoPage
+    ? demoTemplate.match(/<a class="alert-banner" id="alert-banner" href="\{\{\.AlertsHref\}\}" hidden>([\s\S]*?)<\/a>/)
+    : template.match(/<a class="alert-banner" id="alert-banner" href="\/alerts" hidden>([\s\S]*?)<\/a>/);
+  assert.ok(block, (demoPage ? 'demo.html.tmpl' : 'index.html.tmpl') + ' has the banner link');
   const banner = make('a', 'alert-banner', shell);
   banner.setAttribute('class', 'alert-banner');
-  banner.setAttribute('href', '/alerts');
+  banner.setAttribute('href', demoPage ? '/demo/alerts' : '/alerts');
   banner.hidden = true;
   const spanPattern = /<span\b([^>]*)>([^<]*)<\/span>/g;
   let m;
@@ -557,4 +563,68 @@ test('a page without the banner markup does nothing', () => {
   page.centre(16.5, 80.6);
   page.advance(1000);
   assert.equal(page.requests.length, 0);
+});
+
+// Amended 2026-10-29 by plan 05-19 (D-05, D-07, ROBUST-06): the cases below are
+// new and change none of the cases above. The Demo's banner carries a Demo tag
+// right after the level icon; the script shows it only when the server's pick
+// says demo is true, and the real page, which has no such element, is untouched.
+
+test('the Demo banner markup holds the same spans plus the Demo tag right after the icon', () => {
+  const page = loadPage({ demoPage: true, account: null });
+  for (const id of ['alert-banner', 'alert-banner-level', 'alert-banner-event', 'alert-banner-area', 'alert-banner-more', 'alert-banner-more-sr', 'alert-banner-demo']) {
+    assert.ok(byId(page, id), 'the Demo page has #' + id);
+  }
+  const order = page.banner.children.map((c) => (c.id || c.className));
+  const icon = order.indexOf('alert-banner__icon');
+  assert.ok(icon !== -1, 'the icon span is in the banner');
+  assert.equal(order[icon + 1], 'alert-banner-demo', 'the Demo tag follows the icon');
+  assert.equal(order[icon + 2], 'alert-banner-event', 'the event words follow the tag');
+  assert.equal(byId(page, 'alert-banner-demo').hidden, true, 'the tag starts hidden');
+  assert.equal(byId(page, 'alert-banner-demo').textContent, 'Demo');
+});
+
+test('a pick with demo true shows the Demo tag; demo false or missing hides it', () => {
+  const page = loadPage({ demoPage: true, account: null });
+  const tag = byId(page, 'alert-banner-demo');
+  page.api.render(view(pick({ demo: true })));
+  assert.equal(page.banner.hidden, false);
+  assert.equal(tag.hidden, false, 'a sample alert shows the Demo tag');
+  assert.ok(accessibleName(page.banner).includes('Demo'), 'the tag is part of the link name');
+  page.api.render(view(pick({ demo: false })));
+  assert.equal(tag.hidden, true, 'demo false hides the tag');
+  page.api.render(view(pick({ demo: true })));
+  page.api.render(view(pick()));
+  assert.equal(tag.hidden, true, 'a pick with no demo field hides the tag');
+  page.api.render(view(pick({ demo: 'true' })));
+  assert.equal(tag.hidden, true, 'only the boolean true counts');
+});
+
+test('the Demo tag goes with the banner when the banner is hidden', () => {
+  const page = loadPage({ demoPage: true, account: null });
+  const tag = byId(page, 'alert-banner-demo');
+  page.api.render(view(pick({ demo: true })));
+  page.api.render(view(null));
+  assert.equal(page.banner.hidden, true);
+  assert.equal(tag.hidden, true);
+  page.api.render(view(pick({ demo: true }), { state: 'stale' }));
+  assert.equal(page.banner.hidden, true);
+  assert.equal(tag.hidden, true, 'a stale view never leaves a Demo tag showing');
+});
+
+test('the real page has no Demo tag and a demo flag changes nothing there', () => {
+  const page = loadPage();
+  assert.equal(byId(page, 'alert-banner-demo'), undefined);
+  page.api.render(view(pick({ demo: true })));
+  assert.equal(page.banner.hidden, false, 'the banner still draws');
+  assert.equal(accessibleName(page.banner).trim(), 'Extreme. Cyclone warning, Krishna district. 2 more alerts.');
+});
+
+test('the Demo banner follows the place on the visit API base and stores nothing', () => {
+  const page = loadPage({ demoPage: true, account: null, apiBase: '/demo/api/v/abc' });
+  page.centre(16.5424, 80.6386);
+  page.advance(1000);
+  assert.equal(page.requests.length, 1);
+  assert.ok(page.requests[0].url.startsWith('/demo/api/v/abc/official/alerts?'), page.requests[0].url);
+  assert.equal(page.store.size, 0);
 });
