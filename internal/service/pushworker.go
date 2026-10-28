@@ -130,6 +130,7 @@ type PushWorkerQuerier interface {
 	MarkPushFailed(ctx context.Context, arg sqlcgen.MarkPushFailedParams) (int64, error)
 	PushAccountHome(ctx context.Context, arg sqlcgen.PushAccountHomeParams) (sqlcgen.PushAccountHomeRow, error)
 	CountAccountPushesInWindow(ctx context.Context, arg sqlcgen.CountAccountPushesInWindowParams) (int64, error)
+	AccountPushSentAboutReport(ctx context.Context, arg sqlcgen.AccountPushSentAboutReportParams) (bool, error)
 	PushSubscriptionsForAccount(ctx context.Context, accountID int64) ([]sqlcgen.PushSubscriptionsForAccountRow, error)
 	MarkPushSubscriptionOK(ctx context.Context, arg sqlcgen.MarkPushSubscriptionOKParams) error
 	DeletePushSubscriptionByID(ctx context.Context, id int64) error
@@ -452,6 +453,20 @@ func (w *PushWorker) sendRow(ctx context.Context, claim sqlcgen.ClaimDuePushesRo
 	defer cancel()
 	errs = append(errs, w.settle(wctx, run, results, strings.Contains(text.Body, NotConfirmedYetWords))...)
 	return errors.Join(errs...)
+}
+
+// heldByHourlyCap says whether the hourly limit stops a push of this kind when
+// sentInHour pushes were already sent to the person in the rolling hour. Stub
+// until the GREEN commit: it still holds the old rule.
+func heldByHourlyCap(kind PushKind, sentInHour int64) bool {
+	return kind != PushKindConfirmedUpdate && sentInHour >= PushPerAccountPerHour
+}
+
+// deviceSkipsRepeatPush says whether a device with this endpoint host is left
+// out of a push because an earlier push about the same report was sent. Stub
+// until the GREEN commit.
+func deviceSkipsRepeatPush(host string, alreadyPushed bool) bool {
+	return false
 }
 
 // stillHolds is the kind's predicate at send time.
