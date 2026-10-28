@@ -109,6 +109,9 @@
   {{template "flag_dialog.html.tmpl" .}}
   <div id="toast" role="status" aria-live="polite" hidden></div>
 
+  {{/* Phase 3.3 plan 21: the first post or vote pop-up, a direct child of body, drawn only while this account's Changes switch is off. */}}
+  {{if .ChangesAsk}}{{template "changes_ask"}}{{end}}
+
   <script src="/static/js/app.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/votes.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/visibility.js?v={{.AssetVersion}}" defer></script>
@@ -116,6 +119,7 @@
   <script src="/static/js/queue.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/flag.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/report-form.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/changes-ask.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/low.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
 </body>

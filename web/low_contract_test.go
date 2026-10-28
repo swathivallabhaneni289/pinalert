@@ -176,7 +176,9 @@ func TestLowDataAssetPolicy(t *testing.T) {
 		}
 		index[s] = i
 	}
-	later := map[string]bool{"/static/js/queue.js": true, "/static/js/flag.js": true, "/static/js/report-form.js": true}
+	// Amended 2026-10-28 by Phase 3.3 plan 21 (03.3-UAT gap for test 4): changes-ask.js
+	// asks about changes after a first post or vote.
+	later := map[string]bool{"/static/js/queue.js": true, "/static/js/flag.js": true, "/static/js/report-form.js": true, "/static/js/changes-ask.js": true}
 	for _, s := range bodyScripts {
 		isCanonical := false
 		for _, c := range canonicalScripts {
