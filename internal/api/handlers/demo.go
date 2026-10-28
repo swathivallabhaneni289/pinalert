@@ -133,9 +133,15 @@ func DemoRoutes(cfg DemoConfig) chi.Router {
 		if visit == (DemoLimit{}) {
 			visit = DemoVisitLimitDefault
 		}
-		r.With(demoVisitLimiter(visit)).Get("/", DemoPage(cfg.Template, store, cfg.Page))
+		pages := r.With(demoVisitLimiter(visit))
+		pages.Get("/", DemoPage(cfg.Template, store, cfg.Page))
+		// Official alerts and My activity (plan 05-19) are Demo places of the
+		// same visit. They are registered here for the same reason as the page
+		// above: Mount("/demo") claims every path under it.
+		pages.Get("/alerts", DemoAlertsPage(cfg.Template, store, cfg.Page))
 	}
 	r.Get("/api/v/{visit}/reports", demoNearby(store))
+	r.Get("/api/v/{visit}/official/alerts", demoOfficialAlerts(store))
 	r.With(limiter.Middleware()).Post("/api/v/{visit}/reports", demoSubmit(store))
 	for _, v := range demoVoteRoutes {
 		r.With(limiter.Middleware()).Post("/api/v/{visit}/reports/{id}/"+v.action, demoVote(store, v.kind, v.value))

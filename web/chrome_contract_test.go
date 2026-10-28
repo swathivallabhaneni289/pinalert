@@ -63,6 +63,12 @@ func TestDisclaimerBarOnEveryFullPage(t *testing.T) {
 		// the only strip there, so the notice strip is not drawn (the check
 		// below that keeps the notice strip to the Nearby page still holds).
 		"templates/demo.html.tmpl": "demo+top",
+		// Amended 2026-10-29 by plan 05-19 (D-05, UI-SPEC 4a): the Demo's Official
+		// alerts and My activity pages open the same way as the Demo's Nearby
+		// page: the Demo strip, then the top bar. The notice strip is still not
+		// drawn outside Nearby.
+		"templates/demo_alerts.html.tmpl":   "demo+top",
+		"templates/demo_activity.html.tmpl": "demo+top",
 	}
 
 	wrapped := func(call string) *regexp.Regexp {

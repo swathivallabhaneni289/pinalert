@@ -1,5 +1,7 @@
 package handlers
 
+import "pinalert/internal/demo"
+
 // The main places of the app (Phase 3.4, D-01, D-10, D-12). One ordered list
 // is rendered twice by web/templates/app_bar.html.tmpl, once into the phone
 // bottom bar and once into the laptop top bar, so both sizes reach the same
@@ -102,13 +104,37 @@ func navTitle(title string) navOption {
 
 // demoNavHrefs are the addresses of the main places inside the Demo (plan
 // 05-13, D-05). The Demo has its own page for each place, so a visitor never
-// leaves the sandbox through the bar. The pages for /demo/alerts and
-// /demo/activity come with plan 05-19; until then those two addresses answer
-// with the Demo's not found page.
+// leaves the sandbox through the bar. Plan 05-19 built the pages for
+// /demo/alerts and /demo/activity.
 var demoNavHrefs = map[string]string{
 	NavNearby:   "/demo",
 	NavAlerts:   "/demo/alerts",
 	NavActivity: "/demo/activity",
+}
+
+// The two query parameters of a Demo place address. v carries the visit, so the
+// three places of one visit show the same world; from carries the one word that
+// sends Exit demo to the first-time flow (UI-SPEC 4a).
+const (
+	demoVisitParam = "v"
+	demoFromParam  = "from"
+)
+
+// demoPlaceHref is the address of a Demo place for one visit: the place's path,
+// then ?v=<visit>, then &from=welcome when the visitor came from the first-time
+// flow. An empty visit gives the bare path (a missing visit starts a new world,
+// as a reload does). The visit is a base64url id the store handed out and from
+// is the constant demoFromWelcome or empty, so neither needs escaping; a visit
+// of any other shape is left out rather than written (T-05-102).
+func demoPlaceHref(path, visit, from string) string {
+	if !demo.ValidVisitID(visit) {
+		return path
+	}
+	href := path + "?" + demoVisitParam + "=" + visit
+	if from == demoFromWelcome {
+		href += "&" + demoFromParam + "=" + demoFromWelcome
+	}
+	return href
 }
 
 // demoNavFor builds the bar data for a Demo page. The places and their order
@@ -116,13 +142,16 @@ var demoNavHrefs = map[string]string{
 // in the Demo too; only the addresses change. Demo is true, which makes
 // app_bar.html.tmpl leave out the Search a place field, the bell, the gear and
 // the person menu, and point the wordmark and the Post a report links at the
-// Demo. Every word and address comes from this file's constants (T-34-13).
-func demoNavFor(current string, opts ...navOption) NavView {
+// Demo. Each place's address carries the visit (and from=welcome when the
+// visitor came from the first-time flow), so Nearby, Official alerts and My
+// activity show one world in one visit. Every word and address comes from this
+// file's constants and the validated visit (T-34-13).
+func demoNavFor(current, visit, from string, opts ...navOption) NavView {
 	v := navFor(current, opts...)
 	v.Demo = true
 	for i := range v.Items {
 		if href, ok := demoNavHrefs[v.Items[i].Key]; ok {
-			v.Items[i].Href = href
+			v.Items[i].Href = demoPlaceHref(href, visit, from)
 		}
 	}
 	return v
