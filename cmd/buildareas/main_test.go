@@ -120,3 +120,21 @@ func TestBuildFileRejectsBadLines(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildFileSkipsFeaturesWithoutACode(t *testing.T) {
+	// The upstream file has two districts with dist_lgd 0 (areas with no LGD
+	// code). Merged under code 0 they would be one wrongly named district that
+	// no CAP message can ever name, so the builder leaves them out and counts them.
+	ok := `{"type":"Feature","properties":{"dist_lgd":5,"dtname":"Ok","state_lgd":1,"stname":"Y"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,1],[0,0]]]}}`
+	zero := `{"type":"Feature","properties":{"dist_lgd":0,"dtname":"Nowhere","state_lgd":1,"stname":"Y"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,1],[0,0]]]}}`
+	f, st, err := buildFile(strings.NewReader(zero + "\n" + ok + "\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Districts) != 1 || f.Districts[0].Code != 5 {
+		t.Fatalf("only the coded district should remain, got %+v", f.Districts)
+	}
+	if st.Features != 2 || st.NoCode != 1 {
+		t.Errorf("stats: features %d (want 2), without a code %d (want 1)", st.Features, st.NoCode)
+	}
+}

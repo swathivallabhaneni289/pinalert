@@ -16,6 +16,10 @@
 // The census 2011 code that is also on every line is ignored on purpose: it
 // does not match the codes SACHET puts in its messages.
 //
+// Two features in the upstream file have dist_lgd 0 (areas the LGD has no code
+// for). No alert can name them, so they are left out and counted on the stats
+// line rather than merged into one wrongly named district.
+//
 // Every ring is simplified with Douglas-Peucker at -tolerance degrees, rounded
 // to -decimals places, and polygons that share a code are merged. The output is
 // gzip compressed JSON with no timestamp and no file name, so two runs over the
@@ -78,6 +82,7 @@ type areaFile struct {
 // stats is what the builder prints on one line.
 type stats struct {
 	Features  int
+	NoCode    int // features left out because dist_lgd is 0
 	Districts int
 	Points    int
 	Bytes     int
@@ -154,8 +159,8 @@ func main() {
 		os.Exit(1)
 	}
 	st.Bytes = buf.Len()
-	fmt.Fprintf(os.Stderr, "buildareas: features read %d, districts written %d, points written %d, bytes written %d\n",
-		st.Features, st.Districts, st.Points, st.Bytes)
+	fmt.Fprintf(os.Stderr, "buildareas: features read %d, left out without a code %d, districts written %d, points written %d, bytes written %d\n",
+		st.Features, st.NoCode, st.Districts, st.Points, st.Bytes)
 }
 
 // buildFile reads one GeoJSON Feature per line and returns the merged,
@@ -200,6 +205,13 @@ func buildFile(r io.Reader) (areaFile, stats, error) {
 			return areaFile{}, st, fmt.Errorf("line %d: no usable polygon left after rounding", line)
 		}
 		code := int(*ft.Properties.DistLGD)
+		if code == 0 {
+			// Areas the LGD has no code for (two in the upstream file) cannot
+			// be named by any alert, and merged under 0 they would be one
+			// wrongly named district.
+			st.NoCode++
+			continue
+		}
 		d, ok := byCode[code]
 		if !ok {
 			d = &areaDistrict{
