@@ -1351,3 +1351,51 @@ func (q *Queries) UpsertPushSubscription(ctx context.Context, arg UpsertPushSubs
 	err := row.Scan(&id)
 	return id, err
 }
+
+const voteLogForReport = `-- name: VoteLogForReport :many
+SELECT report_id, account_id, kind, value, geohash_cell, created_at
+FROM votes
+WHERE report_id = $1::bigint
+ORDER BY created_at, id
+`
+
+type VoteLogForReportRow struct {
+	ReportID    int64
+	AccountID   int64
+	Kind        string
+	Value       string
+	GeohashCell string
+	CreatedAt   time.Time
+}
+
+// The worker replays this to decide whether a report had been confirmed before a
+// now disputed note may reach a phone (03.3-UAT gap for test 8, 2026-10-28).
+// votes is an append only log, so these rows in order are the report's whole
+// vote history. It returns raw facts only and SQL decides nothing (TRUST-02): the
+// Go resolver replays them through BuildVoteTally, Resolve and ConfirmedByPeople.
+func (q *Queries) VoteLogForReport(ctx context.Context, reportID int64) ([]VoteLogForReportRow, error) {
+	rows, err := q.db.Query(ctx, voteLogForReport, reportID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []VoteLogForReportRow
+	for rows.Next() {
+		var i VoteLogForReportRow
+		if err := rows.Scan(
+			&i.ReportID,
+			&i.AccountID,
+			&i.Kind,
+			&i.Value,
+			&i.GeohashCell,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

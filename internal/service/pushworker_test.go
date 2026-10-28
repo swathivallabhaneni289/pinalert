@@ -80,6 +80,13 @@ type pwQuerier struct {
 	facts map[int64]sqlcgen.PushReportFactsRow
 	votes []sqlcgen.CurrentVotesForReportsRow
 
+	// voteLog is the answer of VoteLogForReport, the report's whole vote history in
+	// order. While it is nil the fake answers its current votes as a log, so a case
+	// that sets only votes keeps its meaning. voteLogReads holds the report id of
+	// every read.
+	voteLog      []sqlcgen.VoteLogForReportRow
+	voteLogReads []int64
+
 	home       sqlcgen.PushAccountHomeRow
 	homeErr    error
 	homeParams []sqlcgen.PushAccountHomeParams
@@ -232,6 +239,21 @@ func (q *pwQuerier) AccountPushSentAboutReport(_ context.Context, a sqlcgen.Acco
 	q.rec("AccountPushSentAboutReport")
 	q.aboutParams = append(q.aboutParams, a)
 	return q.sentAbout, nil
+}
+
+func (q *pwQuerier) VoteLogForReport(_ context.Context, reportID int64) ([]sqlcgen.VoteLogForReportRow, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.rec("VoteLogForReport")
+	q.voteLogReads = append(q.voteLogReads, reportID)
+	if q.voteLog != nil {
+		return q.voteLog, nil
+	}
+	rows := make([]sqlcgen.VoteLogForReportRow, 0, len(q.votes))
+	for _, v := range q.votes {
+		rows = append(rows, sqlcgen.VoteLogForReportRow(v))
+	}
+	return rows, nil
 }
 
 func (q *pwQuerier) PushSubscriptionsForAccount(_ context.Context, _ int64) ([]sqlcgen.PushSubscriptionsForAccountRow, error) {
@@ -622,7 +644,11 @@ func TestWorkerSkipsWhenNoLongerEligible(t *testing.T) {
 		{name: "reached_live, hidden since", kind: "changed", event: "reached_live", severity: "low", votes: pwDispute(3), wantVis: VisibilityHidden, want: "not_eligible"},
 		{name: "reached_live, retracted since", kind: "changed", event: "reached_live", severity: "low", votes: append(pwConfirm(2), pwReporterResolved()...), wantVis: VisibilityRetracted, want: "not_eligible"},
 		{name: "reached_live, provisional again", kind: "changed", event: "reached_live", severity: "low", wantVis: VisibilityProvisional, want: "not_eligible"},
-		{name: "hidden, still hidden", kind: "changed", event: "hidden", severity: "low", votes: pwDispute(3), wantVis: VisibilityHidden, want: "sent"},
+		// 2026-10-28 (03.3-UAT gap for test 8): the now disputed note reaches a
+		// phone only for a report people had confirmed before. The vote history
+		// the fake answers is the votes in the order given.
+		{name: "hidden, never confirmed", kind: "changed", event: "hidden", severity: "low", votes: pwDispute(3), wantVis: VisibilityHidden, want: "not_eligible"},
+		{name: "hidden, confirmed before and disputed now", kind: "changed", event: "hidden", severity: "low", votes: append(pwConfirm(2), pwDispute(3)...), wantVis: VisibilityHidden, want: "sent"},
 		{name: "hidden, live again", kind: "changed", event: "hidden", severity: "low", votes: pwConfirm(2), wantVis: VisibilityLive, want: "not_eligible"},
 		{name: "hidden, retracted since", kind: "changed", event: "hidden", severity: "low", votes: append(pwDispute(3), pwReporterResolved()...), wantVis: VisibilityRetracted, want: "not_eligible"},
 		{name: "resolved, still retracted", kind: "changed", event: "resolved", severity: "low", votes: pwReporterResolved(), wantVis: VisibilityRetracted, want: "sent"},
@@ -699,6 +725,143 @@ func TestWorkerSkipsWhenNoLongerEligible(t *testing.T) {
 				return
 			}
 			r.wantSkipped(c.want)
+		})
+	}
+}
+
+// TestReportWasConfirmed pins the replay that decides whether a now disputed
+// note may reach a phone (03.3-UAT gap for test 8, 2026-10-28). It walks a vote
+// log through the same BuildVoteTally, Resolve and ConfirmedByPeople the feed
+// uses, so each row says which edge of that replay it pins.
+func TestReportWasConfirmed(t *testing.T) {
+	const reportID = int64(77)
+	reporter := int64(900)
+	meta := ReportMeta{Severity: SeverityLow, Category: CategoryFlood}
+	t0 := pushFactsNow.Add(-3 * time.Hour)
+
+	type step struct {
+		report  int64
+		account int64
+		kind    VoteKind
+		value   VoteValue
+		cell    string
+	}
+	cell := func(i int) string { return fmt.Sprintf("tdr1c%02d", i) }
+	var (
+		confirmers = func(n int) []step {
+			var s []step
+			for i := 0; i < n; i++ {
+				s = append(s, step{reportID, int64(100 + i), VoteKindContent, VoteConfirm, cell(i)})
+			}
+			return s
+		}
+		disputers = func(n int) []step {
+			var s []step
+			for i := 0; i < n; i++ {
+				s = append(s, step{reportID, int64(200 + i), VoteKindContent, VoteDispute, cell(10 + i)})
+			}
+			return s
+		}
+		join = func(parts ...[]step) []step {
+			var out []step
+			for _, p := range parts {
+				out = append(out, p...)
+			}
+			return out
+		}
+	)
+	T := IndependentAgreementThreshold
+
+	cases := []struct {
+		name  string
+		steps []step
+		want  bool
+	}{
+		{name: "no votes", want: false},
+		{name: "disputes only", steps: disputers(T + 1), want: false},
+		{name: "confirms below the threshold", steps: confirmers(T - 1), want: false},
+		{name: "enough confirms, then more disputes (Hidden now)",
+			steps: join(confirmers(T), disputers(T+1)), want: true},
+		{name: "disputes first, then confirms that never outnumber them",
+			steps: join(disputers(T+1), confirmers(T)), want: false},
+		{name: "enough confirms, then a confirmer turns dispute and others dispute (the standing confirm count fell)",
+			steps: join(confirmers(T),
+				[]step{{reportID, 100, VoteKindContent, VoteDispute, cell(0)}},
+				disputers(T)), want: true},
+		{name: "the reporter's own confirm is left out",
+			steps: join(confirmers(T-1), []step{{reportID, reporter, VoteKindContent, VoteConfirm, cell(30)}}), want: false},
+		{name: "retracted by the reporter before any confirmation",
+			steps: join([]step{{reportID, reporter, VoteKindResolution, VoteResolve, cell(31)}}, confirmers(T)), want: false},
+		{name: "confirmed first, retracted by the reporter after",
+			steps: join(confirmers(T), []step{{reportID, reporter, VoteKindResolution, VoteResolve, cell(31)}}), want: true},
+		{name: "rows of another report are ignored",
+			steps: []step{{reportID + 1, 100, VoteKindContent, VoteConfirm, cell(0)}, {reportID + 1, 101, VoteKindContent, VoteConfirm, cell(1)}}, want: false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var history []sqlcgen.CurrentVotesForReportsRow
+			for i, s := range c.steps {
+				history = append(history, sqlcgen.CurrentVotesForReportsRow{
+					ReportID: s.report, AccountID: s.account, Kind: string(s.kind), Value: string(s.value),
+					GeohashCell: s.cell, CreatedAt: t0.Add(time.Duration(i) * time.Minute),
+				})
+			}
+			got := reportWasConfirmed(meta, history, reportID, &reporter, pushFactsNow)
+			if got != c.want {
+				t.Errorf("reportWasConfirmed = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+// TestWorkerReadsVoteLogOnlyForHidden proves the vote history is read for one
+// kind of row only: a changed row whose event is hidden. Every other row reads
+// nothing new (P-2 of plan 03.3-18).
+func TestWorkerReadsVoteLogOnlyForHidden(t *testing.T) {
+	cases := []struct {
+		name     string
+		kind     string
+		event    string
+		severity string
+		votes    []sqlcgen.CurrentVotesForReportsRow
+		first    *string
+		want     int
+	}{
+		{name: "changed, hidden", kind: "changed", event: "hidden", severity: "low", votes: append(pwConfirm(2), pwDispute(3)...), want: 1},
+		{name: "changed, reached_live", kind: "changed", event: "reached_live", severity: "low", votes: pwConfirm(2), want: 0},
+		{name: "changed, resolved", kind: "changed", event: "resolved", severity: "low", votes: pwReporterResolved(), want: 0},
+		{name: "changed, fading", kind: "changed", event: "fading", severity: "low", votes: pwConfirm(2), want: 0},
+		{name: "critical", kind: "critical", severity: "critical", want: 0},
+		{name: "reliable", kind: "reliable", severity: "low", votes: pwConfirm(2), want: 0},
+		{name: "confirmed update", kind: "confirmed_update", severity: "critical", votes: pwConfirm(2), first: pwStr("critical"), want: 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := newPWRig(t)
+			r.q.claimRows = []sqlcgen.ClaimDuePushesRow{pwClaim(1, c.kind)}
+			r.q.home.ReliableAlertsOn = true
+			r.q.home.ChangesPushOn = true
+			r.q.home.CriticalPushOn = true
+			r.report(func(row *sqlcgen.PushReportFactsRow) {
+				row.Severity = c.severity
+				if c.severity != "critical" {
+					row.Happening = nil
+				}
+			})
+			r.q.votes = c.votes
+			r.q.claimRows[0].FirstKind = c.first
+			if c.event != "" {
+				r.q.claimRows[0].UpdateKind = pwStr(c.event)
+			}
+			if err := r.sweep(); err != nil {
+				t.Fatalf("SweepOnce: %v", err)
+			}
+			if got := r.q.callCount("VoteLogForReport"); got != c.want {
+				t.Fatalf("VoteLogForReport reads = %d, want %d", got, c.want)
+			}
+			if c.want == 1 && (len(r.q.voteLogReads) != 1 || r.q.voteLogReads[0] != pwReportID) {
+				t.Errorf("the log was read for reports %v, want only %d", r.q.voteLogReads, pwReportID)
+			}
 		})
 	}
 }

@@ -135,6 +135,7 @@ type PushWorkerQuerier interface {
 	PushAccountHome(ctx context.Context, arg sqlcgen.PushAccountHomeParams) (sqlcgen.PushAccountHomeRow, error)
 	CountAccountPushesInWindow(ctx context.Context, arg sqlcgen.CountAccountPushesInWindowParams) (int64, error)
 	AccountPushSentAboutReport(ctx context.Context, arg sqlcgen.AccountPushSentAboutReportParams) (bool, error)
+	VoteLogForReport(ctx context.Context, reportID int64) ([]sqlcgen.VoteLogForReportRow, error)
 	PushSubscriptionsForAccount(ctx context.Context, accountID int64) ([]sqlcgen.PushSubscriptionsForAccountRow, error)
 	MarkPushSubscriptionOK(ctx context.Context, arg sqlcgen.MarkPushSubscriptionOKParams) error
 	DeletePushSubscriptionByID(ctx context.Context, id int64) error
@@ -297,6 +298,14 @@ type pushRowRun struct {
 	lease time.Time
 	now   time.Time
 	facts pushReportFacts
+	// wasConfirmed is filled in sendRow for a changed row whose event is hidden:
+	// whether people nearby had confirmed the report at some point before.
+	wasConfirmed bool
+}
+
+// reportWasConfirmed is a stub for the RED commit of plan 03.3-18.
+func reportWasConfirmed(meta ReportMeta, history []sqlcgen.CurrentVotesForReportsRow, reportID int64, reporter *int64, now time.Time) bool {
+	return true
 }
 
 // pushDevice is one live subscription that passed the policy, with the host the

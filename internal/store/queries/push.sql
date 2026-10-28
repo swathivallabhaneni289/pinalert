@@ -628,3 +628,14 @@ SELECT a.home_area_cell,
 FROM accounts a
 LEFT JOIN account_alert_settings s ON s.account_id = a.id
 WHERE a.id = sqlc.arg(account_id)::bigint;
+
+-- name: VoteLogForReport :many
+-- The worker replays this to decide whether a report had been confirmed before a
+-- now disputed note may reach a phone (03.3-UAT gap for test 8, 2026-10-28).
+-- votes is an append only log, so these rows in order are the report's whole
+-- vote history. It returns raw facts only and SQL decides nothing (TRUST-02): the
+-- Go resolver replays them through BuildVoteTally, Resolve and ConfirmedByPeople.
+SELECT report_id, account_id, kind, value, geohash_cell, created_at
+FROM votes
+WHERE report_id = sqlc.arg(report_id)::bigint
+ORDER BY created_at, id;
