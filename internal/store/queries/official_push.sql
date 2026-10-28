@@ -229,6 +229,35 @@ LEFT JOIN official_alert_areas ar ON ar.alert_id = a.id
 WHERE a.id = sqlc.arg(id)::bigint
 GROUP BY a.id;
 
+-- name: OfficialPredecessorsForPush :many
+-- The stored alerts, under any other guid, whose message identifier an Update
+-- names in its references. The queue judges an Update that has no earlier
+-- version under its own guid against them, so a wording only Update under a new
+-- guid queues nobody. Each row carries the alert's area codes, district codes
+-- from the district rows and state codes from the state rows.
+SELECT a.id, a.severity, a.placement_tier,
+       COALESCE(array_agg(DISTINCT ar.district_lgd) FILTER (WHERE ar.district_lgd IS NOT NULL), '{}')::int[] AS district_codes,
+       COALESCE(array_agg(DISTINCT ar.state_lgd) FILTER (WHERE ar.state_lgd IS NOT NULL), '{}')::int[] AS state_codes
+FROM official_alerts a
+LEFT JOIN official_alert_areas ar ON ar.alert_id = a.id
+WHERE a.cap_identifier = ANY(sqlc.arg(identifiers)::text[])
+  AND a.guid <> sqlc.arg(guid)::text
+GROUP BY a.id
+ORDER BY a.id;
+
+-- name: OfficialAlertWithdrawnByStored :one
+-- Whether a stored message under another guid names this alert's message
+-- identifier in its references (an Update that replaces it or a Cancel that
+-- withdraws it). The refresher stores the newest message first, so the replacing
+-- message can be stored before the alert it replaces, and that alert is then not
+-- marked at the moment it is stored. The queue refuses to push it.
+SELECT EXISTS (
+    SELECT 1
+    FROM official_alerts n
+    WHERE n.guid <> sqlc.arg(guid)::text
+      AND sqlc.arg(cap_identifier)::text = ANY(string_to_array(n.references_text, ' '))
+)::boolean;
+
 -- name: DeleteAccountOfficialPushOutbox :execrows
 -- Delete my account: the official push rows of the person are personal rows,
 -- like the updates and the Phase 3.3 push copy.

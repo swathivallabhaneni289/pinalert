@@ -361,6 +361,88 @@ func (q *Queries) OfficialAlertForPush(ctx context.Context, id int64) (OfficialA
 	return i, err
 }
 
+const officialAlertWithdrawnByStored = `-- name: OfficialAlertWithdrawnByStored :one
+SELECT EXISTS (
+    SELECT 1
+    FROM official_alerts n
+    WHERE n.guid <> $1::text
+      AND $2::text = ANY(string_to_array(n.references_text, ' '))
+)::boolean
+`
+
+type OfficialAlertWithdrawnByStoredParams struct {
+	Guid          string
+	CapIdentifier string
+}
+
+// Whether a stored message under another guid names this alert's message
+// identifier in its references (an Update that replaces it or a Cancel that
+// withdraws it). The refresher stores the newest message first, so the replacing
+// message can be stored before the alert it replaces, and that alert is then not
+// marked at the moment it is stored. The queue refuses to push it.
+func (q *Queries) OfficialAlertWithdrawnByStored(ctx context.Context, arg OfficialAlertWithdrawnByStoredParams) (bool, error) {
+	row := q.db.QueryRow(ctx, officialAlertWithdrawnByStored, arg.Guid, arg.CapIdentifier)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const officialPredecessorsForPush = `-- name: OfficialPredecessorsForPush :many
+SELECT a.id, a.severity, a.placement_tier,
+       COALESCE(array_agg(DISTINCT ar.district_lgd) FILTER (WHERE ar.district_lgd IS NOT NULL), '{}')::int[] AS district_codes,
+       COALESCE(array_agg(DISTINCT ar.state_lgd) FILTER (WHERE ar.state_lgd IS NOT NULL), '{}')::int[] AS state_codes
+FROM official_alerts a
+LEFT JOIN official_alert_areas ar ON ar.alert_id = a.id
+WHERE a.cap_identifier = ANY($1::text[])
+  AND a.guid <> $2::text
+GROUP BY a.id
+ORDER BY a.id
+`
+
+type OfficialPredecessorsForPushParams struct {
+	Identifiers []string
+	Guid        string
+}
+
+type OfficialPredecessorsForPushRow struct {
+	ID            int64
+	Severity      string
+	PlacementTier string
+	DistrictCodes []int32
+	StateCodes    []int32
+}
+
+// The stored alerts, under any other guid, whose message identifier an Update
+// names in its references. The queue judges an Update that has no earlier
+// version under its own guid against them, so a wording only Update under a new
+// guid queues nobody. Each row carries the alert's area codes, district codes
+// from the district rows and state codes from the state rows.
+func (q *Queries) OfficialPredecessorsForPush(ctx context.Context, arg OfficialPredecessorsForPushParams) ([]OfficialPredecessorsForPushRow, error) {
+	rows, err := q.db.Query(ctx, officialPredecessorsForPush, arg.Identifiers, arg.Guid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OfficialPredecessorsForPushRow
+	for rows.Next() {
+		var i OfficialPredecessorsForPushRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Severity,
+			&i.PlacementTier,
+			&i.DistrictCodes,
+			&i.StateCodes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const officialPushCandidates = `-- name: OfficialPushCandidates :many
 SELECT a.id AS account_id,
        COALESCE(a.home_area_cell, '')::text AS home_area_cell

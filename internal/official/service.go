@@ -47,14 +47,18 @@ type Service struct {
 }
 
 // NewService builds the SACHET client and the refresher over the database. The
-// options come after the SACHET registration, so a later plan can add its
-// version hook or register another feed here without main.go changing, and a
-// test can replace the SACHET fetcher by registering its own.
+// options come after the SACHET registration and the push hook, so a later plan
+// can add its own version hook or register another feed here without main.go
+// changing, and a test can replace the SACHET fetcher by registering its own.
+//
+// The push hook (plan 05-11) queues phone alerts inside the transaction of each
+// stored alert version, so it is wired here and nowhere else.
 func NewService(pool TxBeginner, q *sqlcgen.Queries, cfg Config, opts ...RefresherOption) *Service {
 	ix := areas.Default()
 	client := NewSachetClient(ClientConfig{ContactEmail: cfg.ContactEmail, BaseURL: cfg.BaseURL})
-	all := make([]RefresherOption, 0, len(opts)+1)
+	all := make([]RefresherOption, 0, len(opts)+2)
 	all = append(all, WithSachet(client, ix))
+	all = append(all, WithVersionHook(PushEnqueueHook(areas.Default())))
 	all = append(all, opts...)
 	return newService(NewRefresher(pool, q, all...), q, ix)
 }

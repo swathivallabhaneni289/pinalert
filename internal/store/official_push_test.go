@@ -326,6 +326,47 @@ func TestOfficialPushQueries(t *testing.T) {
 		}
 	})
 
+	t.Run("predecessors and withdrawn by a stored message", func(t *testing.T) {
+		testutil.Truncate(t, pool)
+		first := testutil.SeedOfficialAlert(t, pool, testutil.OfficialAlertSeed{
+			GUID: "1792000000000401", CapIdentifier: "IN-1792000000000401_1", Severity: "Severe", Tier: "district",
+			DistrictCodes: []int{749}, StateCodes: []int{28}})
+		testutil.SeedOfficialAlert(t, pool, testutil.OfficialAlertSeed{
+			GUID: "1792000000000402", CapIdentifier: "IN-1792000000000402_1", Severity: "Extreme", Tier: "state", StateCodes: []int{28}})
+
+		rows, err := q.OfficialPredecessorsForPush(ctx, sqlcgen.OfficialPredecessorsForPushParams{
+			Identifiers: []string{"IN-1792000000000401_1", "IN-nothing_1"}, Guid: "1792000000000999"})
+		if err != nil || len(rows) != 1 || rows[0].ID != first || rows[0].Severity != "Severe" ||
+			len(rows[0].DistrictCodes) != 1 || rows[0].DistrictCodes[0] != 749 || len(rows[0].StateCodes) != 1 {
+			t.Fatalf("predecessors = %+v (%v), want the one Severe alert with district 749 and state 28", rows, err)
+		}
+		// An alert never counts as its own predecessor.
+		rows, err = q.OfficialPredecessorsForPush(ctx, sqlcgen.OfficialPredecessorsForPushParams{
+			Identifiers: []string{"IN-1792000000000401_1"}, Guid: "1792000000000401"})
+		if err != nil || len(rows) != 0 {
+			t.Errorf("an alert listed itself as a predecessor: %+v (%v)", rows, err)
+		}
+
+		withdrawn, err := q.OfficialAlertWithdrawnByStored(ctx, sqlcgen.OfficialAlertWithdrawnByStoredParams{
+			Guid: "1792000000000401", CapIdentifier: "IN-1792000000000401_1"})
+		if err != nil || withdrawn {
+			t.Fatalf("withdrawn with nothing stored = %v (%v), want false", withdrawn, err)
+		}
+		testutil.MustExec(t, pool,
+			`UPDATE official_alerts SET references_text = 'IMD-Chennai IN-1792000000000401_1 2026-10-25T09:00:00+05:30' WHERE guid = '1792000000000402'`)
+		withdrawn, err = q.OfficialAlertWithdrawnByStored(ctx, sqlcgen.OfficialAlertWithdrawnByStoredParams{
+			Guid: "1792000000000401", CapIdentifier: "IN-1792000000000401_1"})
+		if err != nil || !withdrawn {
+			t.Errorf("withdrawn by a stored message that names it = %v (%v), want true", withdrawn, err)
+		}
+		// A longer identifier that merely contains the text is not a match.
+		withdrawn, _ = q.OfficialAlertWithdrawnByStored(ctx, sqlcgen.OfficialAlertWithdrawnByStoredParams{
+			Guid: "1792000000000401", CapIdentifier: "IN-1792000000000401"})
+		if withdrawn {
+			t.Error("a prefix of an identifier was read as a match")
+		}
+	})
+
 	t.Run("deleting an account deletes only its rows", func(t *testing.T) {
 		testutil.Truncate(t, pool)
 		a := officialPushPerson(t, pool, "op-del-a@example.com", "op-del-a-sess", "tf3bq")
