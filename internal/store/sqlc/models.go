@@ -71,6 +71,76 @@ type ModerationCheck struct {
 	CreatedAt     time.Time
 }
 
+type OfficialAlert struct {
+	ID                  int64
+	Guid                string
+	CapIdentifier       string
+	SourcePubdate       pgtype.Timestamptz
+	Sender              string
+	Issuer              string
+	MsgType             string
+	ReferencesText      string
+	Event               string
+	Severity            string
+	Urgency             string
+	Certainty           string
+	SentAt              time.Time
+	EffectiveAt         pgtype.Timestamptz
+	OnsetAt             pgtype.Timestamptz
+	ExpiresAt           time.Time
+	ExpiresInferred     bool
+	HeadlineEn          string
+	HeadlineOriginal    string
+	OriginalLang        string
+	DescriptionEn       string
+	DescriptionOriginal string
+	Instruction         string
+	AreaDesc            string
+	PlacementTier       string
+	CancelledAt         pgtype.Timestamptz
+	SupersededAt        pgtype.Timestamptz
+	FirstSeenAt         time.Time
+	LastSeenAt          time.Time
+}
+
+type OfficialAlertArea struct {
+	ID          int64
+	AlertID     int64
+	DistrictLgd *int32
+	StateLgd    *int32
+}
+
+type OfficialFeedStatus struct {
+	Feed                string
+	LastAttemptAt       pgtype.Timestamptz
+	LastSuccessAt       pgtype.Timestamptz
+	LastError           *string
+	ConsecutiveFailures int32
+	LastEtag            string
+	LastModified        string
+	ItemsSeen           int32
+}
+
+type OfficialHazard struct {
+	ID           int64
+	EventType    string
+	EventID      int64
+	EpisodeID    *int64
+	Name         string
+	AlertLevel   string
+	Country      string
+	Latitude     float64
+	Longitude    float64
+	FromDate     pgtype.Timestamptz
+	ToDate       pgtype.Timestamptz
+	IsCurrent    bool
+	SeverityText string
+	ReportUrl    string
+	DateModified pgtype.Timestamptz
+	FirstSeenAt  time.Time
+	LastSeenAt   time.Time
+}
+
 type PushOutbox struct {
 	ID              int64
 	AccountID       int64

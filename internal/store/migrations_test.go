@@ -1142,3 +1142,179 @@ func TestMigration00011(t *testing.T) {
 		t.Errorf("after Up again: %d of 4 new columns present", got)
 	}
 }
+
+// TestMigration00012 covers the Phase 5 migration: the file carries both goose
+// markers, builds nothing concurrently, uses no ON DELETE and names every
+// constraint where it adds it; on a database it adds the four official tables
+// with both feed rows, the CHECK lists and the unique rules refuse what they
+// must, Down removes everything and Up applies again.
+func TestMigration00012(t *testing.T) {
+	const file = "migrations/00012_add_official_alerts.sql"
+	contents, err := MigrationsFS.ReadFile(file)
+	if err != nil {
+		t.Fatalf("reading embedded %s: %v", file, err)
+	}
+	text := string(contents)
+	up := strings.Index(text, "+goose Up")
+	down := strings.Index(text, "+goose Down")
+	if up < 0 || down < 0 || down < up {
+		t.Fatalf("%s must carry +goose Up then +goose Down", file)
+	}
+	var code []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		code = append(code, line)
+	}
+	upCode := strings.ToUpper(strings.Join(code, "\n"))
+	if strings.Contains(upCode, "CONCURRENTLY") {
+		t.Error("migration 00012 must not use CONCURRENTLY: goose runs it inside a transaction")
+	}
+	if strings.Contains(upCode, "ON DELETE") {
+		t.Error("migration 00012 must not use ON DELETE: the repo convention has none")
+	}
+	for _, name := range []string{
+		"official_feed_status_feed_valid", "official_feed_status_error_valid", "official_feed_status_counts",
+		"official_alerts_guid_unique", "official_alerts_msg_type_valid", "official_alerts_severity_valid",
+		"official_alerts_placement_valid", "idx_official_alerts_expires_at",
+		"official_alert_areas_code_present", "uq_official_alert_areas",
+		"idx_official_alert_areas_district", "idx_official_alert_areas_state",
+		"official_hazards_event_unique", "official_hazards_position_valid",
+	} {
+		if !strings.Contains(text[:down], name) {
+			t.Errorf("migration 00012 Up must add %s", name)
+		}
+	}
+	for _, feed := range []string{"'sachet'", "'gdacs'"} {
+		if !strings.Contains(text[up:down], "INSERT INTO official_feed_status") || !strings.Contains(text[up:down], feed) {
+			t.Errorf("migration 00012 Up must insert the %s feed row", feed)
+		}
+	}
+	// Down drops the four tables in reverse order of their creation.
+	last := -1
+	for _, table := range []string{"official_hazards", "official_alert_areas", "official_alerts", "official_feed_status"} {
+		at := strings.Index(text[down:], "DROP TABLE "+table+";")
+		if at < 0 {
+			t.Errorf("migration 00012 Down must drop table %s", table)
+			continue
+		}
+		if at < last {
+			t.Errorf("migration 00012 Down drops %s out of order", table)
+		}
+		last = at
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping the database part of the 00012 migration test")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("opening database: %v", err)
+	}
+	defer db.Close()
+
+	goose.SetBaseFS(MigrationsFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up: %v", err)
+	}
+
+	const guid = "1792000000000012"
+	t.Cleanup(func() {
+		_ = goose.Up(db, "migrations")
+		_, _ = db.Exec(`DELETE FROM official_alert_areas WHERE alert_id IN (SELECT id FROM official_alerts WHERE guid = $1)`, guid)
+		_, _ = db.Exec(`DELETE FROM official_alerts WHERE guid = $1`, guid)
+		_, _ = db.Exec(`DELETE FROM official_hazards WHERE event_id = 9000012`)
+		_, _ = db.Exec(`UPDATE official_feed_status SET last_error = NULL, consecutive_failures = 0`)
+	})
+
+	tableCount := func() int {
+		var n int
+		err := db.QueryRow(`SELECT count(*) FROM information_schema.tables
+			WHERE table_schema = 'public'
+			  AND table_name IN ('official_alerts', 'official_alert_areas', 'official_feed_status', 'official_hazards')`).Scan(&n)
+		if err != nil {
+			t.Fatalf("counting tables: %v", err)
+		}
+		return n
+	}
+	feedRows := func() int {
+		var n int
+		if err := db.QueryRow(`SELECT count(*) FROM official_feed_status WHERE feed IN ('sachet', 'gdacs')`).Scan(&n); err != nil {
+			t.Fatalf("counting feed rows: %v", err)
+		}
+		return n
+	}
+	if got := tableCount(); got != 4 {
+		t.Errorf("after Up: %d of 4 new tables present", got)
+	}
+
+	wantCode := func(label, code, query string, args ...any) {
+		t.Helper()
+		_, err := db.Exec(query, args...)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != code {
+			t.Errorf("%s: want SQLSTATE %s, got %v", label, code, err)
+		}
+	}
+	const insertAlert = `INSERT INTO official_alerts (guid, cap_identifier, msg_type, severity, sent_at, expires_at, placement_tier, first_seen_at, last_seen_at)
+		VALUES ($1, 'IN-x_1', $2, $3, now(), now() + interval '1 hour', $4, now(), now())`
+	wantCode("a bad severity", "23514", insertAlert, guid, "Alert", "Catastrophic", "unplaced")
+	wantCode("a bad msg_type", "23514", insertAlert, guid, "Ack", "Severe", "unplaced")
+	wantCode("a bad placement_tier", "23514", insertAlert, guid, "Alert", "Severe", "polygon")
+	wantCode("a bad feed name", "23514", `INSERT INTO official_feed_status (feed) VALUES ('nws')`)
+	wantCode("a bad last_error", "23514", `UPDATE official_feed_status SET last_error = 'dns failure' WHERE feed = 'sachet'`)
+	wantCode("a negative failure count", "23514", `UPDATE official_feed_status SET consecutive_failures = -1 WHERE feed = 'sachet'`)
+
+	var alertID int64
+	if err := db.QueryRow(insertAlert+` RETURNING id`, guid, "Alert", "Severe", "district").Scan(&alertID); err != nil {
+		t.Fatalf("inserting an alert: %v", err)
+	}
+	wantCode("a second alert with the same guid", "23505", insertAlert, guid, "Alert", "Severe", "district")
+	wantCode("an area with both codes null", "23514",
+		`INSERT INTO official_alert_areas (alert_id) VALUES ($1)`, alertID)
+	if _, err := db.Exec(`INSERT INTO official_alert_areas (alert_id, district_lgd, state_lgd) VALUES ($1, 568, 33)`, alertID); err != nil {
+		t.Fatalf("inserting an area: %v", err)
+	}
+	wantCode("the same area twice", "23505",
+		`INSERT INTO official_alert_areas (alert_id, district_lgd, state_lgd) VALUES ($1, 568, 33)`, alertID)
+	wantCode("an area for a missing alert", "23503",
+		`INSERT INTO official_alert_areas (alert_id, district_lgd) VALUES (0, 568)`)
+	wantCode("a hazard off the globe", "23514",
+		`INSERT INTO official_hazards (event_type, event_id, latitude, longitude, first_seen_at, last_seen_at) VALUES ('FL', 9000012, 91, 0, now(), now())`)
+	if _, err := db.Exec(`INSERT INTO official_hazards (event_type, event_id, latitude, longitude, first_seen_at, last_seen_at) VALUES ('FL', 9000012, 20.5, 85.8, now(), now())`); err != nil {
+		t.Fatalf("inserting a hazard: %v", err)
+	}
+	wantCode("the same hazard twice", "23505",
+		`INSERT INTO official_hazards (event_type, event_id, latitude, longitude, first_seen_at, last_seen_at) VALUES ('FL', 9000012, 20.5, 85.8, now(), now())`)
+
+	if got := feedRows(); got != 2 {
+		t.Errorf("after Up: %d of 2 feed rows present", got)
+	}
+
+	name := "00012_add_official_alerts.sql"
+	version, err := goose.NumericComponent(name)
+	if err != nil {
+		t.Fatalf("parsing version of %s: %v", name, err)
+	}
+	// Down drops the tables whole, so their rows need no clean up first.
+	if err := goose.DownTo(db, "migrations", version-1); err != nil {
+		t.Fatalf("goose down to %d: %v", version-1, err)
+	}
+	if got := tableCount(); got != 0 {
+		t.Errorf("after Down: %d new tables still present", got)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up again: %v", err)
+	}
+	if got := tableCount(); got != 4 {
+		t.Errorf("after Up again: %d of 4 new tables present", got)
+	}
+	if got := feedRows(); got != 2 {
+		t.Errorf("after Up again: %d of 2 feed rows present", got)
+	}
+}
