@@ -64,11 +64,17 @@
         </button>
       </div>
       <a class="alert-banner" id="alert-banner" href="/alerts" hidden>
+        {{/* Plan 05-15 (D-07): one slim line. The link's name is its content: the level first, then the words, then the count (Extreme. Cyclone warning, Krishna district. 2 more alerts.). The banner script fills it. */}}
+        <span class="visually-hidden" id="alert-banner-level"></span>
         <span class="alert-banner__icon" aria-hidden="true"></span>
-        <span class="alert-banner__text">
-          <strong class="alert-banner__title" id="alert-banner-title"></strong>
-          <span class="alert-banner__line" id="alert-banner-line"></span>
-        </span>
+        <span class="alert-banner__event" id="alert-banner-event"></span>
+        <span class="alert-banner__sep" aria-hidden="true">&middot;</span>
+        <span class="visually-hidden">, </span>
+        <span class="alert-banner__area" id="alert-banner-area"></span>
+        <span class="visually-hidden">. </span>
+        <span class="alert-banner__more" id="alert-banner-more" aria-hidden="true" hidden></span>
+        <span class="visually-hidden" id="alert-banner-more-sr"></span>
+        <span class="app-icon app-icon--chevron-right alert-banner__chevron" aria-hidden="true"></span>
       </a>
       <div class="list-head">
         <p class="list-head__count" id="feed-count"></p>
@@ -236,6 +242,7 @@
           integrity="sha256-Hmz4yz61/ZCYeaob82o4P7UGyaWy27+rq85lopTdH8s="
           crossorigin="anonymous"></script>
   <script src="/static/js/app.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/official-banner.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/votes.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/visibility.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/trust.js?v={{.AssetVersion}}" defer></script>

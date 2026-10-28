@@ -91,7 +91,7 @@ func TestBannerMarkup(t *testing.T) {
 	p421InOrder(t, "script order", index,
 		`/static/js/app.js?v={{.AssetVersion}}" defer`,
 		`/static/js/official-banner.js?v={{.AssetVersion}}" defer`)
-	if got := strings.Count(index, "official-banner.js"); got != 1 {
+	if got := strings.Count(index, "/static/js/official-banner.js"); got != 1 {
 		t.Errorf("index.html.tmpl loads official-banner.js %d times, want 1", got)
 	}
 	// The Low data view gets no banner (UI-SPEC Defaults 11).

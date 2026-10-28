@@ -94,31 +94,68 @@
 }
 
 /*
- * The official alert banner slot (Phase 3.4, D-15, UI-SPEC 2f). A link to
- * /alerts that exists in the markup, hidden, with no data until Phase 5. When
- * Phase 5 shows it: the critical tint, a 1px critical border, an 8px corner,
- * a bold first line and a second line in the normal text colour.
+ * The Nearby banner (Phase 5 plan 15, D-07, D-08, UI-SPEC Surface 2). One slim,
+ * still line, a link to /alerts, drawn by official-banner.js only when the
+ * server's pick exists and the feed is fresh. It is never taller than a list
+ * row (44px, as a minimum so a larger text size is never clipped) and never
+ * wraps: only the area shortens, with an ellipsis. Left to right: the level
+ * icon, the event phrase, a dot, the area, "+N", a chevron. No underline, no
+ * crawl, no animation, no faded text. Extreme is red with the octagon, Severe
+ * orange (the app's amber) with the triangle: the shape says it as well as the
+ * colour. Text on the tint is the normal text colour. On the laptop the row is a
+ * box above the list head; the phone flush row is in phone.css.
  */
 .alert-banner:not([hidden]) {
   display: flex;
-  align-items: flex-start;
-  column-gap: var(--space-sm);
+  align-items: center;
+  box-sizing: border-box;
+  position: relative;
+  min-width: 0;
+  min-height: var(--touch-target-min);
   margin: var(--space-sm) var(--space-md) 0;
-  padding: var(--space-sm) var(--space-md);
-  border: 1px solid var(--color-severity-critical);
+  padding: 0 var(--space-12);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: var(--color-severity-critical-bg);
+  background: var(--color-surface);
   color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  white-space: nowrap;
   text-decoration: none;
 }
 
-.alert-banner__icon {
+.alert-banner--extreme:not([hidden]) {
+  border-color: var(--color-severity-critical);
+  background: var(--color-severity-critical-bg);
+}
+
+.alert-banner--severe:not([hidden]) {
+  border-color: var(--color-severity-medium);
+  background: var(--color-severity-medium-bg);
+}
+
+.alert-banner:hover,
+.alert-banner:focus {
+  text-decoration: none;
+}
+
+.alert-banner:focus-visible {
+  outline-offset: -2px;
+}
+
+.alert-banner__icon,
+.alert-banner__event,
+.alert-banner__sep,
+.alert-banner__more,
+.alert-banner__chevron {
   flex: none;
+}
+
+.alert-banner__icon {
   width: 20px;
   height: 20px;
-  background-color: var(--color-severity-critical);
-  -webkit-mask-image: url("/static/icons/storm_cyclone.svg");
-  mask-image: url("/static/icons/storm_cyclone.svg");
+  margin-right: var(--space-sm);
+  background-color: var(--color-text);
   -webkit-mask-size: contain;
   mask-size: contain;
   -webkit-mask-repeat: no-repeat;
@@ -127,18 +164,59 @@
   mask-position: center;
 }
 
-.alert-banner__text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
+.alert-banner--extreme .alert-banner__icon {
+  background-color: var(--color-tone-bad);
+  -webkit-mask-image: url("/static/icons/octagon-alert.svg");
+  mask-image: url("/static/icons/octagon-alert.svg");
 }
 
-.alert-banner__title {
+.alert-banner--severe .alert-banner__icon {
+  background-color: var(--color-tone-caution);
+  -webkit-mask-image: url("/static/icons/triangle-alert.svg");
+  mask-image: url("/static/icons/triangle-alert.svg");
+}
+
+.alert-banner__event {
   font-weight: var(--font-weight-semibold);
 }
 
-.alert-banner__line {
-  color: var(--color-text);
+.alert-banner__sep {
+  margin: 0 var(--space-xs);
+}
+
+.alert-banner__area {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--font-weight-regular);
+}
+
+.alert-banner__more:not([hidden]) {
+  margin-left: auto;
+  padding-left: var(--space-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.alert-banner__chevron {
+  width: 20px;
+  height: 20px;
+  margin-left: auto;
+}
+
+.alert-banner__more:not([hidden]) ~ .alert-banner__chevron {
+  margin-left: var(--space-xs);
+}
+
+@media (forced-colors: active) {
+  .alert-banner:not([hidden]) {
+    border-color: CanvasText;
+  }
+
+  .alert-banner--extreme .alert-banner__icon,
+  .alert-banner--severe .alert-banner__icon {
+    background-color: CanvasText;
+  }
 }
 
 /*
