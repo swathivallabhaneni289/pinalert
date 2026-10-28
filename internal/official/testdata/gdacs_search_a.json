@@ -1,0 +1,304 @@
+{
+  "type": "FeatureCollection",
+  "_note": "Recorded from the live GDACS SEARCH answer for request A on 2026-10-29 (Orange and Red, last 14 days), all four live features kept, plus one synthetic drought the parser must drop.",
+  "features": [
+    {
+      "type": "Feature",
+      "bbox": [
+        81.8,
+        16.4,
+        81.8,
+        16.4
+      ],
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          81.8,
+          16.4
+        ]
+      },
+      "properties": {
+        "eventtype": "TC",
+        "eventid": 1001345,
+        "episodeid": 10,
+        "eventname": "ARNAB-26",
+        "glide": "TC-2026-000197-IND",
+        "name": "Tropical Cyclone ARNAB-26",
+        "description": "Tropical Cyclone ARNAB-26",
+        "htmldescription": "Red Tropical Cyclone ARNAB-26 in India from: 26 Oct 2026  to: 28 Oct 2026 .",
+        "icon": "https://www.gdacs.org/images/gdacs_icons/maps/Orange/TC.png",
+        "iconoverall": "https://www.gdacs.org/images/gdacs_icons/maps/Red/TC.png",
+        "url": {
+          "geometry": "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=TC&eventid=1001345&episodeid=10",
+          "report": "https://www.gdacs.org/report.aspx?eventid=1001345&episodeid=10&eventtype=TC",
+          "details": "https://www.gdacs.org/gdacsapi/api/events/geteventdata?eventtype=TC&eventid=1001345"
+        },
+        "alertlevel": "Red",
+        "alertscore": 3,
+        "episodealertlevel": "Orange",
+        "episodealertscore": 2.0,
+        "istemporary": "false",
+        "iscurrent": "true",
+        "country": "India",
+        "fromdate": "2026-10-26T00:00:00",
+        "todate": "2026-10-28T06:00:00",
+        "datemodified": "2026-10-28T14:09:15",
+        "iso3": "IND",
+        "source": "JTWC",
+        "sourceid": "",
+        "polygonlabel": "Centroid",
+        "Class": "Point_Centroid",
+        "countryonland": "",
+        "affectedcountries": [
+          {
+            "iso2": "IN",
+            "iso3": "IND",
+            "countryname": "India"
+          }
+        ],
+        "severitydata": {
+          "severity": 222.2208,
+          "severitytext": "Tropical Storm (maximum wind speed of 222 km/h)",
+          "severityunit": "km/h"
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "bbox": [
+        127.4,
+        31.2,
+        127.4,
+        31.2
+      ],
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          127.4,
+          31.2
+        ]
+      },
+      "properties": {
+        "eventtype": "TC",
+        "eventid": 1001338,
+        "episodeid": 46,
+        "eventname": "CHAMPI-26",
+        "glide": "TC-2026-000192-GUM",
+        "name": "Tropical Cyclone CHAMPI-26",
+        "description": "Tropical Cyclone CHAMPI-26",
+        "htmldescription": "Red Tropical Cyclone CHAMPI-26 in Philippines, Guam, Northern Mariana Islands, Japan, China, South Korea from: 14 Oct 2026  to: 25 Oct 2026 .",
+        "icon": "https://www.gdacs.org/images/gdacs_icons/maps/Green/TC.png",
+        "iconoverall": "https://www.gdacs.org/images/gdacs_icons/maps/Red/TC.png",
+        "url": {
+          "geometry": "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=TC&eventid=1001338&episodeid=46",
+          "report": "https://www.gdacs.org/report.aspx?eventid=1001338&episodeid=46&eventtype=TC",
+          "details": "https://www.gdacs.org/gdacsapi/api/events/geteventdata?eventtype=TC&eventid=1001338"
+        },
+        "alertlevel": "Red",
+        "alertscore": 3,
+        "episodealertlevel": "Green",
+        "episodealertscore": 1.0,
+        "istemporary": "false",
+        "iscurrent": "true",
+        "country": "Philippines, Guam, Northern Mariana Islands, Japan, China, South Korea",
+        "fromdate": "2026-10-14T12:00:00",
+        "todate": "2026-10-25T18:00:00",
+        "datemodified": "2026-10-26T22:00:19",
+        "iso3": "GUM",
+        "source": "JTWC",
+        "sourceid": "",
+        "polygonlabel": "Centroid",
+        "Class": "Point_Centroid",
+        "countryonland": "",
+        "affectedcountries": [
+          {
+            "iso2": "PH",
+            "iso3": "PHL",
+            "countryname": "Philippines"
+          },
+          {
+            "iso2": "GU",
+            "iso3": "GUM",
+            "countryname": "Guam"
+          },
+          {
+            "iso2": "JP",
+            "iso3": "JPN",
+            "countryname": "Japan"
+          },
+          {
+            "iso2": "CN",
+            "iso3": "CHN",
+            "countryname": "China"
+          },
+          {
+            "iso2": "KR",
+            "iso3": "KOR",
+            "countryname": "South Korea"
+          }
+        ],
+        "severitydata": {
+          "severity": 296.2944,
+          "severitytext": "Tropical Storm (maximum wind speed of 296 km/h)",
+          "severityunit": "km/h"
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "bbox": [
+        93.7797,
+        32.3805,
+        93.7797,
+        32.3805
+      ],
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          93.7797,
+          32.3805
+        ]
+      },
+      "properties": {
+        "eventtype": "EQ",
+        "eventid": 1573141,
+        "episodeid": 1741837,
+        "eventname": "",
+        "glide": "EQ-2026-000195-CHN",
+        "name": "Earthquake in China",
+        "description": "Earthquake in China",
+        "htmldescription": "Red M 7 Earthquake in China at: 22 Oct 2026 14:33:40.",
+        "icon": "https://www.gdacs.org/images/gdacs_icons/maps/Red/EQ.png",
+        "iconoverall": "https://www.gdacs.org/images/gdacs_icons/maps/Red/EQ.png",
+        "url": {
+          "geometry": "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=EQ&eventid=1573141&episodeid=1741837",
+          "report": "https://www.gdacs.org/report.aspx?eventid=1573141&episodeid=1741837&eventtype=EQ",
+          "details": "https://www.gdacs.org/gdacsapi/api/events/geteventdata?eventtype=EQ&eventid=1573141"
+        },
+        "alertlevel": "Red",
+        "alertscore": 3,
+        "episodealertlevel": "Red",
+        "episodealertscore": 2.07132412448536,
+        "istemporary": "false",
+        "iscurrent": "false",
+        "country": "China",
+        "fromdate": "2026-10-22T14:33:40",
+        "todate": "2026-10-22T14:33:40",
+        "datemodified": "2026-10-23T15:02:54",
+        "iso3": "CHN",
+        "source": "NEIC",
+        "sourceid": "",
+        "polygonlabel": "Centroid",
+        "Class": "Point_Centroid",
+        "affectedcountries": [
+          {
+            "iso2": "CN",
+            "iso3": "CHN",
+            "countryname": "China"
+          }
+        ],
+        "severitydata": {
+          "severity": 7.0,
+          "severitytext": "Magnitude 7M, Depth:18km",
+          "severityunit": "M"
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "bbox": [
+        -110.3,
+        21.5,
+        -110.3,
+        21.5
+      ],
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -110.3,
+          21.5
+        ]
+      },
+      "properties": {
+        "eventtype": "TC",
+        "eventid": 1001335,
+        "episodeid": 38,
+        "eventname": "SIMON-26",
+        "glide": "",
+        "name": "Tropical Cyclone SIMON-26",
+        "description": "Tropical Cyclone SIMON-26",
+        "htmldescription": "Orange Tropical Cyclone SIMON-26 in México from: 07 Oct 2026  to: 16 Oct 2026 .",
+        "icon": "https://www.gdacs.org/images/gdacs_icons/maps/Green/TC.png",
+        "iconoverall": "https://www.gdacs.org/images/gdacs_icons/maps/Orange/TC.png",
+        "url": {
+          "geometry": "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=TC&eventid=1001335&episodeid=38",
+          "report": "https://www.gdacs.org/report.aspx?eventid=1001335&episodeid=38&eventtype=TC",
+          "details": "https://www.gdacs.org/gdacsapi/api/events/geteventdata?eventtype=TC&eventid=1001335"
+        },
+        "alertlevel": "Orange",
+        "alertscore": 2,
+        "episodealertlevel": "Green",
+        "episodealertscore": 1.0,
+        "istemporary": "false",
+        "iscurrent": "false",
+        "country": "México",
+        "fromdate": "2026-10-07T15:00:00",
+        "todate": "2026-10-16T21:00:00",
+        "datemodified": "2026-10-17T17:37:52",
+        "iso3": "MEX",
+        "source": "NOAA",
+        "sourceid": "",
+        "polygonlabel": "Centroid",
+        "Class": "Point_Centroid",
+        "countryonland": "",
+        "affectedcountries": [],
+        "severitydata": {
+          "severity": 249.9984,
+          "severitytext": "Tropical Depression (maximum wind speed of 250 km/h)",
+          "severityunit": "km/h"
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "_synthetic": "synthetic drought, added by hand: the live answers held none",
+      "bbox": [
+        78.0,
+        22.0,
+        78.0,
+        22.0
+      ],
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          78.0,
+          22.0
+        ]
+      },
+      "properties": {
+        "eventtype": "DR",
+        "eventid": 1000999,
+        "episodeid": 3,
+        "eventname": "",
+        "name": "Drought in India",
+        "description": "Drought in India",
+        "alertlevel": "Orange",
+        "alertscore": 2,
+        "iscurrent": "true",
+        "country": "India",
+        "fromdate": "2026-09-01T00:00:00",
+        "todate": "2026-10-28T00:00:00",
+        "datemodified": "2026-10-28T00:00:00",
+        "iso3": "IND",
+        "url": {
+          "report": "https://www.gdacs.org/report.aspx?eventid=1000999&episodeid=3&eventtype=DR"
+        },
+        "severitydata": {
+          "severity": 1.0,
+          "severitytext": "Drought (synthetic)",
+          "severityunit": ""
+        }
+      }
+    }
+  ]
+}

@@ -72,6 +72,25 @@ type StoredAlert struct {
 	StateCodes    []int
 }
 
+// StoredHazard is one GDACS event as the view reads it (plan 05-21). DistrictCode
+// is the district the event's point falls in, found by the caller from the
+// boundary data, or 0 when the point is in none. A zero FromDate or ToDate
+// means GDACS sent none. ReportURL is empty unless it passed SafeGdacsURL.
+type StoredHazard struct {
+	ID           int64
+	EventType    string
+	EventID      int64
+	Name         string
+	AlertLevel   string // Red, Orange or Green
+	Country      string
+	Lat, Lon     float64
+	FromDate     time.Time
+	ToDate       time.Time
+	SeverityText string
+	ReportURL    string
+	DistrictCode int
+}
+
 // Area is where a person is, in our own boundary data names. DistrictCodes can
 // hold several districts (a home cell tested at its centre and corners); the
 // name and state are those of the first.
@@ -84,27 +103,36 @@ type Area struct {
 
 // ViewInput is everything BuildView reads. Reader is nil when the page sent no
 // position (or it fell outside every district), Home when the account has no
-// usable home area. Demo marks every row as a sample.
+// usable home area. Demo marks every row as a sample. Hazards are the GDACS
+// events whose point is in the reader's or the home district, and HazardStatus is
+// the gdacs feed's own status (plan 05-21): hazards are listed only while that
+// feed is fresh, and they never reach the banner.
 type ViewInput struct {
-	Now    time.Time
-	Status FeedStatus
-	Reader *Area
-	Home   *Area
-	Alerts []StoredAlert
-	Demo   bool
+	Now          time.Time
+	Status       FeedStatus
+	Reader       *Area
+	Home         *Area
+	Alerts       []StoredAlert
+	Hazards      []StoredHazard
+	HazardStatus FeedStatus
+	Demo         bool
 }
 
 // View is the answer. Groups is never nil. AgeSeconds and LastSuccessAt are nil
-// for a feed that never succeeded.
+// for a feed that never succeeded. The Hazard fields are the same three facts for
+// the GDACS feed, which is checked on its own schedule.
 type View struct {
-	State         FreshState
-	AgeSeconds    *int64
-	LastSuccessAt *time.Time
-	AreaKnown     bool
-	Groups        []Group
-	Count         int
-	DistrictsLine string
-	Banner        *Banner
+	State               FreshState
+	AgeSeconds          *int64
+	LastSuccessAt       *time.Time
+	HazardState         FreshState
+	HazardAgeSeconds    *int64
+	HazardLastSuccessAt *time.Time
+	AreaKnown           bool
+	Groups              []Group
+	Count               int
+	DistrictsLine       string
+	Banner              *Banner
 }
 
 // AreaOfDistrict is the Area of one district in our own boundary data names,
@@ -168,11 +196,12 @@ type Banner struct {
 }
 
 // entry is a row together with what the banner rule needs and the row does not
-// carry.
+// carry. hazard is true for a GDACS row, which the banner rule never reads.
 type entry struct {
-	row   Row
-	event string
-	rank  int
+	row    Row
+	event  string
+	rank   int
+	hazard bool
 }
 
 type section struct {
@@ -196,6 +225,13 @@ func BuildView(in ViewInput) View {
 		t := in.Status.LastSuccessAt.UTC()
 		secs := int64(age / time.Second)
 		v.LastSuccessAt, v.AgeSeconds = &t, &secs
+	}
+	hazardState, hazardAge := State(in.HazardStatus.LastSuccessAt, in.Now)
+	v.HazardState = hazardState
+	if in.HazardStatus.LastSuccessAt != nil && !in.HazardStatus.LastSuccessAt.IsZero() {
+		t := in.HazardStatus.LastSuccessAt.UTC()
+		secs := int64(hazardAge / time.Second)
+		v.HazardLastSuccessAt, v.HazardAgeSeconds = &t, &secs
 	}
 	if state == StateUnavailable || !v.AreaKnown {
 		return v
@@ -258,6 +294,27 @@ func BuildView(in ViewInput) View {
 		listed = append(listed, a)
 	}
 
+	// GDACS hazards are listed only while their own feed is fresh (an old
+	// hazard is never shown as current) and only on the reader's or the home
+	// district. They are rows and nothing more: they are kept out of the banner
+	// pick below and never reach the phone alerts (D-12, ROBUST-06).
+	hazardRows := map[*section][]entry{}
+	if hazardState == StateFresh {
+		for _, h := range in.Hazards {
+			var target *section
+			switch {
+			case h.DistrictCode == 0:
+			case in.Reader != nil && contains(in.Reader.DistrictCodes, h.DistrictCode):
+				target = &readerSec
+			case homeShown && contains(in.Home.DistrictCodes, h.DistrictCode):
+				target = &homeSec
+			}
+			if target != nil {
+				hazardRows[target] = append(hazardRows[target], hazardEntry(h))
+			}
+		}
+	}
+
 	// The state sections keep the reader's state first, then the home's.
 	ordered := []*section{&readerSec, &homeSec}
 	sort.SliceStable(stateSecs, func(i, j int) bool {
@@ -268,10 +325,14 @@ func BuildView(in ViewInput) View {
 
 	for _, sec := range ordered {
 		alerts := buckets[sec]
-		if len(alerts) == 0 {
+		if len(alerts) == 0 && len(hazardRows[sec]) == 0 {
 			continue
 		}
 		sec.entries = groupRows(alerts, in.Demo)
+		if extra := hazardRows[sec]; len(extra) > 0 {
+			sec.entries = append(sec.entries, extra...)
+			sortEntries(sec.entries)
+		}
 		rows := make([]Row, len(sec.entries))
 		for i, e := range sec.entries {
 			rows[i] = e.row
@@ -329,6 +390,13 @@ func groupRows(alerts []StoredAlert, demo bool) []entry {
 		row.ExpiresInferred = r.latest.ExpiresInferred
 		out = append(out, entry{row: row, event: r.newest.Event, rank: severityRank(r.newest.Severity)})
 	}
+	sortEntries(out)
+	return out
+}
+
+// sortEntries puts a section's entries in display order: by rank (Extreme
+// first, unknown last), then newest first, then by id.
+func sortEntries(out []entry) {
 	sort.SliceStable(out, func(i, j int) bool {
 		a, b := out[i], out[j]
 		if a.rank != b.rank {
@@ -339,7 +407,48 @@ func groupRows(alerts []StoredAlert, demo bool) []entry {
 		}
 		return a.row.ID > b.row.ID
 	})
-	return out
+}
+
+// hazardEntry is the row of one GDACS hazard. Red reads as Extreme and Orange as
+// Severe for the chip colour and the order; Green is neutral and sorts with the
+// unknown ones. The line on the row says what GDACS is: an automatic estimate.
+// Nothing here is a vote, a count or a reliability tag.
+func hazardEntry(h StoredHazard) entry {
+	word := GdacsLevelWord(h.AlertLevel)
+	level, rank := "neutral", severityRank("")
+	switch word {
+	case "Red":
+		level, rank = "extreme", severityRank("Extreme")
+	case "Orange":
+		level, rank = "severe", severityRank("Severe")
+	}
+	headline := strings.TrimSpace(h.Name)
+	if headline == "" {
+		headline = HazardWord(h.EventType)
+	}
+	return entry{
+		row: Row{
+			ID:           h.ID,
+			Source:       sourceGdacs,
+			Level:        level,
+			LevelWord:    word,
+			Badge:        badgeGdacs,
+			Headline:     headline,
+			AreaText:     areaText(h.Country),
+			Issuer:       "GDACS",
+			IssuedAt:     h.FromDate,
+			ExpiresAt:    h.ToDate,
+			GroupedCount: 1,
+			Details: Details{
+				Description: h.SeverityText,
+				Areas:       h.Country,
+				SourceLine:  sourceLineGDAC,
+			},
+		},
+		event:  h.EventType,
+		rank:   rank,
+		hazard: true,
+	}
 }
 
 func newer(a, b StoredAlert) bool {
@@ -457,7 +566,8 @@ func pickBanner(in ViewInput, reader *section, stateSecs []*section) *Banner {
 	}
 	var cands []candidate
 	for _, e := range reader.entries {
-		if e.rank <= 1 {
+		// A GDACS row is an automatic estimate and never the banner (D-12).
+		if e.rank <= 1 && !e.hazard {
 			cands = append(cands, candidate{e, districtWords(in.Reader.DistrictName)})
 		}
 	}
@@ -466,7 +576,7 @@ func pickBanner(in ViewInput, reader *section, stateSecs []*section) *Banner {
 			continue
 		}
 		for _, e := range s.entries {
-			if e.rank == 0 {
+			if e.rank == 0 && !e.hazard {
 				cands = append(cands, candidate{e, in.Reader.StateName})
 			}
 		}

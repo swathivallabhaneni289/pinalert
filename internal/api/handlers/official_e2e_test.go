@@ -101,8 +101,24 @@ type officialJSON struct {
 	} `json:"banner"`
 }
 
+// fakeGdacs stands in for the GDACS fetcher (plan 05-21). NewService registers
+// the real one, so every server built here replaces it, and a read that starts
+// the lazy refresh can never reach www.gdacs.org. It counts its runs.
+type fakeGdacs struct {
+	calls atomic.Int32
+}
+
+func (f *fakeGdacs) Fetch(_ context.Context, _ official.FeedStatus) (official.Result, error) {
+	f.calls.Add(1)
+	return official.Result{ItemsSeen: 1}, nil
+}
+
 // newOfficialServer builds the e2e server with an official.Service that has the
 // given fake SACHET fetcher registered. tweak runs after, for the request log.
+//
+// Amended 2026-10-29 by plan 05-21: a fake GDACS fetcher is registered next to
+// the fake SACHET one, because the service now registers the real GDACS client
+// and a lazy refresh would otherwise call the real host from a test.
 func newOfficialServer(t *testing.T, f official.Fetcher, tweak func(d *api.Deps)) (*httptest.Server, *recordingMailer, *pgxpool.Pool) {
 	t.Helper()
 	return newE2EServerWith(t, func(d *api.Deps, q *sqlcgen.Queries) {
@@ -110,6 +126,7 @@ func newOfficialServer(t *testing.T, f official.Fetcher, tweak func(d *api.Deps)
 		// source; the refresher's status, claim and success go through q.
 		d.Official = official.NewService(nil, q, official.Config{}, func(r *official.Refresher) {
 			r.Register(official.FeedSachet, f, 0)
+			r.Register(official.FeedGdacs, &fakeGdacs{}, 0)
 		})
 		if tweak != nil {
 			tweak(d)
@@ -507,5 +524,255 @@ func TestOfficialAlertsNeverLogsPosition(t *testing.T) {
 	}
 	if strings.Contains(raw, homeCell) {
 		t.Errorf("the response holds the home cell")
+	}
+}
+
+// ---- GET /api/official/pins (plan 05-21) ----
+
+// pinsJSON is the wire shape of the pins answer, declared here so the test
+// asserts the JSON contract and not the server's own types.
+type pinsJSON struct {
+	State      string `json:"state"`
+	AgeSeconds *int64 `json:"age_seconds"`
+	Pins       []struct {
+		ID           int64   `json:"id"`
+		EventType    string  `json:"event_type"`
+		HazardWord   string  `json:"hazard_word"`
+		Name         string  `json:"name"`
+		AlertLevel   string  `json:"alert_level"`
+		LevelWord    string  `json:"level_word"`
+		Lat          float64 `json:"lat"`
+		Lon          float64 `json:"lon"`
+		FromDate     *string `json:"from_date"`
+		ToDate       *string `json:"to_date"`
+		SeverityText string  `json:"severity_text"`
+		ReportURL    string  `json:"report_url"`
+	} `json:"pins"`
+}
+
+func getPins(t *testing.T, client *http.Client, baseURL string) (*http.Response, pinsJSON, string) {
+	t.Helper()
+	resp, err := client.Get(baseURL + "/api/official/pins")
+	if err != nil {
+		t.Fatalf("GET /api/official/pins: %v", err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading the body: %v", err)
+	}
+	var out pinsJSON
+	if resp.StatusCode == http.StatusOK {
+		if err := json.Unmarshal(raw, &out); err != nil {
+			t.Fatalf("decoding the body: %v (%s)", err, raw)
+		}
+	}
+	return resp, out, string(raw)
+}
+
+type seededHazard struct {
+	eventType string
+	eventID   int64
+	level     string
+	name      string
+	lat, lon  float64
+	to        *time.Time // nil stores no end date
+	current   bool
+	reportURL string
+}
+
+func seedPinHazard(t *testing.T, pool *pgxpool.Pool, h seededHazard) int64 {
+	t.Helper()
+	now := time.Now().UTC()
+	var id int64
+	if err := pool.QueryRow(context.Background(),
+		`INSERT INTO official_hazards (event_type, event_id, name, alert_level, country, latitude, longitude,
+		     from_date, to_date, is_current, severity_text, report_url, first_seen_at, last_seen_at)
+		 VALUES ($1, $2, $3, $4, 'India', $5, $6, $7, $8, $9, 'Magnitude 5.0M', $10, $11, $11)
+		 RETURNING id`,
+		h.eventType, h.eventID, h.name, h.level, h.lat, h.lon, now.Add(-12*time.Hour), h.to, h.current, h.reportURL, now,
+	).Scan(&id); err != nil {
+		t.Fatalf("seeding hazard %s %d: %v", h.eventType, h.eventID, err)
+	}
+	return id
+}
+
+func TestOfficialPinsRoute(t *testing.T) {
+	srv, mailer, pool := newOfficialServer(t, &fakeSachet{}, nil)
+	client := newVerifiedClient(t, srv, mailer, "official-pins@example.com")
+	now := time.Now().UTC()
+	// The last attempt is recent, so the read starts no refresh and the answer
+	// is the seeded rows.
+	attempt, success := now.Add(-time.Minute), now.Add(-4*time.Minute)
+	testutil.SetOfficialFeedStatus(t, pool, "gdacs", &attempt, &success, 9)
+
+	in := func(d time.Duration) *time.Time { t := now.Add(d); return &t }
+	red := seedPinHazard(t, pool, seededHazard{eventType: "TC", eventID: 1, level: "Red", name: "Tropical Cyclone ARNAB-26",
+		lat: 16.4, lon: 81.8, to: in(time.Hour), current: true, reportURL: "https://www.gdacs.org/report.aspx?eventid=1&eventtype=TC"})
+	ended := seedPinHazard(t, pool, seededHazard{eventType: "EQ", eventID: 2, level: "Orange", name: "Earthquake in India",
+		lat: 28.6, lon: 77.2, to: in(-time.Hour), current: true, reportURL: "https://www.gdacs.org/report.aspx?eventid=2"})
+	seedPinHazard(t, pool, seededHazard{eventType: "EQ", eventID: 3, level: "Green", name: "ended three days ago",
+		lat: 20, lon: 78, to: in(-72 * time.Hour), current: true})
+	seedPinHazard(t, pool, seededHazard{eventType: "FL", eventID: 4, level: "Green", name: "not current",
+		lat: 20, lon: 78, to: in(time.Hour), current: false})
+	evil := seedPinHazard(t, pool, seededHazard{eventType: "TC", eventID: 5, level: "Red", name: "stored with a bad link",
+		lat: 15, lon: 80, to: in(2 * time.Hour), current: true, reportURL: "https://www.gdacs.org.evil.example/x"})
+	open := seedPinHazard(t, pool, seededHazard{eventType: "WF", eventID: 6, level: "Green", name: "no end date",
+		lat: 22, lon: 79, to: nil, current: true})
+
+	resp, got, raw := getPins(t, client, srv.URL)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d: %s", resp.StatusCode, raw)
+	}
+	if cc := resp.Header.Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", cc)
+	}
+	if got.State != "fresh" || got.AgeSeconds == nil || *got.AgeSeconds < 230 || *got.AgeSeconds > 260 {
+		t.Fatalf("state %q age %v, want fresh at about 240 seconds", got.State, got.AgeSeconds)
+	}
+	var ids []int64
+	for _, p := range got.Pins {
+		ids = append(ids, p.ID)
+	}
+	if len(ids) != 4 || ids[0] != red || ids[1] != ended || ids[2] != evil || ids[3] != open {
+		t.Fatalf("pin ids = %v, want [%d %d %d %d]: the current ones, the one that ended an hour ago kept, the one that ended three days ago, the not current one dropped",
+			ids, red, ended, evil, open)
+	}
+
+	p := got.Pins[0]
+	if p.EventType != "TC" || p.HazardWord != "Cyclone" || p.Name != "Tropical Cyclone ARNAB-26" || p.AlertLevel != "red" ||
+		p.LevelWord != "Red" || p.Lat != 16.4 || p.Lon != 81.8 || p.SeverityText != "Magnitude 5.0M" {
+		t.Errorf("first pin = %+v", p)
+	}
+	if p.ReportURL != "https://www.gdacs.org/report.aspx?eventid=1&eventtype=TC" {
+		t.Errorf("report_url = %q, want the GDACS link kept", p.ReportURL)
+	}
+	if p.FromDate == nil || p.ToDate == nil {
+		t.Errorf("dates = %v %v, want both", p.FromDate, p.ToDate)
+	} else if _, err := time.Parse(time.RFC3339, *p.ToDate); err != nil {
+		t.Errorf("to_date %q: %v", *p.ToDate, err)
+	}
+	if got.Pins[2].ReportURL != "" {
+		t.Errorf("a look alike link came back as %q, want it empty", got.Pins[2].ReportURL)
+	}
+	if got.Pins[3].ToDate != nil {
+		t.Errorf("a hazard with no end date has to_date %q, want null", *got.Pins[3].ToDate)
+	}
+	if got.Pins[1].HazardWord != "Earthquake" || got.Pins[1].AlertLevel != "orange" || got.Pins[3].HazardWord != "Wildfire" {
+		t.Errorf("pins = %+v", got.Pins)
+	}
+
+	// A pin has no vote, count or reliability field.
+	for _, banned := range []string{"confirm", "dispute", "votes", "reliab", "reports"} {
+		if strings.Contains(strings.ToLower(raw), banned) {
+			t.Errorf("the pins answer mentions %q: %s", banned, raw)
+		}
+	}
+}
+
+func TestOfficialPinsHiddenWhenStale(t *testing.T) {
+	srv, mailer, pool := newOfficialServer(t, &fakeSachet{}, nil)
+	client := newVerifiedClient(t, srv, mailer, "official-pins-stale@example.com")
+	now := time.Now().UTC()
+	to := now.Add(time.Hour)
+	seedPinHazard(t, pool, seededHazard{eventType: "TC", eventID: 1, level: "Red", name: "Tropical Cyclone ARNAB-26",
+		lat: 16.4, lon: 81.8, to: &to, current: true, reportURL: "https://www.gdacs.org/report.aspx?eventid=1"})
+
+	// The last attempt is recent so the read's lazy refresh never starts (it
+	// would run the fake fetcher and turn the feed fresh mid test).
+	attempt := now.Add(-time.Minute)
+	for name, c := range map[string]struct {
+		success *time.Time
+		state   string
+		age     int64
+	}{
+		"two hours old":   {success: ptrTime(now.Add(-2 * time.Hour)), state: "stale", age: 7200},
+		"seven hours old": {success: ptrTime(now.Add(-7 * time.Hour)), state: "unavailable", age: 25200},
+		"never":           {success: nil, state: "unavailable"},
+	} {
+		testutil.SetOfficialFeedStatus(t, pool, "gdacs", &attempt, c.success, 9)
+		resp, got, raw := getPins(t, client, srv.URL)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: status = %d: %s", name, resp.StatusCode, raw)
+		}
+		if got.State != c.state {
+			t.Errorf("%s: state = %q, want %q", name, got.State, c.state)
+		}
+		if len(got.Pins) != 0 || !strings.Contains(raw, `"pins":[]`) {
+			t.Errorf("%s: pins = %v in %s, want an empty list (never null)", name, got.Pins, raw)
+		}
+		switch {
+		case c.success == nil && got.AgeSeconds != nil:
+			t.Errorf("%s: age_seconds = %d, want null", name, *got.AgeSeconds)
+		case c.success != nil && (got.AgeSeconds == nil || *got.AgeSeconds < c.age-5 || *got.AgeSeconds > c.age+30):
+			t.Errorf("%s: age_seconds = %v, want about %d", name, got.AgeSeconds, c.age)
+		}
+	}
+
+	// And fresh again brings the pin back, so the empty answer was the state's doing.
+	fresh := now.Add(-3 * time.Minute)
+	testutil.SetOfficialFeedStatus(t, pool, "gdacs", &attempt, &fresh, 9)
+	if _, got, raw := getPins(t, client, srv.URL); got.State != "fresh" || len(got.Pins) != 1 {
+		t.Errorf("fresh again: %s", raw)
+	}
+}
+
+func ptrTime(t time.Time) *time.Time { return &t }
+
+// TestOfficialAlertsCarryHazardState: GET /api/official/alerts reports the GDACS
+// feed's own state next to SACHET's (plan 05-21), and lists a hazard in the
+// reader's district as a GDACS row that never raises the banner.
+func TestOfficialAlertsCarryHazardState(t *testing.T) {
+	srv, mailer, pool := newOfficialServer(t, &fakeSachet{}, nil)
+	client := newVerifiedClient(t, srv, mailer, "official-hazard-state@example.com")
+	officialFeed(t, pool, time.Minute, 4*time.Minute, true) // sachet fresh
+	now := time.Now().UTC()
+	attempt, success := now.Add(-time.Minute), now.Add(-2*time.Hour)
+	testutil.SetOfficialFeedStatus(t, pool, "gdacs", &attempt, &success, 9)
+
+	to := now.Add(time.Hour)
+	seedPinHazard(t, pool, seededHazard{eventType: "TC", eventID: 1, level: "Red", name: "Tropical Cyclone ARNAB-26",
+		lat: 16.5062, lon: 80.6480, to: &to, current: true})
+
+	_, raw := func() (int, string) {
+		resp, err := client.Get(srv.URL + "/api/official/alerts" + vijayawadaQuery)
+		if err != nil {
+			t.Fatalf("GET: %v", err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}()
+	var got struct {
+		State                string  `json:"state"`
+		HazardsState         string  `json:"hazards_state"`
+		HazardsAgeSeconds    *int64  `json:"hazards_age_seconds"`
+		HazardsLastSuccessAt *string `json:"hazards_last_success_at"`
+		Count                int     `json:"count"`
+	}
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("decoding: %v (%s)", err, raw)
+	}
+	if got.State != "fresh" || got.HazardsState != "stale" || got.HazardsAgeSeconds == nil || *got.HazardsAgeSeconds < 7190 ||
+		got.HazardsLastSuccessAt == nil || got.Count != 0 {
+		t.Fatalf("sachet %q hazards %q age %v last %v count %d; want fresh, stale, about 7200 s and no rows for a stale hazard feed: %s",
+			got.State, got.HazardsState, got.HazardsAgeSeconds, got.HazardsLastSuccessAt, got.Count, raw)
+	}
+
+	// Fresh GDACS: the Red hazard in the reader's district is a GDACS row, and
+	// the banner stays empty.
+	fresh := now.Add(-3 * time.Minute)
+	testutil.SetOfficialFeedStatus(t, pool, "gdacs", &attempt, &fresh, 9)
+	status, o, raw := getOfficial(t, client, srv.URL, vijayawadaQuery)
+	if status != http.StatusOK || o.Count != 1 || len(o.Groups) != 1 || o.Groups[0].Kind != "reader" {
+		t.Fatalf("status %d, groups %v count %d: %s", status, groupKindList(o), o.Count, raw)
+	}
+	row := o.Groups[0].Rows[0]
+	if row.Source != "gdacs" || row.Badge != "GDACS" || row.Level != "extreme" || row.LevelWord != "Red" || row.Issuer != "GDACS" ||
+		!strings.Contains(row.Details.SourceLine, "Automatic estimate") {
+		t.Errorf("row = %+v", row)
+	}
+	if o.Banner != nil {
+		t.Errorf("banner = %+v, want none: GDACS never raises it", *o.Banner)
 	}
 }

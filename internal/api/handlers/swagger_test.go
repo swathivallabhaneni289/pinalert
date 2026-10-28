@@ -891,8 +891,12 @@ func TestSwaggerOfficialAlerts(t *testing.T) {
 	}
 
 	_, props := p07WalkSwaggerDefinitions(t, spec.Definitions, []string{"handlers.OfficialAlertsResponse"})
+	// Amended 2026-10-29 by plan 05-21: three keys carry the GDACS feed's own
+	// freshness (hazards_state, hazards_age_seconds, hazards_last_success_at). The
+	// eight keys written before are all still required.
 	p14AssertPropKeys(t, props, "handlers.OfficialAlertsResponse",
-		[]string{"state", "age_seconds", "last_success_at", "area_known", "groups", "count", "districts_line", "banner"})
+		[]string{"state", "age_seconds", "last_success_at", "area_known", "groups", "count", "districts_line", "banner",
+			"hazards_state", "hazards_age_seconds", "hazards_last_success_at"})
 	p14AssertPropKeys(t, props, "handlers.OfficialGroupResponse", []string{"kind", "label", "rows"})
 	p14AssertPropKeys(t, props, "handlers.OfficialRowResponse",
 		[]string{"id", "source", "level", "level_word", "badge", "demo", "headline", "original_language_only", "area_text",
@@ -907,9 +911,64 @@ func TestSwaggerOfficialAlerts(t *testing.T) {
 		[]string{"level", "level_word", "event_phrase", "area", "more", "alert_id", "demo"})
 	p14AssertEnum(t, p14SwaggerProp(t, props, "handlers.OfficialAlertsResponse", "state"), []string{"fresh", "stale", "unavailable"})
 	p14AssertEnum(t, p14SwaggerProp(t, props, "handlers.OfficialGroupResponse", "kind"), []string{"reader", "home", "state", "unplaced"})
-	for _, key := range []string{"age_seconds", "last_success_at", "banner"} {
+	p14AssertEnum(t, p14SwaggerProp(t, props, "handlers.OfficialAlertsResponse", "hazards_state"), []string{"fresh", "stale", "unavailable"})
+	p14AssertEnum(t, p14SwaggerProp(t, props, "handlers.OfficialRowResponse", "source"), []string{"sachet", "gdacs"})
+	p14AssertEnum(t, p14SwaggerProp(t, props, "handlers.OfficialRowResponse", "level"),
+		[]string{"extreme", "severe", "moderate", "minor", "unknown", "neutral"})
+	for _, key := range []string{"age_seconds", "last_success_at", "banner", "hazards_age_seconds", "hazards_last_success_at"} {
 		if v, _ := p14SwaggerProp(t, props, "handlers.OfficialAlertsResponse", key)["x-nullable"].(bool); !v {
 			t.Errorf("handlers.OfficialAlertsResponse %q must carry x-nullable true", key)
+		}
+	}
+}
+
+// TestSwaggerOfficialPins is plan 05-21's drift guard: GET /official/pins is
+// documented with its refusals and no parameters, and the response definitions
+// carry exactly the fields the map layer reads, with the nullable ones marked and
+// the state and level enums closed.
+func TestSwaggerOfficialPins(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "docs", "swagger.json"))
+	if err != nil {
+		t.Fatalf("reading docs/swagger.json: %v", err)
+	}
+	var spec struct {
+		Paths map[string]map[string]struct {
+			Parameters []json.RawMessage          `json:"parameters"`
+			Responses  map[string]json.RawMessage `json:"responses"`
+		} `json:"paths"`
+		Definitions map[string]json.RawMessage `json:"definitions"`
+	}
+	if err := json.Unmarshal(raw, &spec); err != nil {
+		t.Fatalf("parsing docs/swagger.json: %v", err)
+	}
+	op, ok := spec.Paths["/official/pins"]["get"]
+	if !ok {
+		t.Fatal("docs/swagger.json is missing the GET /official/pins operation")
+	}
+	for _, code := range []string{"200", "401", "503"} {
+		if _, ok := op.Responses[code]; !ok {
+			t.Errorf("GET /official/pins documents no %s response", code)
+		}
+	}
+	if len(op.Parameters) != 0 {
+		t.Errorf("GET /official/pins documents %d parameters, want none", len(op.Parameters))
+	}
+
+	_, props := p07WalkSwaggerDefinitions(t, spec.Definitions, []string{"handlers.OfficialPinsResponse"})
+	p14AssertPropKeys(t, props, "handlers.OfficialPinsResponse", []string{"state", "age_seconds", "pins"})
+	p14AssertPropKeys(t, props, "handlers.OfficialPinResponse",
+		[]string{"id", "event_type", "hazard_word", "name", "alert_level", "level_word", "lat", "lon",
+			"from_date", "to_date", "severity_text", "report_url"})
+	p14AssertEnum(t, p14SwaggerProp(t, props, "handlers.OfficialPinsResponse", "state"), []string{"fresh", "stale", "unavailable"})
+	p14AssertEnum(t, p14SwaggerProp(t, props, "handlers.OfficialPinResponse", "alert_level"), []string{"red", "orange", "green"})
+	for _, key := range []string{"age_seconds"} {
+		if v, _ := p14SwaggerProp(t, props, "handlers.OfficialPinsResponse", key)["x-nullable"].(bool); !v {
+			t.Errorf("handlers.OfficialPinsResponse %q must carry x-nullable true", key)
+		}
+	}
+	for _, key := range []string{"from_date", "to_date"} {
+		if v, _ := p14SwaggerProp(t, props, "handlers.OfficialPinResponse", key)["x-nullable"].(bool); !v {
+			t.Errorf("handlers.OfficialPinResponse %q must carry x-nullable true", key)
 		}
 	}
 }

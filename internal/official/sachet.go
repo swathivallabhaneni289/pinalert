@@ -121,9 +121,16 @@ type fetchError struct {
 	status int    // the HTTP status, for class status
 	msg    string
 	cause  error
+	feed   string // the feed named in the text; empty means sachet (plan 05-21 added gdacs)
 }
 
-func (e *fetchError) Error() string { return "official: sachet " + e.msg }
+func (e *fetchError) Error() string {
+	feed := e.feed
+	if feed == "" {
+		feed = "sachet"
+	}
+	return "official: " + feed + " " + e.msg
+}
 func (e *fetchError) Unwrap() error { return e.cause }
 
 // parseError is a body that could not be used.

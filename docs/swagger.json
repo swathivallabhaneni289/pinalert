@@ -788,6 +788,38 @@
                 }
             }
         },
+        "/official/pins": {
+            "get": {
+                "description": "Returns the current GDACS (Global Disaster Alert and Coordination System) hazard events for the map layer: cyclones, floods, earthquakes, volcanoes and wildfires, each with its hazard word, its Red, Orange or Green level word, its point, its dates and GDACS's severity text.\nA pin is an automatic estimate from GDACS, not an official warning and not a Pinalert report: it has no votes and no reliability tag, and it is never counted as a report. Follow your state disaster management authority.\nCurrent means GDACS marks the event current and it ended no more than 2 days ago. state is the GDACS feed's own freshness (fresh within 30 minutes of the last good check, stale up to 6 hours, unavailable after that or never). Unless the state is fresh, pins is empty: an old hazard is never drawn as current.\nreport_url is a GDACS page link and is empty unless it starts with https://www.gdacs.org/. All text is GDACS text and must be drawn with textContent only.\nA read also starts a background refresh of the feeds that are due; it never delays the answer.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "official"
+                ],
+                "summary": "GDACS hazard pins for the map",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.OfficialPinsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/reports": {
             "get": {
                 "description": "Runs the indexed bounding-box prefilter followed by exact Haversine distance,\nthen resolves each report fresh via the shared resolver. This single endpoint serves\nthe map, the list, the Past tab, the counts for an empty Active tab and a report link;\nthere is no separate route per tab.\nall is the Show menu's All: active and disputed reports in one answer, nearest first. Every\nreport carries its own view word, so a client that groups by it lists disputed ones last.\nA resolved, expired, held or removed report is never in all.\nThe view parameter picks the tab. active (the default) is Live and Provisional reports,\nnearest first. disputed is only reports currently hidden by disputes, replacing the\ndefault view rather than adding to it; a critical or rescue-needed report stays Live\nhowever heavily it is disputed, so it appears only in the active view. past is what was\nresolved and what ran out its time in the last seven days, the resolved group first and\nthen the expired group, each newest first and cut at 25 with the cut object saying so.\nresolved is accepted as a read only alias of past and answered as past. A resolved\n(retracted) report is never returned by the active or the disputed view; it is listed\nonly in the past view, and no past entry changes an active count.\nshow_disputed=true still selects the disputed view so old links keep working; sent with\nanother view it is refused with 400 on the field view.\nThe category parameter keeps one report category in the chosen view and is refused with\n400 when it is not one of the ten known categories. rescue_needed is still accepted here\nso reports stored before 2026-10-16 can be found.\nThe report parameter is a report id from a link. When it is sent the focus object answers\nit: ok with that report even when it lies outside the radius and outside the seven day\nwindow, too_old when it ended more than seven days ago, or unavailable when there is no such\nreport or no tab lists it. Not found and every unlisted state share the one unavailable\nanswer. The reports array still holds the reader's own area.\nrecent ({resolved_24h, expired_24h}) is present only when the view is active or all, no category\nwas sent and there are no reports, so an empty tab can say what happened lately.\nA finished Rescue report never leaves the API exact on the past view or on a link: its\ndescription is empty, its latitude, longitude and geohash are a blurred point,\napproximate is true and distance_km is measured to that point. A live Rescue report and\nfinished Flood, Shelter and Power reports stay exact.\nEvery report carries your_vote, your_resolution, undos_left and is_own_report relative to\nthe calling verified account. Requires a session verified by email through the\nmagic-link flow; an unverified caller receives 401 and no report data.\nEvery report also carries a trust object: how many people at different nearby spots confirmed and disputed it, counted once per spot and not once per vote.\nlat, lon and radius_km must be finite numbers; NaN is refused with 400 and the name of the parameter.",
@@ -2434,6 +2466,28 @@
                         "$ref": "#/definitions/handlers.OfficialGroupResponse"
                     }
                 },
+                "hazards_age_seconds": {
+                    "description": "HazardsAgeSeconds is the time since the last good GDACS check. Null when it\nwas never checked.",
+                    "type": "integer",
+                    "x-nullable": true,
+                    "example": 600
+                },
+                "hazards_last_success_at": {
+                    "description": "HazardsLastSuccessAt is the time of the last good GDACS check. Null when\nnever checked.",
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "2026-10-29T06:20:00Z"
+                },
+                "hazards_state": {
+                    "description": "HazardsState is the same fresh, stale or unavailable word for the GDACS\nfeed, which is checked on its own schedule (plan 05-21). GDACS rows are\nlisted only while it is fresh.",
+                    "type": "string",
+                    "enum": [
+                        "fresh",
+                        "stale",
+                        "unavailable"
+                    ],
+                    "example": "fresh"
+                },
                 "last_success_at": {
                     "description": "LastSuccessAt is the time of the last good check. Null when never checked.",
                     "type": "string",
@@ -2549,6 +2603,98 @@
                 }
             }
         },
+        "handlers.OfficialPinResponse": {
+            "type": "object",
+            "properties": {
+                "alert_level": {
+                    "description": "AlertLevel is red, orange or green. LevelWord is the same as Red, Orange or\nGreen.",
+                    "type": "string",
+                    "enum": [
+                        "red",
+                        "orange",
+                        "green"
+                    ],
+                    "example": "red"
+                },
+                "event_type": {
+                    "description": "EventType is GDACS's two letter type: EQ, TC, FL, VO or WF.",
+                    "type": "string",
+                    "example": "TC"
+                },
+                "from_date": {
+                    "description": "FromDate and ToDate are the event's start and end by GDACS. Null when GDACS\nsent none.",
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "2026-10-26T00:00:00Z"
+                },
+                "hazard_word": {
+                    "type": "string",
+                    "example": "Cyclone"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 7
+                },
+                "lat": {
+                    "type": "number",
+                    "example": 16.4
+                },
+                "level_word": {
+                    "type": "string",
+                    "example": "Red"
+                },
+                "lon": {
+                    "type": "number",
+                    "example": 81.8
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Tropical Cyclone ARNAB-26"
+                },
+                "report_url": {
+                    "description": "ReportURL is a GDACS page link, and is empty unless it starts with\nhttps://www.gdacs.org/.",
+                    "type": "string",
+                    "example": "https://www.gdacs.org/report.aspx?eventid=1001345\u0026episodeid=10\u0026eventtype=TC"
+                },
+                "severity_text": {
+                    "type": "string",
+                    "example": "Tropical Storm (maximum wind speed of 222 km/h)"
+                },
+                "to_date": {
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "2026-10-28T06:00:00Z"
+                }
+            }
+        },
+        "handlers.OfficialPinsResponse": {
+            "type": "object",
+            "properties": {
+                "age_seconds": {
+                    "description": "AgeSeconds is the time since the last good GDACS check. Null when never\nchecked.",
+                    "type": "integer",
+                    "x-nullable": true,
+                    "example": 600
+                },
+                "pins": {
+                    "description": "Pins are the current hazards, never nil.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.OfficialPinResponse"
+                    }
+                },
+                "state": {
+                    "description": "State is fresh (last good GDACS check within 30 minutes), stale (up to 6\nhours) or unavailable (never checked, or over 6 hours).",
+                    "type": "string",
+                    "enum": [
+                        "fresh",
+                        "stale",
+                        "unavailable"
+                    ],
+                    "example": "fresh"
+                }
+            }
+        },
         "handlers.OfficialRowResponse": {
             "type": "object",
             "properties": {
@@ -2599,13 +2745,15 @@
                     "example": "IMD Chennai"
                 },
                 "level": {
+                    "description": "Level drives the chip colour. A GDACS Red is extreme, Orange is severe and\nGreen is neutral (plan 05-21).",
                     "type": "string",
                     "enum": [
                         "extreme",
                         "severe",
                         "moderate",
                         "minor",
-                        "unknown"
+                        "unknown",
+                        "neutral"
                     ],
                     "example": "severe"
                 },

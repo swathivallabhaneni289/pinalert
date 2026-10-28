@@ -1,0 +1,489 @@
+{
+  "type": "FeatureCollection",
+  "_note": "Recorded from the live GDACS SEARCH answer for request B on 2026-10-29 (EQ, TC and FL, last 3 days, all levels), trimmed from 100 features to 7 live ones that cover the box edge, plus one synthetic drought inside the box that the parser must drop.",
+  "features": [
+    {
+      "type": "Feature",
+      "bbox": [
+        81.8,
+        16.4,
+        81.8,
+        16.4
+      ],
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          81.8,
+          16.4
+        ]
+      },
+      "properties": {
+        "eventtype": "TC",
+        "eventid": 1001345,
+        "episodeid": 10,
+        "eventname": "ARNAB-26",
+        "glide": "TC-2026-000197-IND",
+        "name": "Tropical Cyclone ARNAB-26",
+        "description": "Tropical Cyclone ARNAB-26",
+        "htmldescription": "Red Tropical Cyclone ARNAB-26 in India from: 26 Oct 2026  to: 28 Oct 2026 .",
+        "icon": "https://www.gdacs.org/images/gdacs_icons/maps/Orange/TC.png",
+        "iconoverall": "https://www.gdacs.org/images/gdacs_icons/maps/Red/TC.png",
+        "url": {
+          "geometry": "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=TC&eventid=1001345&episodeid=10",
+          "report": "https://www.gdacs.org/report.aspx?eventid=1001345&episodeid=10&eventtype=TC",
+          "details": "https://www.gdacs.org/gdacsapi/api/events/geteventdata?eventtype=TC&eventid=1001345"
+        },
+        "alertlevel": "Red",
+        "alertscore": 3,
+        "episodealertlevel": "Orange",
+        "episodealertscore": 2.0,
+        "istemporary": "false",
+        "iscurrent": "true",
+        "country": "India",
+        "fromdate": "2026-10-26T00:00:00",
+        "todate": "2026-10-28T06:00:00",
+        "datemodified": "2026-10-28T14:09:15",
+        "iso3": "IND",
+        "source": "JTWC",
+        "sourceid": "",
+        "polygonlabel": "Centroid",
+        "Class": "Point_Centroid",
+        "countryonland": "",
+        "affectedcountries": [
+          {
+            "iso2": "IN",
+            "iso3": "IND",
+            "countryname": "India"
+          }
+        ],
+        "severitydata": {
+          "severity": 222.2208,
+          "severitytext": "Tropical Storm (maximum wind speed of 222 km/h)",
+          "severityunit": "km/h"
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "bbox": [
+        93.9028,
+        32.5388,
+        93.9028,
+        32.5388
+      ],
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          93.9028,
+          32.5388
+        ]
+      },
+      "properties": {
+        "eventtype": "EQ",
+        "eventid": 1574196,
+        "episodeid": 1743078,
+        "eventname": "",
+        "glide": "",
+        "name": "Earthquake in China",
+        "description": "Earthquake in China",
+        "htmldescription": "Green M 5.4 Earthquake in China at: 27 Oct 2026 18:57:53.",
+        "icon": "https://www.gdacs.org/images/gdacs_icons/maps/Green/EQ.png",
+        "iconoverall": "https://www.gdacs.org/images/gdacs_icons/maps/Green/EQ.png",
+        "url": {
+          "geometry": "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=EQ&eventid=1574196&episodeid=1743078",
+          "report": "https://www.gdacs.org/report.aspx?eventid=1574196&episodeid=1743078&eventtype=EQ",
+          "details": "https://www.gdacs.org/gdacsapi/api/events/geteventdata?eventtype=EQ&eventid=1574196"
+        },
+        "alertlevel": "Green",
+        "alertscore": 1,
+        "episodealertlevel": "Green",
+        "episodealertscore": 0.0,
+        "istemporary": "false",
+        "iscurrent": "true",
+        "country": "China",
+        "fromdate": "2026-10-27T18:57:53",
+        "todate": "2026-10-27T18:57:53",
+        "datemodified": "2026-10-27T19:28:23",
+        "iso3": "CHN",
+        "source": "NEIC",
+        "sourceid": "",
+        "polygonlabel": "Centroid",
+        "Class": "Point_Centroid",
+        "affectedcountries": [
+          {
+            "iso2": "CN",
+            "iso3": "CHN",
+            "countryname": "China"
+          }
+        ],
+        "severitydata": {
+          "severity": 5.4,
+          "severitytext": "Magnitude 5.4M, Depth:10km",
+          "severityunit": "M"
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "bbox": [
+        69.9044,
+        36.2043,
+        69.9044,
+        36.2043
+      ],
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          69.9044,
+          36.2043
+        ]
+      },
+      "properties": {
+        "eventtype": "EQ",
+        "eventid": 1574148,
+        "episodeid": 1743067,
+        "eventname": "",
+        "glide": "",
+        "name": "Earthquake in Afghanistan",
+        "description": "Earthquake in Afghanistan",
+        "htmldescription": "Green M 4.6 Earthquake in Afghanistan at: 27 Oct 2026 14:09:06.",
+        "icon": "https://www.gdacs.org/images/gdacs_icons/maps/Green/EQ.png",
+        "iconoverall": "https://www.gdacs.org/images/gdacs_icons/maps/Green/EQ.png",
+        "url": {
+          "geometry": "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=EQ&eventid=1574148&episodeid=1743067",
+          "report": "https://www.gdacs.org/report.aspx?eventid=1574148&episodeid=1743067&eventtype=EQ",
+          "details": "https://www.gdacs.org/gdacsapi/api/events/geteventdata?eventtype=EQ&eventid=1574148"
+        },
+        "alertlevel": "Green",
+        "alertscore": 1,
+        "episodealertlevel": "Green",
+        "episodealertscore": 0.0,
+        "istemporary": "false",
+        "iscurrent": "true",
+        "country": "Afghanistan",
+        "fromdate": "2026-10-27T14:09:06",
+        "todate": "2026-10-27T14:09:06",
+        "datemodified": "2026-10-27T17:35:43",
+        "iso3": "AFG",
+        "source": "NEIC",
+        "sourceid": "",
+        "polygonlabel": "Centroid",
+        "Class": "Point_Centroid",
+        "affectedcountries": [
+          {
+            "iso2": "AF",
+            "iso3": "AFG",
+            "countryname": "Afghanistan"
+          }
+        ],
+        "severitydata": {
+          "severity": 4.6,
+          "severitytext": "Magnitude 4.6M, Depth:115.076km",
+          "severityunit": "M"
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "bbox": [
+        -48.1847,
+        -23.3718,
+        -48.1847,
+        -23.3718
+      ],
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -48.1847,
+          -23.3718
+        ]
+      },
+      "properties": {
+        "eventtype": "FL",
+        "eventid": 1104216,
+        "episodeid": 6,
+        "eventname": "",
+        "glide": "",
+        "name": "Flood in Brazil",
+        "description": "Flood in Brazil",
+        "htmldescription": "Green Flood in Brazil from: 01 Oct 2026 01 to: 26 Oct 2026 01.",
+        "icon": "https://www.gdacs.org/images/gdacs_icons/maps/Green/FL.png",
+        "iconoverall": "https://www.gdacs.org/images/gdacs_icons/maps/Green/FL.png",
+        "url": {
+          "geometry": "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=FL&eventid=1104216&episodeid=6",
+          "report": "https://www.gdacs.org/report.aspx?eventid=1104216&episodeid=6&eventtype=FL",
+          "details": "https://www.gdacs.org/gdacsapi/api/events/geteventdata?eventtype=FL&eventid=1104216"
+        },
+        "alertlevel": "Green",
+        "alertscore": 1,
+        "episodealertlevel": "Green",
+        "episodealertscore": 0.5,
+        "istemporary": "false",
+        "iscurrent": "true",
+        "country": "Brazil",
+        "fromdate": "2026-10-01T01:00:00",
+        "todate": "2026-10-26T01:00:00",
+        "datemodified": "2026-10-28T12:33:49",
+        "iso3": "BRA",
+        "source": "GLOFAS",
+        "sourceid": "",
+        "polygonlabel": "Centroid",
+        "Class": "Point_Centroid",
+        "affectedcountries": [
+          {
+            "iso2": "BR",
+            "iso3": "BRA",
+            "countryname": "Brazil"
+          }
+        ],
+        "severitydata": {
+          "severity": 0.0,
+          "severitytext": "Magnitude 0 ",
+          "severityunit": ""
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "bbox": [
+        100.4776,
+        5.9924,
+        100.4776,
+        5.9924
+      ],
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          100.4776,
+          5.9924
+        ]
+      },
+      "properties": {
+        "eventtype": "FL",
+        "eventid": 1104239,
+        "episodeid": 2,
+        "eventname": "",
+        "glide": "",
+        "name": "Flood in Malaysia",
+        "description": "Flood in Malaysia",
+        "htmldescription": "Green Flood in Malaysia from: 15 Oct 2026 01 to: 26 Oct 2026 01.",
+        "icon": "https://www.gdacs.org/images/gdacs_icons/maps/Green/FL.png",
+        "iconoverall": "https://www.gdacs.org/images/gdacs_icons/maps/Green/FL.png",
+        "url": {
+          "geometry": "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=FL&eventid=1104239&episodeid=2",
+          "report": "https://www.gdacs.org/report.aspx?eventid=1104239&episodeid=2&eventtype=FL",
+          "details": "https://www.gdacs.org/gdacsapi/api/events/geteventdata?eventtype=FL&eventid=1104239"
+        },
+        "alertlevel": "Green",
+        "alertscore": 1,
+        "episodealertlevel": "Green",
+        "episodealertscore": 0.5,
+        "istemporary": "false",
+        "iscurrent": "true",
+        "country": "Malaysia",
+        "fromdate": "2026-10-15T01:00:00",
+        "todate": "2026-10-26T01:00:00",
+        "datemodified": "2026-10-28T12:26:59",
+        "iso3": "MYS",
+        "source": "GLOFAS",
+        "sourceid": "",
+        "polygonlabel": "Centroid",
+        "Class": "Point_Centroid",
+        "affectedcountries": [
+          {
+            "iso2": "MY",
+            "iso3": "MYS",
+            "countryname": "Malaysia"
+          }
+        ],
+        "severitydata": {
+          "severity": 0.0,
+          "severitytext": "Magnitude 0 ",
+          "severityunit": ""
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "bbox": [
+        93.6303,
+        32.23,
+        93.6303,
+        32.23
+      ],
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          93.6303,
+          32.23
+        ]
+      },
+      "properties": {
+        "eventtype": "EQ",
+        "eventid": 1573845,
+        "episodeid": 1742690,
+        "eventname": "",
+        "glide": "",
+        "name": "Earthquake in China",
+        "description": "Earthquake in China",
+        "htmldescription": "Green M 4.7 Earthquake in China at: 25 Oct 2026 22:01:35.",
+        "icon": "https://www.gdacs.org/images/gdacs_icons/maps/Green/EQ.png",
+        "iconoverall": "https://www.gdacs.org/images/gdacs_icons/maps/Green/EQ.png",
+        "url": {
+          "geometry": "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=EQ&eventid=1573845&episodeid=1742690",
+          "report": "https://www.gdacs.org/report.aspx?eventid=1573845&episodeid=1742690&eventtype=EQ",
+          "details": "https://www.gdacs.org/gdacsapi/api/events/geteventdata?eventtype=EQ&eventid=1573845"
+        },
+        "alertlevel": "Green",
+        "alertscore": 1,
+        "episodealertlevel": "Green",
+        "episodealertscore": 0.0,
+        "istemporary": "false",
+        "iscurrent": "true",
+        "country": "China",
+        "fromdate": "2026-10-25T22:01:35",
+        "todate": "2026-10-25T22:01:35",
+        "datemodified": "2026-10-26T00:19:49",
+        "iso3": "CHN",
+        "source": "NEIC",
+        "sourceid": "",
+        "polygonlabel": "Centroid",
+        "Class": "Point_Centroid",
+        "affectedcountries": [
+          {
+            "iso2": "CN",
+            "iso3": "CHN",
+            "countryname": "China"
+          }
+        ],
+        "severitydata": {
+          "severity": 4.7,
+          "severitytext": "Magnitude 4.7M, Depth:10km",
+          "severityunit": "M"
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "bbox": [
+        127.4,
+        31.2,
+        127.4,
+        31.2
+      ],
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          127.4,
+          31.2
+        ]
+      },
+      "properties": {
+        "eventtype": "TC",
+        "eventid": 1001338,
+        "episodeid": 46,
+        "eventname": "CHAMPI-26",
+        "glide": "TC-2026-000192-GUM",
+        "name": "Tropical Cyclone CHAMPI-26",
+        "description": "Tropical Cyclone CHAMPI-26",
+        "htmldescription": "Red Tropical Cyclone CHAMPI-26 in Philippines, Guam, Northern Mariana Islands, Japan, China, South Korea from: 14 Oct 2026  to: 25 Oct 2026 .",
+        "icon": "https://www.gdacs.org/images/gdacs_icons/maps/Green/TC.png",
+        "iconoverall": "https://www.gdacs.org/images/gdacs_icons/maps/Red/TC.png",
+        "url": {
+          "geometry": "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=TC&eventid=1001338&episodeid=46",
+          "report": "https://www.gdacs.org/report.aspx?eventid=1001338&episodeid=46&eventtype=TC",
+          "details": "https://www.gdacs.org/gdacsapi/api/events/geteventdata?eventtype=TC&eventid=1001338"
+        },
+        "alertlevel": "Red",
+        "alertscore": 3,
+        "episodealertlevel": "Green",
+        "episodealertscore": 1.0,
+        "istemporary": "false",
+        "iscurrent": "true",
+        "country": "Philippines, Guam, Northern Mariana Islands, Japan, China, South Korea",
+        "fromdate": "2026-10-14T12:00:00",
+        "todate": "2026-10-25T18:00:00",
+        "datemodified": "2026-10-26T22:00:19",
+        "iso3": "GUM",
+        "source": "JTWC",
+        "sourceid": "",
+        "polygonlabel": "Centroid",
+        "Class": "Point_Centroid",
+        "countryonland": "",
+        "affectedcountries": [
+          {
+            "iso2": "PH",
+            "iso3": "PHL",
+            "countryname": "Philippines"
+          },
+          {
+            "iso2": "GU",
+            "iso3": "GUM",
+            "countryname": "Guam"
+          },
+          {
+            "iso2": "JP",
+            "iso3": "JPN",
+            "countryname": "Japan"
+          },
+          {
+            "iso2": "CN",
+            "iso3": "CHN",
+            "countryname": "China"
+          },
+          {
+            "iso2": "KR",
+            "iso3": "KOR",
+            "countryname": "South Korea"
+          }
+        ],
+        "severitydata": {
+          "severity": 296.2944,
+          "severitytext": "Tropical Storm (maximum wind speed of 296 km/h)",
+          "severityunit": "km/h"
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "_synthetic": "synthetic drought inside the South Asia box, added by hand: the live answers held none",
+      "bbox": [
+        75.0,
+        20.0,
+        75.0,
+        20.0
+      ],
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          75.0,
+          20.0
+        ]
+      },
+      "properties": {
+        "eventtype": "DR",
+        "eventid": 1000998,
+        "episodeid": 1,
+        "eventname": "",
+        "name": "Drought in India",
+        "description": "Drought in India",
+        "alertlevel": "Green",
+        "alertscore": 1,
+        "iscurrent": "true",
+        "country": "India",
+        "fromdate": "2026-10-20T00:00:00",
+        "todate": "2026-10-28T00:00:00",
+        "datemodified": "2026-10-28T00:00:00",
+        "iso3": "IND",
+        "url": {
+          "report": "https://www.gdacs.org/report.aspx?eventid=1000998&episodeid=1&eventtype=DR"
+        },
+        "severitydata": {
+          "severity": 0.5,
+          "severitytext": "Drought (synthetic)",
+          "severityunit": ""
+        }
+      }
+    }
+  ]
+}

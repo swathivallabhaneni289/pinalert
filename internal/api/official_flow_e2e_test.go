@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -124,12 +125,32 @@ func (u *journeyUpstream) total() int {
 
 // sachetHostSwap sends requests for the SACHET host name to the fake upstream
 // and everything else to the transport that was in place.
+//
+// Amended 2026-10-29 by plan 05-21: the real service now registers the GDACS
+// feed too, so the refresh door calls www.gdacs.org as well. That host is
+// answered here, in process, with an empty feature collection and counted in
+// gdacsHits, so the journey never reaches the real GDACS either. Every older
+// line of the swap is unchanged.
 type sachetHostSwap struct {
-	target *url.URL
-	next   http.RoundTripper
+	target    *url.URL
+	next      http.RoundTripper
+	gdacsHits atomic.Int32
 }
 
 func (s *sachetHostSwap) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.URL.Host == "www.gdacs.org" {
+		s.gdacsHits.Add(1)
+		body := `{"type":"FeatureCollection","features":[]}`
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Proto:      "HTTP/1.1", ProtoMajor: 1, ProtoMinor: 1,
+			Header:        http.Header{"Content-Type": []string{"application/json"}},
+			Body:          io.NopCloser(strings.NewReader(body)),
+			ContentLength: int64(len(body)),
+			Request:       req,
+		}, nil
+	}
 	if req.URL.Host != "sachet.ndma.gov.in" {
 		return s.next.RoundTrip(req)
 	}
@@ -259,7 +280,8 @@ func TestPhase5OfficialJourney(t *testing.T) {
 		t.Fatalf("parsing the fake upstream address: %v", err)
 	}
 	original := http.DefaultTransport
-	http.DefaultTransport = &sachetHostSwap{target: target, next: original}
+	swap := &sachetHostSwap{target: target, next: original}
+	http.DefaultTransport = swap
 	t.Cleanup(func() { http.DefaultTransport = original })
 
 	// The real router, with the real official service and the refresh door open.
@@ -327,9 +349,23 @@ func TestPhase5OfficialJourney(t *testing.T) {
 	if err := json.Unmarshal(body, &summary); err != nil {
 		t.Fatalf("decoding the refresh summary: %v (%s)", err, body)
 	}
-	if len(summary.Feeds) != 1 || summary.Feeds[0].Feed != "sachet" || summary.Feeds[0].Skipped ||
+	// Amended 2026-10-29 by plan 05-21: the summary lists SACHET and then GDACS,
+	// the service's two registered feeds. The SACHET check is the one written
+	// before, unchanged; the GDACS entry must be a run (not skipped) with no
+	// error, stored nothing (the fake GDACS holds no event) and made exactly its
+	// two SEARCH requests.
+	if len(summary.Feeds) != 2 {
+		t.Fatalf("refresh summary = %s, want two feeds, sachet then gdacs", body)
+	}
+	if summary.Feeds[0].Feed != "sachet" || summary.Feeds[0].Skipped ||
 		summary.Feeds[0].Error != "" || summary.Feeds[0].Stored < 1 {
 		t.Fatalf("refresh summary = %s, want sachet run, not skipped, no error, at least 1 stored", body)
+	}
+	if g := summary.Feeds[1]; g.Feed != "gdacs" || g.Skipped || g.Error != "" || g.Stored != 0 {
+		t.Fatalf("refresh summary = %s, want gdacs run, not skipped, no error, nothing stored", body)
+	}
+	if n := swap.gdacsHits.Load(); n != 2 {
+		t.Fatalf("%d GDACS requests for one refresh, want 2", n)
 	}
 	if upstream.total() == 0 {
 		t.Fatal("the fake upstream was never reached: the swap did not take")
