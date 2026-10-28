@@ -32,9 +32,11 @@ const FALLBACK_BODY = 'Open Pinalert for a new alert near your home area.';
 const FALLBACK_TAG = 'pinalert';
 
 // safeTarget returns the address a tap may open: /?report= followed by 1 to 18
-// digits, or / for anything else. A value from a push is never trusted.
+// digits (a report), the exact string /alerts (an official alert opens Official
+// alerts, D-11), or / for anything else. A value from a push is never trusted,
+// so /alerts/ , /alerts?x=1, //alerts and other near misses all become /.
 function safeTarget(u) {
-  return typeof u === 'string' && /^\/\?report=\d{1,18}$/.test(u) ? u : '/';
+  return typeof u === 'string' && (u === '/alerts' || /^\/\?report=\d{1,18}$/.test(u)) ? u : '/';
 }
 
 // normalise turns a decoded payload into the fields of one notification. A
