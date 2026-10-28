@@ -545,6 +545,52 @@
   }
 }
 
+/* The alerts pop-up (plan 03.3-19). Its box, title and buttons are the Log out
+   box's, from auth.css; these rules only lay out what the pop-up adds: the home
+   area search (shown when no area is known) and the Reliable reporter tick box.
+   They are scoped to the pop-up's id, add no colour and no motion, and the field
+   and the results keep the window.css look. */
+#welcome-alerts-ask-title {
+  margin-bottom: var(--space-md);
+}
+
+/* A block that can be hidden takes no display of its own, so the hidden attribute
+   keeps working. */
+#welcome-alerts-home {
+  margin: 0 0 var(--space-md);
+}
+
+#welcome-alerts-home-status {
+  margin-top: var(--space-xs);
+}
+
+/* Five rows do not fit above the buttons on a 320px wide phone at large text, so
+   the list scrolls inside itself and Not now and Allow stay on screen. */
+#welcome-alerts-home-results {
+  margin-top: var(--space-xs);
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+#welcome-alerts-ask .welcome-ask__check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: var(--touch-target-min);
+  margin: 0 0 var(--space-md);
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  cursor: pointer;
+}
+
+#welcome-alerts-reliable {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+}
+
 @media (forced-colors: active) {
   .welcome {
     border: 1px solid CanvasText;

@@ -369,7 +369,12 @@ func TestWelcomeStep3And4Privacy(t *testing.T) {
 	// form's address search is a different script.
 	p13MustNotContain(t, "welcome.js", js,
 		"'/api/geocode?q='", "/api/geocode?", "step3", "Step3", "STEP3", "welcome-search", "enterStep4", "homePrefilled", "lastPrefill", "homeTouched")
-	w10Count(t, "welcome.js", js, "makeSearch({", 1)
+	// Amended 2026-10-28 by plan 03.3-19 (03.3-UAT gap for test 4): the alerts
+	// pop-up has the same areas-mode search for an account with no home area, so
+	// there are two instances, step 4's and the pop-up's. Both use STEP4_SEARCH_URL
+	// (the address is pinned once above) and neither reads the device position.
+	w10Count(t, "welcome.js", js, "makeSearch({", 2)
+	w10Count(t, "welcome.js", js, "url: STEP4_SEARCH_URL", 2)
 	notNow := jsFunctionBody(t, js, "notNow()")
 	p13MustContain(t, "notNow", notNow, "goTo(4)")
 	p13MustNotContain(t, "notNow", notNow, "geolocation", "PinalertPosition", "request(", "fetch(", "homeInput", "homePick")
@@ -489,15 +494,21 @@ func TestWelcomeScriptsAndStyles(t *testing.T) {
 
 // TestWelcomeAlertsAsk pins the alerts pop-up that opens after step 4 (quick
 // 261027-t5w, owner, 2026-10-27, which replaced step 5, Alerts, of Phase 3.3
-// plan 13): a native modal dialog that is a direct child of body after the flow
-// root, with the Log out box markup, the title, no supporting line, Not now then
-// Allow, the key on the flow root, and not a trace of the removed step 5 page.
+// plan 13), as amended by plan 03.3-19 (03.3-UAT gap for test 4, owner
+// 2026-10-27): a native modal dialog that is a direct child of body after the
+// flow root, with the Log out box markup, a title that names the home area, the
+// home area search (hidden when an area is stored), the unticked Reliable
+// reporter tick box, Not now then Allow, the key on the flow root, and not a
+// trace of the removed step 5 page.
 func TestWelcomeAlertsAsk(t *testing.T) {
 	page := w10Template(t)
 
-	const open = `<dialog id="welcome-alerts-ask" class="logout-confirm" aria-labelledby="welcome-alerts-ask-title">`
+	const open = `<dialog id="welcome-alerts-ask" class="logout-confirm" aria-labelledby="welcome-alerts-ask-title" data-home-area="{{.HomeAreaName}}">`
+	// Amended 2026-10-28 by plan 03.3-19: the pin on the number of dialog tags is
+	// gone, because Phase 7.1 plan 13b adds a second dialog to this page. This
+	// pop-up is counted by its id.
+	w10Count(t, "welcome.html.tmpl", page, `id="welcome-alerts-ask"`, 1)
 	w10Count(t, "welcome.html.tmpl", page, open, 1)
-	w10Count(t, "welcome.html.tmpl", page, "<dialog", 1)
 	// A direct child of body: it comes right after the closing of the #welcome
 	// root (the last step section, the pane and the root) and before the scripts,
 	// so the welcome Tab trap never sees its keys and the native modal can make
@@ -509,18 +520,45 @@ func TestWelcomeAlertsAsk(t *testing.T) {
 	if ask == "" {
 		t.Fatalf("no alerts pop-up in welcome.html.tmpl")
 	}
+	// The title names the home area: the words, the stored name or your home
+	// area, and a question mark. No title ends in near you with a question mark.
+	const titleHead = `<h2 class="logout-confirm__title" id="welcome-alerts-ask-title" tabindex="-1">`
+	const titleWords = "Get alerts for critical reports near "
 	p13MustContain(t, "alerts pop-up", ask,
 		`<div class="logout-confirm__body">`,
-		`<h2 class="logout-confirm__title" id="welcome-alerts-ask-title" tabindex="-1">Get alerts for critical reports near you?</h2>`,
+		titleHead+titleWords+`{{if .HomeAreaName}}{{.HomeAreaName}}{{else}}your home area{{end}}?</h2>`,
 		`<div class="logout-confirm__actions">`,
 		`<button type="button" class="btn" id="welcome-alerts-later">Not now</button>`,
 		`<button type="button" class="btn btn--primary" id="welcome-alerts-allow">Allow</button>`)
-	p13Ordered(t, ask, "alerts pop-up", `id="welcome-alerts-ask-title"`, `class="logout-confirm__actions"`, `id="welcome-alerts-later"`, `id="welcome-alerts-allow"`)
-	// D-A: the Log out box is a title and buttons, so there is no supporting line,
-	// and nothing is chosen on open.
-	p13MustNotContain(t, "alerts pop-up", ask, "autofocus", "<p", "<form", "<a ", "<input")
+	w10Count(t, "welcome.html.tmpl", page, "near you?", 0)
+
+	// The search block: the step 4 search markup, hidden when an area is stored.
+	p13MustContain(t, "alerts pop-up", ask,
+		`<div class="welcome-ask__home" id="welcome-alerts-home"{{if .HomeAreaName}} hidden{{end}}>`,
+		`<form id="welcome-alerts-home-form" novalidate>`,
+		`<label class="app-window__label" for="welcome-alerts-home-input">Home area</label>`,
+		`type="search" id="welcome-alerts-home-input"`,
+		`<p class="app-window__status" id="welcome-alerts-home-status" role="status" aria-live="polite" hidden></p>`,
+		`<ul class="app-window__results" id="welcome-alerts-home-results" role="listbox" aria-label="Places found" hidden></ul>`)
+
+	// The tick box: unticked, labelled with the Settings row words.
+	box := regexp.MustCompile(`<input[^>]*id="welcome-alerts-reliable"[^>]*>`).FindString(ask)
+	if box == "" {
+		t.Fatalf("no Reliable tick box in the alerts pop-up")
+	}
+	p13MustContain(t, "tick box", box, `type="checkbox"`)
+	p13MustNotContain(t, "tick box", box, "checked")
+	p13MustContain(t, "alerts pop-up", ask,
+		`<label class="welcome-ask__check"><input type="checkbox" id="welcome-alerts-reliable"><span>A Reliable reporter posts near me</span></label>`)
+
+	p13Ordered(t, ask, "alerts pop-up", `id="welcome-alerts-ask-title"`, `id="welcome-alerts-home"`, `id="welcome-alerts-reliable"`, `class="logout-confirm__actions"`, `id="welcome-alerts-later"`, `id="welcome-alerts-allow"`)
+	// Nothing is chosen on open, there is no supporting line (the only paragraph
+	// is the search status line), and no link.
+	p13MustNotContain(t, "alerts pop-up", ask, "autofocus", "<a ")
+	w10Count(t, "alerts pop-up", ask, "<p", 1)
 	w10Count(t, "alerts pop-up", ask, "<button", 2)
-	for _, id := range []string{"welcome-alerts-ask", "welcome-alerts-ask-title", "welcome-alerts-later", "welcome-alerts-allow"} {
+	w10Count(t, "alerts pop-up", ask, "<input", 2)
+	for _, id := range []string{"welcome-alerts-ask-title", "welcome-alerts-later", "welcome-alerts-allow", "welcome-alerts-home", "welcome-alerts-home-form", "welcome-alerts-home-input", "welcome-alerts-home-status", "welcome-alerts-home-results", "welcome-alerts-reliable"} {
 		w10Count(t, "welcome.html.tmpl", page, `id="`+id+`"`, 1)
 	}
 
@@ -571,7 +609,9 @@ func TestWelcomeAlertsAsk(t *testing.T) {
 	}
 	p13MustNotContain(t, "welcome.css", css,
 		`data-step="5"`, ".welcome__example", ".welcome__alerts-part", ".welcome__status", ".btn[hidden]")
-	// auth.css carries the whole look of the pop-up, so welcome.css adds nothing.
+	// auth.css carries the look of the box (plan 03.3-19 adds only layout rules
+	// for the search block and the tick box, scoped by id), so welcome.css never
+	// names the Log out box class.
 	p13MustNotContain(t, "welcome.css", css, "logout-confirm")
 }
 
@@ -590,10 +630,34 @@ func TestWelcomeAlertsScript(t *testing.T) {
 	p13MustNotContain(t, "welcome.js", js, "requestPermission", "Notification.", "serviceWorker", "pushManager", "deviceState", "confirm(")
 	w10Count(t, "welcome.js", js, "'welcome-alerts-ask'", 1)
 
+	// Plan 03.3-19 (03.3-UAT gap for test 4, owner 2026-10-27): the pop-up saves a
+	// home area and the Reliable choice after enable. The alerts address and the
+	// Reliable field are each written once in the whole file (comments included, so
+	// no comment spells them), the one Reliable request is saveReliable, and the
+	// old changes_push field is not used. A Mac Dock app never gets the pop-up.
+	w10Count(t, "welcome.js", raw, "/api/me/alerts", 1)
+	w10Count(t, "welcome.js", raw, "reliable_alerts", 1)
+	w10Count(t, "welcome.js", raw, "function saveReliable(", 1)
+	p13MustNotContain(t, "welcome.js", js, "changes_push")
+	p13MustContain(t, "canAsk", jsFunctionBody(t, js, "canAsk()"), "isMacDockApp")
+	// The title words in the script are the words before the home area in the
+	// template, so the two cannot drift apart.
+	words := regexp.MustCompile(`var ASK_TITLE_START = '([^']*)';`).FindStringSubmatch(js)
+	if words == nil {
+		t.Fatalf("welcome.js has no ASK_TITLE_START constant")
+	}
+	titleLine := regexp.MustCompile(`id="welcome-alerts-ask-title" tabindex="-1">([^{]*)\{\{if \.HomeAreaName\}\}`).FindStringSubmatch(w10Template(t))
+	if titleLine == nil {
+		t.Fatalf("welcome.html.tmpl has no title with the home area action")
+	}
+	if words[1] != titleLine[1] {
+		t.Errorf("ASK_TITLE_START is %q, but the template title starts with %q", words[1], titleLine[1])
+	}
+
 	// The Allow handler: busy check, then enable as the first real statement,
 	// then the busy flags. Nothing is awaited before enable.
 	allow := jsFunctionBody(t, js, "onAskAllow()")
-	p13Ordered(t, allow, "onAskAllow", "if (askBusy) {", "window.PinalertNotify.enable(pushKey)", "askBusy = true;", ".then(")
+	p13Ordered(t, allow, "onAskAllow", "if (askBusy) {", "window.PinalertNotify.enable(pushKey)", "askBusy = true;", ".then(", "saveReliable(", "postDone()")
 	p13MustNotContain(t, "onAskAllow", allow, "await ", "setTimeout(")
 	// Not now and Escape never reach enable.
 	for _, name := range []string{"onAskLater()", "onAskCancel(e)", "endFlow()", "openAsk()", "canAsk()"} {

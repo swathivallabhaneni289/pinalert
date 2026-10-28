@@ -8,6 +8,7 @@ package handlers_test
 import (
 	"context"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -417,39 +418,112 @@ func TestWelcomeEscapesStoredValues(t *testing.T) {
 }
 
 // TestWelcomeAlertsAskRendersForNewAccount pins quick 261027-t5w (owner,
-// 2026-10-27, which replaced Phase 3.3 plan 13's step 5): a new account gets the
-// alerts pop-up on /welcome, its title and the configured public key on the flow
-// root, and no fifth step. A page with no key renders an empty attribute, which
-// welcome.js reads as no pop-up.
+// 2026-10-27, which replaced Phase 3.3 plan 13's step 5) as amended by plan
+// 03.3-19 (03.3-UAT gap for test 4, owner 2026-10-27): the alerts pop-up on
+// /welcome names the home area in its title, holds the home area search when no
+// area is stored, offers the unticked Reliable reporter tick box, and carries
+// the configured public key on the flow root; there is no fifth step. A page
+// with no key renders an empty attribute, which welcome.js reads as no pop-up.
+// One subtest per case.
 func TestWelcomeAlertsAskRendersForNewAccount(t *testing.T) {
 	const key = "test-public-key-placeholder"
 	base, newClient, _ := welcomeServerWithKey(t, key)
-	_, still := newClient("welcome-ask@example.com")
 
-	resp, body := welcomeGet(t, still, base, "/welcome")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET /welcome: %d", resp.StatusCode)
-	}
-	for _, want := range []string{
-		`<dialog id="welcome-alerts-ask" class="logout-confirm" aria-labelledby="welcome-alerts-ask-title">`,
-		`id="welcome-alerts-ask-title" tabindex="-1">Get alerts for critical reports near you?</h2>`,
-		`<button type="button" class="btn" id="welcome-alerts-later">Not now</button>`,
-		`<button type="button" class="btn btn--primary" id="welcome-alerts-allow">Allow</button>`,
-		`/static/css/auth.css`,
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("/welcome lacks %q", want)
+	const searchOpen = `<div class="welcome-ask__home" id="welcome-alerts-home"`
+	common := func(t *testing.T, body string) {
+		t.Helper()
+		for _, want := range []string{
+			`<dialog id="welcome-alerts-ask" class="logout-confirm" aria-labelledby="welcome-alerts-ask-title"`,
+			`<button type="button" class="btn" id="welcome-alerts-later">Not now</button>`,
+			`<button type="button" class="btn btn--primary" id="welcome-alerts-allow">Allow</button>`,
+			`id="welcome-alerts-reliable"`,
+			`A Reliable reporter posts near me`,
+			`/static/css/auth.css`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("/welcome lacks %q", want)
+			}
+		}
+		if n := strings.Count(body, `id="welcome-alerts-ask"`); n != 1 {
+			t.Errorf("/welcome holds id=welcome-alerts-ask %d times, want 1", n)
+		}
+		if strings.Contains(body, "near you?") {
+			t.Errorf("/welcome still holds a title ending in near you?")
+		}
+		box := regexp.MustCompile(`<input[^>]*id="welcome-alerts-reliable"[^>]*>`).FindString(body)
+		if box == "" || strings.Contains(box, "checked") {
+			t.Errorf("the Reliable tick box %q must exist and start unticked", box)
+		}
+		tag := p25OpeningTag(t, body, `<div class="welcome" id="welcome"`)
+		if !strings.Contains(tag, `data-push-key="`+key+`"`) {
+			t.Errorf("the flow root %q does not carry data-push-key=%q", tag, key)
+		}
+		for _, banned := range []string{`id="welcome-step-5"`, "Step 5 of", "welcome__example", "device-guide", "Home Screen"} {
+			if strings.Contains(body, banned) {
+				t.Errorf("/welcome holds %q: the alerts ask is a pop-up, not a fifth step", banned)
+			}
 		}
 	}
-	tag := p25OpeningTag(t, body, `<div class="welcome" id="welcome"`)
-	if !strings.Contains(tag, `data-push-key="`+key+`"`) {
-		t.Errorf("the flow root %q does not carry data-push-key=%q", tag, key)
-	}
-	for _, banned := range []string{`id="welcome-step-5"`, "Step 5 of", "welcome__example", "device-guide", "Home Screen"} {
-		if strings.Contains(body, banned) {
-			t.Errorf("/welcome holds %q: the alerts ask is a pop-up, not a fifth step", banned)
+
+	t.Run("a new account is asked for the home area first", func(t *testing.T) {
+		_, still := newClient("welcome-ask@example.com")
+		resp, body := welcomeGet(t, still, base, "/welcome")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET /welcome: %d", resp.StatusCode)
 		}
-	}
+		common(t, body)
+		if !strings.Contains(body, `id="welcome-alerts-ask-title" tabindex="-1">Get alerts for critical reports near your home area?</h2>`) {
+			t.Errorf("/welcome lacks the your home area title")
+		}
+		if tag := p25OpeningTag(t, body, searchOpen); strings.Contains(tag, "hidden") {
+			t.Errorf("the search block %q is hidden for an account with no home area", tag)
+		}
+		dialog := p25OpeningTag(t, body, `<dialog id="welcome-alerts-ask"`)
+		if !strings.Contains(dialog, `data-home-area=""`) {
+			t.Errorf("the dialog %q should carry an empty data-home-area", dialog)
+		}
+	})
+
+	t.Run("a stored home area names the title and hides the search", func(t *testing.T) {
+		client, still := newClient("welcome-ask-home@example.com")
+		meWant(t, "profile", meSend(t, client, http.MethodPatch, base+"/api/me/profile",
+			`{"home_area":{"name":"Benz Circle","lat":12.9,"lon":77.6}}`), http.StatusOK)
+		resp, body := welcomeGet(t, still, base, "/welcome")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET /welcome: %d", resp.StatusCode)
+		}
+		common(t, body)
+		if !strings.Contains(body, `id="welcome-alerts-ask-title" tabindex="-1">Get alerts for critical reports near Benz Circle?</h2>`) {
+			t.Errorf("/welcome lacks the Benz Circle title")
+		}
+		if tag := p25OpeningTag(t, body, searchOpen); !strings.Contains(tag, "hidden") {
+			t.Errorf("the search block %q should be hidden when a home area is stored", tag)
+		}
+		dialog := p25OpeningTag(t, body, `<dialog id="welcome-alerts-ask"`)
+		if !strings.Contains(dialog, `data-home-area="Benz Circle"`) {
+			t.Errorf("the dialog %q should carry data-home-area=Benz Circle", dialog)
+		}
+	})
+
+	t.Run("a stored name holding markup is escaped in the title and the attribute", func(t *testing.T) {
+		client, still := newClient("welcome-ask-markup@example.com")
+		meWant(t, "profile", meSend(t, client, http.MethodPatch, base+"/api/me/profile",
+			`{"home_area":{"name":"Park <i>X</i>","lat":12.9,"lon":77.6}}`), http.StatusOK)
+		resp, body := welcomeGet(t, still, base, "/welcome")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET /welcome: %d", resp.StatusCode)
+		}
+		if strings.Contains(body, "<i>X</i>") {
+			t.Errorf("/welcome holds the stored markup unescaped")
+		}
+		if !strings.Contains(body, `tabindex="-1">Get alerts for critical reports near Park &lt;i&gt;X&lt;/i&gt;?</h2>`) {
+			t.Errorf("/welcome lacks the escaped name in the title")
+		}
+		dialog := p25OpeningTag(t, body, `<dialog id="welcome-alerts-ask"`)
+		if !strings.Contains(dialog, `data-home-area="Park &lt;i&gt;X&lt;/i&gt;"`) {
+			t.Errorf("the dialog %q lacks the escaped name in data-home-area", dialog)
+		}
+	})
 }
 
 // TestWelcomeIsNotDoneBeforeFirstRunDone pins decision 15: the flow is recorded
