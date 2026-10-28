@@ -39,6 +39,11 @@
   until the end of the text has been seen, which welcome.js does (the marker is
   the last child of the text box; the hold is never written here). The install
   guide lives only in Settings (the device guide partial, shown in its window).
+  Plan 05-18 (D-03, UI-SPEC 4e and 4f) offers the Demo here: Try the demo beside
+  Continue on step 1 and as the third control of the step 2 Disagree box, whose
+  lead gains the restored second sentence. Both are plain links to
+  /demo?from=welcome (the Demo's Exit returns to this flow); welcome.js does
+  not handle them and no step is added.
 */}}
   <div class="welcome" id="welcome" role="dialog" aria-modal="true" aria-labelledby="welcome-step-{{.StartStep}}-title" data-start-step="{{.StartStep}}" data-step="{{.StartStep}}" data-account-id="{{.AccountID}}" data-push-key="{{.PushPublicKey}}">
     <div class="welcome__progress" aria-hidden="true"><div class="welcome__progress-fill"></div></div>
@@ -80,7 +85,8 @@
             </div>
           </li>
         </ul>
-        <div class="welcome__actions">
+        <div class="welcome__actions welcome__actions--pair welcome__actions--demo">
+          <a class="btn" id="welcome-try-demo-1" href="/demo?from=welcome">Try the demo</a>
           <button type="button" class="btn btn--primary" id="welcome-continue-1">Continue</button>
         </div>
       </section>
@@ -102,12 +108,13 @@
           <button type="button" class="btn btn--primary" id="welcome-agree">Agree</button>
         </div>
         <div class="welcome__notice welcome__notice--box" id="welcome-disagree-message" role="group" aria-labelledby="welcome-disagree-lead" tabindex="-1" hidden>
-          <p class="welcome__notice-lead" id="welcome-disagree-lead">Sorry, you need to agree before you can continue.</p>
+          <p class="welcome__notice-lead" id="welcome-disagree-lead">Sorry, you need to agree before you can continue. You can still look around in the Demo without agreeing.</p>
           <div class="welcome__notice-actions">
             <button type="button" class="btn" id="welcome-reread">Read again</button>
             <form class="welcome__notice-form" method="post" action="/auth/logout">
               <button type="submit" class="btn" id="welcome-logout">Log out</button>
             </form>
+            <a class="btn" id="welcome-try-demo-2" href="/demo?from=welcome">Try the demo</a>
           </div>
         </div>
         <p class="inline-error" id="welcome-error-2" role="alert" hidden></p>

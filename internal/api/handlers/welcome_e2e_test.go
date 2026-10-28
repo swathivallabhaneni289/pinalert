@@ -160,7 +160,12 @@ func TestOnboardingFlowEndToEnd(t *testing.T) {
 	}
 	// Amended 2026-10-27 by quick 261027-t5w: there is no step 5 any more, so
 	// none of its parts may render.
-	for _, banned := range []string{"Demo", "welcome-flow@example.com",
+	//
+	// Amended 2026-10-29 by plan 05-18 (D-03): Phase 5 adds Try the demo to
+	// step 1 and the Disagree box, so "Demo" left this list; the rendered
+	// links are pinned in TestWelcomeOffersTheDemoForANewAccount. Every other
+	// case stays.
+	for _, banned := range []string{"welcome-flow@example.com",
 		`id="welcome-step-5`, `id="welcome-back-5"`, `data-step="5"`, "Step 5 of", "Get alerts when it matters", "Allow alerts"} {
 		if strings.Contains(body, banned) {
 			t.Errorf("/welcome holds %q", banned)
@@ -217,6 +222,39 @@ func TestOnboardingFlowEndToEnd(t *testing.T) {
 	// Low data choice, after which a bare / goes there (D-17).
 	if resp, _ := welcomeGet(t, still, base, "/low"); resp.StatusCode != http.StatusOK {
 		t.Errorf("GET /low after the flow: status %d, want 200", resp.StatusCode)
+	}
+}
+
+// TestWelcomeOffersTheDemoForANewAccount pins plan 05-18 (D-03): the rendered
+// first-time flow for a new account offers the Demo beside Continue on step 1
+// and in the Disagree box, both as links to /demo?from=welcome, and the Disagree
+// lead holds the restored second sentence. The links are plain links, so nothing
+// here depends on a script.
+func TestWelcomeOffersTheDemoForANewAccount(t *testing.T) {
+	base, newClient, _ := welcomeServer(t)
+	_, still := newClient("welcome-demo@example.com")
+
+	resp, body := welcomeGet(t, still, base, "/welcome")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /welcome: %d", resp.StatusCode)
+	}
+	for _, want := range []string{
+		`<a class="btn" id="welcome-try-demo-1" href="/demo?from=welcome">Try the demo</a>`,
+		`<a class="btn" id="welcome-try-demo-2" href="/demo?from=welcome">Try the demo</a>`,
+		`Sorry, you need to agree before you can continue. You can still look around in the Demo without agreeing.`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("/welcome lacks %q", want)
+		}
+	}
+	// Step 1 holds Try the demo before Continue, and the flow is still four steps.
+	one := strings.Index(body, `id="welcome-try-demo-1"`)
+	two := strings.Index(body, `id="welcome-continue-1"`)
+	if one == -1 || two == -1 || one > two {
+		t.Errorf("step 1 should hold Try the demo (%d) before Continue (%d)", one, two)
+	}
+	if n := strings.Count(body, `<section class="welcome__step"`); n != 4 {
+		t.Errorf("/welcome holds %d steps, want 4", n)
 	}
 }
 
