@@ -1,0 +1,458 @@
+// demo_e2e_test.go proves the Demo API end to end over the real router and a
+// real Postgres (plan 05-10): a whole Demo run writes nothing to any table and
+// sets no cookie, the Demo answers in the same JSON shapes as the real routes,
+// and the Demo keeps the real vote rules and refusals. The Demo store is created
+// in the test (there is no page that starts a visit yet), and its clock is moved
+// by hand so the pretend neighbours' votes fall due without waiting.
+package handlers_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"strconv"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"pinalert/internal/api"
+	"pinalert/internal/demo"
+	"pinalert/internal/service"
+	sqlcgen "pinalert/internal/store/sqlc"
+)
+
+// demoClock is the Demo store's clock: the wall clock plus an offset the test
+// moves.
+type demoClock struct{ off atomic.Int64 }
+
+func (c *demoClock) Now() time.Time          { return time.Now().Add(time.Duration(c.off.Load())) }
+func (c *demoClock) Advance(d time.Duration) { c.off.Add(int64(d)) }
+
+// demoE2E is one real server with one Demo visit on it.
+type demoE2E struct {
+	t      *testing.T
+	srv    *httptest.Server
+	mailer *recordingMailer
+	pool   *pgxpool.Pool
+	clock  *demoClock
+	visit  string
+	client *http.Client // no cookie jar: a Demo visitor has no session
+}
+
+func newDemoE2E(t *testing.T) *demoE2E {
+	t.Helper()
+	clock := &demoClock{}
+	store := demo.NewStore(demo.WithStoreClock(clock.Now), demo.WithWorldSetup(demo.SeedSetup))
+	w, err := store.Create()
+	if err != nil {
+		t.Fatalf("creating a Demo world: %v", err)
+	}
+	srv, mailer, pool := newE2EServerWith(t, func(d *api.Deps, _ *sqlcgen.Queries) {
+		d.Demo = store
+	})
+	return &demoE2E{t: t, srv: srv, mailer: mailer, pool: pool, clock: clock, visit: w.ID, client: &http.Client{}}
+}
+
+// do sends one Demo request and returns the status and body. It fails the test
+// when the answer sets a cookie.
+func (d *demoE2E) do(method, path string, body any) (int, []byte) {
+	d.t.Helper()
+	var rd io.Reader
+	if body != nil {
+		buf, err := json.Marshal(body)
+		if err != nil {
+			d.t.Fatalf("marshalling the body: %v", err)
+		}
+		rd = bytes.NewReader(buf)
+	}
+	req, err := http.NewRequest(method, d.srv.URL+"/demo/api/v/"+d.visit+path, rd)
+	if err != nil {
+		d.t.Fatalf("building the request: %v", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := d.client.Do(req)
+	if err != nil {
+		d.t.Fatalf("%s %s: %v", method, path, err)
+	}
+	defer resp.Body.Close()
+	if got := resp.Header.Values("Set-Cookie"); len(got) != 0 {
+		d.t.Fatalf("%s %s set a cookie: %v", method, path, got)
+	}
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		d.t.Fatalf("reading the answer: %v", err)
+	}
+	return resp.StatusCode, raw
+}
+
+const demoFeedQuery = "/reports?lat=16.5424&lon=80.6386&radius_km=10"
+
+// feed reads the active view at the pretend position and requires 200.
+func (d *demoE2E) feed() ([]map[string]any, map[string]any) {
+	d.t.Helper()
+	status, raw := d.do(http.MethodGet, demoFeedQuery, nil)
+	if status != http.StatusOK {
+		d.t.Fatalf("GET Demo reports = %d, want 200: %s", status, raw)
+	}
+	var whole map[string]any
+	if err := json.Unmarshal(raw, &whole); err != nil {
+		d.t.Fatalf("decoding the Demo feed: %v (%s)", err, raw)
+	}
+	list, _ := whole["reports"].([]any)
+	items := make([]map[string]any, 0, len(list))
+	for _, v := range list {
+		items = append(items, v.(map[string]any))
+	}
+	return items, whole
+}
+
+// vote sends one vote on the Demo with the pretend position as the body.
+func (d *demoE2E) vote(reportID int64, action string) (int, []byte) {
+	d.t.Helper()
+	return d.do(http.MethodPost, "/reports/"+strconv.FormatInt(reportID, 10)+"/"+action,
+		map[string]float64{"latitude": demo.PretendLat, "longitude": demo.PretendLon})
+}
+
+// postPractice posts a practice report at the pretend position and returns its
+// id and the raw answer.
+func (d *demoE2E) postPractice() (int64, []byte) {
+	d.t.Helper()
+	status, raw := d.do(http.MethodPost, "/reports", map[string]any{
+		"category":    "flood",
+		"severity":    "low",
+		"description": "Water rising near the bridge",
+		"latitude":    demo.PretendLat,
+		"longitude":   demo.PretendLon,
+	})
+	if status != http.StatusCreated {
+		d.t.Fatalf("POST Demo practice report = %d, want 201: %s", status, raw)
+	}
+	var out struct {
+		Report struct {
+			ID int64 `json:"id"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil || out.Report.ID == 0 {
+		d.t.Fatalf("decoding the practice report answer %s: %v", raw, err)
+	}
+	return out.Report.ID, raw
+}
+
+// itemByID finds a feed item by id.
+func itemByID(items []map[string]any, id int64) map[string]any {
+	for _, it := range items {
+		if n, ok := it["id"].(float64); ok && int64(n) == id {
+			return it
+		}
+	}
+	return nil
+}
+
+// nearSeedReports are the feed items that are not the visitor's own and lie
+// within 900 metres of the pretend position, so a vote from it is inside the 1 km
+// rule.
+func nearSeedReports(items []map[string]any) []map[string]any {
+	var out []map[string]any
+	for _, it := range items {
+		dist, ok := it["distance_km"].(float64)
+		own, _ := it["is_own_report"].(bool)
+		if ok && dist <= 0.9 && !own {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+func reportIDOf(it map[string]any) int64 { return int64(it["id"].(float64)) }
+
+// tableCounts counts the rows of every table in the public schema. The table
+// list is read from pg_tables, so a table added later is covered automatically.
+func tableCounts(t *testing.T, pool *pgxpool.Pool) map[string]int {
+	t.Helper()
+	ctx := context.Background()
+	rows, err := pool.Query(ctx, `SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename`)
+	if err != nil {
+		t.Fatalf("listing the tables: %v", err)
+	}
+	var names []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			t.Fatalf("scanning a table name: %v", err)
+		}
+		names = append(names, n)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		t.Fatalf("reading the table names: %v", err)
+	}
+	counts := make(map[string]int, len(names))
+	for _, n := range names {
+		var c int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM "`+n+`"`).Scan(&c); err != nil {
+			t.Fatalf("counting %s: %v", n, err)
+		}
+		counts[n] = c
+	}
+	return counts
+}
+
+func TestDemoWritesNothing(t *testing.T) {
+	d := newDemoE2E(t)
+	before := tableCounts(t, d.pool)
+	for _, must := range []string{"sessions", "reports", "votes", "accounts"} {
+		if _, ok := before[must]; !ok {
+			t.Fatalf("the table list %v lacks %s: the count would prove nothing", before, must)
+		}
+	}
+
+	items, _ := d.feed()
+	if len(items) == 0 {
+		t.Fatal("the Demo feed is empty: the seed did not run")
+	}
+	practiceID, _ := d.postPractice()
+
+	near := nearSeedReports(items)
+	if len(near) < 2 {
+		t.Fatalf("only %d seed reports lie within 900 m of the pretend position, want at least 2", len(near))
+	}
+	if status, raw := d.vote(reportIDOf(near[0]), "confirm"); status != http.StatusOK {
+		t.Fatalf("Demo confirm = %d, want 200: %s", status, raw)
+	}
+	if status, raw := d.vote(reportIDOf(near[1]), "dispute"); status != http.StatusOK {
+		t.Fatalf("Demo dispute = %d, want 200: %s", status, raw)
+	}
+
+	// The pretend neighbours fall due; the next read casts their votes through the
+	// real CastVote, in memory.
+	d.clock.Advance(20 * time.Second)
+	after, _ := d.feed()
+	mine := itemByID(after, practiceID)
+	if mine == nil {
+		t.Fatalf("the practice report %d is not in the Demo feed", practiceID)
+	}
+	trust, _ := mine["trust"].(map[string]any)
+	places, _ := trust["confirmed_places"].(float64)
+	if int(places) < service.IndependentAgreementThreshold {
+		t.Fatalf("practice report confirmed_places = %v after 20 s, want at least %d: the neighbours did not vote", places, service.IndependentAgreementThreshold)
+	}
+	if confirmed, _ := mine["confirmed_by_people"].(bool); !confirmed {
+		t.Fatalf("practice report confirmed_by_people = false after the neighbours confirmed it")
+	}
+
+	got := tableCounts(t, d.pool)
+	if !reflect.DeepEqual(before, got) {
+		t.Fatalf("a Demo run changed the table row counts\nbefore: %v\nafter:  %v", before, got)
+	}
+}
+
+// demoShape reduces decoded JSON to its shape: an object keeps its keys, an
+// array is the shape of its first element, a null is "null" and every other
+// value is "value". Two answers have the same shape when their keys agree at
+// every depth.
+func demoShape(v any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, val := range x {
+			out[k] = demoShape(val)
+		}
+		return out
+	case []any:
+		if len(x) == 0 {
+			return []any{}
+		}
+		return []any{demoShape(x[0])}
+	case nil:
+		return "null"
+	default:
+		return "value"
+	}
+}
+
+func mustDecodeAny(t *testing.T, raw []byte) map[string]any {
+	t.Helper()
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("decoding %s: %v", raw, err)
+	}
+	return out
+}
+
+func TestDemoAPIShapesMatchReal(t *testing.T) {
+	d := newDemoE2E(t)
+
+	// The real side: one account posts, another confirms from a different spot
+	// inside 1 km.
+	reporter := newVerifiedClient(t, d.srv, d.mailer, "shape-reporter@example.com")
+	voter := newVerifiedClient(t, d.srv, d.mailer, "shape-voter@example.com")
+	realPost := postReport(t, reporter, d.srv.URL, map[string]any{
+		"category":    "flood",
+		"severity":    "low",
+		"description": "Water rising near the bridge",
+		"latitude":    demo.PretendLat,
+		"longitude":   demo.PretendLon,
+	})
+	realPostRaw, _ := io.ReadAll(realPost.Body)
+	realPost.Body.Close()
+	if realPost.StatusCode != http.StatusCreated {
+		t.Fatalf("real POST /api/reports = %d: %s", realPost.StatusCode, realPostRaw)
+	}
+	realID := int64(mustDecodeAny(t, realPostRaw)["report"].(map[string]any)["id"].(float64))
+
+	realFeed, err := reporter.Get(d.srv.URL + "/api/reports?lat=16.5424&lon=80.6386&radius_km=10")
+	if err != nil {
+		t.Fatalf("real GET /api/reports: %v", err)
+	}
+	realFeedRaw, _ := io.ReadAll(realFeed.Body)
+	realFeed.Body.Close()
+	if realFeed.StatusCode != http.StatusOK {
+		t.Fatalf("real GET /api/reports = %d: %s", realFeed.StatusCode, realFeedRaw)
+	}
+	realWhole := mustDecodeAny(t, realFeedRaw)
+	var realItems []map[string]any
+	for _, v := range realWhole["reports"].([]any) {
+		realItems = append(realItems, v.(map[string]any))
+	}
+	// The real reporter's own fresh report, as the real reporter sees it, to
+	// compare with the Demo visitor's own fresh report. Both are read before any
+	// vote, so the same states are compared.
+	realItem := itemByID(realItems, realID)
+	if realItem == nil {
+		t.Fatalf("the real report %d is not in the real feed", realID)
+	}
+
+	realVote := postVote(t, voter, d.srv.URL, realID, "confirm", map[string]float64{"latitude": demo.PretendLat + 0.002, "longitude": demo.PretendLon})
+	realVoteRaw, _ := io.ReadAll(realVote.Body)
+	realVote.Body.Close()
+	if realVote.StatusCode != http.StatusOK {
+		t.Fatalf("real confirm = %d: %s", realVote.StatusCode, realVoteRaw)
+	}
+
+	// The Demo side.
+	practiceID, practiceRaw := d.postPractice()
+	demoItems, demoWhole := d.feed()
+	demoItem := itemByID(demoItems, practiceID)
+	if demoItem == nil {
+		t.Fatalf("the practice report %d is not in the Demo feed", practiceID)
+	}
+	near := nearSeedReports(demoItems)
+	if len(near) == 0 {
+		t.Fatal("no seed report within 900 m to confirm")
+	}
+	status, demoVoteRaw := d.vote(reportIDOf(near[0]), "confirm")
+	if status != http.StatusOK {
+		t.Fatalf("Demo confirm = %d: %s", status, demoVoteRaw)
+	}
+
+	check := func(name string, real, demoV any) {
+		t.Helper()
+		rs, ds := demoShape(real), demoShape(demoV)
+		if !reflect.DeepEqual(rs, ds) {
+			rj, _ := json.Marshal(rs)
+			dj, _ := json.Marshal(ds)
+			t.Errorf("%s: the Demo answer has a different shape from the real one\nreal: %s\ndemo: %s", name, rj, dj)
+		}
+	}
+	check("GET reports item", realItem, demoItem)
+	check("POST reports answer", mustDecodeAny(t, realPostRaw), mustDecodeAny(t, practiceRaw))
+	check("confirm answer", mustDecodeAny(t, realVoteRaw), mustDecodeAny(t, demoVoteRaw))
+
+	// The list envelope, apart from the reports array whose elements are compared
+	// above.
+	realEnv, demoEnv := map[string]any{}, map[string]any{}
+	for k, v := range realWhole {
+		if k != "reports" {
+			realEnv[k] = v
+		}
+	}
+	for k, v := range demoWhole {
+		if k != "reports" {
+			demoEnv[k] = v
+		}
+	}
+	check("GET reports envelope", realEnv, demoEnv)
+}
+
+func TestDemoRulesAreReal(t *testing.T) {
+	d := newDemoE2E(t)
+	items, _ := d.feed()
+
+	// Too far: a seed report beyond 1 km of the pretend position. The Ended seed
+	// report is not used: the service checks expiry before distance.
+	var far map[string]any
+	for _, it := range items {
+		dist, ok := it["distance_km"].(float64)
+		own, _ := it["is_own_report"].(bool)
+		if ok && dist > 1.1 && dist < 4 && !own {
+			far = it
+			break
+		}
+	}
+	if far == nil {
+		t.Fatal("no seed report 1.1 to 4 km from the pretend position")
+	}
+	status, raw := d.vote(reportIDOf(far), "confirm")
+	if status != http.StatusForbidden {
+		t.Fatalf("confirm from beyond 1 km = %d, want 403: %s", status, raw)
+	}
+	var e demoErrBody
+	if err := json.Unmarshal(raw, &e); err != nil {
+		t.Fatalf("decoding %s: %v", raw, err)
+	}
+	if e.Error.Field != "location" || e.Error.Message != service.TooFarMessage() {
+		t.Fatalf("too far error = %+v, want field location and %q", e.Error, service.TooFarMessage())
+	}
+
+	// No self vote.
+	practiceID, _ := d.postPractice()
+	for _, action := range []string{"confirm", "dispute"} {
+		status, raw = d.vote(practiceID, action)
+		if status != http.StatusForbidden {
+			t.Fatalf("%s on the visitor's own report = %d, want 403: %s", action, status, raw)
+		}
+		if err := json.Unmarshal(raw, &e); err != nil {
+			t.Fatalf("decoding %s: %v", raw, err)
+		}
+		if e.Error.Field != "account" || e.Error.Message != "You can't vote on your own report." {
+			t.Fatalf("self vote error = %+v, want field account and the self vote sentence", e.Error)
+		}
+	}
+
+	// The two undo limit: resolve then take it back, twice, and the third take
+	// back is refused.
+	for round := 1; round <= 2; round++ {
+		if status, raw = d.vote(practiceID, "resolve"); status != http.StatusOK {
+			t.Fatalf("resolve round %d = %d, want 200: %s", round, status, raw)
+		}
+		if status, raw = d.vote(practiceID, "unresolve"); status != http.StatusOK {
+			t.Fatalf("unresolve round %d = %d, want 200: %s", round, status, raw)
+		}
+	}
+	if status, raw = d.vote(practiceID, "resolve"); status != http.StatusOK {
+		t.Fatalf("third resolve = %d, want 200: %s", status, raw)
+	}
+	status, raw = d.vote(practiceID, "unresolve")
+	if status != http.StatusConflict {
+		t.Fatalf("third undo = %d, want 409: %s", status, raw)
+	}
+	if err := json.Unmarshal(raw, &e); err != nil {
+		t.Fatalf("decoding %s: %v", raw, err)
+	}
+	if e.Error.Message != "You have used both undos on this report." {
+		t.Fatalf("third undo message = %q, want the undo limit sentence", e.Error.Message)
+	}
+
+	// A report that is not there is the real 404.
+	if status, raw = d.vote(999999, "confirm"); status != http.StatusNotFound {
+		t.Fatalf("vote on a missing report = %d, want 404: %s", status, raw)
+	}
+}

@@ -187,59 +187,7 @@ func CastVote(svc *service.VotingService, kind service.VoteKind, value service.V
 
 		res, err := svc.CastVote(r.Context(), in)
 		if err != nil {
-			// The errors.Is sentinel branches are ordered ahead of the
-			// errors.As validation branch below, and deliberately so: the
-			// sentinels are distinct error values errors.As on a
-			// ValidationError would not match anyway, and ordering them
-			// first keeps the security-relevant refusals visibly at the
-			// top of the map rather than buried under input handling.
-			switch {
-			case errors.Is(err, service.ErrCannotVoteOwnReport):
-				// 403 rather than 400: the request is well-formed, the
-				// caller is authenticated, and the server is refusing on
-				// authorisation grounds (D-03).
-				writeFieldError(w, http.StatusForbidden, "account", "You can't vote on your own report.")
-				return
-			case errors.Is(err, service.ErrReportNotFound):
-				writeFieldError(w, http.StatusNotFound, "report", "Report not found.")
-				return
-			case errors.Is(err, service.ErrReportExpired):
-				// 409 Conflict because the request conflicts with the
-				// report's current state; 410 Gone was rejected because the
-				// report still exists and is still retrievable through its
-				// owner's Activity history; 400 was rejected because
-				// nothing about the request itself is malformed.
-				writeFieldError(w, http.StatusConflict, "report", "This report has expired.")
-				return
-			case errors.Is(err, service.ErrNothingToTakeBack):
-				// 409 for the same reason as the expiry refusal: the request
-				// is well formed and conflicts with the caller's standing
-				// vote on this report (D-22). Fixed sentence, nothing echoed.
-				writeFieldError(w, http.StatusConflict, "report", "You have no resolved mark on this report to take back.")
-				return
-			case errors.Is(err, service.ErrUndoLimitReached):
-				// The take back and the poster's reopen share one limit of
-				// two per report (D-22, D-28); the limit is enforced in the
-				// service, never trusted from the client.
-				writeFieldError(w, http.StatusConflict, "report", "You have used both undos on this report.")
-				return
-			case errors.Is(err, service.ErrVoterTooFar):
-				// 403 rather than 400: the request is well formed and the
-				// caller is authenticated, and the server refuses it because
-				// the voter stands farther than service.MaxVoteDistanceKm
-				// from the report (D-01). The field is location so the
-				// browser can key its one silent retry on it (D-02), and the
-				// message is the fixed sentence with no computed distance.
-				writeFieldError(w, http.StatusForbidden, "location", service.TooFarMessage())
-				return
-			}
-			var ve service.ValidationError
-			if errors.As(err, &ve) {
-				writeFieldError(w, http.StatusBadRequest, ve.Field, ve.Message)
-				return
-			}
-			log.Printf("handlers: CastVote: %v", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			writeCastVoteError(w, err)
 			return
 		}
 
@@ -247,11 +195,77 @@ func CastVote(svc *service.VotingService, kind service.VoteKind, value service.V
 		// from the client's point of view, and D-02 means the same caller
 		// re-POSTing changes their standing vote rather than creating a
 		// second one.
-		writeJSON(w, http.StatusOK, CastVoteResponse{
-			Visibility: string(res.Visibility),
-			Reason:     string(res.Reason),
-			Trust:      trustToResponse(res.Trust),
-			UndosLeft:  res.UndosLeft,
-		})
+		writeJSON(w, http.StatusOK, castVoteResponse(res))
+	}
+}
+
+// writeCastVoteError maps a refusal of VotingService.CastVote onto the one
+// answer every vote route gives. The real routes and the Demo's (demo.go) call
+// it, so the status, field and sentence of each refusal exist exactly once
+// (plan 05-10, P5-C18).
+func writeCastVoteError(w http.ResponseWriter, err error) {
+	// The errors.Is sentinel branches are ordered ahead of the
+	// errors.As validation branch below, and deliberately so: the
+	// sentinels are distinct error values errors.As on a
+	// ValidationError would not match anyway, and ordering them
+	// first keeps the security-relevant refusals visibly at the
+	// top of the map rather than buried under input handling.
+	switch {
+	case errors.Is(err, service.ErrCannotVoteOwnReport):
+		// 403 rather than 400: the request is well-formed, the
+		// caller is authenticated, and the server is refusing on
+		// authorisation grounds (D-03).
+		writeFieldError(w, http.StatusForbidden, "account", "You can't vote on your own report.")
+		return
+	case errors.Is(err, service.ErrReportNotFound):
+		writeFieldError(w, http.StatusNotFound, "report", "Report not found.")
+		return
+	case errors.Is(err, service.ErrReportExpired):
+		// 409 Conflict because the request conflicts with the
+		// report's current state; 410 Gone was rejected because the
+		// report still exists and is still retrievable through its
+		// owner's Activity history; 400 was rejected because
+		// nothing about the request itself is malformed.
+		writeFieldError(w, http.StatusConflict, "report", "This report has expired.")
+		return
+	case errors.Is(err, service.ErrNothingToTakeBack):
+		// 409 for the same reason as the expiry refusal: the request
+		// is well formed and conflicts with the caller's standing
+		// vote on this report (D-22). Fixed sentence, nothing echoed.
+		writeFieldError(w, http.StatusConflict, "report", "You have no resolved mark on this report to take back.")
+		return
+	case errors.Is(err, service.ErrUndoLimitReached):
+		// The take back and the poster's reopen share one limit of
+		// two per report (D-22, D-28); the limit is enforced in the
+		// service, never trusted from the client.
+		writeFieldError(w, http.StatusConflict, "report", "You have used both undos on this report.")
+		return
+	case errors.Is(err, service.ErrVoterTooFar):
+		// 403 rather than 400: the request is well formed and the
+		// caller is authenticated, and the server refuses it because
+		// the voter stands farther than service.MaxVoteDistanceKm
+		// from the report (D-01). The field is location so the
+		// browser can key its one silent retry on it (D-02), and the
+		// message is the fixed sentence with no computed distance.
+		writeFieldError(w, http.StatusForbidden, "location", service.TooFarMessage())
+		return
+	}
+	var ve service.ValidationError
+	if errors.As(err, &ve) {
+		writeFieldError(w, http.StatusBadRequest, ve.Field, ve.Message)
+		return
+	}
+	log.Printf("handlers: CastVote: %v", err)
+	http.Error(w, "internal server error", http.StatusInternalServerError)
+}
+
+// castVoteResponse maps the service's answer to a vote onto the wire shape
+// shared by the five vote routes, real and Demo.
+func castVoteResponse(res service.CastVoteResult) CastVoteResponse {
+	return CastVoteResponse{
+		Visibility: string(res.Visibility),
+		Reason:     string(res.Reason),
+		Trust:      trustToResponse(res.Trust),
+		UndosLeft:  res.UndosLeft,
 	}
 }

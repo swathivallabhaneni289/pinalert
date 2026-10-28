@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"pinalert/internal/api/handlers"
+	"pinalert/internal/demo"
 	"pinalert/internal/service"
 	"pinalert/internal/session"
 	sqlcgen "pinalert/internal/store/sqlc"
@@ -348,10 +349,23 @@ func TestAccessGateAllowsVerified(t *testing.T) {
 // GET /globe/tiles/0/0/0.jpg (the sign in globe's Earth pictures, public like the
 // icons and answered from a fake upstream here), which must answer 200, and the
 // near misses /globe/tiles/9/0/0.jpg and /globe/tiles must not.
+//
+// Amended 2026-10-29 by plan 05-10 (D-04, owner 2026-10-17): the Demo opens
+// without an account. One row was added for GET /demo/api/v/<visit>/reports,
+// answered 200 from a Demo store created in the test, and a negative loop at the
+// end proves /api/reports, /alerts and /api/official/alerts stay gated for a
+// caller with no session (401, 302 and 401). Every older row is unchanged.
 func TestAccessGateExemptRoutes(t *testing.T) {
 	globeUp := fakeGlobeUpstream(t)
+	demoStore := demo.NewStore(demo.WithWorldSetup(demo.SeedSetup))
+	demoWorld, err := demoStore.Create()
+	if err != nil {
+		t.Fatalf("creating a Demo world: %v", err)
+	}
+	demoFeedPath := "/demo/api/v/" + demoWorld.ID + "/reports?lat=16.5424&lon=80.6386&radius_km=10"
 	srv, _, _ := newGateTestServerWith(t, func(d *Deps, _ *sqlcgen.Queries) {
 		d.GlobeUpstream = globeUp.URL
+		d.Demo = demoStore
 	})
 
 	appAssets := []string{
@@ -366,7 +380,7 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 		"/apple-touch-icon.png",
 		"/apple-touch-icon-precomposed.png",
 	}
-	mustBeOK := map[string]bool{"/disclaimer": true, "/policy": true, "/globe/tiles/0/0/0.jpg": true}
+	mustBeOK := map[string]bool{"/disclaimer": true, "/policy": true, "/globe/tiles/0/0/0.jpg": true, demoFeedPath: true}
 	for _, p := range appAssets {
 		mustBeOK[p] = true
 	}
@@ -385,6 +399,7 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 		{"disclaimer page", http.MethodGet, "/disclaimer", ""},
 		{"policy page", http.MethodGet, "/policy", ""},
 		{"globe tile", http.MethodGet, "/globe/tiles/0/0/0.jpg", ""},
+		{"demo feed", http.MethodGet, demoFeedPath, ""},
 	}
 	for _, p := range appAssets {
 		cases = append(cases, struct {
@@ -456,6 +471,31 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 			defer resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				t.Fatalf("GET %s returned 200: only the 85 listed globe tile paths are public", p)
+			}
+		})
+	}
+
+	// Amended 2026-10-29 by plan 05-10 (D-04): opening /demo opens nothing else.
+	// The real report feed, the Official alerts page and its data stay behind the
+	// gate for a caller with no session: 401 for the two API reads, 302 to /login
+	// for the page. An exact status, not "not 200", so a 404 or a 503 hiding a
+	// bypass would fail.
+	for _, g := range []struct {
+		path string
+		want int
+	}{
+		{"/api/reports?lat=16.5424&lon=80.6386", http.StatusUnauthorized},
+		{"/api/official/alerts?lat=16.5424&lon=80.6386", http.StatusUnauthorized},
+		{"/alerts", http.StatusFound},
+	} {
+		t.Run("still gated "+g.path, func(t *testing.T) {
+			resp, err := newGateJarClient(t).Get(srv.URL + g.path)
+			if err != nil {
+				t.Fatalf("GET %s: %v", g.path, err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != g.want {
+				t.Fatalf("GET %s = %d, want %d: it must stay behind the gate", g.path, resp.StatusCode, g.want)
 			}
 		})
 	}

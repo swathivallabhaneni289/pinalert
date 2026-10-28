@@ -120,6 +120,9 @@ func TestSkipSessionFor(t *testing.T) {
 // globe tile paths; every old assertion about the ten paths is kept, and the
 // POST set and the prefixes are asserted empty until plans 05-10 and 05-12 add
 // the Demo prefix and the refresh endpoint.
+//
+// Amended 2026-10-29 by plan 05-10 (D-04, D-05): the prefix list is now asserted
+// to be exactly ["/demo"]; the POST set is still asserted empty until plan 05-12.
 func TestPWASkipSetMatchesRoutes(t *testing.T) {
 	mgr, err := session.NewManager([]byte("pwa-routes-test-secret-not-for-production"), false)
 	if err != nil {
@@ -160,8 +163,14 @@ func TestPWASkipSetMatchesRoutes(t *testing.T) {
 			t.Errorf("%s is a globe tile path but is not a registered GET route", p)
 		}
 	}
-	if len(skip.post) != 0 || len(skip.prefixes) != 0 {
-		t.Errorf("sessionSkipSet has POST paths %v and prefixes %v, want none in plan 05-04", skip.post, skip.prefixes)
+	if len(skip.post) != 0 {
+		t.Errorf("sessionSkipSet has POST paths %v, want none until plan 05-12", skip.post)
+	}
+	// Amended 2026-10-29 by plan 05-10 (D-04, D-05): the prefix list was asserted
+	// empty; it is now exactly the Demo prefix. The POST set assertion above is
+	// unchanged.
+	if !slices.Equal(skip.prefixes, []string{"/demo"}) {
+		t.Errorf("sessionSkipSet prefixes = %v, want exactly [/demo]", skip.prefixes)
 	}
 	if len(handlers.PWAPublicPaths) != 10 {
 		t.Errorf("PWAPublicPaths has %d entries, want 10", len(handlers.PWAPublicPaths))
