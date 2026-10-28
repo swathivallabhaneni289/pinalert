@@ -1318,3 +1318,165 @@ func TestMigration00012(t *testing.T) {
 		t.Errorf("after Up again: %d of 2 feed rows present", got)
 	}
 }
+
+// TestMigration00013 covers the Phase 5 push migration (plan 05-11): the file
+// carries both goose markers, builds nothing concurrently, uses no ON DELETE and
+// names every constraint where it adds it; on a database it adds the official
+// push outbox and the official_push_on column, the CHECK lists and the unique
+// index refuse what they must (skip_reason already_notified is accepted), an
+// account with no settings row reads the switch as on, Down removes both and Up
+// applies again.
+func TestMigration00013(t *testing.T) {
+	const file = "migrations/00013_add_official_push.sql"
+	contents, err := MigrationsFS.ReadFile(file)
+	if err != nil {
+		t.Fatalf("reading embedded %s: %v", file, err)
+	}
+	text := string(contents)
+	up := strings.Index(text, "+goose Up")
+	down := strings.Index(text, "+goose Down")
+	if up < 0 || down < 0 || down < up {
+		t.Fatalf("%s must carry +goose Up then +goose Down", file)
+	}
+	var code []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		code = append(code, line)
+	}
+	allCode := strings.ToUpper(strings.Join(code, "\n"))
+	if strings.Contains(allCode, "CONCURRENTLY") {
+		t.Error("migration 00013 must not use CONCURRENTLY: goose runs it inside a transaction")
+	}
+	if strings.Contains(allCode, "ON DELETE") {
+		t.Error("migration 00013 must not use ON DELETE: the repo convention has none")
+	}
+	for _, want := range []string{
+		"CREATE TABLE official_push_outbox",
+		"official_push_on BOOLEAN NOT NULL DEFAULT true",
+		"official_push_outbox_reason_valid", "official_push_outbox_state_valid",
+		"official_push_outbox_skip_reason_valid", "uq_official_push_once",
+		"idx_official_push_outbox_due",
+		"'already_notified'",
+	} {
+		if !strings.Contains(text[up:down], want) {
+			t.Errorf("migration 00013 Up must contain %q", want)
+		}
+	}
+	// Down drops the table before the column, the reverse of the Up order.
+	dropTable := strings.Index(text[down:], "DROP TABLE official_push_outbox;")
+	dropColumn := strings.Index(text[down:], "DROP COLUMN official_push_on")
+	if dropTable < 0 || dropColumn < 0 || dropTable > dropColumn {
+		t.Error("migration 00013 Down must drop official_push_outbox, then the official_push_on column")
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping the database part of the 00013 migration test")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("opening database: %v", err)
+	}
+	defer db.Close()
+
+	goose.SetBaseFS(MigrationsFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up: %v", err)
+	}
+
+	const guid = "1792000000000013"
+	const email = "migration-00013@example.com"
+	t.Cleanup(func() {
+		_ = goose.Up(db, "migrations")
+		_, _ = db.Exec(`DELETE FROM official_push_outbox WHERE alert_id IN (SELECT id FROM official_alerts WHERE guid = $1)`, guid)
+		_, _ = db.Exec(`DELETE FROM official_alerts WHERE guid = $1`, guid)
+		_, _ = db.Exec(`DELETE FROM account_alert_settings WHERE account_id IN (SELECT id FROM accounts WHERE email = $1)`, email)
+		_, _ = db.Exec(`DELETE FROM accounts WHERE email = $1`, email)
+	})
+
+	objects := func() (tables, columns int) {
+		if err := db.QueryRow(`SELECT count(*) FROM information_schema.tables
+			WHERE table_schema = 'public' AND table_name = 'official_push_outbox'`).Scan(&tables); err != nil {
+			t.Fatalf("counting tables: %v", err)
+		}
+		if err := db.QueryRow(`SELECT count(*) FROM information_schema.columns
+			WHERE table_schema = 'public' AND table_name = 'account_alert_settings' AND column_name = 'official_push_on'`).Scan(&columns); err != nil {
+			t.Fatalf("counting columns: %v", err)
+		}
+		return tables, columns
+	}
+	if tables, columns := objects(); tables != 1 || columns != 1 {
+		t.Errorf("after Up: %d table and %d column present, want 1 and 1", tables, columns)
+	}
+
+	wantCode := func(label, code, query string, args ...any) {
+		t.Helper()
+		_, err := db.Exec(query, args...)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != code {
+			t.Errorf("%s: want SQLSTATE %s, got %v", label, code, err)
+		}
+	}
+
+	var accountID, alertID int64
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ($1) RETURNING id`, email).Scan(&accountID); err != nil {
+		t.Fatalf("inserting an account: %v", err)
+	}
+	// An account with no settings row reads the switch as on (D-11).
+	var on bool
+	if err := db.QueryRow(`SELECT COALESCE(s.official_push_on, true)
+		FROM accounts a LEFT JOIN account_alert_settings s ON s.account_id = a.id WHERE a.id = $1`, accountID).Scan(&on); err != nil || !on {
+		t.Errorf("a missing settings row reads %v (%v), want true", on, err)
+	}
+	if _, err := db.Exec(`INSERT INTO account_alert_settings (account_id) VALUES ($1)`, accountID); err != nil {
+		t.Fatalf("inserting a settings row: %v", err)
+	}
+	if err := db.QueryRow(`SELECT official_push_on FROM account_alert_settings WHERE account_id = $1`, accountID).Scan(&on); err != nil || !on {
+		t.Errorf("a new settings row has official_push_on %v (%v), want the default true", on, err)
+	}
+	if err := db.QueryRow(`INSERT INTO official_alerts (guid, cap_identifier, msg_type, severity, sent_at, expires_at, placement_tier, first_seen_at, last_seen_at)
+		VALUES ($1, 'IN-x_1', 'Alert', 'Severe', now(), now() + interval '1 hour', 'district', now(), now()) RETURNING id`, guid).Scan(&alertID); err != nil {
+		t.Fatalf("inserting an alert: %v", err)
+	}
+
+	const insert = `INSERT INTO official_push_outbox (account_id, alert_id, cap_identifier, reason, state, skip_reason, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, now() + interval '1 hour')`
+	wantCode("a bad reason", "23514", insert, accountID, alertID, "IN-x_bad1", "stacked", "queued", nil)
+	wantCode("a bad state", "23514", insert, accountID, alertID, "IN-x_bad2", "new", "pending", nil)
+	wantCode("a bad skip_reason", "23514", insert, accountID, alertID, "IN-x_bad3", "new", "skipped", "because")
+	wantCode("an alert that does not exist", "23503", insert, accountID, 0, "IN-x_bad4", "new", "queued", nil)
+	for _, reason := range []string{"not_eligible", "stale", "no_home_area", "out_of_area", "no_device",
+		"cap_account", "switched_off", "feed_not_fresh", "already_notified"} {
+		if _, err := db.Exec(insert, accountID, alertID, "IN-x_"+reason, "new", "skipped", reason); err != nil {
+			t.Errorf("skip_reason %q must be accepted: %v", reason, err)
+		}
+	}
+	wantCode("the same person, alert and version twice", "23505", insert, accountID, alertID, "IN-x_already_notified", "new", "queued", nil)
+	if _, err := db.Exec(insert, accountID, alertID, "IN-x_2", "escalated", "queued", nil); err != nil {
+		t.Errorf("a second version of the same alert for the same person must be accepted: %v", err)
+	}
+
+	name := "00013_add_official_push.sql"
+	version, err := goose.NumericComponent(name)
+	if err != nil {
+		t.Fatalf("parsing version of %s: %v", name, err)
+	}
+	// Down drops the table whole, so its rows need no clean up first.
+	if err := goose.DownTo(db, "migrations", version-1); err != nil {
+		t.Fatalf("goose down to %d: %v", version-1, err)
+	}
+	if tables, columns := objects(); tables != 0 || columns != 0 {
+		t.Errorf("after Down: %d table and %d column still present", tables, columns)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up again: %v", err)
+	}
+	if tables, columns := objects(); tables != 1 || columns != 1 {
+		t.Errorf("after Up again: %d table and %d column present, want 1 and 1", tables, columns)
+	}
+}

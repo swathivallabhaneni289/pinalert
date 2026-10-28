@@ -8,10 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"pinalert/internal/service"
 	sqlcgen "pinalert/internal/store/sqlc"
+	"pinalert/internal/testutil"
 )
 
 // fakeDeleteQuerier records every call AccountDeletionService makes, in order.
@@ -96,6 +98,11 @@ func (f *fakeDeleteQuerier) DeleteAccountPushOutbox(ctx context.Context, account
 	return 0, f.step("DeleteAccountPushOutbox")
 }
 
+func (f *fakeDeleteQuerier) DeleteAccountOfficialPushOutbox(ctx context.Context, accountID int64) (int64, error) {
+	f.accountIDs["DeleteAccountOfficialPushOutbox"] = accountID
+	return 0, f.step("DeleteAccountOfficialPushOutbox")
+}
+
 func (f *fakeDeleteQuerier) DeleteAccountPushSubscriptions(ctx context.Context, accountID int64) (int64, error) {
 	f.accountIDs["DeleteAccountPushSubscriptions"] = accountID
 	return 0, f.step("DeleteAccountPushSubscriptions")
@@ -118,6 +125,10 @@ func (f *fakeDeleteQuerier) ScrubDeletedAccount(ctx context.Context, arg sqlcgen
 // plan 10 (decision 11, UI-SPEC O-3): DeleteAccountPushOutbox and
 // DeleteAccountPushSubscriptions now run after the four personal row deletes
 // and before RevokeAccountSessions, so the nine steps became eleven.
+//
+// Amended 2026-10-29 by plan 05-11 (T-05-62): DeleteAccountOfficialPushOutbox
+// now runs right after DeleteAccountPushOutbox, so the eleven steps became
+// twelve. Every old step and its order is kept.
 var wantDeleteOrder = []string{
 	"AccountEmailForDelete",
 	"DeleteMagicLinkTokensForEmail",
@@ -127,12 +138,13 @@ var wantDeleteOrder = []string{
 	"DeleteAccountMutes",
 	"DeleteAccountAlertSettings",
 	"DeleteAccountPushOutbox",
+	"DeleteAccountOfficialPushOutbox",
 	"DeleteAccountPushSubscriptions",
 	"RevokeAccountSessions",
 	"ScrubDeletedAccount",
 }
 
-// TestDeleteAccountOrder: the eleven steps run in the documented order, the
+// TestDeleteAccountOrder: the twelve steps run in the documented order, the
 // scrub last, each keyed by the account id (or the real address) it needs.
 func TestDeleteAccountOrder(t *testing.T) {
 	fixed := time.Date(2026, 10, 19, 8, 0, 0, 0, time.UTC)
@@ -277,6 +289,71 @@ func TestDeletedEmailFor(t *testing.T) {
 	}
 	if service.DeletedEmailFor(1) == service.DeletedEmailFor(2) {
 		t.Errorf("two accounts share a scrubbed address")
+	}
+}
+
+// TestDeleteAccountRemovesOfficialPushRows (plan 05-11, T-05-62): on a real
+// database an account with official push rows has none after DeleteAccount, the
+// other account's rows stay, and the deletion still runs in one transaction (a
+// failure at the scrub, simulated by deleting an already deleted account, leaves
+// the rows of the account that was not deleted alone). It needs a database and
+// skips without DATABASE_URL. The account's official push rows are also covered
+// by the rollback check below: they are back when the transaction rolls back.
+func TestDeleteAccountRemovesOfficialPushRows(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+
+	a := testutil.SeedReporterAccount(t, pool, "official-del-a@example.com", "official-del-a-sess")
+	b := testutil.SeedReporterAccount(t, pool, "official-del-b@example.com", "official-del-b-sess")
+	alert := testutil.SeedOfficialAlert(t, pool, testutil.OfficialAlertSeed{Severity: "Severe", Tier: "district", DistrictCodes: []int{749}})
+	testutil.MustExec(t, pool,
+		`INSERT INTO official_push_outbox (account_id, alert_id, cap_identifier, reason, expires_at)
+		 VALUES ($1, $3, 'IN-del_1', 'new', now() + interval '1 hour'),
+		        ($1, $3, 'IN-del_2', 'escalated', now() + interval '1 hour'),
+		        ($2, $3, 'IN-del_1', 'new', now() + interval '1 hour')`, a, b, alert)
+	count := func(account int64) int {
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM official_push_outbox WHERE account_id = $1`, account).Scan(&n); err != nil {
+			t.Fatalf("counting rows: %v", err)
+		}
+		return n
+	}
+
+	// The deletion runs inside the one transaction: when that transaction is
+	// rolled back after every step succeeded, the official push rows are back.
+	errRollback := errors.New("roll back after the last step")
+	rollback := func(ctx context.Context, fn func(q service.AccountDeleteQuerier) error) error {
+		return pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+			if err := fn(sqlcgen.New(tx)); err != nil {
+				return err
+			}
+			return errRollback
+		})
+	}
+	if err := service.NewAccountDeletionService(sqlcgen.New(pool), rollback).DeleteAccount(ctx, a); !errors.Is(err, errRollback) {
+		t.Fatalf("DeleteAccount in a transaction that rolls back gave %v, want the rollback error", err)
+	}
+	if n := count(a); n != 2 {
+		t.Errorf("after a rolled back deletion the account has %d official push rows, want 2", n)
+	}
+
+	svc := service.NewAccountDeletionService(sqlcgen.New(pool), service.PgxAccountTx(pool))
+	if err := svc.DeleteAccount(ctx, a); err != nil {
+		t.Fatalf("DeleteAccount: %v", err)
+	}
+	if n := count(a); n != 0 {
+		t.Errorf("the deleted account still has %d official push rows", n)
+	}
+	if n := count(b); n != 1 {
+		t.Errorf("the other account has %d official push rows, want 1", n)
+	}
+	// A second delete of the same account fails before it changes anything, and
+	// the other account's row is still there.
+	if err := svc.DeleteAccount(ctx, a); !errors.Is(err, service.ErrAccountAlreadyDeleted) {
+		t.Errorf("a second delete gave %v, want ErrAccountAlreadyDeleted", err)
+	}
+	if n := count(b); n != 1 {
+		t.Errorf("the other account has %d official push rows after the failed delete, want 1", n)
 	}
 }
 

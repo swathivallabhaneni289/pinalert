@@ -40,6 +40,9 @@ type AccountDeleteQuerier interface {
 	// phone alert rows (Phase 3.3, decision 11): the account's subscriptions
 	// are personal rows like its updates and mutes.
 	DeleteAccountPushOutbox(ctx context.Context, accountID int64) (int64, error)
+	// DeleteAccountOfficialPushOutbox removes the queued official alert pushes
+	// (Phase 5 plan 05-11), a sibling table of the push outbox.
+	DeleteAccountOfficialPushOutbox(ctx context.Context, accountID int64) (int64, error)
 	DeleteAccountPushSubscriptions(ctx context.Context, accountID int64) (int64, error)
 	RevokeAccountSessions(ctx context.Context, arg sqlcgen.RevokeAccountSessionsParams) (int64, error)
 	ScrubDeletedAccount(ctx context.Context, arg sqlcgen.ScrubDeletedAccountParams) (int64, error)
@@ -105,7 +108,8 @@ func DeletedEmailFor(accountID int64) string {
 // first run mark are cleared, and deleted_at is set. Every session of the
 // account is revoked. The person's own rows are deleted: updates, update
 // cursors, mutes, alert settings, the queued phone alerts and phone alert
-// subscriptions (Phase 3.3), and the magic link tokens and resend cooldown of
+// subscriptions (Phase 3.3), the queued official alert pushes (Phase 5), and
+// the magic link tokens and resend cooldown of
 // the real address.
 //
 // Its effect on other people: none. Reports and votes are not touched, so they
@@ -155,6 +159,12 @@ func (s *AccountDeletionService) DeleteAccount(ctx context.Context, accountID in
 		// subscriptions, inside the same transaction and before the scrub.
 		if _, err := q.DeleteAccountPushOutbox(ctx, accountID); err != nil {
 			return fmt.Errorf("service: DeleteAccount: account %d: deleting queued phone alerts: %w", accountID, err)
+		}
+		// Phase 5 plan 05-11 (T-05-62): the official alert pushes queued for the
+		// account live in their own table and go with the rest, in the same
+		// transaction and before the scrub.
+		if _, err := q.DeleteAccountOfficialPushOutbox(ctx, accountID); err != nil {
+			return fmt.Errorf("service: DeleteAccount: account %d: deleting queued official alerts: %w", accountID, err)
 		}
 		if _, err := q.DeleteAccountPushSubscriptions(ctx, accountID); err != nil {
 			return fmt.Errorf("service: DeleteAccount: account %d: deleting push subscriptions: %w", accountID, err)
