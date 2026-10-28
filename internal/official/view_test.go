@@ -671,3 +671,35 @@ func TestTitleName(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildViewDemoBanner (plan 05-19, D-05, D-07): the banner carries the Demo
+// flag of its input, so the Nearby banner can draw the Demo tag, and a Demo row
+// never names NDMA or any issuer's channel as its source (T-05-99).
+func TestBuildViewDemoBanner(t *testing.T) {
+	in := ViewInput{
+		Now: viewNow, Status: viewStatus(time.Minute), Reader: readerArea(),
+		Alerts: []StoredAlert{testAlert(1, withSeverity("Extreme"))},
+	}
+	real := BuildView(in)
+	if real.Banner == nil {
+		t.Fatal("an Extreme alert in the reader's district gave no banner")
+	}
+	if real.Banner.Demo {
+		t.Errorf("a real view's banner has Demo true")
+	}
+
+	in.Demo = true
+	sample := BuildView(in)
+	if sample.Banner == nil {
+		t.Fatal("a Demo view with an Extreme alert gave no banner")
+	}
+	if !sample.Banner.Demo {
+		t.Errorf("a Demo view's banner has Demo false")
+	}
+	if got := sample.Groups[0].Rows[0].Details.SourceLine; got == "" || strings.Contains(got, "NDMA") {
+		t.Errorf("a Demo row's source line = %q, want a non empty line that does not name NDMA", got)
+	}
+	if got := real.Groups[0].Rows[0].Details.SourceLine; got != "NDMA SACHET" {
+		t.Errorf("a real row's source line = %q, want NDMA SACHET", got)
+	}
+}

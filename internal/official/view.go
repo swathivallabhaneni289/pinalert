@@ -155,6 +155,9 @@ type Banner struct {
 	Area        string
 	More        int
 	AlertID     int64
+	// Demo is true when the view was built for the Demo (ViewInput.Demo): the
+	// banner then draws the Demo tag and the alert is a made up sample.
+	Demo bool
 }
 
 // entry is a row together with what the banner rule needs and the row does not

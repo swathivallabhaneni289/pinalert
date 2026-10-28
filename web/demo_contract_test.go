@@ -391,3 +391,67 @@ func TestReportFormToleratesNoSearch(t *testing.T) {
 	p13MustMatch(t, "modal.js", modal, `if \(locationNotice\)`)
 	p13MustContain(t, "modal.js", modal, "data-pretend-place")
 }
+
+// ---- Plan 05-19: the Demo's other two places and the sample banner ----------
+//
+// Official alerts and My activity each have their own Demo template, with the
+// same shell as the real page and the Demo strip first. The helpers carry the
+// dm19 prefix.
+
+// dm19Attribution is the one sentence the Demo's Official alerts page ends with
+// (UI-SPEC 1a). The real page's attribution names the issuers; the Demo's
+// names none, because nothing on it is from an issuer.
+const dm19Attribution = "These alerts are made up for the Demo."
+
+// TestDemoAlertsPageMarkup pins the Demo's Official alerts page (plan 05-19,
+// D-05, D-06, ROBUST-06, UI-SPEC 4b and 4c): the Demo strip first, the same
+// shell the real renderer fills, the Demo's API base and pretend position on
+// the page root, no account, no stored position, and the Demo attribution in
+// place of the real one.
+func TestDemoAlertsPageMarkup(t *testing.T) {
+	page := p13ReadTemplate(t, "demo_alerts.html.tmpl")
+
+	p13Ordered(t, page, "demo alerts page",
+		`<body`, `{{template "demo_strip" .}}`, `<div class="top-chrome">`, `{{template "app_topbar" .}}`,
+		`id="official-page"`, `id="official-status"`, `id="official-section"`, `id="official-list"`,
+		`id="official-attribution"`, `{{template "app_bottombar" .}}`)
+
+	root := dm13OpenTag(t, page, `id="official-page"`)
+	p13MustContain(t, "#official-page", root,
+		`data-demo="1"`, `data-api-base="{{.APIBase}}"`, `data-fixed-lat="{{.FixedLat}}"`, `data-fixed-lon="{{.FixedLon}}"`)
+
+	if n := strings.Count(page, dm19Attribution); n != 1 {
+		t.Errorf("demo_alerts.html.tmpl holds the Demo attribution %d times, want 1", n)
+	}
+	attribution := dm13OpenTag(t, page, `id="official-attribution"`)
+	at := strings.Index(page, attribution) + len(attribution)
+	if got := page[at : at+strings.Index(page[at:], "</p>")]; got != dm19Attribution {
+		t.Errorf("#official-attribution says %q, want %q", got, dm19Attribution)
+	}
+
+	// The real page names the issuers and holds an account id and the stored
+	// position script. None of that belongs to the Demo.
+	p13MustNotContain(t, "demo alerts page", page,
+		"data-account-id", "AccountID", ".Email", "NDMA", "SACHET", "GDACS", "position.js", `template "app_head"`,
+		"manifest", "serviceWorker", "tel:", `href="/alerts"`, `href="/profile`, `href="/settings`)
+
+	names := dm13Scripts(page)
+	want := []string{"api-base.js", "app-bar.js", "demo.js", "official-alerts.js"}
+	var local []string
+	for _, n := range names {
+		if n != "theme.js" {
+			local = append(local, n)
+		}
+	}
+	if strings.Join(local, ",") != strings.Join(want, ",") {
+		t.Errorf("the Demo alerts page loads %v, want %v in this order", local, want)
+	}
+	if dm13Index(names, "api-base.js") > dm13Index(names, "official-alerts.js") {
+		t.Errorf("api-base.js must load before official-alerts.js: %v", names)
+	}
+	p13MustContain(t, "demo alerts page", page, "/static/css/official.css", "/static/css/demo.css")
+
+	// The sentence is written by the page, and the renderer leaves it alone.
+	script := dm13Code(p13ReadStatic(t, "static/js/official-alerts.js"))
+	p13MustNotContain(t, "official-alerts.js code", script, "official-attribution")
+}

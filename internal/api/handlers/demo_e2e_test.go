@@ -456,3 +456,80 @@ func TestDemoRulesAreReal(t *testing.T) {
 		t.Fatalf("vote on a missing report = %d, want 404: %s", status, raw)
 	}
 }
+
+// TestDemoOfficialAlertsAPI (plan 05-19, D-05, ROBUST-06): the Demo's alerts
+// answer has the real route's shape, built from the sample alerts through the
+// real view. Every row is a Demo row with no badge, the banner carries the Demo
+// flag, the position in the query changes nothing (the reader is the pretend
+// position), and an unknown, malformed or ended visit is the Demo's 404 with
+// field visit.
+func TestDemoOfficialAlertsAPI(t *testing.T) {
+	d := newDemoE2E(t)
+	read := func(query string) map[string]any {
+		t.Helper()
+		status, raw := d.do(http.MethodGet, "/official/alerts"+query, nil)
+		if status != http.StatusOK {
+			t.Fatalf("GET Demo official alerts%s = %d, want 200: %s", query, status, raw)
+		}
+		return mustDecodeAny(t, raw)
+	}
+	whole := read("?lat=16.5424&lon=80.6386")
+	if whole["state"] != "fresh" || whole["area_known"] != true {
+		t.Fatalf("state %v area_known %v, want fresh and true", whole["state"], whole["area_known"])
+	}
+	groups, _ := whole["groups"].([]any)
+	if len(groups) != 2 || whole["count"] != float64(3) {
+		t.Fatalf("groups %d count %v, want 2 groups and 3 rows", len(groups), whole["count"])
+	}
+	for _, g := range groups {
+		for _, r := range g.(map[string]any)["rows"].([]any) {
+			row := r.(map[string]any)
+			if row["demo"] != true || row["badge"] != "" {
+				t.Errorf("row %v: demo %v badge %q, want a Demo row with no badge", row["id"], row["demo"], row["badge"])
+			}
+		}
+	}
+	banner, _ := whole["banner"].(map[string]any)
+	if banner == nil || banner["demo"] != true || banner["level"] != "extreme" {
+		t.Fatalf("banner = %v, want the Extreme sample with demo true", whole["banner"])
+	}
+
+	// The reader is the pretend position whatever the query says, or says
+	// nothing. The times move with the clock, so the shapes and the group
+	// labels are compared, not the whole answer.
+	for _, query := range []string{"", "?lat=28.6&lon=77.2"} {
+		other := read(query)
+		if !reflect.DeepEqual(demoShape(whole), demoShape(other)) {
+			t.Errorf("the answer for %q has another shape", query)
+		}
+		if other["districts_line"] != whole["districts_line"] || other["count"] != whole["count"] {
+			t.Errorf("the answer for %q covers %v (%v rows), want %v (%v rows): the reader must be the pretend position",
+				query, other["districts_line"], other["count"], whole["districts_line"], whole["count"])
+		}
+	}
+
+	for _, visit := range []string{"nosuchvisit0123456789ab", "short", "..%2f..%2fetc"} {
+		req, err := http.NewRequest(http.MethodGet, d.srv.URL+"/demo/api/v/"+visit+"/official/alerts", nil)
+		if err != nil {
+			t.Fatalf("building the request: %v", err)
+		}
+		resp, err := d.client.Do(req)
+		if err != nil {
+			t.Fatalf("GET official alerts for %q: %v", visit, err)
+		}
+		raw, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("visit %q = %d, want 404: %s", visit, resp.StatusCode, raw)
+			continue
+		}
+		var e struct {
+			Error struct {
+				Field string `json:"field"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(raw, &e); err != nil || e.Error.Field != "visit" {
+			t.Errorf("visit %q answered %s, want the error with field visit", visit, raw)
+		}
+	}
+}
