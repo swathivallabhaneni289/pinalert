@@ -19,7 +19,9 @@
 //     (never needs-install, blocked or unsupported, so never an iPhone Safari
 //     tab), and this is not a Mac Dock app, whose browser already holds this
 //     Mac's subscription (07.1 D-18);
-//   - no other dialog is open, so it never stacks on another box;
+//   - no other dialog is open and the page is not locked by another box
+//     (data-modal-open on the root, or this dialog made inert), so it never
+//     stacks on another box;
 //   - this account has not been asked in this browser (see the key below).
 // Any probe that throws counts as "do not open".
 //
@@ -96,7 +98,13 @@
       if (localStorage.getItem(ASKED_KEY) === account) {
         return '';
       }
-      if (document.querySelector('dialog[open]')) {
+      // Another box is open: a native dialog, or a box that locked the page
+      // (the report form, the Flag box, the reader window). The lock makes
+      // this dialog inert, so it could not be answered (CR-01). The key is not
+      // written, so the next post or vote can ask.
+      if (document.querySelector('dialog[open]') ||
+          document.documentElement.hasAttribute('data-modal-open') ||
+          (typeof dialog.closest === 'function' && dialog.closest('[inert]'))) {
         return '';
       }
       return key;

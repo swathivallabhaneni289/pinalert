@@ -60,6 +60,10 @@ function fakeEl(id, extra = {}) {
 //   patch              200 | 400 | 500 | 'reject' | 'hang'
 //   showModal          false for a dialog with no showModal
 //   otherDialog        true for another open dialog on the page
+//   modalOpen          true for a page locked by another box (data-modal-open
+//                      on the root, set by Pinalert.lockPage for the report
+//                      form, the Flag box and the reader window)
+//   inert              true for a dialog the page lock made inert
 //   stored             what pinalert.changesAsked holds before
 //   readThrows, writeThrows   a storage that fails
 //   noDialog           true for a page without the partial
@@ -67,18 +71,24 @@ function load(o = {}) {
   const opts = {
     key: 'BPUSHKEY', account: '7', base: 'maybe', macDock: false, notify: true, enable: 'resolve',
     patch: 200, showModal: true, otherDialog: false, stored: null, readThrows: false, writeThrows: false,
-    noDialog: false, ...o
+    noDialog: false, modalOpen: false, inert: false, ...o
   };
   const source = fs.readFileSync(scriptPath, 'utf8');
   const log = [];
   const doc = { activeElement: null };
+  doc.documentElement = {
+    attrs: opts.modalOpen ? { 'data-modal-open': 'true' } : {},
+    hasAttribute(name) { return Object.hasOwn(this.attrs, name); },
+    removeAttribute(name) { delete this.attrs[name]; }
+  };
   const make = (id, extra) => fakeEl(id, { doc, log, ...extra });
 
   const dialog = make('changes-ask', {
     open: false,
     showCalls: 0,
     closeCalls: 0,
-    close() { if (this.open) { this.open = false; this.closeCalls += 1; log.push('close'); this.fire('close'); } }
+    close() { if (this.open) { this.open = false; this.closeCalls += 1; log.push('close'); this.fire('close'); } },
+    closest(sel) { return sel === '[inert]' && opts.inert ? { id: 'locked' } : null; }
   });
   if (opts.showModal) {
     dialog.showModal = function () { this.open = true; this.showCalls += 1; log.push('showModal'); };
@@ -272,6 +282,37 @@ test(NAME + 'never opens on a dialog with no showModal or a page without the par
 test(NAME + 'does not open while another dialog is open, and then writes no key', () => {
   const m = load({ otherDialog: true });
   m.ask.offer();
+  assert.equal(m.dialog.showCalls, 0);
+  assert.equal(m.store.has('pinalert.changesAsked'), false);
+});
+
+// CR-01 (03.3-REVIEW): the report form, the Flag box and the reader window are
+// not native dialogs. They lock the page with data-modal-open on the root and
+// make the rest of it inert, this dialog included, so a pop-up opened then
+// could not be answered.
+test(NAME + 'does not open while the page is locked by another box (data-modal-open), writes no key, and offers again later', async () => {
+  const m = load({ modalOpen: true });
+  let done = false;
+  m.ask.offer().then(() => { done = true; });
+  await settle();
+  assert.equal(done, true, 'offer resolves at once');
+  assert.equal(m.dialog.showCalls, 0);
+  assert.equal(m.dialog.open, false);
+  assert.equal(m.store.has('pinalert.changesAsked'), false, 'no key, so the next post or vote can ask');
+  let quiet = false;
+  m.ask.settled().then(() => { quiet = true; });
+  await settle();
+  assert.equal(quiet, true, 'settled resolves');
+  // The other box closes: the next offer opens.
+  m.doc.documentElement.removeAttribute('data-modal-open');
+  m.ask.offer();
+  assert.equal(m.dialog.showCalls, 1);
+  assert.equal(m.store.has('pinalert.changesAsked'), true);
+});
+
+test(NAME + 'does not open while the dialog itself sits inside an inert part of the page, and writes no key', async () => {
+  const m = load({ inert: true });
+  await m.ask.offer();
   assert.equal(m.dialog.showCalls, 0);
   assert.equal(m.store.has('pinalert.changesAsked'), false);
 });
