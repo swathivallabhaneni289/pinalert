@@ -50,15 +50,26 @@ import (
 // notify.js, votes.js and report-form.js (the figure above was last set before
 // the Phase 3.3 plans). 684597 raw bytes (html 11838, css 229635, js 429339,
 // icons 13785, other 0; gzip level 5 total 204179 bytes); budget 787456, the
-// measured total plus 15 percent rounded up to the next 1024 bytes.
+// measured total plus 15 percent rounded up to the next 1024 bytes. The 03.3
+// code review found that only 11531 bytes of that came from Phase 3.3: the
+// total at the commit before the gap fix was already 673066, so 82074 bytes had
+// come from earlier work since 2026-10-17 that was never re-measured. Whether
+// that earlier growth was intended is the owner's call (docs/MODERATION.md).
+//
+// Re-measured on 2026-10-28 by the 03.3 code review fixes: changes-ask.js now
+// loads only with its pop-up (WR-03), and this page has no push key, so it is
+// no longer counted; CR-02 and WR-02 grew notify.js. 676839 raw bytes (html
+// 11773, css 229635, js 421646, icons 13785, other 0; gzip level 5 total 201292
+// bytes); budget 779264. A page that shows the pop-up adds changes-ask.js and
+// the partial, about 12 KB, inside the budget.
 //
 // To change the budget after an intended change: re-measure with
 // go test ./web/ -run TestLowDataByteBudget -v, set both constants together in
 // one commit and update the Low data view size budget section of
 // docs/MODERATION.md.
 const (
-	lowDataMeasuredBytes = 684597
-	lowDataByteBudget    = 787456
+	lowDataMeasuredBytes = 676839
+	lowDataByteBudget    = 779264
 )
 
 type p427Rule struct {

@@ -525,8 +525,9 @@ var changesAskAccount = account.Account{ID: 4242, Email: "changes-ask-reader@exa
 // runChangesAskCases pins plan 03.3-21 (the 03.3-UAT gap for test 4): a page
 // where people post and vote renders the changes pop-up exactly once, closed,
 // for a signed in account whose Changes switch is off when the server has a
-// push key, and renders none in any other case, always with a 200 and always
-// with the one deferred changes-ask.js tag carrying the asset version. render
+// push key, and renders none in any other case, always with a 200. The one
+// deferred changes-ask.js tag carrying the asset version comes with the pop-up
+// and only with it (03.3-REVIEW fix WR-03). render
 // answers the status and the body of one request. No database is needed.
 func runChangesAskCases(t *testing.T, page string, render func(cfg PageConfig, acc account.Account) (int, string)) {
 	t.Helper()
@@ -586,12 +587,17 @@ func runChangesAskCases(t *testing.T, page string, render func(cfg PageConfig, a
 					t.Errorf("%s: the lookup was asked about %v, want only [%d]", page, tc.lookup.asked, changesAskAccount.ID)
 				}
 			}
-			// The script is always on the page; it does nothing without the dialog.
-			if n := strings.Count(body, "/static/js/changes-ask.js"); n != 1 {
-				t.Errorf("%s: changes-ask.js appears %d times, want 1", page, n)
+			// Amended by the 03.3-REVIEW fix WR-03: the script comes with the
+			// dialog and only with it, after it, so an account that can never
+			// see the pop-up does not load it.
+			if n := strings.Count(body, "/static/js/changes-ask.js"); n != want {
+				t.Errorf("%s: changes-ask.js appears %d times, want %d", page, n, want)
 			}
-			if n := strings.Count(body, scriptTag); n != 1 {
-				t.Errorf("%s: want exactly one %s", page, scriptTag)
+			if n := strings.Count(body, scriptTag); n != want {
+				t.Errorf("%s: %s appears %d times, want %d", page, scriptTag, n, want)
+			}
+			if tc.wantDialog && strings.Index(body, scriptTag) < strings.Index(body, `<dialog id="changes-ask"`) {
+				t.Errorf("%s: changes-ask.js must come after the dialog", page)
 			}
 
 			// A failed read is logged with the numeric id and nothing else about the account.
