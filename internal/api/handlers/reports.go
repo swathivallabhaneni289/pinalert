@@ -8,6 +8,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -510,38 +511,10 @@ func SubmitReport(svc *service.ReportService, gate *RateGate) http.HandlerFunc {
 			return
 		}
 
-		var capacityStatus *service.CapacityStatus
-		if req.ShelterCapacityStatus != nil {
-			cs := service.CapacityStatus(*req.ShelterCapacityStatus)
-			capacityStatus = &cs
-		}
-
-		in := service.SubmitInput{
-			Category:              service.Category(req.Category),
-			Severity:              service.Severity(req.Severity),
-			Description:           req.Description,
-			Latitude:              req.Latitude,
-			Longitude:             req.Longitude,
-			ShelterCapacityStatus: capacityStatus,
-			ShelterHeadcount:      req.ShelterHeadcount,
-			WrittenAt:             service.ClampWrittenAt(parseWrittenAt(req.WrittenAt), time.Now().UTC()),
-		}
-		if req.RequestID != nil {
-			in.RequestID = *req.RequestID
-		}
-		if req.Happening != nil {
-			h := service.Happening(*req.Happening)
-			in.Happening = &h
-		}
+		in := submitInputFrom(req)
 
 		if err := service.ValidateSubmitInput(in); err != nil {
-			var ve service.ValidationError
-			if errors.As(err, &ve) {
-				writeFieldError(w, http.StatusBadRequest, ve.Field, ve.Message)
-				return
-			}
-			log.Printf("handlers: SubmitReport: %v", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			writeSubmitError(w, err)
 			return
 		}
 
@@ -582,18 +555,7 @@ func SubmitReport(svc *service.ReportService, gate *RateGate) http.HandlerFunc {
 
 		res, err := svc.SubmitChecked(r.Context(), sessionID, acc.ID, in)
 		if err != nil {
-			var tr service.TextRejectedError
-			if errors.As(err, &tr) {
-				writeFieldError(w, http.StatusUnprocessableEntity, "description", service.RejectMessage(tr.Reason))
-				return
-			}
-			var ve service.ValidationError
-			if errors.As(err, &ve) {
-				writeFieldError(w, http.StatusBadRequest, ve.Field, ve.Message)
-				return
-			}
-			log.Printf("handlers: SubmitReport: %v", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			writeSubmitError(w, err)
 			return
 		}
 
@@ -605,6 +567,57 @@ func SubmitReport(svc *service.ReportService, gate *RateGate) http.HandlerFunc {
 		stored = true
 		writeJSON(w, http.StatusCreated, SubmitReportResponse{Report: reportToResponse(res)})
 	}
+}
+
+// submitInputFrom converts the decoded body of a report post into the service's
+// input. It reads nothing from the request and decides nothing: validation is
+// service.ValidateSubmitInput's. SubmitReport and the Demo's post route (demo.go)
+// share it, so a body means the same thing on both (plan 05-10).
+func submitInputFrom(req SubmitReportRequest) service.SubmitInput {
+	var capacityStatus *service.CapacityStatus
+	if req.ShelterCapacityStatus != nil {
+		cs := service.CapacityStatus(*req.ShelterCapacityStatus)
+		capacityStatus = &cs
+	}
+
+	in := service.SubmitInput{
+		Category:              service.Category(req.Category),
+		Severity:              service.Severity(req.Severity),
+		Description:           req.Description,
+		Latitude:              req.Latitude,
+		Longitude:             req.Longitude,
+		ShelterCapacityStatus: capacityStatus,
+		ShelterHeadcount:      req.ShelterHeadcount,
+		WrittenAt:             service.ClampWrittenAt(parseWrittenAt(req.WrittenAt), time.Now().UTC()),
+	}
+	if req.RequestID != nil {
+		in.RequestID = *req.RequestID
+	}
+	if req.Happening != nil {
+		h := service.Happening(*req.Happening)
+		in.Happening = &h
+	}
+	return in
+}
+
+// writeSubmitError maps a refusal of the validation or of SubmitChecked onto the
+// one answer every report post gives: 422 on the field description for text the
+// check refused, 400 naming the field for a validation error, and a generic 500
+// with the detail logged server side only for anything else. SubmitReport and
+// the Demo's post route share it (plan 05-10).
+func writeSubmitError(w http.ResponseWriter, err error) {
+	var tr service.TextRejectedError
+	if errors.As(err, &tr) {
+		writeFieldError(w, http.StatusUnprocessableEntity, "description", service.RejectMessage(tr.Reason))
+		return
+	}
+	var ve service.ValidationError
+	if errors.As(err, &ve) {
+		writeFieldError(w, http.StatusBadRequest, ve.Field, ve.Message)
+		return
+	}
+	log.Printf("handlers: SubmitReport: %v", err)
+	http.Error(w, "internal server error", http.StatusInternalServerError)
 }
 
 // NearbyReports handles GET /api/reports: parse lat/lon/radius_km/view/
@@ -669,12 +682,34 @@ func SubmitReport(svc *service.ReportService, gate *RateGate) http.HandlerFunc {
 // @Failure 401 {object} ErrorResponse
 // @Router /reports [get]
 func NearbyReports(svc *service.ReportService) http.HandlerFunc {
+	return nearbyHandler(svc, func(r *http.Request) (int64, bool) {
+		acc, ok := account.FromContext(r.Context())
+		if !ok {
+			return 0, false
+		}
+		return acc.ID, true
+	}, svc.Nearby)
+}
+
+// nearbyReadFunc reads the Live, Provisional and (optionally) Hidden reports
+// around a point as service.ReportService.Nearby does.
+type nearbyReadFunc func(ctx context.Context, q service.NearbyQuery) ([]service.ReportView, error)
+
+// nearbyHandler is the whole of GET /api/reports: the query parsing, the view
+// choice, the reads and the response. NearbyReports calls it with the gate's
+// verified account; the Demo's feed route (demo.go) calls it with its world's
+// services and the visitor's synthetic account, so the two routes parse the same
+// query, refuse it with the same sentences and answer in the same shape (plan
+// 05-10). viewer says which account the reads are for and false means there is
+// none, which is a programming error and answers 500. nearby is the read of the
+// default, disputed and all views.
+func nearbyHandler(svc *service.ReportService, viewer func(*http.Request) (int64, bool), nearby nearbyReadFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Reaching this handler at all means the gate already resolved a
 		// verified account, so a missing one is a programming error (a
 		// route mounted outside the gated group), not a client condition,
 		// the same shape SubmitReport uses for a missing session id.
-		acc, ok := account.FromContext(r.Context())
+		viewerID, ok := viewer(r)
 		if !ok {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
@@ -763,7 +798,7 @@ func NearbyReports(svc *service.ReportService) http.HandlerFunc {
 				Latitude:        lat,
 				Longitude:       lon,
 				RadiusKm:        radiusKm,
-				ViewerAccountID: acc.ID,
+				ViewerAccountID: viewerID,
 				Category:        category,
 			})
 			if err != nil {
@@ -779,11 +814,11 @@ func NearbyReports(svc *service.ReportService) http.HandlerFunc {
 				ExpiredPartial:  page.ExpiredPartial,
 			}
 		default:
-			nearby, err := svc.Nearby(r.Context(), service.NearbyQuery{
+			found, err := nearby(r.Context(), service.NearbyQuery{
 				Latitude:        lat,
 				Longitude:       lon,
 				RadiusKm:        radiusKm,
-				ViewerAccountID: acc.ID,
+				ViewerAccountID: viewerID,
 				IncludeDisputed: view == service.FeedViewDisputed,
 				All:             view == feedViewAll,
 				Category:        category,
@@ -793,7 +828,7 @@ func NearbyReports(svc *service.ReportService) http.HandlerFunc {
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 				return
 			}
-			views = nearby
+			views = found
 		}
 
 		// The counts for an empty Active tab (D-12) and an empty All: only the
@@ -820,7 +855,7 @@ func NearbyReports(svc *service.ReportService) http.HandlerFunc {
 				ReportID:        reportID,
 				Latitude:        lat,
 				Longitude:       lon,
-				ViewerAccountID: acc.ID,
+				ViewerAccountID: viewerID,
 			})
 			if err != nil {
 				log.Printf("handlers: NearbyReports: %v", err)

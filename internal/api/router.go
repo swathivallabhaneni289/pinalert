@@ -402,6 +402,14 @@ var compressibleContentTypes = []string{"text/html", "text/css", "text/javascrip
 // prefixes, all built in sessionSkipSet, so the later sessionless routes of
 // Phase 5 join that set instead of adding a second bypass.
 //
+// Amended 2026-10-29 by Phase 5 plan 05-10 (D-04): everything under /demo joins
+// the exempt set and skips the session middleware (the first entry of the rule
+// set's prefixes). It is the Demo's sandbox, mounted from handlers.DemoRoutes: it
+// reads and writes no account and no table, sets no cookie and writes no sessions
+// row. Only the /demo prefix is exempt: /demonstration, dot segments, a double
+// slash and another case are not Demo routes, and /api/reports, /alerts and
+// /api/official/alerts stay behind the gate.
+//
 // The route table has a third part, the moderator group (D-08), which is the
 // one exception to "every other route" above. It sits outside the access gate
 // and answers a plain 404 that is byte equal to an unknown route to everyone
@@ -451,7 +459,7 @@ func NewRouter(deps Deps) *chi.Mux {
 	// The session middleware runs for every request except the public sessionless
 	// routes in sessionSkipSet: the exact public app asset paths (plan 03.3-04, a
 	// launcher or manifest fetch without a cookie must not create a session) and
-	// the 85 globe tile paths (plan 05-04).
+	// the 85 globe tile paths (plan 05-04) and everything under /demo (plan 05-10).
 	r.Use(skipSessionFor(sessionSkipSet(), deps.Session.Middleware(deps.persistSession)))
 
 	// Local copies of the page and auth configs that carry the shared Chrome
@@ -522,6 +530,17 @@ func NewRouter(deps Deps) *chi.Mux {
 	// The public legal pages (D-23, P4-A18): no account data (R-07), cacheable only in the browser.
 	r.Get("/disclaimer", handlers.Legal(deps.Template, auth, handlers.LegalDisclaimerPage))
 	r.Get("/policy", handlers.Legal(deps.Template, auth, handlers.LegalPolicyPage))
+	// The Demo (plan 05-10, D-04, owner 2026-10-17): a visitor with no account can
+	// try Pinalert first. Everything under /demo is public and sessionless (the
+	// prefix is in sessionSkipSet), and it reads and writes no account and no
+	// table: each visit is an in memory world running the real services. Only the
+	// /demo prefix is exempt; /api/reports, /alerts and /api/official/alerts stay
+	// behind the gate below. The Demo's own per IP limits live in DemoRoutes.
+	demoStore := deps.Demo
+	if demoStore == nil {
+		demoStore = demo.NewStore(demo.WithWorldSetup(demo.SeedSetup))
+	}
+	r.Mount("/demo", handlers.DemoRoutes(handlers.DemoConfig{Store: demoStore}))
 	// The installable app assets (plan 03.3-04, T-03.3-05): the manifest, the
 	// service worker and the icons. Each is an exact GET path, never a prefix,
 	// taken from the one list handlers.PWAPublicPaths, which is also what builds
@@ -867,9 +886,9 @@ func (s sessionSkip) matches(r *http.Request) bool {
 
 // sessionSkipSet builds the rule set the router uses, from the same lists the
 // routes are registered from: the exact GET paths are handlers.PWAPublicPaths
-// (plan 03.3-04) and handlers.GlobeTilePaths() (plan 05-04). The POST paths and
-// the prefixes start empty: plan 05-10 adds the Demo prefix and plan 05-12 the
-// refresh endpoint here.
+// (plan 03.3-04) and handlers.GlobeTilePaths() (plan 05-04). The POST paths start
+// empty and plan 05-12 adds the refresh endpoint there. The one prefix is /demo
+// (plan 05-10).
 func sessionSkipSet() sessionSkip {
 	tiles := handlers.GlobeTilePaths()
 	get := make(map[string]bool, len(handlers.PWAPublicPaths)+len(tiles))
@@ -879,7 +898,8 @@ func sessionSkipSet() sessionSkip {
 	for _, path := range tiles {
 		get[path] = true
 	}
-	return sessionSkip{get: get, post: map[string]bool{}}
+	// "/demo" covers GET and POST under it: the Demo's sandbox API (plan 05-10).
+	return sessionSkip{get: get, post: map[string]bool{}, prefixes: []string{"/demo"}}
 }
 
 // skipSessionFor wraps the session middleware so a request goes straight to the
