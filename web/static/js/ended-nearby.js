@@ -126,7 +126,35 @@ window.PinalertEndedNearby = (function () {
     return isFinite(raw) && raw > 0 ? raw : FALLBACK_RADIUS_KM;
   }
 
+  // fixedPosition is the Demo's pretend position, from data-fixed-lat and
+  // data-fixed-lon on the page root (plan 05-19, as map.js reads them since plan
+  // 05-13), or null when the page names no valid pair. Both must be numbers in
+  // range; a half pair or a bad value counts as none.
+  function fixedPosition() {
+    var page = document.querySelector('.profile-page');
+    if (!page) {
+      return null;
+    }
+    var rawLat = page.getAttribute('data-fixed-lat');
+    var rawLon = page.getAttribute('data-fixed-lon');
+    if (rawLat === null || rawLon === null || rawLat === '' || rawLon === '') {
+      return null;
+    }
+    var lat = Number(rawLat);
+    var lon = Number(rawLon);
+    if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+      return null;
+    }
+    return { lat: lat, lon: lon };
+  }
+
+  // readPosition is the page's fixed position when it has one (the Demo asks
+  // the browser for nothing and keeps nothing), else the one Nearby last kept.
   function readPosition() {
+    var fixed = fixedPosition();
+    if (fixed) {
+      return fixed;
+    }
     return typeof PinalertPosition !== 'undefined' ? PinalertPosition.read() : null;
   }
 

@@ -54,6 +54,9 @@
   var moreEl = document.getElementById('alert-banner-more');
   var moreSrEl = document.getElementById('alert-banner-more-sr');
   var shellEl = document.getElementById('app-shell');
+  // The Demo tag exists on the Demo's Nearby only (plan 05-19). It is optional:
+  // the real page has no such element and keeps drawing its banner without it.
+  var demoEl = document.getElementById('alert-banner-demo');
 
   var required = [bannerEl, levelEl, eventEl, areaEl, moreEl, moreSrEl];
   for (var i = 0; i < required.length; i += 1) {
@@ -110,7 +113,7 @@
     if (typeof more !== 'number' || !isFinite(more) || more < 1) {
       more = 0;
     }
-    return { rank: rank, word: word, event: event, area: area, more: Math.floor(more) };
+    return { rank: rank, word: word, event: event, area: area, more: Math.floor(more), demo: banner.demo === true };
   }
 
   // ---- Drawing ------------------------------------------------------------
@@ -119,10 +122,13 @@
   // alert coming back after a failed request is not announced again.
   function hideQuiet() {
     bannerEl.hidden = true;
+    if (demoEl) {
+      demoEl.hidden = true;
+    }
   }
 
   function hide() {
-    bannerEl.hidden = true;
+    hideQuiet();
     shownRank = 0;
   }
 
@@ -160,6 +166,11 @@
       moreEl.textContent = '';
       moreEl.hidden = true;
       moreSrEl.textContent = '';
+    }
+    // The Demo tag shows only for the server's sample alert (banner.demo is the
+    // boolean true), never for a real one.
+    if (demoEl) {
+      demoEl.hidden = !pick.demo;
     }
     bannerEl.hidden = false;
     announce(pick);

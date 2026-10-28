@@ -12,6 +12,13 @@ package handlers
 // starts a new world, so nothing a visitor did survives the visit. The page
 // asks the browser for no location: the pretend position is on the page shell
 // and the scripts use it instead.
+//
+// Plan 05-19 added the Demo's other two places (Official alerts and My
+// activity). They share this file's view model and builders. The bars of the
+// three pages link to each other with ?v=<visit>, and a page given a valid,
+// living visit shows that world again, so the three places of one visit agree.
+// A page removes the v from its own address as it loads (demo.js), so a reload
+// or a copied address has no visit and starts a fresh Demo.
 
 import (
 	"bytes"
@@ -120,13 +127,13 @@ func demoVisitFor(store *demo.Store, r *http.Request) (*demo.World, error) {
 // place current (one of the Nav constants): the visit's world, the Demo bars
 // whose places carry the visit, the Exit address and the pretend position. When
 // the world cannot be made it answers 503 itself and returns false.
-func newDemoPlaceModel(w http.ResponseWriter, r *http.Request, store *demo.Store, cfg PageConfig, current string, opts ...navOption) (demoViewModel, bool) {
+func newDemoPlaceModel(w http.ResponseWriter, r *http.Request, store *demo.Store, cfg PageConfig, current string, opts ...navOption) (demoViewModel, *demo.World, bool) {
 	world, err := demoVisitFor(store, r)
 	if err != nil {
 		log.Printf("handlers: Demo page: starting a visit failed: %v", err)
 		w.Header().Set("Cache-Control", "no-store")
 		http.Error(w, demoBusyMessage, http.StatusServiceUnavailable)
-		return demoViewModel{}, false
+		return demoViewModel{}, nil, false
 	}
 	from := demoFromWord(r)
 	chrome := cfg.Chrome.withDefaults()
@@ -145,7 +152,7 @@ func newDemoPlaceModel(w http.ResponseWriter, r *http.Request, store *demo.Store
 		PretendPlace:    demo.PretendPlace,
 		DefaultRadiusKm: cfg.DefaultRadiusKm,
 		VoteRadiusKm:    cfg.VoteRadiusKm,
-	}, true
+	}, world, true
 }
 
 // serveDemoPlace renders one Demo page from a view model. The page is built in
@@ -172,7 +179,7 @@ func serveDemoPlace(w http.ResponseWriter, tmpl *template.Template, name string,
 // reached through DemoRoutes, behind the per IP visit limit.
 func DemoPage(tmpl *template.Template, store *demo.Store, cfg PageConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		vm, ok := newDemoPlaceModel(w, r, store, cfg, NavNearby, navTitle(demoWordmark))
+		vm, _, ok := newDemoPlaceModel(w, r, store, cfg, NavNearby, navTitle(demoWordmark))
 		if !ok {
 			return
 		}

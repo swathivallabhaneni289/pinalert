@@ -30,7 +30,7 @@ const demoAlertsTemplate = "demo_alerts.html.tmpl"
 // the per IP visit limit.
 func DemoAlertsPage(tmpl *template.Template, store *demo.Store, cfg PageConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		vm, ok := newDemoPlaceModel(w, r, store, cfg, NavAlerts)
+		vm, _, ok := newDemoPlaceModel(w, r, store, cfg, NavAlerts)
 		if !ok {
 			return
 		}

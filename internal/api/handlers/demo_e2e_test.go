@@ -540,15 +540,13 @@ func TestDemoActivityPageParts(t *testing.T) {
 			t.Errorf("part %s lacks its empty state %q", key, empty)
 		}
 	}
-	if order := []string{"Posted by you", "You confirmed", "You disputed", "Ended nearby"}; true {
-		last := -1
-		for _, name := range order {
-			at := strings.Index(fresh, name)
-			if at <= last {
-				t.Errorf("part name %q is missing or out of order", name)
-			}
-			last = at
+	last := -1
+	for _, name := range []string{"Posted by you", "You confirmed", "You disputed", "Ended nearby"} {
+		at := strings.Index(fresh, name)
+		if at <= last {
+			t.Errorf("part name %q is missing or out of order", name)
 		}
+		last = at
 	}
 	for _, banned := range []string{"Updates", "queue-strip", "reporter record", "data-account-id", "bell-trigger", "tel:"} {
 		if strings.Contains(fresh, banned) {

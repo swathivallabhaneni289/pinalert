@@ -139,6 +139,7 @@ func DemoRoutes(cfg DemoConfig) chi.Router {
 		// same visit. They are registered here for the same reason as the page
 		// above: Mount("/demo") claims every path under it.
 		pages.Get("/alerts", DemoAlertsPage(cfg.Template, store, cfg.Page))
+		pages.Get("/activity", DemoActivityPage(cfg.Template, store, cfg.Page))
 	}
 	r.Get("/api/v/{visit}/reports", demoNearby(store))
 	r.Get("/api/v/{visit}/official/alerts", demoOfficialAlerts(store))

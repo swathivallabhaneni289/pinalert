@@ -1,0 +1,175 @@
+{{/*
+  The Demo's My activity page (Phase 5, plan 19; D-05; UI-SPEC 4c). It mirrors
+  profile.html.tmpl, so the real stylesheet and the real scripts (activity.js,
+  ended-nearby.js and the trust and visibility builders) find every class and id
+  they expect. It shows what the visitor did in this visit and nothing else:
+  Posted by you, You confirmed, You disputed and Ended nearby, each with the real
+  layout and the real empty state. It differs in what the Demo needs:
+
+    - the Demo strip is the first element, as on every Demo screen, and every
+      card carries the Demo tag in its status cell;
+    - the page root names the Demo's API base (data-api-base, read by
+      api-base.js) and the fixed pretend position (data-fixed-lat,
+      data-fixed-lon). ended-nearby.js reads that position before any stored one,
+      so Ended nearby is asked for from Singh Nagar and the browser is never asked
+      for a location;
+    - there is no Updates part, no reporter record, no Waiting to send strip and
+      no moderation note, because the Demo has no person, no bell and no offline
+      queue; the scripts for those are not loaded;
+    - no app head (it would register the service worker).
+
+  The parts and the cards are built on the server by the same code the signed in
+  page uses, from this visit's own world.
+*/}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/icons/app.svg" type="image/svg+xml">
+  <title>Pinalert Demo: My activity</title>
+  <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/feed.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/trust.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/activity.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/app-bar.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/phone.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/demo.css?v={{.AssetVersion}}">
+  <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
+</head>
+<body class="has-app-bar">
+  {{template "demo_strip" .}}
+  <div class="top-chrome">
+    {{template "app_topbar" .}}
+  </div>
+  <div id="notice-live" class="visually-hidden" role="status" aria-live="polite"></div>
+
+  <div class="app-content">
+  <main class="profile-page"
+        data-demo="1"
+        data-visit="{{.Visit}}"
+        data-api-base="{{.APIBase}}"
+        data-fixed-lat="{{.FixedLat}}"
+        data-fixed-lon="{{.FixedLon}}"
+        data-part="{{.CurrentPart}}"
+        data-default-radius-km="{{.DefaultRadiusKm}}">
+    <h1 class="activity-heading">My activity</h1>
+
+    <nav class="activity-hub" aria-label="My activity">
+      {{range .Parts}}
+      <a class="activity-hub__row" href="{{.Href}}" data-part-link="{{.Key}}"><span class="activity-hub__tile" aria-hidden="true"><span class="app-icon app-icon--{{.Icon}}"></span></span><span class="activity-hub__text"><span class="activity-hub__name">{{.Name}}</span><span class="activity-hub__summary">{{.Summary}}</span></span>{{if .ShowCount}}<span class="activity-hub__count">{{.Count}}</span>{{else if eq .Key "ended"}}<span class="activity-hub__count" id="ended-hub-count" hidden></span>{{end}}<span class="app-icon app-icon--chevron-right activity-hub__chevron" aria-hidden="true"></span></a>
+      {{end}}
+    </nav>
+
+    {{range .Parts}}
+    <section class="activity-part activity-part--{{.Key}}" id="part-{{.Key}}" data-part-key="{{.Key}}"{{if .Current}} data-current{{end}} aria-labelledby="activity-title-{{.Key}}">
+      <div class="activity-part__head">
+        <h2 class="activity-part__title" id="activity-title-{{.Key}}">{{.Name}}{{if .ShowCount}} <span class="activity-part__count">{{.Count}}</span>{{else if eq .Key "ended"}} <span class="activity-part__count" id="ended-title-count" hidden></span>{{end}}</h2>
+        <p class="activity-part__line">{{.Line}}</p>
+      </div>
+      <div class="activity-part__body">
+        {{if eq .Key "ended"}}
+        <div class="activity-box" id="ended-nearby">
+          <div class="activity-skeleton" id="ended-skeleton">
+            <div class="skeleton-row"></div>
+            <div class="skeleton-row"></div>
+            <div class="skeleton-row"></div>
+            <div class="skeleton-row"></div>
+          </div>
+          <div class="activity-cols" id="ended-cols" aria-hidden="true" hidden>
+            <span class="activity-cols__disc"></span>
+            <span>Report</span>
+            <span>Status</span>
+            <span>What happened</span>
+            <span>When</span>
+            <span class="activity-cols__distance">Distance</span>
+          </div>
+          <div class="activity-group" id="ended-resolved" hidden>
+            <p class="activity-group__label">Resolved</p>
+            <ol class="activity-group__list profile-report-list" id="ended-resolved-list"></ol>
+            <p class="activity-group__cut" id="ended-resolved-cut" hidden></p>
+          </div>
+          <div class="activity-group" id="ended-faded" hidden>
+            <p class="activity-group__label">Expired</p>
+            <ol class="activity-group__list profile-report-list" id="ended-faded-list"></ol>
+            <p class="activity-group__cut" id="ended-faded-cut" hidden></p>
+          </div>
+          <div class="empty-state profile-empty-state activity-empty" id="ended-empty" hidden>
+            <h3>{{.EmptyTitle}}</h3>
+            <p>{{.EmptyText}}</p>
+          </div>
+          <div class="empty-state profile-empty-state activity-empty" id="ended-location" hidden>
+            <h3>Ended nearby needs your location</h3>
+            <p>Open Nearby and allow location, then come back.</p>
+          </div>
+          <div class="error-state activity-empty" id="ended-error" hidden>
+            <h3>Couldn't load reports</h3>
+            <p>Check your connection and try again.</p>
+            <button type="button" class="activity-retry" id="ended-retry">Try again</button>
+          </div>
+        </div>
+        {{else}}
+        <div class="activity-box">
+          {{if .Rows}}
+          <div class="activity-cols" aria-hidden="true">
+            <span class="activity-cols__disc"></span>
+            <span>Report</span>
+            <span>Status</span>
+            <span>What happened</span>
+            <span>When</span>
+            <span class="activity-cols__distance">Distance</span>
+          </div>
+          <ol class="profile-report-list">
+            {{range .Rows}}
+            <li class="report-row activity-card activity-card--{{.Kind}} {{.SeverityClass}} {{.VisibilityClass}}"
+                data-report-id="{{.ReportID}}"
+                data-visibility="{{.Visibility}}"
+                data-visibility-reason="{{.VisibilityReason}}"
+                data-expired="{{.Expired}}"
+                data-trust="{{.TrustJSON}}"
+                {{if .CanReopen}}data-can-reopen="true"{{end}}
+                {{if .UndosUsed}}data-undos-used="true"{{end}}>
+              <span class="icon-badge activity-card__icon" aria-hidden="true"><span class="icon-glyph {{.IconGlyph}}"></span></span>
+              <div class="activity-card__report">
+                <p class="report-row__title">{{.Description}}</p>
+                <p class="report-row__meta activity-card__sub">{{.Detail}}</p>
+              </div>
+              <div class="activity-card__status"><span class="demo-tag">Demo</span><span class="visually-hidden">{{.SeverityWord}} severity. </span><span class="activity-chip" data-word-ongoing="Ongoing" data-word-disputed="Disputed">{{.StatusWord}}</span></div>
+              <div class="activity-card__what"></div>
+              <p class="activity-card__when">{{.WhenText}}</p>
+              <p class="activity-card__distance" data-distance-for="{{.ReportID}}" data-lat="{{.Lat}}" data-lon="{{.Lon}}">Unknown</p>
+            </li>
+            {{end}}
+          </ol>
+          {{else}}
+          <div class="empty-state profile-empty-state activity-empty">
+            <h3>{{.EmptyTitle}}</h3>
+            <p>{{.EmptyText}}</p>
+          </div>
+          {{end}}
+        </div>
+        {{end}}
+      </div>
+    </section>
+    {{end}}
+  </main>
+  </div>
+
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+
+  {{template "app_bottombar" .}}
+
+  <script src="/static/js/api-base.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/app.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/votes.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/visibility.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/trust.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/ended-cards.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/ended-nearby.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/activity.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/app-bar.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/demo.js?v={{.AssetVersion}}" defer></script>
+</body>
+</html>
