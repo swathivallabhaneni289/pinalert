@@ -220,6 +220,39 @@ func TestOnboardingFlowEndToEnd(t *testing.T) {
 	}
 }
 
+// TestWelcomeOffersTheDemoForANewAccount pins plan 05-18 (D-03): the rendered
+// first-time flow for a new account offers the Demo beside Continue on step 1
+// and in the Disagree box, both as links to /demo?from=welcome, and the Disagree
+// lead holds the restored second sentence. The links are plain links, so nothing
+// here depends on a script.
+func TestWelcomeOffersTheDemoForANewAccount(t *testing.T) {
+	base, newClient, _ := welcomeServer(t)
+	_, still := newClient("welcome-demo@example.com")
+
+	resp, body := welcomeGet(t, still, base, "/welcome")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /welcome: %d", resp.StatusCode)
+	}
+	for _, want := range []string{
+		`<a class="btn" id="welcome-try-demo-1" href="/demo?from=welcome">Try the demo</a>`,
+		`<a class="btn" id="welcome-try-demo-2" href="/demo?from=welcome">Try the demo</a>`,
+		`Sorry, you need to agree before you can continue. You can still look around in the Demo without agreeing.`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("/welcome lacks %q", want)
+		}
+	}
+	// Step 1 holds Try the demo before Continue, and the flow is still four steps.
+	one := strings.Index(body, `id="welcome-try-demo-1"`)
+	two := strings.Index(body, `id="welcome-continue-1"`)
+	if one == -1 || two == -1 || one > two {
+		t.Errorf("step 1 should hold Try the demo (%d) before Continue (%d)", one, two)
+	}
+	if n := strings.Count(body, `<section class="welcome__step"`); n != 4 {
+		t.Errorf("/welcome holds %d steps, want 4", n)
+	}
+}
+
 // TestWelcomeStartsAtStep3AfterAgree pins that a person who left after Agree
 // does not read and agree twice, and that an older agreement does not count.
 func TestWelcomeStartsAtStep3AfterAgree(t *testing.T) {

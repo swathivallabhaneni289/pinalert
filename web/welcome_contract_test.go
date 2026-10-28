@@ -68,8 +68,13 @@ func TestWelcomeFourStepsInOrder(t *testing.T) {
 	// The laptop step list is drawn from the steps the handler passes.
 	p13MustContain(t, "step list", page, `<ol class="welcome__steps"`, `{{range .Steps}}`, `data-step="{{.Number}}"`)
 
-	// Phase 5's sentences are not rendered: the second official alerts card and
-	// the Demo, with the second Disagree sentence it adds.
+	// Official alerts are a Settings switch only (owner 2026-10-27, quick
+	// 261027-t5w), so "Severe official alerts" stays out of the flow for good.
+	//
+	// Amended 2026-10-29 by plan 05-18 (D-03): Phase 5 adds Try the demo to step 1
+	// and the Disagree box, with the second Disagree sentence, so "Demo", "look
+	// around" and "looking around" left this list. Every other pin stays; the new
+	// pins are in demo_entry_contract_test.go.
 	//
 	// Amended 2026-10-18 by Phase 3.3 plan 13 (03.4 D-27, decision 15): the
 	// Alerts sentences ("Get alerts when it matters", "Allow alerts", "Critical
@@ -77,7 +82,7 @@ func TestWelcomeFourStepsInOrder(t *testing.T) {
 	// list; the obsolete "Share, then Add to Home Screen" ban is gone because
 	// the guide's real wording lives in device_guide.html.tmpl.
 	for _, banned := range []string{
-		"Severe official alerts", "Demo", "look around", "looking around",
+		"Severe official alerts",
 	} {
 		if strings.Contains(page, banned) {
 			t.Errorf("welcome.html.tmpl holds %q, which belongs to a later phase", banned)
@@ -149,7 +154,12 @@ func TestWelcomeStep2ReadsTheSharedText(t *testing.T) {
 	// because it holds buttons and takes focus.
 	p13MustContain(t, "disagree box", page,
 		`<div class="welcome__notice welcome__notice--box" id="welcome-disagree-message" role="group" aria-labelledby="welcome-disagree-lead" tabindex="-1" hidden>`,
-		`<p class="welcome__notice-lead" id="welcome-disagree-lead">Sorry, you need to agree before you can continue.</p>`,
+		// Amended 2026-10-29 by plan 05-18 (D-03, UI-SPEC 4f): the lead keeps its
+		// built first sentence, unchanged, and adds a space and the restored
+		// second sentence. The old pin was the paragraph holding the first
+		// sentence alone; the first sentence is still pinned on its own below
+		// (it is counted once in the page).
+		`<p class="welcome__notice-lead" id="welcome-disagree-lead">Sorry, you need to agree before you can continue. You can still look around in the Demo without agreeing.</p>`,
 		`<button type="button" class="btn" id="welcome-reread">Read again</button>`,
 		`<form class="welcome__notice-form" method="post" action="/auth/logout">`,
 		`<button type="submit" class="btn" id="welcome-logout">Log out</button>`)
@@ -166,11 +176,18 @@ func TestWelcomeStep2ReadsTheSharedText(t *testing.T) {
 	// has a real status line (role="status" hidden), so the ban on a status
 	// region now covers the Disagree box only, which is a group that takes focus.
 	p13MustNotContain(t, "disagree box", boxHTML, `role="status"`)
-	for _, banned := range []string{"112", "tel:", "CallHref", "Numbers", "<a "} {
+	//
+	// Amended 2026-10-29 by plan 05-18 (D-03): the box gains one link, Try the
+	// demo, so "<a " left the ban list. The ban on a call line is unchanged (no
+	// number, no tel: link); the box may hold exactly one anchor and it is the
+	// Demo link.
+	for _, banned := range []string{"112", "tel:", "CallHref", "Numbers"} {
 		if strings.Contains(boxHTML, banned) {
 			t.Errorf("the Disagree box holds %q; the owner dropped the call line", banned)
 		}
 	}
+	w10Count(t, "the Disagree box", boxHTML, "<a ", 1)
+	w10Count(t, "the Disagree box", boxHTML, `<a class="btn" id="welcome-try-demo-2" href="/demo?from=welcome">Try the demo</a>`, 1)
 
 	js := stripJSComments(p421ReadStatic(t, "js/welcome.js"))
 	if strings.Contains(js, "Sorry, you need to agree") || strings.Contains(js, "You need to agree") || strings.Contains(js, "DISAGREE_MESSAGE") {
