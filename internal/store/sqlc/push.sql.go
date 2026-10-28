@@ -12,6 +12,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const accountPushSentAboutReport = `-- name: AccountPushSentAboutReport :one
+SELECT EXISTS (
+    SELECT 1
+    FROM push_outbox
+    WHERE account_id = $1::bigint
+      AND report_id = $2::bigint
+      AND state = 'sent'
+)::boolean
+`
+
+type AccountPushSentAboutReportParams struct {
+	AccountID int64
+	ReportID  int64
+}
+
+// Serves the one notification per report rule for Apple endpoints (03.3-UAT gap
+// for test 8, 2026-10-28): whether any push about this report, of any kind, was
+// already sent to this account. Only sent rows count, so a skipped or failed row
+// never makes a later push look like a repeat.
+func (q *Queries) AccountPushSentAboutReport(ctx context.Context, arg AccountPushSentAboutReportParams) (bool, error) {
+	row := q.db.QueryRow(ctx, accountPushSentAboutReport, arg.AccountID, arg.ReportID)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const accountsWithChangesPush = `-- name: AccountsWithChangesPush :many
 SELECT a.id AS account_id
 FROM accounts a

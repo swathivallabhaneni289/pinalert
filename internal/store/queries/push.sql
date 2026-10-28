@@ -561,6 +561,19 @@ WHERE account_id = sqlc.arg(account_id)::bigint
   AND kind IN ('critical', 'reliable', 'changed')
   AND sent_at > sqlc.arg(since)::timestamptz;
 
+-- name: AccountPushSentAboutReport :one
+-- Serves the one notification per report rule for Apple endpoints (03.3-UAT gap
+-- for test 8, 2026-10-28): whether any push about this report, of any kind, was
+-- already sent to this account. Only sent rows count, so a skipped or failed row
+-- never makes a later push look like a repeat.
+SELECT EXISTS (
+    SELECT 1
+    FROM push_outbox
+    WHERE account_id = sqlc.arg(account_id)::bigint
+      AND report_id = sqlc.arg(report_id)::bigint
+      AND state = 'sent'
+)::boolean;
+
 -- name: SkipStalePushes :execrows
 -- On wake, queued rows whose own life or whose report's life is over become
 -- skipped with reason stale instead of flushing a backlog. A row a worker holds

@@ -87,6 +87,11 @@ type pwQuerier struct {
 	count       int64
 	countParams []sqlcgen.CountAccountPushesInWindowParams
 
+	// sentAbout is the answer of AccountPushSentAboutReport: whether an earlier
+	// push about the report was already sent to the account.
+	sentAbout   bool
+	aboutParams []sqlcgen.AccountPushSentAboutReportParams
+
 	subs []sqlcgen.PushSubscriptionsForAccountRow
 
 	marks     []pwMark
@@ -219,6 +224,14 @@ func (q *pwQuerier) CountAccountPushesInWindow(_ context.Context, a sqlcgen.Coun
 	q.rec("CountAccountPushesInWindow")
 	q.countParams = append(q.countParams, a)
 	return q.count, nil
+}
+
+func (q *pwQuerier) AccountPushSentAboutReport(_ context.Context, a sqlcgen.AccountPushSentAboutReportParams) (bool, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.rec("AccountPushSentAboutReport")
+	q.aboutParams = append(q.aboutParams, a)
+	return q.sentAbout, nil
 }
 
 func (q *pwQuerier) PushSubscriptionsForAccount(_ context.Context, _ int64) ([]sqlcgen.PushSubscriptionsForAccountRow, error) {
@@ -944,7 +957,24 @@ func TestWorkerConfirmedUpdateSkipsApple(t *testing.T) {
 }
 
 func TestWorkerCapPerAccountHour(t *testing.T) {
-	for _, kind := range []string{"critical", "reliable", "changed"} {
+	// A Critical alert is never held by the hourly cap, but it is still counted
+	// (03.3-UAT gap for test 8, 2026-10-28): the cap is read and does not stop it.
+	for _, count := range []int64{PushPerAccountPerHour, 99} {
+		t.Run(fmt.Sprintf("critical over the cap (%d sent) is still sent", count), func(t *testing.T) {
+			r := newPWRig(t)
+			r.q.count = count
+			if err := r.sweep(); err != nil {
+				t.Fatal(err)
+			}
+			if m := r.onlyMark(); m.kind != "sent" {
+				t.Fatalf("mark = %+v, want sent", m)
+			}
+			if n := len(r.s.messages()); n != 1 {
+				t.Fatalf("%d messages were sent, want 1", n)
+			}
+		})
+	}
+	for _, kind := range []string{"reliable", "changed"} {
 		t.Run(kind+" over the cap is skipped and nothing else is queued", func(t *testing.T) {
 			r := newPWRig(t)
 			r.q.claimRows = []sqlcgen.ClaimDuePushesRow{pwClaim(1, kind)}
@@ -1012,6 +1042,142 @@ func TestWorkerCapPerAccountHour(t *testing.T) {
 		if n := r.q.callCount("CountAccountPushesInWindow"); n != 0 {
 			t.Errorf("the cap was read %d times for a confirmed update", n)
 		}
+	})
+}
+
+func TestHeldByHourlyCap(t *testing.T) {
+	cases := []struct {
+		kind PushKind
+		sent int64
+		want bool
+	}{
+		{PushKindCritical, 0, false},
+		{PushKindCritical, 3, false},
+		{PushKindCritical, 4, false},
+		{PushKindCritical, 99, false},
+		{PushKindReliable, 0, false},
+		{PushKindReliable, 3, false},
+		{PushKindReliable, 4, true},
+		{PushKindReliable, 99, true},
+		{PushKindChanged, 3, false},
+		{PushKindChanged, 4, true},
+		{PushKindChanged, 99, true},
+		{PushKindConfirmedUpdate, 0, false},
+		{PushKindConfirmedUpdate, 4, false},
+		{PushKindConfirmedUpdate, 99, false},
+	}
+	for _, c := range cases {
+		if got := heldByHourlyCap(c.kind, c.sent); got != c.want {
+			t.Errorf("heldByHourlyCap(%s, %d) = %v, want %v", c.kind, c.sent, got, c.want)
+		}
+	}
+}
+
+func TestDeviceSkipsRepeatPush(t *testing.T) {
+	apple := []string{"web.push.apple.com", "api.push.apple.com", "WEB.PUSH.APPLE.COM", "Web.Push.Apple.Com", "x.y.push.apple.com"}
+	others := []string{"fcm.googleapis.com", "updates.push.services.mozilla.com", "wns2-par02p.notify.windows.com", "android.googleapis.com"}
+	for _, h := range apple {
+		if !deviceSkipsRepeatPush(h, true) {
+			t.Errorf("deviceSkipsRepeatPush(%q, true) = false, want true", h)
+		}
+		if deviceSkipsRepeatPush(h, false) {
+			t.Errorf("deviceSkipsRepeatPush(%q, false) = true, want false (the first push goes)", h)
+		}
+	}
+	for _, h := range others {
+		for _, already := range []bool{true, false} {
+			if deviceSkipsRepeatPush(h, already) {
+				t.Errorf("deviceSkipsRepeatPush(%q, %v) = true, want false (only Apple endpoints are left out)", h, already)
+			}
+		}
+	}
+}
+
+func TestWorkerAppleFirstPushOnly(t *testing.T) {
+	// setup builds a changed row about a Live report with an Apple and a Google
+	// device by default; sentAbout is what AccountPushSentAboutReport answers.
+	setup := func(t *testing.T, sentAbout bool, devices ...sqlcgen.PushSubscriptionsForAccountRow) *pwRig {
+		r := newPWRig(t)
+		r.q.claimRows = []sqlcgen.ClaimDuePushesRow{pwClaim(1, "changed")}
+		r.q.claimRows[0].UpdateKind = pwStr("fading")
+		r.q.votes = pwConfirm(2) // a fading note needs a Live report (S-01)
+		r.q.home.ChangesPushOn = true
+		r.report(func(row *sqlcgen.PushReportFactsRow) {
+			row.Severity = "low"
+			row.Happening = nil
+		})
+		r.q.sentAbout = sentAbout
+		r.q.subs = devices
+		return r
+	}
+	endpointsSent := func(r *pwRig) []string {
+		var out []string
+		for _, m := range r.s.messages() {
+			out = append(out, m.sub.Endpoint)
+		}
+		return out
+	}
+	apple := pwDevice(11, pwEndpointApple, "web.push.apple.com")
+	google := pwDevice(12, pwEndpointFCM, "fcm.googleapis.com")
+
+	t.Run("a repeat push goes to the Google device and not the Apple one", func(t *testing.T) {
+		r := setup(t, true, apple, google)
+		if err := r.sweep(); err != nil {
+			t.Fatal(err)
+		}
+		if got := endpointsSent(r); len(got) != 1 || got[0] != pwEndpointFCM {
+			t.Fatalf("sent to %v, want only the Google device", got)
+		}
+		if m := r.onlyMark(); m.kind != "sent" {
+			t.Fatalf("mark = %+v", m)
+		}
+		if len(r.q.aboutParams) != 1 || r.q.aboutParams[0].AccountID != pwAccountID || r.q.aboutParams[0].ReportID != pwReportID {
+			t.Errorf("first push check params = %+v, want the account and the report", r.q.aboutParams)
+		}
+	})
+	t.Run("an account with only Apple devices has the repeat push skipped as no_device", func(t *testing.T) {
+		r := setup(t, true, apple)
+		if err := r.sweep(); err != nil {
+			t.Fatal(err)
+		}
+		r.wantSkipped("no_device")
+	})
+	t.Run("with no earlier push both devices get it", func(t *testing.T) {
+		r := setup(t, false, apple, google)
+		if err := r.sweep(); err != nil {
+			t.Fatal(err)
+		}
+		if got := endpointsSent(r); len(got) != 2 {
+			t.Fatalf("sent to %v, want both devices", got)
+		}
+	})
+	t.Run("the first push about a report still reaches an Apple device", func(t *testing.T) {
+		r := setup(t, false, apple)
+		if err := r.sweep(); err != nil {
+			t.Fatal(err)
+		}
+		if got := endpointsSent(r); len(got) != 1 || got[0] != pwEndpointApple {
+			t.Fatalf("sent to %v, want the Apple device", got)
+		}
+	})
+	t.Run("the check is not read when no device is an Apple one", func(t *testing.T) {
+		r := setup(t, true, google)
+		if err := r.sweep(); err != nil {
+			t.Fatal(err)
+		}
+		if got := endpointsSent(r); len(got) != 1 || got[0] != pwEndpointFCM {
+			t.Fatalf("sent to %v, want the Google device", got)
+		}
+		if n := r.q.callCount("AccountPushSentAboutReport"); n != 0 {
+			t.Errorf("the first push check was read %d times with no Apple device", n)
+		}
+	})
+	t.Run("N6: the stored host column saying Google does not hide an Apple endpoint", func(t *testing.T) {
+		r := setup(t, true, pwDevice(11, pwEndpointApple, "fcm.googleapis.com"))
+		if err := r.sweep(); err != nil {
+			t.Fatal(err)
+		}
+		r.wantSkipped("no_device")
 	})
 }
 
