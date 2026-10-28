@@ -246,12 +246,27 @@ body {
   .login-gate.has-globe .login-card { background: var(--color-surface); }
   .login-gate.has-globe .login-ways__btn:not(:hover) { background: var(--color-bg); }
 }
+/* A color-mix() holding var() parses everywhere and only fails when computed, to transparent, so the
+   solid line above it is no fallback: Safari 15.0 to 16.1 has backdrop-filter but no color-mix. The
+   test names no var(), or every browser would pass it. */
+@supports not (background: color-mix(in srgb, currentColor 65%, transparent)) {
+  .login-gate.has-globe .login-card { background: var(--color-surface); }
+  .login-gate.has-globe .login-ways__btn:not(:hover) { background: var(--color-bg); }
+}
+/* The red bar and icon of an error line fall near 2 to 1 on light glass, so a shown one gets a solid backing. */
+.login-gate.has-globe .login-card .inline-error:not([hidden]) { background: var(--color-surface);
+  padding: var(--space-xs) var(--space-sm); border-radius: 0 6px 6px 0; }
 /* Owner, 2026-10-29: on a phone the whole Earth shows in full, centred above the card, and the glass card
    overlaps only its lower edge. Its box is reserved here from the first paint, so the card never moves when
    the Earth arrives or if it never does; the size keeps the card's main button on the first screen. */
 @media (max-width: 899.98px) {
   .login-gate.has-globe:not([hidden]) { --g: clamp(140px, min(100vw - 48px, (100vh - 404px) * 1.28), 300px);
-    --g: clamp(140px, min(100vw - 48px, (100svh - 404px) * 1.28), 300px); justify-content: flex-start; }
+    justify-content: flex-start; }
+  /* A custom property takes any value, so a second --g line would always win and leave var(--g)
+     invalid where svh is unknown. The svh value goes in only where svh is understood. */
+  @supports (height: 100svh) {
+    .login-gate.has-globe:not([hidden]) { --g: clamp(140px, min(100vw - 48px, (100svh - 404px) * 1.28), 300px); }
+  }
   .login-gate.has-globe .globe-area:not([hidden]) { display: contents; }
   .login-gate.has-globe .globe-bg { position: relative; inset: auto; order: -1; flex: none; align-self: center;
     width: var(--g); height: var(--g); }
@@ -2045,9 +2060,10 @@ body.mode-direct .mock-show { display: none; }
     var w = gate.clientWidth;
     if (!w || gate.hidden) return;
     var h = Math.max(240, window.innerHeight - gate.offsetTop);
-    var laptop = w >= 900;
+    // The same split as the stylesheet: clientWidth leaves out a scrollbar, the media query does not.
+    var laptop = !window.matchMedia('(max-width: 899.98px)').matches;
     // Owner, 2026-10-29: a phone reads the box the stylesheet reserved above the card; the sphere fills it.
-    var phoneBox = laptop ? 0 : globeArea.querySelector(".globe-bg").clientWidth;
+    var phoneBox = laptop ? 0 : globeArea.querySelector('.globe-bg').clientWidth;
     diameter = laptop ? Math.min(h * 0.92, 900) : phoneBox / BOX;
     var bw = laptop ? Math.min(diameter * BOX, w) : phoneBox, bh = laptop ? Math.min(diameter * BOX, h) : phoneBox;
     gate.style.setProperty('--globe-x', Math.round((w - bw) / 2) + 'px');
