@@ -120,7 +120,7 @@ func validOfficialEventWord(w string) bool {
 // this is a second guard, not the first.
 func safeOfficialArea(area string) bool {
 	for _, r := range area {
-		if unicode.IsControl(r) || r == '–' || r == '—' {
+		if unicode.IsControl(r) || r == '\u2013' || r == '\u2014' {
 			return false
 		}
 	}

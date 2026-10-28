@@ -93,7 +93,7 @@ func TestBuildOfficialPushTextRefuses(t *testing.T) {
 		{"an empty area", func(in *OfficialPushInput) { in.Area = "" }},
 		{"an area of spaces", func(in *OfficialPushInput) { in.Area = "   " }},
 		{"an area with a line break", func(in *OfficialPushInput) { in.Area = "Krishna\ndistrict" }},
-		{"an area with an em dash", func(in *OfficialPushInput) { in.Area = "Krishna — district" }},
+		{"an area with an em dash", func(in *OfficialPushInput) { in.Area = "Krishna \u2014 district" }},
 		{"an empty issuer", func(in *OfficialPushInput) { in.Issuer = "" }},
 		{"an issuer that is not in the table", func(in *OfficialPushInput) { in.Issuer = "NDMA" }},
 		{"an issuer with a digit", func(in *OfficialPushInput) { in.Issuer = "Kerala2 SDMA" }},
@@ -197,7 +197,7 @@ func TestOfficialPushCopyHasNoNoiseWords(t *testing.T) {
 				t.Errorf("official notification text %q mentions %q", s, bad)
 			}
 		}
-		if strings.ContainsAny(s, "–—") {
+		if strings.ContainsAny(s, "\u2013\u2014") {
 			t.Errorf("official notification text %q holds a dash", s)
 		}
 		if strings.ContainsAny(s, "\r\n\t") {
