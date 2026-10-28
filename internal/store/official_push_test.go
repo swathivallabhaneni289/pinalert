@@ -385,3 +385,169 @@ func TestOfficialPushQueries(t *testing.T) {
 		}
 	})
 }
+
+// TestOfficialSeriesQueries covers the two series statements of plan 05-16
+// (amended 2026-10-29): the walk over references_text and the sent check over
+// every alert id of a series.
+func TestOfficialSeriesQueries(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+	far := time.Date(2035, 1, 1, 0, 0, 0, 0, time.UTC)
+	base := time.Date(2026, 10, 25, 9, 0, 0, 0, time.UTC)
+
+	seed := func(guid string, minutes int, refs string) int64 {
+		id := testutil.SeedOfficialAlert(t, pool, testutil.OfficialAlertSeed{
+			GUID: guid, CapIdentifier: "IN-" + guid + "_1", Severity: "Severe",
+			Tier: "district", DistrictCodes: []int{749}, SentAt: base.Add(time.Duration(minutes) * time.Minute),
+		})
+		if refs != "" {
+			testutil.MustExec(t, pool, `UPDATE official_alerts SET references_text = $2 WHERE id = $1`, id, refs)
+		}
+		return id
+	}
+	ids := func(rows []sqlcgen.OfficialAlertSeriesRow) map[int64]bool {
+		out := map[int64]bool{}
+		for _, r := range rows {
+			if out[r.ID] {
+				t.Errorf("alert %d appears twice in the series", r.ID)
+			}
+			out[r.ID] = true
+		}
+		return out
+	}
+	roots := func(rows []sqlcgen.OfficialAlertSeriesRow) []int64 {
+		var out []int64
+		for _, r := range rows {
+			if !r.NamesMember {
+				out = append(out, r.ID)
+			}
+		}
+		return out
+	}
+
+	t.Run("a chain A to B to C returns all three with A as the root", func(t *testing.T) {
+		testutil.Truncate(t, pool)
+		a := seed("1900000000000001", 0, "")
+		b := seed("1900000000000002", 10, "IN-1900000000000001_1")
+		c := seed("1900000000000003", 20, "IN-1900000000000002_1")
+		rows, err := q.OfficialAlertSeries(ctx, c)
+		if err != nil {
+			t.Fatalf("OfficialAlertSeries: %v", err)
+		}
+		got := ids(rows)
+		if len(rows) != 3 || !got[a] || !got[b] || !got[c] {
+			t.Fatalf("series = %+v, want alerts %d, %d and %d", rows, a, b, c)
+		}
+		if r := roots(rows); len(r) != 1 || r[0] != a {
+			t.Errorf("roots = %v, want only %d", r, a)
+		}
+		if rows[0].ID != a || rows[0].Guid != "1900000000000001" || !rows[0].SentAt.Equal(base) {
+			t.Errorf("first row = %+v, want the oldest alert first", rows[0])
+		}
+		// From the root the walk goes nowhere: it names nothing.
+		fromRoot, err := q.OfficialAlertSeries(ctx, a)
+		if err != nil || len(fromRoot) != 1 || fromRoot[0].ID != a || fromRoot[0].NamesMember {
+			t.Errorf("series from the root = %+v (%v), want only itself", fromRoot, err)
+		}
+	})
+
+	t.Run("an alert naming two stored alerts returns both", func(t *testing.T) {
+		testutil.Truncate(t, pool)
+		a := seed("1900000000000011", 0, "")
+		b := seed("1900000000000012", 5, "")
+		c := seed("1900000000000013", 20, "IN-1900000000000011_1 IN-1900000000000012_1")
+		rows, err := q.OfficialAlertSeries(ctx, c)
+		if err != nil {
+			t.Fatalf("OfficialAlertSeries: %v", err)
+		}
+		got := ids(rows)
+		if len(rows) != 3 || !got[a] || !got[b] || !got[c] {
+			t.Fatalf("series = %+v, want alerts %d, %d and %d", rows, a, b, c)
+		}
+		if r := roots(rows); len(r) != 2 {
+			t.Errorf("roots = %v, want the two alerts that name nothing", r)
+		}
+	})
+
+	t.Run("a references cycle ends and returns each alert once", func(t *testing.T) {
+		testutil.Truncate(t, pool)
+		a := seed("1900000000000021", 0, "IN-1900000000000022_1")
+		b := seed("1900000000000022", 10, "IN-1900000000000021_1")
+		rows, err := q.OfficialAlertSeries(ctx, a)
+		if err != nil {
+			t.Fatalf("OfficialAlertSeries: %v", err)
+		}
+		got := ids(rows)
+		if len(rows) != 2 || !got[a] || !got[b] {
+			t.Fatalf("series = %+v, want alerts %d and %d once each", rows, a, b)
+		}
+		if r := roots(rows); len(r) != 0 {
+			t.Errorf("roots = %v, want none in a cycle (the caller falls back to the earliest)", r)
+		}
+	})
+
+	t.Run("an alert that names itself or nothing returns only itself", func(t *testing.T) {
+		testutil.Truncate(t, pool)
+		lone := seed("1900000000000031", 0, "")
+		self := seed("1900000000000032", 0, "IN-1900000000000032_1")
+		unknown := seed("1900000000000033", 0, "IN-not-stored_1")
+		for _, id := range []int64{lone, self, unknown} {
+			rows, err := q.OfficialAlertSeries(ctx, id)
+			if err != nil || len(rows) != 1 || rows[0].ID != id || rows[0].NamesMember {
+				t.Errorf("series of %d = %+v (%v), want only itself naming no member", id, rows, err)
+			}
+		}
+		rows, err := q.OfficialAlertSeries(ctx, 999999)
+		if err != nil || len(rows) != 0 {
+			t.Errorf("series of a missing alert = %+v (%v), want no rows", rows, err)
+		}
+	})
+
+	t.Run("sent for series is true for any sent row of the series and only for that account", func(t *testing.T) {
+		testutil.Truncate(t, pool)
+		a := seed("1900000000000041", 0, "")
+		b := seed("1900000000000042", 10, "IN-1900000000000041_1")
+		other := seed("1900000000000043", 10, "")
+		mine := officialPushPerson(t, pool, "series-mine@example.com", "series-mine-sess", "tf3bq")
+		theirs := officialPushPerson(t, pool, "series-theirs@example.com", "series-theirs-sess", "tf3bq")
+		sent := func(account, alert int64, capID, state string) {
+			testutil.MustExec(t, pool,
+				`INSERT INTO official_push_outbox (account_id, alert_id, cap_identifier, reason, state, sent_at, created_at, expires_at)
+				 VALUES ($1, $2, $3, 'new', $4, $5, $5, $6)`,
+				account, alert, capID, state, base, far)
+		}
+		ask := func(account int64, alertIDs ...int64) bool {
+			got, err := q.OfficialPushSentForSeries(ctx, sqlcgen.OfficialPushSentForSeriesParams{AccountID: account, AlertIds: alertIDs})
+			if err != nil {
+				t.Fatalf("OfficialPushSentForSeries: %v", err)
+			}
+			return got
+		}
+
+		if ask(mine, a, b) {
+			t.Error("true with no rows at all")
+		}
+		sent(mine, a, "IN-1900000000000041_1", "skipped")
+		sent(mine, b, "IN-1900000000000042_1", "failed")
+		if ask(mine, a, b) {
+			t.Error("true when the only rows are skipped or failed")
+		}
+		sent(mine, a, "IN-1900000000000041_9", "sent")
+		if !ask(mine, a, b) {
+			t.Error("false though the account had a sent row for the first alert of the series")
+		}
+		if !ask(mine, b, a) {
+			t.Error("false when the ids come in another order")
+		}
+		if ask(theirs, a, b) {
+			t.Error("true for another account")
+		}
+		if ask(mine, other) {
+			t.Error("true for an alert outside the series")
+		}
+		if ask(mine) {
+			t.Error("true for an empty list of alerts")
+		}
+	})
+}
