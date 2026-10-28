@@ -120,7 +120,7 @@ Compared exactly against the server's words (all match trustcopy.go, so the test
 
 ## Deferred Issues
 
-`TestVotedReportsByAccountUsesTheAccountIndex` in `internal/store` fails on `p5_06` in the full run and on its own rerun: the planner chose `idx_votes_report_account_kind_created` instead of `idx_votes_account_kind_report_created` on the near empty tables. It touches nothing this plan changed (no store file changed), so it is out of scope and not fixed. It passed in plan 05-03's run, so it depends on the database it runs on (planner statistics), not on the code.
+`TestVotedReportsByAccountUsesTheAccountIndex` in `internal/store` fails on `p5_06` in the full run and on its own rerun: the planner chose `idx_votes_report_account_kind_created` instead of `idx_votes_account_kind_report_created` on the near empty tables. This plan cannot reach it: `git diff --stat 0c0ccfb3 HEAD` shows only `internal/demo/*` and this SUMMARY, `go list -deps ./internal/store/` holds no `pinalert/internal/demo`, and `git log ad7daf6..0c0ccfb3 -- internal/store` (from plan 05-03's last commit to the base) lists no commit, so nothing in the store, its migrations or `votes_test.go` changed after 05-03 reported a clean run. It reproduced on a second run of the test alone. The cause is not established (possibly planner statistics or the Postgres build on this machine). It is out of scope and not fixed, so the plan's "0 FAIL lines" criterion is not met by this one test, and the full suite is not green until it is looked at.
 
 ## Known Stubs
 
