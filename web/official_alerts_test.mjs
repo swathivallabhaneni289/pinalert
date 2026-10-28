@@ -138,7 +138,7 @@ const ids = [
 
 // buildPage makes the markup of alerts.html.tmpl as the ids official-alerts.js
 // reads: every state block starts hidden, as the template ships them.
-function buildPage({ withMarkup = true, account = '7', fixedLat, fixedLon, dataApiBase } = {}) {
+function buildPage({ withMarkup = true, account = '7', fixedLat, fixedLon, dataApiBase, hazardLine = false } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -177,6 +177,11 @@ function buildPage({ withMarkup = true, account = '7', fixedLat, fixedLon, dataA
     if (startHidden.includes(id)) { doc.byId[id].hidden = true; }
   }
   doc.byId['official-retry'].textContent = 'Try again';
+  // Amended 2026-10-29 by plan 05-22: the second muted status line (hazard events
+  // from GDACS) is drawn only by a page that carries it, as alerts.html.tmpl does
+  // and the Demo's template does not, so the older cases above run on a page
+  // without it and prove the script still works then.
+  if (hazardLine) { make('p', 'official-hazard-status', main); }
   return { doc, main };
 }
 
@@ -802,4 +807,102 @@ test('window.PinalertApiBase beats the page attribute', async () => {
   const page = loadPage({ dataApiBase: '/from/attr', apiBase: '/win/api' });
   await flush();
   assert.ok(page.requests[0].url.startsWith('/win/api/official/alerts'), page.requests[0].url);
+});
+
+// ---- Plan 05-22: the second status line, hazard events from GDACS ----------
+// Added 2026-10-29 by plan 05-22 (ALERT-04 for each official feed). The line is
+// muted, sits under the status line, and is drawn from hazards_state,
+// hazards_age_seconds and hazards_last_success_at. The SACHET line, the notice
+// and every other block are unchanged in every case below.
+
+const hazardLine = (page) => el(page, 'official-hazard-status').textContent;
+const withHazards = (over = {}) => view({
+  hazards_state: 'fresh',
+  hazards_age_seconds: 360,
+  hazards_last_success_at: '2026-10-29T10:28:00Z',
+  ...over
+});
+
+test('hazard line: fresh says when hazard events from GDACS were last checked', async () => {
+  const page = await open({ hazardLine: true }, withHazards());
+  assert.equal(hazardLine(page), 'Hazard events from GDACS: last checked 6 minutes ago');
+  assert.equal(status(page), 'Last checked 4 minutes ago', 'the SACHET line is unchanged');
+});
+
+test('hazard line: fresh and under a minute says just now', async () => {
+  const page = await open({ hazardLine: true }, withHazards({ hazards_age_seconds: 20 }));
+  assert.equal(hazardLine(page), 'Hazard events from GDACS: last checked just now');
+});
+
+test('hazard line: stale says they could not be checked since a time', async () => {
+  const page = await open({ hazardLine: true }, withHazards({
+    hazards_state: 'stale', hazards_age_seconds: 7200, hazards_last_success_at: '2026-10-29T08:35:00Z'
+  }));
+  assert.equal(hazardLine(page), 'Hazard events from GDACS could not be checked since 2:05 pm.');
+  assert.equal(status(page), 'Last checked 4 minutes ago', 'the SACHET line is unchanged');
+});
+
+test('hazard line: unavailable with a last good time says the same, with the weekday when not today', async () => {
+  const page = await open({ hazardLine: true }, withHazards({
+    hazards_state: 'unavailable', hazards_age_seconds: 90000, hazards_last_success_at: '2026-10-28T08:35:00Z'
+  }));
+  assert.equal(hazardLine(page), 'Hazard events from GDACS could not be checked since Wed 2:05 pm.');
+});
+
+test('hazard line: never checked says they have not been checked yet', async () => {
+  const page = await open({ hazardLine: true }, withHazards({
+    hazards_state: 'unavailable', hazards_age_seconds: null, hazards_last_success_at: null
+  }));
+  assert.equal(hazardLine(page), 'Hazard events from GDACS have not been checked yet.');
+  assert.equal(status(page), 'Last checked 4 minutes ago', 'the SACHET line is unchanged');
+});
+
+test('hazard line: an answer with no hazard fields draws no line and does not fail', async () => {
+  const page = await open({ hazardLine: true }, view());
+  assert.equal(hazardLine(page), '');
+  assert.ok(el(page, 'official-hazard-status').hidden, 'an empty line is hidden');
+  assert.ok(shown(page, 'official-section') || shown(page, 'official-empty'), 'the page still draws');
+});
+
+test('hazard line: a word the route never sends draws no line', async () => {
+  const page = await open({ hazardLine: true }, withHazards({ hazards_state: 'weird' }));
+  assert.equal(hazardLine(page), '');
+});
+
+test('hazard line: the minutes move with the first line, with no new request', async () => {
+  const page = await open({ hazardLine: true }, withHazards());
+  page.advance(120000);
+  assert.equal(hazardLine(page), 'Hazard events from GDACS: last checked 8 minutes ago');
+  assert.equal(status(page), 'Last checked 6 minutes ago');
+  assert.equal(page.requests.length, 1);
+});
+
+test('hazard line: shown with every state of the SACHET feed, none of them changing its words', async () => {
+  for (const base of [withRows(), staleAt(), { state: 'unavailable', age_seconds: null, last_success_at: null }]) {
+    const page = await open({ hazardLine: true }, withHazards(base));
+    assert.match(hazardLine(page), /^Hazard events from GDACS/, 'state ' + base.state);
+  }
+});
+
+test('hazard line: cleared while loading and after a failed load', async () => {
+  const page = await open({ hazardLine: true }, withHazards());
+  assert.notEqual(hazardLine(page), '');
+  page.api.render(null);
+  assert.equal(hazardLine(page), '', 'a failed draw clears it');
+  const loading = loadPage({ hazardLine: true });
+  assert.equal(hazardLine(loading), '', 'nothing is claimed while loading');
+});
+
+test('hazard line: the words are text, never markup', async () => {
+  const page = await open({ hazardLine: true }, withHazards({ hazards_last_success_at: '<img src=x onerror=1>' }));
+  assert.doesNotMatch(visibleText(page.doc.body), /<img/);
+});
+
+test('hazard line: the Official alerts page carries the line and the Demo page does not', () => {
+  const real = fs.readFileSync(path.join(here, 'templates', 'alerts.html.tmpl'), 'utf8');
+  const demo = fs.readFileSync(path.join(here, 'templates', 'demo_alerts.html.tmpl'), 'utf8');
+  assert.equal(real.split('id="official-hazard-status"').length - 1, 1, 'the real page has the line once');
+  assert.ok(real.indexOf('id="official-status"') < real.indexOf('id="official-hazard-status"'), 'under the status line');
+  assert.ok(real.includes('class="official-status official-status--hazards"'));
+  assert.ok(!demo.includes('official-hazard-status'), 'the Demo never draws a GDACS freshness notice');
 });
