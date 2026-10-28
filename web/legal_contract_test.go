@@ -335,3 +335,48 @@ func TestLegalPagesStructure(t *testing.T) {
 		t.Errorf("glossary entries need even space between them (dd + dt margin-top)")
 	}
 }
+
+// Added 2026-10-29 by plan 05-20 (D-13 item 17, research G3, G6, G9, UI-SPEC P5-C20):
+// the Policy tells a reader, before they agree to anything, which hosts the sign in
+// page contacts, carries NASA's acknowledgement sentence for GIBS, and credits the
+// official sources and the district file. The three sentences are drafts the owner
+// picks the final words of, so this test pins that each is present once, in the
+// Policy part, inside the section about other services, and not what a rewrite may
+// change around them.
+func TestPolicyNamesSignInHostsAndCredits(t *testing.T) {
+	body := stripReadTemplate(t, "legal_body.html.tmpl")
+	_, policy, found := strings.Cut(body, `{{define "legal_policy_body"}}`)
+	if !found {
+		t.Fatalf("legal_body.html.tmpl has no policy part")
+	}
+	startAt := strings.Index(policy, "<h3>Other services Pinalert uses</h3>")
+	endAt := strings.Index(policy, "<h3>Cookies and storage on your device</h3>")
+	if startAt < 0 || endAt < startAt {
+		t.Fatalf("the Policy lost its Other services section or the section after it")
+	}
+	section := policy[startAt:endAt]
+
+	sentences := []struct{ name, text string }{
+		{"the sign in page hosts", "On the sign in page, before you agree to anything, your browser loads the map library from unpkg.com and Earth pictures from Pinalert, which keeps a copy of pictures from NASA GIBS."},
+		{"NASA's GIBS acknowledgement", "We acknowledge the use of imagery provided by services from NASA's Global Imagery Browse Services (GIBS), part of NASA's Earth Science Data and Information System (ESDIS)."},
+		{"the official source credits", "Official alerts are copied from NDMA SACHET and hazard events from GDACS. District areas come from the Local Government Directory via Datameet and ramSeraph, CC0."},
+	}
+	for _, s := range sentences {
+		if n := strings.Count(policy, s.text); n != 1 {
+			t.Errorf("the Policy holds %s %d times, want exactly once", s.name, n)
+		}
+		if !strings.Contains(section, s.text) {
+			t.Errorf("%s is not inside the Other services section", s.name)
+		}
+	}
+	for _, once := range []string{"Global Imagery Browse Services", "Datameet and ramSeraph", "unpkg.com and Earth pictures from Pinalert"} {
+		if n := strings.Count(body, once); n != 1 {
+			t.Errorf("legal_body.html.tmpl holds %q %d times, want 1", once, n)
+		}
+	}
+	// The sentence about the map files that was already there stays, and the new
+	// host sentence sits beside it, not instead of it.
+	if !strings.Contains(section, "The map: its files come from unpkg.com and its map tiles from OpenFreeMap") {
+		t.Errorf("the Policy lost its sentence about the map's files and tiles")
+	}
+}

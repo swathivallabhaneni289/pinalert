@@ -33,7 +33,7 @@ import (
 // changes, so everyone is asked again for the new text (D-27). It is the day
 // the Policy was last updated in YYYY-MM-DD form and must equal the "Last
 // updated" date the Policy shows (TestTermsVersionFollowsPolicyDate).
-const CurrentTermsVersion = "2026-10-17"
+const CurrentTermsVersion = "2026-10-29"
 
 // HomeAreaCellPrecision is the geohash precision of the stored home area cell.
 // Five characters is a cell of about 5 km, the same grid the project uses for
