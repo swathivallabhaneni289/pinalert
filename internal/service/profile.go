@@ -265,6 +265,10 @@ type ProfileQuerier interface {
 	// plan 03.3-12 (PWA-03, PWA-06).
 	GetPushKindSettings(ctx context.Context, accountID int64) (sqlcgen.GetPushKindSettingsRow, error)
 	UpsertPushKindSettings(ctx context.Context, arg sqlcgen.UpsertPushKindSettingsParams) (sqlcgen.UpsertPushKindSettingsRow, error)
+	// Phase 5 (D-11): the switch "Severe official alerts for my area", on for an
+	// account with no stored value.
+	GetOfficialPushSetting(ctx context.Context, accountID int64) (bool, error)
+	UpsertOfficialPushSetting(ctx context.Context, arg sqlcgen.UpsertOfficialPushSettingParams) (bool, error)
 }
 
 // AccountService reads and writes the caller's own profile rows. Every method

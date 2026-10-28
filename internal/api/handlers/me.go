@@ -190,6 +190,7 @@ type AlertSettingsRequest struct {
 	AlertRadiusKm  *int  `json:"alert_radius_km" example:"5"`
 	CriticalPush   *bool `json:"critical_push" example:"true"`
 	ChangesPush    *bool `json:"changes_push" example:"false"`
+	OfficialPush   *bool `json:"official_push" example:"true"`
 }
 
 // AlertSettingsResponse is the caller's alert settings as stored. It carries no
@@ -200,6 +201,7 @@ type AlertSettingsResponse struct {
 	HasHomeArea    bool `json:"has_home_area" example:"true"`
 	CriticalPush   bool `json:"critical_push" example:"true"`
 	ChangesPush    bool `json:"changes_push" example:"false"`
+	OfficialPush   bool `json:"official_push" example:"true"`
 }
 
 // UpdateAlertSettings produces the handler of PATCH /me/alerts.
@@ -218,7 +220,11 @@ type AlertSettingsResponse struct {
 // @Description changes_push (changes to reports the account posted or voted on, off until turned on).
 // @Description Turning critical_push on without a home area is refused with the field critical_push;
 // @Description changes_push needs no home area, and turning either off never does. Removing the home
-// @Description area keeps the stored critical_push value. No position is ever sent. The answer is all
+// @Description area keeps the stored critical_push value. No position is ever sent.
+// @Description A fifth key, official_push, is the switch for Severe official alerts for the home area
+// @Description (on until turned off, even for an account that never saved a choice). Turning
+// @Description official_push on without a home area is refused with the field official_push; turning it
+// @Description off never needs one, and removing the home area keeps the stored value. The answer is all
 // @Description the settings as stored.
 // @Description Requires a session verified by email; an unverified caller receives 401.
 // @Tags me
@@ -253,6 +259,7 @@ func UpdateAlertSettings(accounts *service.AccountService) http.HandlerFunc {
 			AlertRadiusKm:  req.AlertRadiusKm,
 			CriticalPush:   req.CriticalPush,
 			ChangesPush:    req.ChangesPush,
+			OfficialPush:   req.OfficialPush,
 		})
 		if err != nil {
 			var ve service.ValidationError
@@ -271,6 +278,7 @@ func UpdateAlertSettings(accounts *service.AccountService) http.HandlerFunc {
 			HasHomeArea:    got.HasHomeArea,
 			CriticalPush:   got.CriticalPushOn,
 			ChangesPush:    got.ChangesPushOn,
+			OfficialPush:   got.OfficialPushOn,
 		})
 	}
 }

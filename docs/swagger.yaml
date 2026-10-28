@@ -11,6 +11,9 @@ definitions:
       critical_push:
         example: true
         type: boolean
+      official_push:
+        example: true
+        type: boolean
       reliable_alerts:
         example: true
         type: boolean
@@ -27,6 +30,9 @@ definitions:
         example: true
         type: boolean
       has_home_area:
+        example: true
+        type: boolean
+      official_push:
         example: true
         type: boolean
       reliable_alerts:
@@ -1532,7 +1538,11 @@ paths:
         changes_push (changes to reports the account posted or voted on, off until turned on).
         Turning critical_push on without a home area is refused with the field critical_push;
         changes_push needs no home area, and turning either off never does. Removing the home
-        area keeps the stored critical_push value. No position is ever sent. The answer is all
+        area keeps the stored critical_push value. No position is ever sent.
+        A fifth key, official_push, is the switch for Severe official alerts for the home area
+        (on until turned off, even for an account that never saved a choice). Turning
+        official_push on without a home area is refused with the field official_push; turning it
+        off never needs one, and removing the home area keeps the stored value. The answer is all
         the settings as stored.
         Requires a session verified by email; an unverified caller receives 401.
       parameters:

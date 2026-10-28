@@ -51,6 +51,9 @@ type AlertSettings struct {
 	HasHomeArea      bool
 	CriticalPushOn   bool
 	ChangesPushOn    bool
+	// OfficialPushOn is Phase 5's switch "Severe official alerts for my area"
+	// (D-11), on by default.
+	OfficialPushOn bool
 }
 
 // AlertSettingsUpdate is one edit. A nil field leaves that part as stored.
@@ -59,6 +62,7 @@ type AlertSettingsUpdate struct {
 	AlertRadiusKm  *int
 	CriticalPush   *bool
 	ChangesPush    *bool
+	OfficialPush   *bool
 }
 
 // HomeAreaAnchor decodes a stored home area cell into the point a distance is
@@ -119,6 +123,15 @@ func (s *AccountService) AlertSettings(ctx context.Context, accountID int64) (Al
 		AlertRadiusKm:  DefaultAlertRadiusKm,
 		CriticalPushOn: DefaultCriticalPushOn,
 		ChangesPushOn:  DefaultChangesPushOn,
+		OfficialPushOn: DefaultOfficialPushOn,
+	}
+	switch official, err := s.q.GetOfficialPushSetting(ctx, accountID); {
+	case err == nil:
+		out.OfficialPushOn = official
+	case errors.Is(err, pgx.ErrNoRows):
+		// No such account row: the default.
+	default:
+		return AlertSettings{}, fmt.Errorf("service: reading the official alerts switch: %w", err)
 	}
 	switch push, err := s.q.GetPushKindSettings(ctx, accountID); {
 	case err == nil:
@@ -165,7 +178,7 @@ func (s *AccountService) AlertSettings(ctx context.Context, accountID int64) (Al
 // written; 3.2's row is written only when one of its fields is set and the push
 // row only when one of its two fields is set.
 func (s *AccountService) UpdateAlertSettings(ctx context.Context, accountID int64, u AlertSettingsUpdate) (AlertSettings, error) {
-	if u.ReliableAlerts == nil && u.AlertRadiusKm == nil && u.CriticalPush == nil && u.ChangesPush == nil {
+	if u.ReliableAlerts == nil && u.AlertRadiusKm == nil && u.CriticalPush == nil && u.ChangesPush == nil && u.OfficialPush == nil {
 		return AlertSettings{}, ValidationError{Field: "body", Message: AlertsNothingToSaveMessage}
 	}
 	if u.AlertRadiusKm != nil && !validAlertRadius(*u.AlertRadiusKm) {
@@ -195,6 +208,13 @@ func (s *AccountService) UpdateAlertSettings(ctx context.Context, accountID int6
 	}
 	if u.CriticalPush != nil && *u.CriticalPush && !cur.HasHomeArea {
 		return AlertSettings{}, ValidationError{Field: "critical_push", Message: AlertsNeedHomeAreaMessage}
+	}
+	// Phase 5 (D-11): the official switch follows the same home area rule as
+	// Critical, because official alerts are matched to the home district. Turning
+	// it off never needs an area, and the stored value is kept while the area is
+	// missing.
+	if u.OfficialPush != nil && *u.OfficialPush && !cur.HasHomeArea {
+		return AlertSettings{}, ValidationError{Field: "official_push", Message: AlertsNeedHomeAreaMessage}
 	}
 
 	out := cur
@@ -228,6 +248,17 @@ func (s *AccountService) UpdateAlertSettings(ctx context.Context, accountID int6
 		}
 		out.CriticalPushOn = row.CriticalPushOn
 		out.ChangesPushOn = row.ChangesPushOn
+	}
+	if u.OfficialPush != nil {
+		stored, err := s.q.UpsertOfficialPushSetting(ctx, sqlcgen.UpsertOfficialPushSettingParams{
+			AccountID:      accountID,
+			OfficialPushOn: *u.OfficialPush,
+			Now:            s.now().UTC(),
+		})
+		if err != nil {
+			return AlertSettings{}, fmt.Errorf("service: saving the official alerts switch: %w", err)
+		}
+		out.OfficialPushOn = stored
 	}
 	return out, nil
 }

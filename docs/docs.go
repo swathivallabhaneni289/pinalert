@@ -214,7 +214,7 @@ const docTemplate = `{
         },
         "/me/alerts": {
             "patch": {
-                "description": "Saves whether the signed in account wants an update when a Reliable reporter posts\nnear its home area, and how far away that may be: 1, 2, 5 or 10 km. A key left out\nkeeps what is stored. The alert is off until turned on and the distance is 5 km until\nchanged. The distance is measured from the middle of the saved home area, which is a\ncell about 5 km across; no position is ever sent or stored for this. Turning the\nalert on without a home area is refused with the field reliable_alerts, and removing\nthe home area turns the alert off. Only reports posted after the alert was turned on\ncan raise it.\nTwo more keys control the phone notifications: critical_push (Critical reports near the\nhome area, on until turned off, even for an account that never saved a choice) and\nchanges_push (changes to reports the account posted or voted on, off until turned on).\nTurning critical_push on without a home area is refused with the field critical_push;\nchanges_push needs no home area, and turning either off never does. Removing the home\narea keeps the stored critical_push value. No position is ever sent. The answer is all\nthe settings as stored.\nRequires a session verified by email; an unverified caller receives 401.",
+                "description": "Saves whether the signed in account wants an update when a Reliable reporter posts\nnear its home area, and how far away that may be: 1, 2, 5 or 10 km. A key left out\nkeeps what is stored. The alert is off until turned on and the distance is 5 km until\nchanged. The distance is measured from the middle of the saved home area, which is a\ncell about 5 km across; no position is ever sent or stored for this. Turning the\nalert on without a home area is refused with the field reliable_alerts, and removing\nthe home area turns the alert off. Only reports posted after the alert was turned on\ncan raise it.\nTwo more keys control the phone notifications: critical_push (Critical reports near the\nhome area, on until turned off, even for an account that never saved a choice) and\nchanges_push (changes to reports the account posted or voted on, off until turned on).\nTurning critical_push on without a home area is refused with the field critical_push;\nchanges_push needs no home area, and turning either off never does. Removing the home\narea keeps the stored critical_push value. No position is ever sent.\nA fifth key, official_push, is the switch for Severe official alerts for the home area\n(on until turned off, even for an account that never saved a choice). Turning\nofficial_push on without a home area is refused with the field official_push; turning it\noff never needs one, and removing the home area keeps the stored value. The answer is all\nthe settings as stored.\nRequires a session verified by email; an unverified caller receives 401.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1720,6 +1720,10 @@ const docTemplate = `{
                     "type": "boolean",
                     "example": true
                 },
+                "official_push": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "reliable_alerts": {
                     "type": "boolean",
                     "example": true
@@ -1742,6 +1746,10 @@ const docTemplate = `{
                     "example": true
                 },
                 "has_home_area": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "official_push": {
                     "type": "boolean",
                     "example": true
                 },

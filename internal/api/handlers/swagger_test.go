@@ -749,9 +749,10 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 
 	// 03.3-12: PATCH /me/alerts takes and answers the two phone switches next to
 	// 3.2's keys, and still carries no position or home area cell.
+	// Amended 2026-10-29 by plan 05-14 (D-11): official_push joins both lists.
 	for def, want := range map[string][]string{
-		"handlers.AlertSettingsRequest":  {"reliable_alerts", "alert_radius_km", "critical_push", "changes_push"},
-		"handlers.AlertSettingsResponse": {"reliable_alerts", "alert_radius_km", "has_home_area", "critical_push", "changes_push"},
+		"handlers.AlertSettingsRequest":  {"reliable_alerts", "alert_radius_km", "critical_push", "changes_push", "official_push"},
+		"handlers.AlertSettingsResponse": {"reliable_alerts", "alert_radius_km", "has_home_area", "critical_push", "changes_push", "official_push"},
 	} {
 		var d struct {
 			Properties map[string]json.RawMessage `json:"properties"`
