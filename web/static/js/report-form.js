@@ -1421,6 +1421,7 @@
         // leave any form open now alone.
         Pinalert.showToast(report && report.held === true ? EARLIER_HELD_TOAST : EARLIER_POSTED_TOAST,
           null, LONG_TOAST_MS);
+        offerChangesAsk();
         return;
       }
       submitButton.disabled = false;
@@ -1431,6 +1432,7 @@
       } else {
         Pinalert.showToast('Report posted.');
       }
+      offerChangesAsk();
     }).catch(function (err) {
       if (sent.session !== formSession) {
         reportEarlierFailure(payload, err, sent);
@@ -1458,6 +1460,18 @@
         }
       }
     });
+  }
+
+  // 03.3-UAT test 4: an accepted post offers the first-time alerts pop-up. It
+  // never throws, so a broken pop-up cannot turn a posted report into a refusal.
+  function offerChangesAsk() {
+    try {
+      if (window.PinalertChangesAsk) {
+        window.PinalertChangesAsk.offer();
+      }
+    } catch (err) {
+      // Nothing to do: the report is already posted.
+    }
   }
 
   // newRequestId makes the id of one submission: the browser's own random id
