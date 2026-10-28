@@ -139,6 +139,15 @@ type Deps struct {
 	// harness unchanged; cmd/server/main.go turns it on once the /welcome page
 	// exists (plan 10).
 	OnboardingGate bool
+	// GlobeUpstream replaces the NASA GIBS base address behind the sign in
+	// globe's tile routes. Only tests set it, to point at a fake server; empty,
+	// which is what every Deps{} literal and production gives, means the NASA
+	// constant (plan 05-04).
+	GlobeUpstream string
+	// GlobeUserAgent is the User-Agent sent to NASA GIBS when a tile is fetched.
+	// cmd/server/main.go builds it from BASE_URL and CONTACT_EMAIL. Empty sends
+	// Go's stock agent, which only a test harness gives.
+	GlobeUserAgent string
 }
 
 // requestLogger returns the access log middleware. It replaces chi's
@@ -369,6 +378,15 @@ var compressibleContentTypes = []string{"text/html", "text/css", "text/javascrip
 // redirect to /login. They also skip the session middleware (skipSessionFor),
 // so a cookieless fetch neither sets a cookie nor writes a sessions row.
 //
+// Amended 2026-10-28 by Phase 5 plan 05-04 (D-13): 85 more exact GET paths join
+// the exempt set, /globe/tiles/{z}/{y}/{x}.jpg for zoom 0 to 3, listed once in
+// handlers.GlobeTilePaths. They are the Earth pictures of the sign in globe,
+// served from Pinalert's memory after one fetch each from NASA GIBS, and they
+// skip the session middleware like the app assets. The skip function now takes
+// one rule set, sessionSkip: exact GET paths, exact POST paths and path
+// prefixes, all built in sessionSkipSet, so the later sessionless routes of
+// Phase 5 join that set instead of adding a second bypass.
+//
 // The route table has a third part, the moderator group (D-08), which is the
 // one exception to "every other route" above. It sits outside the access gate
 // and answers a plain 404 that is byte equal to an unknown route to everyone
@@ -383,6 +401,12 @@ func NewRouter(deps Deps) *chi.Mux {
 	if err != nil {
 		panic("api: building the installable app assets: " + err.Error())
 	}
+	// The globe tiles are fetched lazily, once each, so building this fetches
+	// nothing.
+	globeTiles := handlers.NewGlobeTiles(handlers.GlobeTilesConfig{
+		Upstream:  deps.GlobeUpstream,
+		UserAgent: deps.GlobeUserAgent,
+	})
 
 	r := chi.NewRouter()
 
@@ -409,10 +433,11 @@ func NewRouter(deps Deps) *chi.Mux {
 	r.Use(requestLogger(deps.RequestLog))
 	// Gzip for HTML, CSS, JavaScript, JSON and SVG when the client accepts it (D-14).
 	r.Use(middleware.Compress(compressionLevel, compressibleContentTypes...))
-	// The session middleware runs for every request except a GET of one of the
-	// exact public app asset paths (plan 03.3-04): a launcher or manifest fetch
-	// without a cookie must not create a session.
-	r.Use(skipSessionFor(pwaSkipSet(), deps.Session.Middleware(deps.persistSession)))
+	// The session middleware runs for every request except the public sessionless
+	// routes in sessionSkipSet: the exact public app asset paths (plan 03.3-04, a
+	// launcher or manifest fetch without a cookie must not create a session) and
+	// the 85 globe tile paths (plan 05-04).
+	r.Use(skipSessionFor(sessionSkipSet(), deps.Session.Middleware(deps.persistSession)))
 
 	// Local copies of the page and auth configs that carry the shared Chrome
 	// data, so the four page routes below render the unofficial bar without
@@ -493,6 +518,18 @@ func NewRouter(deps Deps) *chi.Mux {
 		h, ok := assets.Handler(path)
 		if !ok {
 			panic("api: no handler for the public app asset " + path)
+		}
+		r.Method(http.MethodGet, path, h)
+	}
+	// The sign in globe's Earth pictures (plan 05-04, D-13): the same shape, one
+	// exact GET route for each of the 85 entries of handlers.GlobeTilePaths, which
+	// is also what feeds the session bypass above. Public because the sign in page
+	// is where a visitor lands; each picture is fetched once from NASA and served
+	// from memory.
+	for _, path := range handlers.GlobeTilePaths() {
+		h, ok := globeTiles.Handler(path)
+		if !ok {
+			panic("api: no handler for the globe tile " + path)
 		}
 		r.Method(http.MethodGet, path, h)
 	}
@@ -756,29 +793,83 @@ func staticFileServer(dev bool) http.Handler {
 	})
 }
 
-// pwaSkipSet is the set of paths that skip the session middleware: exactly the
-// entries of handlers.PWAPublicPaths, the same slice the routes are registered
-// from.
-func pwaSkipSet() map[string]bool {
-	set := make(map[string]bool, len(handlers.PWAPublicPaths))
-	for _, path := range handlers.PWAPublicPaths {
-		set[path] = true
+// sessionSkip is the one rule set of every public, sessionless route: the
+// requests that go straight to their handler without a cookie and without a
+// sessions row. get holds exact GET paths, post exact POST paths, and prefixes
+// path prefixes that cover both GET and POST (a prefix "/p" covers "/p" and
+// anything under "/p/"). Later plans add to this one set instead of writing a
+// second bypass.
+type sessionSkip struct {
+	get      map[string]bool
+	post     map[string]bool
+	prefixes []string
+}
+
+// matches reports whether the request skips the session middleware. It is
+// deliberately strict, so a crafted address can never write a sessions row for
+// free or reach a sessionless handler by a spelling the router would read
+// differently (T-03.3-14, T-05-19): the URL carries no encoded form (RawPath is
+// empty), the path holds no double slash, no "." or ".." segment, and then one
+// of three things holds: the method is GET and the path is an exact get entry,
+// the method is POST and the path is an exact post entry, or the method is GET
+// or POST and the path is a prefix or lies under a prefix followed by a slash.
+// Every other request, a HEAD, a PUT, a trailing slash or a different case
+// included, goes through the session middleware as before.
+func (s sessionSkip) matches(r *http.Request) bool {
+	if r.URL.RawPath != "" {
+		return false
 	}
-	return set
+	p := r.URL.Path
+	if strings.Contains(p, "//") || strings.Contains(p, "/./") || strings.Contains(p, "/../") ||
+		strings.HasSuffix(p, "/.") || strings.HasSuffix(p, "/..") {
+		return false
+	}
+	switch r.Method {
+	case http.MethodGet:
+		if s.get[p] {
+			return true
+		}
+	case http.MethodPost:
+		if s.post[p] {
+			return true
+		}
+	default:
+		return false
+	}
+	for _, prefix := range s.prefixes {
+		if p == prefix || strings.HasPrefix(p, prefix+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// sessionSkipSet builds the rule set the router uses, from the same lists the
+// routes are registered from: the exact GET paths are handlers.PWAPublicPaths
+// (plan 03.3-04) and handlers.GlobeTilePaths() (plan 05-04). The POST paths and
+// the prefixes start empty: plan 05-10 adds the Demo prefix and plan 05-12 the
+// refresh endpoint here.
+func sessionSkipSet() sessionSkip {
+	tiles := handlers.GlobeTilePaths()
+	get := make(map[string]bool, len(handlers.PWAPublicPaths)+len(tiles))
+	for _, path := range handlers.PWAPublicPaths {
+		get[path] = true
+	}
+	for _, path := range tiles {
+		get[path] = true
+	}
+	return sessionSkip{get: get, post: map[string]bool{}}
 }
 
 // skipSessionFor wraps the session middleware so a request goes straight to the
-// next handler, without a cookie and without a sessions row, only when all
-// three hold: the method is GET, the URL carries no encoded form (RawPath is
-// empty, so an encoded spelling of a path never matches) and the path is
-// exactly a key of the set. Every other request, a HEAD or a near miss such as
-// a trailing slash or a .map suffix included, goes through the session
-// middleware as before (T-03.3-14).
-func skipSessionFor(paths map[string]bool, next func(http.Handler) http.Handler) func(http.Handler) http.Handler {
+// next handler, without a cookie and without a sessions row, only when the rule
+// set says so (see sessionSkip.matches). Every other request goes through the
+// session middleware as before.
+func skipSessionFor(skip sessionSkip, next func(http.Handler) http.Handler) func(http.Handler) http.Handler {
 	return func(h http.Handler) http.Handler {
 		withSession := next(h)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Method == http.MethodGet && r.URL.RawPath == "" && paths[r.URL.Path] {
+			if skip.matches(r) {
 				h.ServeHTTP(w, r)
 				return
 			}

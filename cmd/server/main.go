@@ -326,6 +326,21 @@ func main() {
 		pushUpdates.set(service.NewUpdatesService(queries, reportService))
 	}
 
+	// The User-Agent NASA GIBS sees when a globe tile is fetched (plan 05-04): the
+	// public address and the contact address, whichever are set, else the
+	// repository URL the geocoder falls back to.
+	globeUserAgent := "Pinalert/1.0 (+https://github.com/swathivallabhaneni289/pinalert)"
+	if publicURL := os.Getenv("BASE_URL"); publicURL != "" || contactEmail != "" {
+		switch {
+		case publicURL != "" && contactEmail != "":
+			globeUserAgent = "Pinalert/1.0 (+" + publicURL + "; contact " + contactEmail + ")"
+		case publicURL != "":
+			globeUserAgent = "Pinalert/1.0 (+" + publicURL + ")"
+		default:
+			globeUserAgent = "Pinalert/1.0 (contact " + contactEmail + ")"
+		}
+	}
+
 	deps := api.Deps{
 		Session:     sessionMgr,
 		Sessions:    queries,
@@ -382,6 +397,8 @@ func main() {
 			Every: placeRateLimitEvery,
 		},
 		ClientIPHeader: clientIPHeader,
+		// Sent to NASA GIBS when a sign in globe tile is fetched (plan 05-04).
+		GlobeUserAgent: globeUserAgent,
 		// The first-time flow gate is on (D-27, orchestrator decision 5). Every
 		// account that has not agreed to the current terms version or not
 		// finished the flow is sent to /welcome for page requests; existing
