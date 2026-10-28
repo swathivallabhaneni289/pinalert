@@ -1196,8 +1196,8 @@
   // A home area that was not saved stops the chain before Reliable (WR-05): the
   // pop-up stays open with one error line, Allow tries the save again without a
   // second enable (enable runs once per visit, so the prompt is never asked in
-  // a loop), and Not now still finishes sign up. A page without the error line
-  // finishes as before. The Reliable save swallows its own failure; Settings
+  // a loop), and Not now still finishes sign up. A page without the error line,
+  // or a pop-up the browser has already closed by itself, finishes as before. The Reliable save swallows its own failure; Settings
   // shows the result.
   function onAskAllow() {
     if (askBusy) {
@@ -1226,7 +1226,7 @@
     Promise.resolve(pending).then(function () {}, function () {}).then(function () {
       return place !== null ? saveAskHome(place) : '';
     }).then(function (problem) {
-      if (problem && askError) {
+      if (problem && askError && askDialog.open) {
         homeNotSaved(problem);
         return false;
       }

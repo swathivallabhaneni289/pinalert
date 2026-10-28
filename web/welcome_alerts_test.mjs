@@ -958,3 +958,33 @@ test('named pop-up: after a failed first-run-done the pop-up frees Allow by the 
   assert.equal(reliableBox(page).disabled, false);
   assert.equal(byId(page, 'welcome-error-4').textContent, SAVE_FAILED);
 });
+
+// The browser can close the pop-up by itself while Allow is still busy (Chrome's
+// close watcher: a second Escape, or the Android back gesture, closes a modal
+// dialog with no cancelable cancel event). If the home area save then fails,
+// there is nobody to show the error line to: sign up finishes as it does when
+// the page has no error line, instead of staying stuck with the buttons off.
+for (const [label, fail] of [
+  ['a 500', (req) => answer(req, 500)],
+  ['a network failure', (req) => req.reject(new Error('offline'))]
+]) {
+  test('named pop-up: closed by the browser while the home save is out and it then fails (' + label + ') first-run-done still goes out and Continue and Skip are freed', async () => {
+    const page = atStep4({ askHome: '' });
+    click(page, 'welcome-continue-4');
+    await pickInAsk(page);
+    reliableBox(page).checked = true;
+    const before = page.requests.length;
+    click(page, 'welcome-alerts-allow');
+    await flush();
+    page.dialog.open = false; // closed by the browser: no cancel event, no close listener
+    fail(page.requests[before]);
+    await flush();
+    assert.equal(byId(page, 'welcome-alerts-ask-error').hidden, true, 'nothing is written into a closed dialog');
+    assert.equal(page.requests.filter((r) => r.url === ALERTS_ADDRESS).length, 0, 'no Reliable request without a saved home area');
+    assert.equal(doneRequests(page).length, 1, 'sign up finishes');
+    answer(doneRequests(page)[0], 500);
+    await flush();
+    assert.equal(byId(page, 'welcome-continue-4').disabled, false);
+    assert.equal(byId(page, 'welcome-skip').disabled, false);
+  });
+}
