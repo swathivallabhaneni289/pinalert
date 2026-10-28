@@ -410,16 +410,19 @@
       return readyRegistration().then(function (registration) {
         // A subscription made with another server key (the operator changed
         // the key pair) makes subscribe fail for good, so drop it first.
-        return Promise.resolve(registration.pushManager.getSubscription()).then(function (existing) {
+        // Each browser call starts at once and races a time limit, so a push
+        // service that never answers ends as a failure (CR-02). The prompt
+        // above has no limit: that wait is the person's own choice.
+        return withTimeout(Promise.resolve(registration.pushManager.getSubscription())).then(function (existing) {
           if (existing && !sameKey(existing, key)) {
-            return existing.unsubscribe();
+            return withTimeout(Promise.resolve(existing.unsubscribe()));
           }
           return null;
         }).then(function () {
-          return registration.pushManager.subscribe({
+          return withTimeout(Promise.resolve(registration.pushManager.subscribe({
             userVisibleOnly: true,
             applicationServerKey: keyBytes(key)
-          });
+          })));
         });
       }).then(function (subscription) {
         return post(SUBSCRIPTION_URL, subscription.toJSON());
