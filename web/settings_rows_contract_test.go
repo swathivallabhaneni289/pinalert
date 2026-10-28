@@ -749,8 +749,11 @@ func TestNotificationsOfficialRow(t *testing.T) {
 		t.Errorf("the label appears %d times, want 2 (the switch row and the no home row)", got)
 	}
 	wrapper := region[strings.Index(region, `id="settings-official-row"`):strings.Index(region, `id="settings-changes-row"`)]
-	on := wrapper[:strings.Index(wrapper, `id="settings-official-nohome"`)]
-	noHome := wrapper[strings.Index(wrapper, `id="settings-official-nohome"`):]
+	split := strings.Index(wrapper, `<button type="button" class="place-row" id="settings-official-nohome"`)
+	if split == -1 {
+		t.Fatalf("the official row has no no home button")
+	}
+	on, noHome := wrapper[:split], wrapper[split:]
 	for _, want := range []string{
 		`<label class="place-row place-row--switch" id="settings-official-on" for="settings-official-switch"{{if not .HasHomeArea}} hidden{{end}}>`,
 		`<span class="place-row__label">Severe official alerts for my area</span>`,

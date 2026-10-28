@@ -613,6 +613,10 @@
   var criticalRow = el('settings-critical-on');
   var criticalSwitch = el('settings-critical-switch');
   var criticalNoHome = el('settings-critical-nohome');
+  // Plan 05-14 (D-11): the official row has the same two variants as Critical.
+  var officialRow = el('settings-official-on');
+  var officialSwitch = el('settings-official-switch');
+  var officialNoHome = el('settings-official-nohome');
   var changesSwitch = el('settings-changes-switch');
   var alertsError = el('settings-alerts-error');
   var deviceError = el('settings-device-error');
@@ -620,16 +624,18 @@
   var homeWindow = el('settings-home-window');
   var homeNote = el('settings-home-alerts-note');
   var alertsReady = !!(reliableRow && reliableSwitch && noHomeRow && radiusRow && radiusSelect &&
-    criticalRow && criticalSwitch && criticalNoHome && changesSwitch &&
+    criticalRow && criticalSwitch && criticalNoHome &&
+    officialRow && officialSwitch && officialNoHome && changesSwitch &&
     alertsError && deviceError && homeRowNode && homeWindow && homeNote);
 
-  // The four fields the alert route takes from this page, with the control that
+  // The five fields the alert route takes from this page, with the control that
   // sends each. A switch holds a boolean, the select holds the option text.
   var CONTROLS = alertsReady ? {
     reliable_alerts: reliableSwitch,
     alert_radius_km: radiusSelect,
     critical_push: criticalSwitch,
-    changes_push: changesSwitch
+    changes_push: changesSwitch,
+    official_push: officialSwitch
   } : {};
 
   // saved holds the last values the server confirmed, which is what a failed
@@ -640,6 +646,7 @@
     saved.alert_radius_km = String(radiusSelect.value);
     saved.critical_push = criticalSwitch.checked === true;
     saved.changes_push = changesSwitch.checked === true;
+    saved.official_push = officialSwitch.checked === true;
   }
   var homeIsSet = alertsReady ? (homeRowNode.getAttribute('data-value') || '') !== '' : false;
   // openedFromAlerts is the Reliable or the Critical no home row that opened the
@@ -648,10 +655,12 @@
   var openedFromAlerts = '';
 
   // The Home area window says the alerts go with the home area only while
-  // Critical or Reliable is on (UI-SPEC W1). A stored Critical value without a
-  // home area does not count: there is nothing to remove then.
+  // Critical, Reliable or Severe official alerts is on (UI-SPEC W1, amended by
+  // plan 05-14). A stored value without a home area does not count: there is
+  // nothing to remove then.
   function syncNote() {
-    homeNote.hidden = !(homeIsSet && (reliableSwitch.checked === true || criticalSwitch.checked === true));
+    homeNote.hidden = !(homeIsSet && (reliableSwitch.checked === true ||
+      criticalSwitch.checked === true || officialSwitch.checked === true));
   }
 
   function putBack(field) {
@@ -663,7 +672,7 @@
   }
 
   // saveAlerts sends one change ({reliable_alerts}, {alert_radius_km},
-  // {critical_push} or {changes_push}) and resolves to true when the server kept
+  // {critical_push}, {changes_push} or {official_push}) and resolves to true when the server kept
   // it. The control that sent it is disabled until the answer. Offline, nothing
   // is sent. The device error line and this one never show together.
   function saveAlerts(body) {
@@ -671,7 +680,7 @@
       return Promise.resolve(false);
     }
     var fields = [];
-    var names = ['reliable_alerts', 'alert_radius_km', 'critical_push', 'changes_push'];
+    var names = ['reliable_alerts', 'alert_radius_km', 'critical_push', 'changes_push', 'official_push'];
     for (var n = 0; n < names.length; n++) {
       if (Object.prototype.hasOwnProperty.call(body, names[n])) {
         fields.push(names[n]);
@@ -730,11 +739,11 @@
     });
   }
 
-  // saveKind saves one kind switch (critical_push or changes_push). The switch
-  // is the control that sent it, so it is the one disabled while the save is in
-  // flight; the field decides which control that is.
+  // saveKind saves one kind switch (critical_push, changes_push or
+  // official_push). The switch is the control that sent it, so it is the one
+  // disabled while the save is in flight; the field decides which control that is.
   function saveKind(field, value, input) {
-    if (field !== 'critical_push' && field !== 'changes_push') {
+    if (field !== 'critical_push' && field !== 'changes_push' && field !== 'official_push') {
       return Promise.resolve(false);
     }
     var body = {};
@@ -743,10 +752,11 @@
   }
 
   // redrawAlerts draws the section for a person with or without a home area.
-  // Reliable and Critical show their switch or their Add a home area first row,
-  // and the distance row is drawn only with a home area. Without one Reliable is
-  // off (the server turned it off) and Critical keeps its stored value; if either
-  // was on, the polite status says so (UI-SPEC W2). Changes is never touched.
+  // Reliable, Critical and Severe official alerts show their switch or their Add
+  // a home area first row, and the distance row is drawn only with a home area.
+  // Without one Reliable is off (the server turned it off) and Critical and
+  // official keep their stored value; if any was on, the polite status says so
+  // (UI-SPEC W2). Changes is never touched.
   function redrawAlerts(hasHome) {
     if (!alertsReady) {
       return;
@@ -756,10 +766,13 @@
     noHomeRow.hidden = homeIsSet;
     criticalRow.hidden = !homeIsSet;
     criticalNoHome.hidden = homeIsSet;
+    officialRow.hidden = !homeIsSet;
+    officialNoHome.hidden = homeIsSet;
     radiusRow.hidden = !homeIsSet;
     if (!homeIsSet) {
       var wasOn = reliableSwitch.checked === true || saved.reliable_alerts === true ||
-        criticalSwitch.checked === true || saved.critical_push === true;
+        criticalSwitch.checked === true || saved.critical_push === true ||
+        officialSwitch.checked === true || saved.official_push === true;
       reliableSwitch.checked = false;
       saved.reliable_alerts = false;
       if (wasOn) {
@@ -797,6 +810,10 @@
       syncNote();
       saveKind('critical_push', criticalSwitch.checked === true, criticalSwitch);
     });
+    officialSwitch.addEventListener('change', function () {
+      syncNote();
+      saveKind('official_push', officialSwitch.checked === true, officialSwitch);
+    });
     changesSwitch.addEventListener('change', function () {
       saveKind('changes_push', changesSwitch.checked === true, changesSwitch);
     });
@@ -809,6 +826,7 @@
     });
     noHomeRow.addEventListener('click', function () { openHomeFrom('reliable'); });
     criticalNoHome.addEventListener('click', function () { openHomeFrom('critical'); });
+    officialNoHome.addEventListener('click', function () { openHomeFrom('official'); });
     if (typeof MutationObserver === 'function') {
       new MutationObserver(syncHome).observe(homeRowNode, { attributes: true, attributeFilter: ['data-value'] });
       // When the Home area window opened from a no home row closes, focus goes
@@ -820,6 +838,8 @@
           openedFromAlerts = '';
           if (which === 'critical') {
             (homeIsSet ? criticalSwitch : criticalNoHome).focus();
+          } else if (which === 'official') {
+            (homeIsSet ? officialSwitch : officialNoHome).focus();
           } else {
             (homeIsSet ? reliableSwitch : noHomeRow).focus();
           }

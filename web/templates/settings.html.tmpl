@@ -61,7 +61,7 @@
       </div>
       {{/* One classless wrapper, so on the laptop grid the box and the error lines are one item beside the title, not three. */}}
       <div>
-      {{/* Phase 3.3 plan 14 (UI-SPEC Surface 2): one box, the rows in the owner's order. The three wrappers are never hidden themselves, so the hairline between rows is always drawn by the box; inside a wrapper the variant that does not apply carries the hidden attribute, which places.css respects on a row. */}}
+      {{/* Phase 3.3 plan 14 (UI-SPEC Surface 2): one box, the rows in the owner's order. The four wrappers (device, Critical, official, Reliable) are never hidden themselves, so the hairline between rows is always drawn by the box; inside a wrapper the variant that does not apply carries the hidden attribute, which places.css respects on a row. */}}
       <div class="place-box" id="settings-alerts-box">
         <div id="settings-device-row">
           <label class="place-row place-row--switch" id="settings-device-on" for="settings-device-switch">
@@ -100,6 +100,21 @@
           <button type="button" class="place-row" id="settings-critical-nohome" aria-haspopup="dialog"{{if .HasHomeArea}} hidden{{end}}>
             <span class="place-row__text">
               <span class="place-row__label">Critical reports near my home area</span>
+              <span class="place-row__sub">Add a home area first</span>
+            </span>
+            <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div id="settings-official-row">
+          <label class="place-row place-row--switch" id="settings-official-on" for="settings-official-switch"{{if not .HasHomeArea}} hidden{{end}}>
+            <span class="place-row__text">
+              <span class="place-row__label">Severe official alerts for my area</span>
+            </span>
+            <input class="place-switch" type="checkbox" role="switch" id="settings-official-switch" name="official_push"{{if .OfficialPushOn}} checked{{end}}>
+          </label>
+          <button type="button" class="place-row" id="settings-official-nohome" aria-haspopup="dialog"{{if .HasHomeArea}} hidden{{end}}>
+            <span class="place-row__text">
+              <span class="place-row__label">Severe official alerts for my area</span>
               <span class="place-row__sub">Add a home area first</span>
             </span>
             <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
@@ -268,7 +283,7 @@
         <p class="app-window__status" id="settings-home-status" role="status" aria-live="polite" hidden></p>
         <ul class="app-window__results" id="settings-home-results" role="listbox" aria-label="Places found" hidden></ul>
         <p class="inline-error" id="settings-home-error" role="alert" hidden></p>
-        <p class="app-window__help" id="settings-home-alerts-note"{{if not (and .HasHomeArea (or .AlertsOn .CriticalPushOn))}} hidden{{end}}>Removing it also turns off alerts about reports near your home area.</p>
+        <p class="app-window__help" id="settings-home-alerts-note"{{if not (and .HasHomeArea (or .AlertsOn .CriticalPushOn .OfficialPushOn))}} hidden{{end}}>Removing it also turns off alerts about reports and official warnings for your home area.</p>
         <div class="app-window__actions">
           <button type="button" class="btn btn--primary" id="settings-home-save" disabled>Save home area</button>
           <button type="button" class="app-window__quiet" id="settings-home-remove"{{if not .HomeAreaName}} hidden{{end}}>Remove home area</button>
