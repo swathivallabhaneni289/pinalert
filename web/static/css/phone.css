@@ -212,14 +212,19 @@
     max-width: calc(100vw - var(--space-12) * 2);
   }
 
-  /* The official alert banner slot scrolls with the cards under the head: it
-     comes after the handle and the head in the sheet whatever its place in the
-     markup (on the laptop it sits above the head). */
+  /* The Nearby banner (Phase 5 plan 15, D-07, UI-SPEC 2a) is a flush row that
+     scrolls with the cards: no side borders, no corner, the top and bottom
+     hairlines in the level colour (feed.css sets the colour and the tint),
+     16px padding, no margin. It comes after the handle and the head in the
+     sheet whatever its place in the markup, as 3.4 placed it (on the laptop it
+     is a box above the head). */
   .pane--list > .alert-banner:not([hidden]) {
     flex: none;
     order: -1;
-    margin-right: 0;
-    margin-left: 0;
+    margin: 0;
+    padding: 0 var(--space-md);
+    border-width: 1px 0;
+    border-radius: 0;
   }
 
   .pane--list #report-list {
