@@ -58,12 +58,15 @@ func (k PushKind) Valid() bool {
 
 // The caps of the phone channel. A push dropped by a cap shows nothing extra
 // (decision 6): there is no "and N more" notification, and the bell holds the
-// full list. The values are pinned by TestPushCapsAreNamed so a change is a
-// deliberate edit.
+// full list of the stored kinds. A Critical alert is push only and is never held
+// by the hourly cap (heldByHourlyCap), so it is never lost to it. The values are
+// pinned by TestPushCapsAreNamed so a change is a deliberate edit.
 const (
 	// PushPerAccountPerHour is how many pushes one person gets in a rolling
 	// hour. It counts critical, reliable and changed pushes, and not confirmed
-	// updates, which replace a notification already on the screen.
+	// updates, which replace a notification already on the screen. A Critical
+	// push is counted but never held back by this limit (heldByHourlyCap), so
+	// the other kinds are held back first.
 	PushPerAccountPerHour = 4
 	// PushCriticalReportsPerReporterPerHour is how many Critical reports from
 	// one reporter may be pushed per hour across all recipients. The per

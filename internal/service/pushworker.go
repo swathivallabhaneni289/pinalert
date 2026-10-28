@@ -10,9 +10,13 @@
 // service worker on every kind (decision 4); an iPhone's own settings may still
 // decide the sound, which docs/PUSH.md says. No confirmed update goes to an
 // Apple endpoint, because iPhone does not replace a notification by its tag and
-// a second note would appear (decision 3). A push over the per person hourly cap
-// is dropped with nothing extra shown (decision 6); the bell still lists
-// everything.
+// a second note would appear (decision 3). For the same reason an Apple endpoint
+// gets only the first push about a report (deviceSkipsRepeatPush); later news
+// about it stays in the bell. A Critical alert is never held by the per person
+// hourly cap, because it is never stored in the bell and a dropped one would
+// show nowhere, but it counts toward the cap; a Reliable or change push over the
+// cap is dropped with nothing extra shown (decision 6) and stays in the bell
+// (heldByHourlyCap).
 //
 // Delivery is at least once. A crash, or a lost database write, between a push
 // service's 201 and the mark sends the row again once its lease passes. Android
@@ -389,7 +393,8 @@ func (w *PushWorker) sendRow(ctx context.Context, claim sqlcgen.ClaimDuePushesRo
 	}
 
 	// 6. The hourly cap; a confirmed update replaces a note already shown and is
-	// not counted.
+	// not counted. A Critical alert is counted but never held (heldByHourlyCap):
+	// it is never stored in the bell, so a dropped one would show nowhere.
 	if run.kind != PushKindConfirmedUpdate {
 		sent, err := w.q.CountAccountPushesInWindow(ctx, sqlcgen.CountAccountPushesInWindowParams{
 			AccountID: claim.AccountID,
@@ -398,7 +403,7 @@ func (w *PushWorker) sendRow(ctx context.Context, claim sqlcgen.ClaimDuePushesRo
 		if err != nil {
 			return w.rowErr(claim.ID, err)
 		}
-		if sent >= PushPerAccountPerHour {
+		if heldByHourlyCap(run.kind, sent) {
 			return w.skip(ctx, run, pushSkipCap)
 		}
 	}
@@ -430,6 +435,28 @@ func (w *PushWorker) sendRow(ctx context.Context, claim sqlcgen.ClaimDuePushesRo
 			sub:  push.Subscription{Endpoint: s.Endpoint, P256dh: s.P256dh, Auth: s.Auth},
 		})
 	}
+	// One notification per report on an Apple endpoint: when an earlier push about
+	// this report was sent to the account, an Apple device is left out
+	// (deviceSkipsRepeatPush). The check is read only when an Apple device is in
+	// the list. A confirmed update already left every Apple device out above.
+	if run.kind != PushKindConfirmedUpdate && anyAppleDevice(devices) {
+		already, err := w.q.AccountPushSentAboutReport(ctx, sqlcgen.AccountPushSentAboutReportParams{
+			AccountID: claim.AccountID,
+			ReportID:  claim.ReportID,
+		})
+		if err != nil {
+			return w.rowErr(claim.ID, err)
+		}
+		kept := devices[:0:0]
+		for _, d := range devices {
+			if deviceSkipsRepeatPush(d.host, already) {
+				log.Printf("push worker: row %d device %d: apple_repeat", claim.ID, d.id)
+				continue
+			}
+			kept = append(kept, d)
+		}
+		devices = kept
+	}
 	if len(devices) == 0 {
 		errs = append(errs, w.skip(ctx, run, pushSkipNoDevice))
 		return errors.Join(errs...)
@@ -456,16 +483,46 @@ func (w *PushWorker) sendRow(ctx context.Context, claim sqlcgen.ClaimDuePushesRo
 }
 
 // heldByHourlyCap says whether the hourly limit stops a push of this kind when
-// sentInHour pushes were already sent to the person in the rolling hour. Stub
-// until the GREEN commit: it still holds the old rule.
+// sentInHour pushes were already sent to the person in the rolling hour. It is
+// the cap order of the 03.3-UAT gap for test 8 (decided 2026-10-28 at the
+// owner's request): a Critical alert near the home area is never held back by
+// the hourly limit, because it is a push only kind that is never stored
+// (UpdateCriticalNearby), so a dropped one would show nowhere. It still counts
+// toward the limit through CountAccountPushesInWindow, so changed and Reliable
+// pushes are held back first. A confirmed update is never counted and never
+// held, because it replaces a note already on the screen. Every other kind
+// (today reliable and changed; Phase 9 adds follow) is held once sentInHour
+// reaches PushPerAccountPerHour. A kind counts toward the limit when
+// CountAccountPushesInWindow lists it.
 func heldByHourlyCap(kind PushKind, sentInHour int64) bool {
-	return kind != PushKindConfirmedUpdate && sentInHour >= PushPerAccountPerHour
+	switch kind {
+	case PushKindCritical, PushKindConfirmedUpdate:
+		return false
+	}
+	return sentInHour >= PushPerAccountPerHour
 }
 
-// deviceSkipsRepeatPush says whether a device with this endpoint host is left
-// out of a push because an earlier push about the same report was sent. Stub
-// until the GREEN commit.
+// deviceSkipsRepeatPush is the per device first push check of the one
+// notification per report rule (owner, 2026-10-28). Apple endpoints (iPhone, and
+// Safari on a Mac) ignore the tag that lets other browsers replace a shown note,
+// so a second push about the same report would stack; such a device gets only
+// the first push about a report, and later news about it stays in the bell. It
+// reports true when push.IsAppleHost(host) and alreadyPushed (an earlier push
+// about the report was sent to this account). host must come from the endpoint
+// policy's reading of the endpoint, never from a stored column (review N6). The
+// check is per account and report (P-1 of plan 03.3-16), so it only ever means
+// fewer notes.
 func deviceSkipsRepeatPush(host string, alreadyPushed bool) bool {
+	return alreadyPushed && push.IsAppleHost(host)
+}
+
+// anyAppleDevice says whether at least one device sits on an Apple endpoint.
+func anyAppleDevice(devices []pushDevice) bool {
+	for _, d := range devices {
+		if push.IsAppleHost(d.host) {
+			return true
+		}
+	}
 	return false
 }
 
