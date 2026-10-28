@@ -260,7 +260,11 @@
   margin: 0;
   display: flex;
   flex-wrap: wrap;
-  column-gap: var(--space-md);
+  /* Three links now (Try the demo, Disclaimer, Policy): 8px between them in
+     both directions, so a wrapped second line sits as close as the first
+     (plan 05-07, UI-SPEC 4e). */
+  column-gap: var(--space-sm);
+  row-gap: var(--space-sm);
 }
 
 /* Plan 42: Disclaimer and Policy are outlined buttons too, never underlined. */
