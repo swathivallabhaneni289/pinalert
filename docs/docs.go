@@ -743,6 +743,58 @@ const docTemplate = `{
                 }
             }
         },
+        "/official/alerts": {
+            "get": {
+                "description": "Returns the official alerts (NDMA SACHET) that cover the reader and whether that answer can be trusted right now.\nThe optional lat and lon (both or neither) are the position Nearby is using. The server turns them into a\ndistrict at once and keeps no reader location: it is neither stored nor logged. The home area saved on the\naccount is read in the same way and is never returned.\nThe server authors every fact in the answer: state (fresh within 30 minutes of the last good check, stale up to\n6 hours, unavailable after that or never), age_seconds from the server clock, the group labels, the row count,\nthe districts line, each row's level, authority badge, issuer and times, and the banner pick. The page recomputes none of it.\nGroups come in this order: where the reader is, the home area when it is another district, state level alerts\nfor the state, and alerts that could not be placed. Within a group the order is Extreme, Severe, Moderate, Minor,\nUnknown, newest first. Near identical alerts are one row with grouped_count.\nWhen the state is stale, rows still inside their own expiry are sent as the last known ones and banner is null.\nWhen it is unavailable no rows are sent. Only a fresh answer with area_known true and no rows may be read as\n\"no official alerts in force\".\nA read also starts a background refresh of the feed when the last attempt is over 10 minutes old; it never delays the answer.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "official"
+                ],
+                "summary": "Official alerts for the reader's area",
+                "parameters": [
+                    {
+                        "type": "number",
+                        "description": "Reader latitude, -90 to 90, sent together with lon",
+                        "name": "lat",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Reader longitude, -180 to 180, sent together with lat",
+                        "name": "lon",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.OfficialAlertsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/reports": {
             "get": {
                 "description": "Runs the indexed bounding-box prefilter followed by exact Haversine distance,\nthen resolves each report fresh via the shared resolver. This single endpoint serves\nthe map, the list, the Past tab, the counts for an empty Active tab and a report link;\nthere is no separate route per tab.\nall is the Show menu's All: active and disputed reports in one answer, nearest first. Every\nreport carries its own view word, so a client that groups by it lists disputed ones last.\nA resolved, expired, held or removed report is never in all.\nThe view parameter picks the tab. active (the default) is Live and Provisional reports,\nnearest first. disputed is only reports currently hidden by disputes, replacing the\ndefault view rather than adding to it; a critical or rescue-needed report stays Live\nhowever heavily it is disputed, so it appears only in the active view. past is what was\nresolved and what ran out its time in the last seven days, the resolved group first and\nthen the expired group, each newest first and cut at 25 with the cut object saying so.\nresolved is accepted as a read only alias of past and answered as past. A resolved\n(retracted) report is never returned by the active or the disputed view; it is listed\nonly in the past view, and no past entry changes an active count.\nshow_disputed=true still selects the disputed view so old links keep working; sent with\nanother view it is refused with 400 on the field view.\nThe category parameter keeps one report category in the chosen view and is refused with\n400 when it is not one of the ten known categories. rescue_needed is still accepted here\nso reports stored before 2026-10-16 can be found.\nThe report parameter is a report id from a link. When it is sent the focus object answers\nit: ok with that report even when it lies outside the radius and outside the seven day\nwindow, too_old when it ended more than seven days ago, or unavailable when there is no such\nreport or no tab lists it. Not found and every unlisted state share the one unavailable\nanswer. The reports array still holds the reader's own area.\nrecent ({resolved_24h, expired_24h}) is present only when the view is active or all, no category\nwas sent and there are no reports, so an empty tab can say what happened lately.\nA finished Rescue report never leaves the API exact on the past view or on a link: its\ndescription is empty, its latitude, longitude and geohash are a blurred point,\napproximate is true and distance_km is measured to that point. A live Rescue report and\nfinished Flood, Shelter and Power reports stay exact.\nEvery report carries your_vote, your_resolution, undos_left and is_own_report relative to\nthe calling verified account. Requires a session verified by email through the\nmagic-link flow; an unverified caller receives 401 and no report data.\nEvery report also carries a trust object: how many people at different nearby spots confirmed and disputed it, counted once per spot and not once per vote.\nlat, lon and radius_km must be finite numbers; NaN is refused with 400 and the name of the parameter.",
@@ -2338,6 +2390,234 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/handlers.MutedReportWire"
                     }
+                }
+            }
+        },
+        "handlers.OfficialAlertsResponse": {
+            "type": "object",
+            "properties": {
+                "age_seconds": {
+                    "description": "AgeSeconds is the time since the last good check by the server clock.\nNull when the feed was never checked.",
+                    "type": "integer",
+                    "x-nullable": true,
+                    "example": 240
+                },
+                "area_known": {
+                    "description": "AreaKnown is false when the request carried no usable position and the\naccount has no home area; groups is then empty and that is not an\nanswer of \"no alerts\".",
+                    "type": "boolean",
+                    "example": true
+                },
+                "banner": {
+                    "description": "Banner is the Nearby banner pick, or null. Only for a fresh answer and\nthe reader's own area.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/handlers.OfficialBannerResponse"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "count": {
+                    "description": "Count is the number of rows across all groups; a grouped row counts once.",
+                    "type": "integer",
+                    "example": 3
+                },
+                "districts_line": {
+                    "description": "DistrictsLine names the districts the page covers, for example\n\"Krishna, NTR, Guntur and 4 more\".",
+                    "type": "string",
+                    "example": "Krishna district"
+                },
+                "groups": {
+                    "description": "Groups are drawn in this order: reader, home, state, unplaced. A group\nwith no rows is left out. Empty when the state is unavailable.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.OfficialGroupResponse"
+                    }
+                },
+                "last_success_at": {
+                    "description": "LastSuccessAt is the time of the last good check. Null when never checked.",
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "2026-10-29T06:25:00Z"
+                },
+                "state": {
+                    "description": "State is fresh (last good check within 30 minutes), stale (up to 6 hours)\nor unavailable (never checked, or over 6 hours).",
+                    "type": "string",
+                    "enum": [
+                        "fresh",
+                        "stale",
+                        "unavailable"
+                    ],
+                    "example": "fresh"
+                }
+            }
+        },
+        "handlers.OfficialBannerResponse": {
+            "type": "object",
+            "properties": {
+                "alert_id": {
+                    "type": "integer",
+                    "example": 41
+                },
+                "area": {
+                    "type": "string",
+                    "example": "Krishna district"
+                },
+                "event_phrase": {
+                    "type": "string",
+                    "example": "Cyclone warning"
+                },
+                "level": {
+                    "type": "string",
+                    "enum": [
+                        "severe",
+                        "extreme"
+                    ],
+                    "example": "extreme"
+                },
+                "level_word": {
+                    "type": "string",
+                    "example": "Extreme"
+                },
+                "more": {
+                    "description": "More is how many other eligible rows there are.",
+                    "type": "integer",
+                    "example": 2
+                }
+            }
+        },
+        "handlers.OfficialDetailsResponse": {
+            "type": "object",
+            "properties": {
+                "areas": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "instruction": {
+                    "type": "string"
+                },
+                "original_description": {
+                    "type": "string"
+                },
+                "original_headline": {
+                    "type": "string"
+                },
+                "original_lang_code": {
+                    "type": "string",
+                    "example": "te"
+                },
+                "original_lang_label": {
+                    "description": "OriginalLangLabel is a language name such as Telugu, or the feed's own\nlabel when it is not known. OriginalLangCode is a BCP 47 code only for\nthe known ones, else empty.",
+                    "type": "string",
+                    "example": "Telugu"
+                },
+                "source_line": {
+                    "type": "string",
+                    "example": "NDMA SACHET"
+                }
+            }
+        },
+        "handlers.OfficialGroupResponse": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "reader",
+                        "home",
+                        "state",
+                        "unplaced"
+                    ],
+                    "example": "reader"
+                },
+                "label": {
+                    "type": "string",
+                    "example": "Where you are: Krishna district"
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.OfficialRowResponse"
+                    }
+                }
+            }
+        },
+        "handlers.OfficialRowResponse": {
+            "type": "object",
+            "properties": {
+                "area_text": {
+                    "type": "string",
+                    "example": "6 mandals"
+                },
+                "badge": {
+                    "description": "Badge is \"Official\" for NDMA SACHET, \"GDACS\" for GDACS, and empty for a\nDemo sample.",
+                    "type": "string",
+                    "example": "Official"
+                },
+                "demo": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "details": {
+                    "$ref": "#/definitions/handlers.OfficialDetailsResponse"
+                },
+                "expires_at": {
+                    "description": "ExpiresAt is the end time; for a grouped row, the latest end.",
+                    "type": "string",
+                    "example": "2026-10-29T14:35:00Z"
+                },
+                "expires_inferred": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "grouped_count": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "headline": {
+                    "description": "Headline is the English headline when the feed has one, else the original\nlanguage headline (original_language_only is then true).",
+                    "type": "string",
+                    "example": "Heavy rain expected"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 41
+                },
+                "issued_at": {
+                    "type": "string",
+                    "example": "2026-10-29T05:40:00Z"
+                },
+                "issuer": {
+                    "type": "string",
+                    "example": "IMD Chennai"
+                },
+                "level": {
+                    "type": "string",
+                    "enum": [
+                        "extreme",
+                        "severe",
+                        "moderate",
+                        "minor",
+                        "unknown"
+                    ],
+                    "example": "severe"
+                },
+                "level_word": {
+                    "type": "string",
+                    "example": "Severe"
+                },
+                "original_language_only": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "source": {
+                    "type": "string",
+                    "enum": [
+                        "sachet",
+                        "gdacs"
+                    ],
+                    "example": "sachet"
                 }
             }
         },

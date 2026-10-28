@@ -610,6 +610,196 @@ definitions:
           $ref: '#/definitions/handlers.MutedReportWire'
         type: array
     type: object
+  handlers.OfficialAlertsResponse:
+    properties:
+      age_seconds:
+        description: |-
+          AgeSeconds is the time since the last good check by the server clock.
+          Null when the feed was never checked.
+        example: 240
+        type: integer
+        x-nullable: true
+      area_known:
+        description: |-
+          AreaKnown is false when the request carried no usable position and the
+          account has no home area; groups is then empty and that is not an
+          answer of "no alerts".
+        example: true
+        type: boolean
+      banner:
+        allOf:
+        - $ref: '#/definitions/handlers.OfficialBannerResponse'
+        description: |-
+          Banner is the Nearby banner pick, or null. Only for a fresh answer and
+          the reader's own area.
+        x-nullable: true
+      count:
+        description: Count is the number of rows across all groups; a grouped row
+          counts once.
+        example: 3
+        type: integer
+      districts_line:
+        description: |-
+          DistrictsLine names the districts the page covers, for example
+          "Krishna, NTR, Guntur and 4 more".
+        example: Krishna district
+        type: string
+      groups:
+        description: |-
+          Groups are drawn in this order: reader, home, state, unplaced. A group
+          with no rows is left out. Empty when the state is unavailable.
+        items:
+          $ref: '#/definitions/handlers.OfficialGroupResponse'
+        type: array
+      last_success_at:
+        description: LastSuccessAt is the time of the last good check. Null when never
+          checked.
+        example: "2026-10-29T06:25:00Z"
+        type: string
+        x-nullable: true
+      state:
+        description: |-
+          State is fresh (last good check within 30 minutes), stale (up to 6 hours)
+          or unavailable (never checked, or over 6 hours).
+        enum:
+        - fresh
+        - stale
+        - unavailable
+        example: fresh
+        type: string
+    type: object
+  handlers.OfficialBannerResponse:
+    properties:
+      alert_id:
+        example: 41
+        type: integer
+      area:
+        example: Krishna district
+        type: string
+      event_phrase:
+        example: Cyclone warning
+        type: string
+      level:
+        enum:
+        - severe
+        - extreme
+        example: extreme
+        type: string
+      level_word:
+        example: Extreme
+        type: string
+      more:
+        description: More is how many other eligible rows there are.
+        example: 2
+        type: integer
+    type: object
+  handlers.OfficialDetailsResponse:
+    properties:
+      areas:
+        type: string
+      description:
+        type: string
+      instruction:
+        type: string
+      original_description:
+        type: string
+      original_headline:
+        type: string
+      original_lang_code:
+        example: te
+        type: string
+      original_lang_label:
+        description: |-
+          OriginalLangLabel is a language name such as Telugu, or the feed's own
+          label when it is not known. OriginalLangCode is a BCP 47 code only for
+          the known ones, else empty.
+        example: Telugu
+        type: string
+      source_line:
+        example: NDMA SACHET
+        type: string
+    type: object
+  handlers.OfficialGroupResponse:
+    properties:
+      kind:
+        enum:
+        - reader
+        - home
+        - state
+        - unplaced
+        example: reader
+        type: string
+      label:
+        example: 'Where you are: Krishna district'
+        type: string
+      rows:
+        items:
+          $ref: '#/definitions/handlers.OfficialRowResponse'
+        type: array
+    type: object
+  handlers.OfficialRowResponse:
+    properties:
+      area_text:
+        example: 6 mandals
+        type: string
+      badge:
+        description: |-
+          Badge is "Official" for NDMA SACHET, "GDACS" for GDACS, and empty for a
+          Demo sample.
+        example: Official
+        type: string
+      demo:
+        example: false
+        type: boolean
+      details:
+        $ref: '#/definitions/handlers.OfficialDetailsResponse'
+      expires_at:
+        description: ExpiresAt is the end time; for a grouped row, the latest end.
+        example: "2026-10-29T14:35:00Z"
+        type: string
+      expires_inferred:
+        example: false
+        type: boolean
+      grouped_count:
+        example: 1
+        type: integer
+      headline:
+        description: |-
+          Headline is the English headline when the feed has one, else the original
+          language headline (original_language_only is then true).
+        example: Heavy rain expected
+        type: string
+      id:
+        example: 41
+        type: integer
+      issued_at:
+        example: "2026-10-29T05:40:00Z"
+        type: string
+      issuer:
+        example: IMD Chennai
+        type: string
+      level:
+        enum:
+        - extreme
+        - severe
+        - moderate
+        - minor
+        - unknown
+        example: severe
+        type: string
+      level_word:
+        example: Severe
+        type: string
+      original_language_only:
+        example: false
+        type: boolean
+      source:
+        enum:
+        - sachet
+        - gdacs
+        example: sachet
+        type: string
+    type: object
   handlers.PlaceResponse:
     properties:
       matched_query:
@@ -1738,6 +1928,54 @@ paths:
       summary: Remove this device from phone alerts
       tags:
       - me
+  /official/alerts:
+    get:
+      description: |-
+        Returns the official alerts (NDMA SACHET) that cover the reader and whether that answer can be trusted right now.
+        The optional lat and lon (both or neither) are the position Nearby is using. The server turns them into a
+        district at once and keeps no reader location: it is neither stored nor logged. The home area saved on the
+        account is read in the same way and is never returned.
+        The server authors every fact in the answer: state (fresh within 30 minutes of the last good check, stale up to
+        6 hours, unavailable after that or never), age_seconds from the server clock, the group labels, the row count,
+        the districts line, each row's level, authority badge, issuer and times, and the banner pick. The page recomputes none of it.
+        Groups come in this order: where the reader is, the home area when it is another district, state level alerts
+        for the state, and alerts that could not be placed. Within a group the order is Extreme, Severe, Moderate, Minor,
+        Unknown, newest first. Near identical alerts are one row with grouped_count.
+        When the state is stale, rows still inside their own expiry are sent as the last known ones and banner is null.
+        When it is unavailable no rows are sent. Only a fresh answer with area_known true and no rows may be read as
+        "no official alerts in force".
+        A read also starts a background refresh of the feed when the last attempt is over 10 minutes old; it never delays the answer.
+      parameters:
+      - description: Reader latitude, -90 to 90, sent together with lon
+        in: query
+        name: lat
+        type: number
+      - description: Reader longitude, -180 to 180, sent together with lat
+        in: query
+        name: lon
+        type: number
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.OfficialAlertsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Official alerts for the reader's area
+      tags:
+      - official
   /reports:
     get:
       description: |-
