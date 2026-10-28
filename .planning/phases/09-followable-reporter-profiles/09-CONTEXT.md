@@ -63,6 +63,13 @@ Requirements: PROF-01, PROF-02, PROF-03.
 - **D-23:** "Voted on at least one of that reporter's reports" (D-02) means a confirm, dispute, resolve or reopen vote; an unresolve alone does not qualify, because it only undoes one's own resolve.
 - **D-24:** "At once" in SC5 is met by the computed tag: from the moment it falls away no follow note is produced or sent and the person cannot be followed; the stored follows end at the next sweep or touch.
 
+### Added after planning (2026-10-28)
+- **D-25 [OWNER RULE, details decided by pinalert-6d at the owner's request]:** Phone notifications stay few and never pile up. The owner said "That'll be too many of notifications, though. I don't want them to be like stacked when they open it.", then "can you take a decision?", and asked that the phone and the laptop behave the same and stay simple. Recorded in 03.3-UAT.md, gaps for test 8, and built in the 3.3 gap fix.
+  - **One notification per report on every device.** Chrome, Edge, Firefox and Android replace it silently in place under the tag report-{id}. An Apple endpoint (iPhone, and Safari on a Mac) ignores the tag, so it gets only the first push about a report. Later pushes stay in the bell.
+  - **Critical is never stopped by the hourly cap of 4, but it counts toward it,** so the changes, Reliable and follow pushes are held back first.
+  - **"Now disputed" goes only for a report that was confirmed before.**
+  - **For Phase 9:** follow pushes count toward the cap. On an Apple endpoint, a follow push about a report that already got a push is not sent (plan 09-26). The docs say so (plan 09-27).
+
 </decisions>
 
 <canonical_refs>

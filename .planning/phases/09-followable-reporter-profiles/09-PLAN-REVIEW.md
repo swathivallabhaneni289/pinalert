@@ -70,3 +70,9 @@ Phase 8 was planned after Phase 9 (commit 2d2f10b). All ten assumptions A-P8-1 t
 
 - **2026-10-27, a 3.3 fix is agreed but not yet built** (03.3-UAT.md gap for test 4): the first post or vote opens a small "Tell you when this report changes?" pop-up (likely in votes.js and report-form.js), and the sign up pop-up gains an unticked tick box for Reliable reporter alerts. Plan 09-17's star box after "Yes, mark resolved" also lives in votes.js: re-read votes.js on top of that fix, and make sure the two never open at once (the star box waits until the changes pop-up is answered or closed). Plan 09-12's Settings rows stay "only for changing your mind later", per the owner principle.
 - **2026-10-28, a third box on Nearby** (7.1 plan 13c, owner decision 07.1 D-17). Inside the installed iPhone app, Nearby opens an alerts ask once on load. Plan 09-17's star box must open only when `document.querySelector('dialog[open]')` is null, the same guard 13c uses. It must also still wait for the 3.3 changes pop-up as noted above.
+- **2026-10-28, owner rule D-25: phone notifications stay few and never pile up** (3.3 check 8; the details were decided by pinalert-6d at the owner's request).
+  - One notification per report on every device: an Apple endpoint gets only the first push about a report.
+  - Critical is never stopped by the hourly cap of 4, but it counts toward it.
+  - "Now disputed" goes only after a confirmation.
+  - All three are built in the 3.3 gap fix for test 8. Plan 09-26 now waits for that fix, puts the follow kind through its checks without copying them, and adds TestFollowPushAppleFirstOnly and TestFollowPushNeverHoldsBackCritical.
+  - Plan 09-27's docs/PUSH.md text says the same. Plan 09-25 (the dispatcher) is unchanged, because the rule applies per device in the worker.
