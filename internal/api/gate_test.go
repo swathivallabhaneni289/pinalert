@@ -316,8 +316,16 @@ func TestAccessGateAllowsVerified(t *testing.T) {
 // must answer 200, and a second test below proves the near misses stay gated.
 // These rows run only on a database: newGateTestServer skips without
 // DATABASE_URL.
+//
+// Amended 2026-10-28 by plan 05-04 (D-13): one row "globe tile" was added for
+// GET /globe/tiles/0/0/0.jpg (the sign in globe's Earth pictures, public like the
+// icons and answered from a fake upstream here), which must answer 200, and the
+// near misses /globe/tiles/9/0/0.jpg and /globe/tiles must not.
 func TestAccessGateExemptRoutes(t *testing.T) {
-	srv, _, _ := newGateTestServer(t)
+	globeUp := fakeGlobeUpstream(t)
+	srv, _, _ := newGateTestServerWith(t, func(d *Deps, _ *sqlcgen.Queries) {
+		d.GlobeUpstream = globeUp.URL
+	})
 
 	appAssets := []string{
 		"/manifest.webmanifest",
@@ -331,7 +339,7 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 		"/apple-touch-icon.png",
 		"/apple-touch-icon-precomposed.png",
 	}
-	mustBeOK := map[string]bool{"/disclaimer": true, "/policy": true}
+	mustBeOK := map[string]bool{"/disclaimer": true, "/policy": true, "/globe/tiles/0/0/0.jpg": true}
 	for _, p := range appAssets {
 		mustBeOK[p] = true
 	}
@@ -349,6 +357,7 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 		{"swagger ui", http.MethodGet, "/swagger/index.html", ""},
 		{"disclaimer page", http.MethodGet, "/disclaimer", ""},
 		{"policy page", http.MethodGet, "/policy", ""},
+		{"globe tile", http.MethodGet, "/globe/tiles/0/0/0.jpg", ""},
 	}
 	for _, p := range appAssets {
 		cases = append(cases, struct {
@@ -405,6 +414,21 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 			defer resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				t.Fatalf("GET %s returned 200: only the ten listed app asset paths are public", p)
+			}
+		})
+	}
+
+	// Amended 2026-10-28 by plan 05-04 (D-13): near misses of the globe tiles.
+	// Only the 85 listed tile paths are public.
+	for _, p := range []string{"/globe/tiles/9/0/0.jpg", "/globe/tiles"} {
+		t.Run("globe near miss "+p, func(t *testing.T) {
+			resp, err := newGateJarClient(t).Get(srv.URL + p)
+			if err != nil {
+				t.Fatalf("GET %s: %v", p, err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				t.Fatalf("GET %s returned 200: only the 85 listed globe tile paths are public", p)
 			}
 		})
 	}

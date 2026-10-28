@@ -33,6 +33,12 @@ var uiSpecPWAPaths = []string{
 // path with no encoded form skips the session middleware; every near miss, every
 // other method and an encoded spelling still runs it (T-03.3-14). It needs no
 // database.
+//
+// Amended 2026-10-28 by plan 05-04 (D-13, D-04, D-05): the bypass is now one rule
+// set, sessionSkip, with exact GET paths, exact POST paths and path prefixes for
+// GET and POST. The seven original rows are kept unchanged; rows were added for a
+// POST of an exact post path, the prefix, dot segments, a double slash, a wrong
+// case, a HEAD and an encoded spelling under the prefix.
 func TestSkipSessionFor(t *testing.T) {
 	ran := 0
 	counting := func(next http.Handler) http.Handler {
@@ -42,11 +48,18 @@ func TestSkipSessionFor(t *testing.T) {
 		})
 	}
 	ok := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	h := skipSessionFor(map[string]bool{"/a": true}, counting)(ok)
+	h := skipSessionFor(sessionSkip{
+		get:      map[string]bool{"/a": true},
+		post:     map[string]bool{"/q": true},
+		prefixes: []string{"/p"},
+	}, counting)(ok)
 
 	encoded := httptest.NewRequest(http.MethodGet, "/a", nil)
 	encoded.URL.Path = "/a"
 	encoded.URL.RawPath = "/%61"
+	encodedPrefix := httptest.NewRequest(http.MethodGet, "/p/x", nil)
+	encodedPrefix.URL.Path = "/p/x"
+	encodedPrefix.URL.RawPath = "/p/%78"
 
 	cases := []struct {
 		name string
@@ -60,6 +73,26 @@ func TestSkipSessionFor(t *testing.T) {
 		{"POST", httptest.NewRequest(http.MethodPost, "/a", nil), 1},
 		{"HEAD", httptest.NewRequest(http.MethodHead, "/a", nil), 1},
 		{"encoded spelling", encoded, 1},
+
+		// Added by plan 05-04.
+		{"POST of an exact post path skips", httptest.NewRequest(http.MethodPost, "/q", nil), 0},
+		{"GET of a post only path", httptest.NewRequest(http.MethodGet, "/q", nil), 1},
+		{"POST of a get only path", httptest.NewRequest(http.MethodPost, "/a", nil), 1},
+		{"prefix itself, GET", httptest.NewRequest(http.MethodGet, "/p", nil), 0},
+		{"prefix itself, POST", httptest.NewRequest(http.MethodPost, "/p", nil), 0},
+		{"under prefix, GET", httptest.NewRequest(http.MethodGet, "/p/x", nil), 0},
+		{"under prefix, POST", httptest.NewRequest(http.MethodPost, "/p/x", nil), 0},
+		{"deeper under prefix", httptest.NewRequest(http.MethodGet, "/p/x/y/z", nil), 0},
+		{"prefix without slash boundary", httptest.NewRequest(http.MethodGet, "/px", nil), 1},
+		{"dot dot out of the prefix", httptest.NewRequest(http.MethodGet, "/p/../a", nil), 1},
+		{"dot segment", httptest.NewRequest(http.MethodGet, "/p/./x", nil), 1},
+		{"double slash", httptest.NewRequest(http.MethodGet, "/p//x", nil), 1},
+		{"ends in dot", httptest.NewRequest(http.MethodGet, "/p/.", nil), 1},
+		{"ends in dot dot", httptest.NewRequest(http.MethodGet, "/p/..", nil), 1},
+		{"other case", httptest.NewRequest(http.MethodGet, "/P/x", nil), 1},
+		{"HEAD under prefix", httptest.NewRequest(http.MethodHead, "/p/x", nil), 1},
+		{"PUT under prefix", httptest.NewRequest(http.MethodPut, "/p/x", nil), 1},
+		{"encoded spelling under prefix", encodedPrefix, 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -76,10 +109,17 @@ func TestSkipSessionFor(t *testing.T) {
 	}
 }
 
-// TestPWASkipSetMatchesRoutes proves the route list and the bypass set are one
-// set: pwaSkipSet has exactly the entries of handlers.PWAPublicPaths, each is a
-// registered GET route of the real router, and the list is the ten addresses of
-// UI-SPEC 6b. It needs no database.
+// TestPWASkipSetMatchesRoutes proves the route lists and the bypass set are one
+// set: sessionSkipSet's GET paths are exactly the entries of
+// handlers.PWAPublicPaths plus handlers.GlobeTilePaths(), each is a registered
+// GET route of the real router, and the PWA list is the ten addresses of UI-SPEC
+// 6b. It needs no database.
+//
+// Amended 2026-10-28 by plan 05-04 (D-13): it was over pwaSkipSet, a map of the
+// ten PWA paths. It is now over sessionSkipSet, whose GET set also holds the 85
+// globe tile paths; every old assertion about the ten paths is kept, and the
+// POST set and the prefixes are asserted empty until plans 05-10 and 05-12 add
+// the Demo prefix and the refresh endpoint.
 func TestPWASkipSetMatchesRoutes(t *testing.T) {
 	mgr, err := session.NewManager([]byte("pwa-routes-test-secret-not-for-production"), false)
 	if err != nil {
@@ -102,9 +142,26 @@ func TestPWASkipSetMatchesRoutes(t *testing.T) {
 		t.Fatalf("walking the router: %v", err)
 	}
 
-	set := pwaSkipSet()
-	if len(set) != len(handlers.PWAPublicPaths) {
-		t.Errorf("pwaSkipSet has %d keys, PWAPublicPaths has %d entries", len(set), len(handlers.PWAPublicPaths))
+	skip := sessionSkipSet()
+	set := skip.get
+	tilePaths := handlers.GlobeTilePaths()
+	if len(set) != len(handlers.PWAPublicPaths)+len(tilePaths) {
+		t.Errorf("sessionSkipSet has %d GET keys, PWAPublicPaths and GlobeTilePaths have %d entries together",
+			len(set), len(handlers.PWAPublicPaths)+len(tilePaths))
+	}
+	if len(tilePaths) != 85 {
+		t.Errorf("GlobeTilePaths has %d entries, want 85", len(tilePaths))
+	}
+	for _, p := range tilePaths {
+		if !set[p] {
+			t.Errorf("%s is a globe tile path but not in the skip set", p)
+		}
+		if !getRoutes[p] {
+			t.Errorf("%s is a globe tile path but is not a registered GET route", p)
+		}
+	}
+	if len(skip.post) != 0 || len(skip.prefixes) != 0 {
+		t.Errorf("sessionSkipSet has POST paths %v and prefixes %v, want none in plan 05-04", skip.post, skip.prefixes)
 	}
 	if len(handlers.PWAPublicPaths) != 10 {
 		t.Errorf("PWAPublicPaths has %d entries, want 10", len(handlers.PWAPublicPaths))
@@ -118,7 +175,7 @@ func TestPWASkipSetMatchesRoutes(t *testing.T) {
 		}
 	}
 	for p := range set {
-		if !slices.Contains(handlers.PWAPublicPaths, p) {
+		if !slices.Contains(handlers.PWAPublicPaths, p) && !slices.Contains(tilePaths, p) {
 			t.Errorf("%s is in the skip set but not on the list", p)
 		}
 	}
