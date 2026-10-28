@@ -49,6 +49,11 @@ window.PinalertMap = (function () {
 
   // The open Leaflet popup, or null.
   var activePopup = null;
+  // The one open GDACS card (plan 05-22), or null, with what its layer asked for:
+  // { opener, onClose }. A GDACS card is a popup that belongs to no report, so
+  // the report address, the report link and the report focus paths skip it.
+  var officialPopup = null;
+  var officialMeta = null;
   // True while focus sits inside the open popup. Kept by focusin and focusout
   // because Leaflet can remove the container before popupclose fires.
   var popupFocusInside = false;
@@ -1071,6 +1076,13 @@ window.PinalertMap = (function () {
     }
     ensureReportHeading(container, close);
 
+    // A GDACS card belongs to no report: it takes the open path of its own below
+    // (plan 05-22), which sets the same marks and puts focus the same way.
+    if (isOfficialPopup(evt.popup)) {
+      openOfficialPopup(evt.popup, container);
+      return;
+    }
+
     var popup = evt.popup;
     activePopup = popup;
     var id = reportIdForPopup(popup);
@@ -1274,6 +1286,10 @@ window.PinalertMap = (function () {
     // It does nothing on a laptop or when the sheet was not moved for this report.
     if (window.PinalertSheet && typeof window.PinalertSheet.restore === 'function') {
       window.PinalertSheet.restore();
+    }
+    if (isOfficialPopup(evt.popup)) {
+      closeOfficialPopup(evt.popup);
+      return;
     }
     var popup = evt.popup;
     var el = popup.getElement();
@@ -2237,6 +2253,185 @@ window.PinalertMap = (function () {
   }
   // ---- End of the report view (plan 39) ----
 
+  // ---- Overlays and the GDACS card (plan 05-22) ----
+  // official-pins.js draws the GDACS hazard pins on a layer group of its own and
+  // opens a read only card for one. These two functions are the whole seam: the
+  // layer is added to the map as it is, and the card opens in the same popup and
+  // the same phone detail pane a crowd report uses, with the same close button,
+  // Escape and focus return. Nothing here reads a report, a count or the store.
+
+  // addOverlay adds a Leaflet layer group to the map and says whether it did.
+  function addOverlay(layer) {
+    if (!map || !layer || typeof layer.addTo !== 'function') {
+      return false;
+    }
+    layer.addTo(map);
+    return true;
+  }
+
+  // isOfficialPopup says whether a popup is the open GDACS card.
+  function isOfficialPopup(popup) {
+    return officialPopup !== null && popup === officialPopup;
+  }
+
+  // openCard opens a node as the GDACS card at a place and says whether it did.
+  // name is the card's accessible name when it holds no title. opts.opener is the
+  // pin element, which carries the open mark and gets focus back on close, and
+  // opts.onClose is called once when the card closes. An open crowd report or
+  // card closes first, the way one report closes for the next.
+  function openCard(latlng, node, name, opts) {
+    if (!map || !node || !latlng) {
+      return false;
+    }
+    // An open GDACS card closes through its own path first, so its pin is
+    // released before the next card is set up.
+    if (officialPopup !== null) {
+      map.closePopup(officialPopup);
+    }
+    var popup = L.popup({
+      className: 'official-popup',
+      minWidth: 340,
+      maxWidth: 340,
+      keepInView: true,
+      autoPan: !reducedMotion,
+      autoPanPaddingTopLeft: panPad.topLeft,
+      autoPanPaddingBottomRight: panPad.bottomRight,
+      offset: [0, -22]
+    });
+    applyPopupPlacement(popup, null);
+    popup.setLatLng(latlng);
+    popup.setContent(node);
+    officialPopup = popup;
+    officialMeta = {
+      opener: opts && opts.opener ? opts.opener : null,
+      onClose: opts && typeof opts.onClose === 'function' ? opts.onClose : null,
+      name: typeof name === 'string' ? name : ''
+    };
+    map.openPopup(popup);
+    return true;
+  }
+
+  // openOfficialPopup is the open path of the GDACS card. It sets the marks the
+  // report path sets (the dialog name, data-popup-open on the popup, the page
+  // and the pin, which trust.js and phone.css read) and puts focus on the card on
+  // a laptop and on the heading on a phone. It writes no address, no report link
+  // and no selection.
+  function openOfficialPopup(popup, container) {
+    activePopup = popup;
+    popupOpener = { id: null, kind: 'official' };
+    listOpenerId = null;
+    container.setAttribute('role', 'dialog');
+    container.setAttribute('aria-modal', 'false');
+    container.setAttribute('data-popup-open', 'true');
+    document.documentElement.setAttribute('data-popup-open', 'true');
+    var title = container.querySelector('.official-card__title');
+    if (title && title.id) {
+      container.setAttribute('aria-labelledby', title.id);
+    } else if (officialMeta && officialMeta.name !== '') {
+      container.setAttribute('aria-label', officialMeta.name);
+    }
+    if (officialMeta && officialMeta.opener) {
+      officialMeta.opener.setAttribute('data-popup-open', 'true');
+    }
+    var card = container.querySelector('.official-card');
+    openedWhileHidden = !card || card.offsetParent === null;
+    hideReportGone(false);
+    if (closeSettle) {
+      // A switch from a report to a pin: the report's close is still queued, and
+      // its step back in the browser would close this card when it lands. The
+      // address loses the report id in place instead, and the phone map keeps
+      // the view it remembered for the report, to return to when this card closes.
+      window.clearTimeout(closeSettle);
+      closeSettle = 0;
+      historyMode = null;
+      closeFromHistory = false;
+      if (currentReportParam() !== null) {
+        writeReportAddress(null, 'replace');
+      }
+    } else {
+      rememberNearbyView();
+    }
+    // The keep in view pan and the clearance from the tools row are what every
+    // move of the map runs for the open popup, so one call does both here.
+    refreshPanPadding();
+    applyPanPadding(popup);
+    toolsTried = { popup: popup, count: 0 };
+    onMapMoveEnd();
+    if (!openedWhileHidden && !phoneDetail() && card) {
+      card.focus({ preventScroll: true });
+    }
+    if (phoneDetail()) {
+      window.setTimeout(function () {
+        if (activePopup === popup) {
+          centerOfficialInStrip(popup, container);
+        }
+      }, 0);
+      focusReportHeading(container);
+    }
+  }
+
+  // centerOfficialInStrip puts the GDACS pin in the middle of the short map
+  // strip above the phone sheet, at the zoom the reader already has: a hazard is
+  // an area, so the map is not zoomed in to a street.
+  function centerOfficialInStrip(popup, popupEl) {
+    if (!map || !popup) {
+      return;
+    }
+    var strip = popupEl.getBoundingClientRect().top - map.getContainer().getBoundingClientRect().top;
+    if (!(strip > 0)) {
+      return;
+    }
+    map.setView(popup.getLatLng(), map.getZoom(), { animate: false });
+    map.panBy([0, Math.round(map.getSize().y / 2 - strip / 2)], { animate: false });
+  }
+
+  // closeOfficialPopup is the close path of the GDACS card: it takes the marks
+  // off, hands focus back to the pin when focus was in the card and was lost,
+  // tells the layer, and lets the phone map return to where it was. It touches
+  // no report, address or link.
+  function closeOfficialPopup(popup) {
+    var meta = officialMeta;
+    officialPopup = null;
+    officialMeta = null;
+    var el = popup.getElement();
+    var pressedClose = closePressHadFocus;
+    var hadFocus = popupFocusInside || pressedClose;
+    closePressHadFocus = false;
+
+    document.documentElement.removeAttribute('data-popup-open');
+    if (el) {
+      el.removeAttribute('data-popup-open');
+    }
+    var opener = meta ? meta.opener : null;
+    if (opener) {
+      opener.removeAttribute('data-popup-open');
+    }
+
+    popupFocusInside = false;
+    popupOpener = null;
+    openedWhileHidden = false;
+    if (activePopup === popup) {
+      activePopup = null;
+    }
+
+    var active = document.activeElement;
+    var lost = !active || active === document.body || !!(el && el.contains(active)) ||
+      (pressedClose && active === map.getContainer());
+    if (hadFocus && lost) {
+      if (opener && opener.isConnected && typeof opener.focus === 'function') {
+        opener.focus({ preventScroll: true });
+      }
+      if (!opener || document.activeElement !== opener) {
+        map.getContainer().focus({ preventScroll: true });
+      }
+    }
+    if (meta && meta.onClose) {
+      meta.onClose();
+    }
+    noteReportClosed();
+  }
+  // ---- End of the overlays and the GDACS card (plan 05-22) ----
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
@@ -2256,6 +2451,8 @@ window.PinalertMap = (function () {
     focusOpenPopup: focusOpenPopup,
     takeRemovedPopupFocus: takeRemovedPopupFocus,
     focusMarker: focusMarker,
-    openReport: openReport
+    openReport: openReport,
+    addOverlay: addOverlay,
+    openCard: openCard
   };
 }());

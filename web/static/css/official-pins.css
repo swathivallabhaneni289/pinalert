@@ -1,0 +1,331 @@
+/*
+ * Pinalert official-pins.css (Phase 5, plan 22, UI-SPEC Surface 3, D-12)
+ *
+ * The GDACS official pin on the Nearby map and the read only card it opens.
+ *
+ * The pin is a flat rectangle, never round, 28px high with a 4px radius, in the
+ * text colour with the page colour for its glyph and its word GDACS. It has no
+ * severity colour: those hues belong to the crowd's reports, and a pin that
+ * carried one could be read as a report. A crowd pin is a round badge and a Demo
+ * pin is a round badge with a dashed ring, so the three are told apart by shape
+ * and by word, never by colour alone (research Pitfall 12). The same on phone and
+ * laptop. The 28px rectangle sits centred in a transparent 44px marker box, which
+ * is the touch target; script passes the same box to Leaflet because Leaflet
+ * writes the icon size inline.
+ *
+ * The card opens in the same containers as a crowd report (the Leaflet popup on
+ * the laptop, the full screen detail sheet of phone.css on a phone). It has no
+ * vote, trust, Flag or Mute part. Its one action is an outlined 44px link to the
+ * GDACS page, never underlined text.
+ *
+ * Tokens only: no new hue. The 28px and 24px heights, the 20px and 16px glyphs and
+ * the 96px marker box width are the named literals of the UI-SPEC table. Loads
+ * after phone.css so the card wins over the detail pane rules where they meet.
+ */
+
+/* ---- The marker box --------------------------------------------------------- */
+
+.official-pin-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  background: transparent;
+  border: 0;
+}
+
+.official-pin-box:focus-visible {
+  outline: none;
+}
+
+/* ---- The pin ---------------------------------------------------------------- */
+
+.official-pin {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 var(--space-sm);
+  border-radius: 4px;
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-size: var(--font-size-label);
+  line-height: 1;
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 35%);
+  transition: transform 0.2s ease;
+}
+
+.official-pin-box:focus-visible .official-pin {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+/* The chosen pin grows and carries no ring (R4). Script raises its marker above
+   the other pins. */
+.official-pin.is-chosen {
+  transform: scale(1.35);
+}
+
+.official-pin__glyph,
+.official-card__glyph {
+  display: block;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.official-glyph--earthquake {
+  -webkit-mask-image: url("/static/icons/earthquake.svg");
+  mask-image: url("/static/icons/earthquake.svg");
+}
+
+.official-glyph--cyclone {
+  -webkit-mask-image: url("/static/icons/storm_cyclone.svg");
+  mask-image: url("/static/icons/storm_cyclone.svg");
+}
+
+.official-glyph--flood {
+  -webkit-mask-image: url("/static/icons/flood.svg");
+  mask-image: url("/static/icons/flood.svg");
+}
+
+.official-glyph--wildfire {
+  -webkit-mask-image: url("/static/icons/fire.svg");
+  mask-image: url("/static/icons/fire.svg");
+}
+
+.official-glyph--volcano {
+  -webkit-mask-image: url("/static/icons/circle-alert.svg");
+  mask-image: url("/static/icons/circle-alert.svg");
+}
+
+/* ---- The card --------------------------------------------------------------- */
+
+.official-card {
+  display: block;
+  box-sizing: border-box;
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+.official-card:focus,
+.official-card:focus-visible {
+  outline: none;
+}
+
+.official-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-12) var(--space-md);
+  background: var(--color-surface);
+}
+
+.official-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  box-sizing: border-box;
+  min-height: 24px;
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--color-text);
+  border-radius: 4px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+.official-card__badge-icon,
+.official-card__chip-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.official-card__badge-icon {
+  -webkit-mask-image: url("/static/icons/shield-check.svg");
+  mask-image: url("/static/icons/shield-check.svg");
+}
+
+.official-card__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  box-sizing: border-box;
+  min-height: 24px;
+  padding: 0 var(--space-sm);
+  border-radius: 4px;
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+.official-card__chip--extreme {
+  background: var(--color-severity-critical-bg);
+  border: 1px solid var(--color-severity-critical);
+}
+
+.official-card__chip--severe {
+  background: var(--color-severity-medium-bg);
+  border: 1px solid var(--color-severity-medium);
+}
+
+.official-card__chip--neutral {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.official-card__chip--extreme .official-card__chip-icon {
+  background-color: var(--color-tone-bad);
+  -webkit-mask-image: url("/static/icons/octagon-alert.svg");
+  mask-image: url("/static/icons/octagon-alert.svg");
+}
+
+.official-card__chip--severe .official-card__chip-icon {
+  background-color: var(--color-tone-caution);
+  -webkit-mask-image: url("/static/icons/triangle-alert.svg");
+  mask-image: url("/static/icons/triangle-alert.svg");
+}
+
+.official-card__chip--neutral .official-card__chip-icon {
+  background-color: var(--color-text);
+  -webkit-mask-image: url("/static/icons/circle-alert.svg");
+  mask-image: url("/static/icons/circle-alert.svg");
+}
+
+.official-card__body {
+  padding: var(--space-12) var(--space-md) var(--space-md);
+}
+
+.official-card__title {
+  margin: 0 0 var(--space-sm);
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.official-card__line,
+.official-card__detail,
+.official-card__honesty,
+.official-card__credit {
+  margin: 0 0 var(--space-xs);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  overflow-wrap: anywhere;
+}
+
+.official-card__label {
+  font-weight: var(--font-weight-semibold);
+}
+
+.official-card__honesty {
+  margin-top: var(--space-12);
+  color: var(--color-text);
+}
+
+.official-card__credit {
+  color: var(--color-text-muted);
+}
+
+/* The one action: an outlined 44px link, never underlined text. */
+.official-card__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: var(--touch-target-min);
+  margin-top: var(--space-md);
+  padding: 0 var(--space-md);
+  border: 1px solid var(--color-text);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+}
+
+/* Leaflet paints every link in its container blue, so the link names its own
+   colour with the container in front. */
+.leaflet-container .official-card__link {
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.leaflet-container .official-card__link:hover,
+.leaflet-container .official-card__link:focus-visible {
+  background: var(--color-surface);
+}
+
+.leaflet-container .official-card__link:active {
+  background: var(--color-border);
+}
+
+/* The laptop popup keeps its close button at the top right inside the card, so
+   the header band leaves room for it. On a phone the Back anchor floats over the
+   map strip above the sheet and needs none. */
+@media (min-width: 900px) {
+  .official-card__head {
+    padding-right: calc(var(--touch-target-min) + var(--space-sm));
+  }
+}
+
+/* ---- Reduced motion ---------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .official-pin {
+    transition: none;
+  }
+}
+
+/* ---- Windows high contrast ---------------------------------------------------- */
+
+@media (forced-colors: active) {
+  .official-pin {
+    forced-color-adjust: none;
+    background: CanvasText;
+    color: Canvas;
+  }
+
+  .official-card__badge,
+  .official-card__chip,
+  .official-card__link {
+    border-color: CanvasText;
+  }
+
+  .official-card__glyph,
+  .official-card__badge-icon,
+  .official-card__chip-icon {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+}

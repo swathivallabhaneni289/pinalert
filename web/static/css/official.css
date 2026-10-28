@@ -38,6 +38,12 @@
   font-weight: var(--font-weight-regular);
 }
 
+/* The second status line, hazard events from GDACS (plan 05-22), sits close
+   under the first and is the same muted words. Added 2026-10-29. */
+.official-status.official-status--hazards:not([hidden]) {
+  padding-top: var(--space-xs);
+}
+
 .official-notice:not([hidden]) {
   display: flex;
   align-items: flex-start;

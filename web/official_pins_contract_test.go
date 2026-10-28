@@ -128,7 +128,8 @@ func TestOfficialPinCard(t *testing.T) {
 		"official-card__title", "'Hazard'", "'Issued '", "'Until '", "'Issued by GDACS'",
 		"Automatic estimate. Follow your state disaster management authority.",
 		"Global Disaster Alert and Coordination System, GDACS",
-		"Open GDACS page", "'_blank'", "noopener noreferrer", "safeGdacsLink(", "textContent")
+		"Open GDACS page", "'_blank'", "noopener noreferrer", "safeGdacsLink(", "make(")
+	p13MustContain(t, "official-pins.js make", jsFunctionBody(t, code, "make(tag, className, text)"), "textContent")
 	p13MustNotContain(t, "buildCard", card, "innerHTML", "createElement('button')", "createElement('input')")
 	// The three level words come from one table the pin name and the chip share.
 	p13MustContain(t, "official-pins.js level words", code, "'Red'", "'Orange'", "'Green'")
@@ -143,7 +144,8 @@ func TestOfficialPinCard(t *testing.T) {
 
 	// The link is drawn only for a gdacs.org page.
 	link := jsFunctionBody(t, code, "safeGdacsLink(url)")
-	p13MustContain(t, "safeGdacsLink", link, "https://www.gdacs.org/", "indexOf(")
+	p13MustContain(t, "safeGdacsLink", link, "GDACS_PREFIX", "indexOf(")
+	p13MustContain(t, "official-pins.js", code, "var GDACS_PREFIX = 'https://www.gdacs.org/';")
 
 	// The look: the link is an outlined 44px button, never underlined text.
 	rule := officialPinRule(t, ".official-card__link")

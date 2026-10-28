@@ -481,7 +481,7 @@ test('a feed-centre event refetches at most every 5 minutes and a timer refetche
   assert.ok(layer.requests.length >= 3);
 });
 
-test('a slow older answer never covers a newer one, and a second request is not sent while one is out', async () => {
+test('a second request is not sent while one is out', async () => {
   const layer = loadLayer();
   await flush();
   layer.emit('pinalert:feed-centre', { lat: 1, lon: 2 });

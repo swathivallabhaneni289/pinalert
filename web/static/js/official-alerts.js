@@ -63,6 +63,10 @@
   var errorTitleEl = document.getElementById('official-error-title');
   var errorBodyEl = document.getElementById('official-error-body');
   var retryEl = document.getElementById('official-retry');
+  // The second muted status line, about hazard events from GDACS (plan 05-22,
+  // ALERT-04 for each official feed). It is optional on purpose: the Demo's page
+  // has no such line and keeps drawing without it, so it is not in the list below.
+  var hazardEl = document.getElementById('official-hazard-status');
 
   var required = [pageEl, statusEl, noticeEl, noticeTextEl, sectionEl, titleEl, districtsEl, listEl, skeletonEl,
     emptyEl, emptyTitleEl, emptyBodyEl, unavailableEl, unavailableTitleEl, unavailableBodyEl, noareaEl,
@@ -285,6 +289,7 @@
 
   function showLoading() {
     hideBlocks();
+    clearHazardLine();
     statusEl.textContent = 'Checking for official alerts…';
     setHidden(skeletonEl, false);
   }
@@ -294,16 +299,59 @@
     hideBlocks();
     listEl.textContent = '';
     statusEl.textContent = 'Not checked';
+    clearHazardLine();
     retryEl.disabled = false;
     showState(errorEl, errorTitleEl, "Couldn't load official alerts", errorBodyEl, 'Check your connection and try again.');
   }
 
   // ---- Status line and sentences that carry an age ------------------------
 
+  // clearHazardLine empties the hazard line and hides it, so a page that has no
+  // answer claims nothing about hazard events.
+  function clearHazardLine() {
+    if (hazardEl) {
+      hazardEl.textContent = '';
+      hazardEl.hidden = true;
+    }
+  }
+
+  // renderHazardLine writes the second status line from the hazard fields of the
+  // answer (plan 05-22): when hazard events from GDACS were last checked, or that
+  // they could not be checked since a time, or not yet. The SACHET line above it
+  // never changes with it. A fresh feed gives the age; a stale or unavailable
+  // feed with a last good check gives the time of that check; a feed never
+  // checked says so. An answer with no hazard state (an older server) draws
+  // nothing, and so does the Demo, whose page has no such line.
+  function renderHazardLine(view, elapsedMs) {
+    if (!hazardEl) {
+      return;
+    }
+    var state = view.hazards_state;
+    if (typeof state !== 'string' || STATES[state] !== true) {
+      clearHazardLine();
+      return;
+    }
+    var last = typeof view.hazards_last_success_at === 'string' ? Date.parse(view.hazards_last_success_at) : NaN;
+    var haveAge = typeof view.hazards_age_seconds === 'number' && isFinite(view.hazards_age_seconds);
+    var age = haveAge ? Math.max(0, view.hazards_age_seconds) + Math.max(0, elapsedMs || 0) / 1000 : null;
+    var words;
+    if (state === 'fresh' && age !== null) {
+      words = 'Hazard events from GDACS: last checked ' + relativeAge(age);
+    } else if (state !== 'fresh' && age !== null && isFinite(last)) {
+      var now = last + Math.max(0, view.hazards_age_seconds) * 1000 + Math.max(0, elapsedMs || 0);
+      words = 'Hazard events from GDACS could not be checked since ' + clockWithDay(view.hazards_last_success_at, now) + '.';
+    } else {
+      words = 'Hazard events from GDACS have not been checked yet.';
+    }
+    hazardEl.textContent = words;
+    hazardEl.hidden = false;
+  }
+
   // renderStatus writes the status line and the two sentences that carry the age
   // of the last good check (the stale notice and the unavailable body). elapsedMs
   // is the time that passed here since the answer was drawn.
   function renderStatus(view, elapsedMs) {
+    renderHazardLine(view, elapsedMs);
     var age = ageOf(view, elapsedMs);
     var hasLast = isFinite(Date.parse(view.last_success_at));
     statusEl.textContent = age === null ? 'Not checked yet' : 'Last checked ' + relativeAge(age);
