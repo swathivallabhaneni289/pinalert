@@ -126,16 +126,21 @@ func bellTagWith(t *testing.T, tmpl, attr string) string {
 	return tmpl[start : at+end+1]
 }
 
-// TestAlertsNeverSaysNoAlerts pins D-22 and T-34-17: the Official alerts page
-// says plainly that alerts are not connected yet and points to the state
-// disaster management authority, and it never claims that no warning is in
-// force, because Pinalert is not looking and that would be false reassurance in
-// an emergency.
+// TestAlertsNeverSaysNoAlerts pins D-22 and T-34-17: the Official alerts
+// template never claims that no warning is in force, because every state
+// sentence is written by official-alerts.js from the server's state and the
+// template itself may not make a claim Pinalert cannot back.
+//
+// Amended 2026-10-29 by plan 05-09 (ALERT-04): the page is filled; the honesty
+// sentences live in official-alerts.js and are pinned by
+// web/official_alerts_test.mjs against every state. The two "not connected"
+// wants are replaced by the noscript line and the attribution line; every claim
+// ban, the list and count bans and the notice strip ban are kept as they were.
 func TestAlertsNeverSaysNoAlerts(t *testing.T) {
 	page := p421ReadTemplate(t, "alerts.html.tmpl")
 	for _, want := range []string{
-		"Official alerts are not connected yet",
-		"Pinalert does not show government warnings yet. Check your state disaster management authority for official warnings.",
+		"Turn on JavaScript to see official alerts, or check your state disaster management authority.",
+		"Alerts are copied from NDMA SACHET. Pinalert is not an official channel. Hazard events come from the Global Disaster Alert and Coordination System, GDACS.",
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("alerts.html.tmpl lacks %q", want)
@@ -147,13 +152,13 @@ func TestAlertsNeverSaysNoAlerts(t *testing.T) {
 		"nothing in" + " force", "in" + " force", "last" + " checked", "0" + " alerts",
 	} {
 		if strings.Contains(lower, banned) {
-			t.Errorf("alerts.html.tmpl holds %q, a claim Pinalert cannot back while alerts are not connected", banned)
+			t.Errorf("alerts.html.tmpl holds %q, a claim only official-alerts.js may write from the server's state", banned)
 		}
 	}
-	// The page is a place with an empty state: no list, no count.
+	// The script builds the list and the count: the template holds no list.
 	for _, banned := range []string{"<ul", "<ol", "<table", "data-count"} {
 		if strings.Contains(lower, banned) {
-			t.Errorf("alerts.html.tmpl holds %q; the list arrives with Phase 5", banned)
+			t.Errorf("alerts.html.tmpl holds %q; official-alerts.js builds the list", banned)
 		}
 	}
 	// D-29: the notice strip is not drawn here.
