@@ -18,7 +18,16 @@
 //     step 4 finishing sends first-run-done directly;
 //   - a 409 goes back to step 2; any other failure closes the pop-up, shows the
 //     step 4 save line, and a second Continue finishes without asking again;
-//   - the flow counts four steps.
+//   - the flow counts four steps;
+//   - (plan 03.3-19, the 03.3-UAT gap for test 4, owner 2026-10-27) the pop-up now
+//     names the home area in its title, asks for the home area first when none is
+//     stored or saved at step 4 (the step 4 place search, a picked place only,
+//     Allow disabled until one is picked), and offers an unticked Reliable
+//     reporter tick box. Allow calls enable first, then saves the picked home
+//     area, then the Reliable switch if ticked, then first-run-done, and every
+//     failure still reaches first-run-done. Not now and Escape save nothing. A
+//     Mac Dock app never gets the pop-up. The cases that cover this start with
+//     "named pop-up: ".
 //
 // Run it with: node --test web/welcome_alerts_test.mjs
 // It carries its own copy of the small fake page of welcome_flow_test.mjs,
@@ -114,7 +123,10 @@ const STEP_NAMES = ['Welcome', 'Disclaimer and policy', 'Your location', 'About 
 // pop-up is a native dialog shaped like the one in logout_confirm_test.mjs, and
 // it sits outside the flow root, as in the template. Its close() does not fire a
 // close event, so nothing here depends on when that event would arrive.
-function buildPage({ start = 1, name = '', home = '', key = KEY, dialogSupport = true } = {}) {
+// askHome is the home area the server stored for the account (data-home-area on
+// the dialog); it defaults to a stored area so the earlier cases, which are about
+// the answers and not the home area, find Allow enabled.
+function buildPage({ start = 1, name = '', home = '', key = KEY, dialogSupport = true, askHome = 'Benz Circle' } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -193,7 +205,19 @@ function buildPage({ start = 1, name = '', home = '', key = KEY, dialogSupport =
     };
     dialog.close = function () { this.closeCalls += 1; this.open = false; };
   }
-  make('h2', 'welcome-alerts-ask-title', dialog, 'logout-confirm__title').setAttribute('tabindex', '-1');
+  dialog.setAttribute('data-home-area', askHome);
+  const askTitle = make('h2', 'welcome-alerts-ask-title', dialog, 'logout-confirm__title');
+  askTitle.setAttribute('tabindex', '-1');
+  askTitle.textContent = 'Get alerts for critical reports near ' + (askHome || 'your home area') + '?';
+  // The home area search block, hidden when an area is stored, and the Reliable
+  // tick box (unticked).
+  const askHomeBlock = make('div', 'welcome-alerts-home', dialog, 'welcome-ask__home');
+  if (askHome) { askHomeBlock.hidden = true; }
+  const askForm = make('form', 'welcome-alerts-home-form', askHomeBlock);
+  make('input', 'welcome-alerts-home-input', askForm);
+  make('p', 'welcome-alerts-home-status', askHomeBlock).hidden = true;
+  make('ul', 'welcome-alerts-home-results', askHomeBlock).hidden = true;
+  make('input', 'welcome-alerts-reliable', dialog).checked = false;
   make('button', 'welcome-alerts-later', dialog);
   make('button', 'welcome-alerts-allow', dialog);
 
@@ -203,10 +227,14 @@ function buildPage({ start = 1, name = '', home = '', key = KEY, dialogSupport =
 // A fake PinalertNotify. enable answers as the mode says: 'pending' waits for
 // the test, 'ok', 'refused', 'offline', 'failed' resolve at once, 'reject'
 // returns a rejected promise, 'throw' throws before returning anything.
-function makeNotify({ base = 'maybe', mode = 'ok' } = {}) {
+// macDock is the answer of isMacDockApp (plan 17); left out, the function does
+// not exist, like an older notify.js.
+function makeNotify({ base = 'maybe', mode = 'ok', macDock } = {}) {
   const calls = { enable: [], deviceState: [], baseState: 0 };
   const waiting = { enable: null };
+  const extra = macDock === undefined ? {} : { isMacDockApp() { return macDock; } };
   return {
+    ...extra,
     calls,
     waiting,
     baseState() { calls.baseState += 1; return base; },
@@ -585,4 +613,272 @@ test('the flow has four steps: ?step=5 falls back to the start step and Back exi
   click(agreed, 'welcome-back-4');
   assert.equal(visibleStep(agreed), 3);
   assert.equal(agreed.requests.length, 0, 'looking at a step records nothing');
+});
+
+// ---- Plan 03.3-19: the pop-up names the home area, asks for it when it is
+// missing, and offers the Reliable reporter tick box (03.3-UAT gap for test 4) ----
+
+const AREA_URL = '/api/geocode/place?kind=area&q=';
+const ALERTS_ADDRESS = '/api/me/alerts';
+const PROFILE_ADDRESS = '/api/me/profile';
+const DONE_ADDRESS = '/api/me/first-run-done';
+const titleFor = (area) => 'Get alerts for critical reports near ' + area + '?';
+const TITLE_NO_HOME = titleFor('your home area');
+const HEBBAL = { name: 'Hebbal', display_name: 'Hebbal, Bengaluru, Karnataka', lat: 13.0358, lon: 77.597 };
+
+const askTitleText = (page) => byId(page, 'welcome-alerts-ask-title').textContent;
+const askHomeBlock = (page) => byId(page, 'welcome-alerts-home');
+const reliableBox = (page) => byId(page, 'welcome-alerts-reliable');
+const bodyOf = (req) => JSON.parse(req.init.body);
+const sent = (page) => page.requests.map((r) => (r.init.method || 'GET') + ' ' + r.url);
+
+// Search in the pop-up the way Enter does, answer it with one place and pick it.
+async function pickInAsk(page, text = 'Hebbal', place = HEBBAL) {
+  byId(page, 'welcome-alerts-home-input').value = text;
+  fire(byId(page, 'welcome-alerts-home-form'), 'submit');
+  const req = page.requests[page.requests.length - 1];
+  assert.equal(req.url, AREA_URL + encodeURIComponent(text), 'the pop-up search sends typed text only, in areas mode');
+  answer(req, 200, { results: [place] });
+  await flush();
+  const option = byId(page, 'welcome-alerts-home-results').children[0].children[0];
+  fire(option, 'click');
+}
+
+// The same for step 4's own search.
+async function pickAtStep4(page, text = 'Hebbal', place = HEBBAL) {
+  byId(page, 'welcome-home-input').value = text;
+  fire(byId(page, 'welcome-home-form'), 'submit');
+  answer(page.requests[page.requests.length - 1], 200, { results: [place] });
+  await flush();
+  fire(byId(page, 'welcome-home-results').children[0].children[0], 'click');
+}
+
+test('named pop-up: a stored home area is named in the title, the search is hidden, Allow is on, the box is unticked', () => {
+  const page = atStep4({ askHome: 'Benz Circle' });
+  click(page, 'welcome-continue-4');
+  assertAskOpen(page);
+  assert.equal(askTitleText(page), titleFor('Benz Circle'));
+  assert.equal(askHomeBlock(page).hidden, true);
+  assert.equal(byId(page, 'welcome-alerts-allow').disabled, false);
+  assert.equal(reliableBox(page).checked, false);
+  assert.ok(page.doc.activeElement === byId(page, 'welcome-alerts-ask-title'), 'the title has focus');
+});
+
+test('named pop-up: a home area saved at step 4 in this visit names the title and hides the search', async () => {
+  const page = atStep4({ askHome: '' });
+  await pickAtStep4(page);
+  click(page, 'welcome-continue-4');
+  const profile = page.requests[page.requests.length - 1];
+  assert.equal(profile.url, PROFILE_ADDRESS);
+  assert.deepEqual(bodyOf(profile).home_area, { name: 'Hebbal', lat: 13.0358, lon: 77.597 });
+  answer(profile, 200);
+  await flush();
+  assert.equal(page.dialog.open, true);
+  assert.equal(askTitleText(page), titleFor('Hebbal'));
+  assert.equal(askHomeBlock(page).hidden, true);
+  assert.equal(byId(page, 'welcome-alerts-allow').disabled, false);
+});
+
+test('named pop-up: with no home area the pop-up asks for one first and Allow waits for a pick', async () => {
+  const page = atStep4({ askHome: '' });
+  click(page, 'welcome-continue-4');
+  assertAskOpen(page);
+  assert.equal(askTitleText(page), TITLE_NO_HOME);
+  assert.equal(askHomeBlock(page).hidden, false);
+  assert.equal(byId(page, 'welcome-alerts-allow').disabled, true);
+  assert.equal(byId(page, 'welcome-alerts-later').disabled, false, 'Not now stays available');
+
+  // Allow does nothing while it is off, even if its handler is reached.
+  click(page, 'welcome-alerts-allow');
+  assert.equal(page.notify.calls.enable.length, 0);
+
+  await pickInAsk(page);
+  assert.equal(byId(page, 'welcome-alerts-allow').disabled, false);
+  assert.equal(askTitleText(page), titleFor('Hebbal'));
+
+  // Typing after the pick forgets it: Allow is off again and the title goes back.
+  const input = byId(page, 'welcome-alerts-home-input');
+  input.value = 'Hebba';
+  fire(input, 'input');
+  assert.equal(byId(page, 'welcome-alerts-allow').disabled, true);
+  assert.equal(askTitleText(page), TITLE_NO_HOME);
+  assert.equal(page.notify.calls.enable.length, 0);
+});
+
+test('named pop-up: Allow with the box ticked calls enable in the tick, then sends one Reliable request, then first-run-done', async () => {
+  const notify = makeNotify({ mode: 'pending' });
+  const page = atStep4({ notify });
+  click(page, 'welcome-continue-4');
+  reliableBox(page).checked = true;
+  click(page, 'welcome-alerts-allow');
+  assert.deepEqual(notify.calls.enable, [KEY], 'enable is called in the same tick, with the page key');
+  assert.equal(page.requests.length, 0, 'no request before enable settles');
+  assert.equal(reliableBox(page).disabled, true);
+  assert.equal(page.dialog.getAttribute('aria-busy'), 'true');
+
+  notify.waiting.enable.resolve({ ok: true, state: 'on' });
+  await flush();
+  assert.deepEqual(sent(page), ['PATCH ' + ALERTS_ADDRESS]);
+  assert.deepEqual(bodyOf(page.requests[0]), { reliable_alerts: true });
+  assert.equal(page.requests[0].init.headers['Content-Type'], 'application/json');
+  answer(page.requests[0], 200);
+  await flush();
+  assert.deepEqual(sent(page), ['PATCH ' + ALERTS_ADDRESS, 'POST ' + DONE_ADDRESS]);
+  answer(page.requests[1], 204);
+  await flush();
+  assert.deepEqual(page.replaced, ['/']);
+});
+
+test('named pop-up: Allow with the box unticked sends no alerts request and one first-run-done', async () => {
+  const page = atStep4();
+  click(page, 'welcome-continue-4');
+  click(page, 'welcome-alerts-allow');
+  await flush();
+  assert.deepEqual(sent(page), ['POST ' + DONE_ADDRESS]);
+  assert.equal(page.notify.calls.enable.length, 1);
+  assert.equal(page.requests.filter((r) => r.url === ALERTS_ADDRESS).length, 0);
+});
+
+test('named pop-up: Allow after a pick saves the home area, then Reliable, then first-run-done, in that order after enable', async () => {
+  const page = atStep4({ askHome: '' });
+  click(page, 'welcome-continue-4');
+  await pickInAsk(page);
+  reliableBox(page).checked = true;
+  const before = page.requests.length;
+  click(page, 'welcome-alerts-allow');
+  assert.deepEqual(page.notify.calls.enable, [KEY]);
+  assert.equal(page.requests.length, before, 'nothing is sent in the tick');
+  await flush();
+  const profile = page.requests[before];
+  assert.equal(profile.url, PROFILE_ADDRESS);
+  assert.equal(profile.init.method, 'PATCH');
+  assert.deepEqual(bodyOf(profile), { home_area: { name: 'Hebbal', lat: 13.0358, lon: 77.597 } });
+  assert.equal(page.requests.length, before + 1, 'one request at a time');
+  answer(profile, 200, {});
+  await flush();
+  assert.equal(page.requests[before + 1].url, ALERTS_ADDRESS);
+  assert.deepEqual(bodyOf(page.requests[before + 1]), { reliable_alerts: true });
+  answer(page.requests[before + 1], 200);
+  await flush();
+  assert.equal(page.requests[before + 2].url, DONE_ADDRESS);
+  assert.equal(page.requests.length, before + 3);
+});
+
+test('named pop-up: Allow after a pick with the box unticked saves only the home area', async () => {
+  const page = atStep4({ askHome: '' });
+  click(page, 'welcome-continue-4');
+  await pickInAsk(page);
+  const before = page.requests.length;
+  click(page, 'welcome-alerts-allow');
+  await flush();
+  answer(page.requests[before], 200);
+  await flush();
+  assert.deepEqual(sent(page).slice(before), ['PATCH ' + PROFILE_ADDRESS, 'POST ' + DONE_ADDRESS]);
+});
+
+for (const [label, fail] of [
+  ['a 500', (req) => answer(req, 500)],
+  ['a 400', (req) => answer(req, 400, { error: { message: 'Pick a place.' } })],
+  ['a network failure', (req) => req.reject(new Error('offline'))]
+]) {
+  test('named pop-up: when the home area save fails (' + label + ') there is no Reliable request, and first-run-done still goes out once', async () => {
+    const page = atStep4({ askHome: '' });
+    click(page, 'welcome-continue-4');
+    await pickInAsk(page);
+    reliableBox(page).checked = true;
+    const before = page.requests.length;
+    click(page, 'welcome-alerts-allow');
+    await flush();
+    fail(page.requests[before]);
+    await flush();
+    assert.equal(page.requests.filter((r) => r.url === ALERTS_ADDRESS).length, 0);
+    assert.equal(doneRequests(page).length, 1);
+    answer(doneRequests(page)[0], 204);
+    await flush();
+    assert.deepEqual(page.replaced, ['/']);
+  });
+
+  test('named pop-up: when the Reliable save fails (' + label + ') first-run-done still goes out once', async () => {
+    const page = atStep4();
+    click(page, 'welcome-continue-4');
+    reliableBox(page).checked = true;
+    click(page, 'welcome-alerts-allow');
+    await flush();
+    assert.equal(page.requests[0].url, ALERTS_ADDRESS);
+    fail(page.requests[0]);
+    await flush();
+    assert.equal(doneRequests(page).length, 1);
+    assert.equal(page.requests.length, 2);
+    answer(page.requests[1], 204);
+    await flush();
+    assert.deepEqual(page.replaced, ['/']);
+  });
+}
+
+for (const mode of ENABLE_MODES) {
+  test('named pop-up: with enable ' + mode + ' the saves still run and first-run-done is sent once', async () => {
+    const notify = makeNotify({ mode });
+    const page = atStep4({ notify, askHome: '' });
+    click(page, 'welcome-continue-4');
+    await pickInAsk(page);
+    reliableBox(page).checked = true;
+    const before = page.requests.length;
+    click(page, 'welcome-alerts-allow');
+    await flush();
+    answer(page.requests[before], 200);
+    await flush();
+    answer(page.requests[before + 1], 200);
+    await flush();
+    assert.deepEqual(sent(page).slice(before), ['PATCH ' + PROFILE_ADDRESS, 'PATCH ' + ALERTS_ADDRESS, 'POST ' + DONE_ADDRESS]);
+    assert.equal(notify.calls.enable.length, 1);
+    assert.equal(doneRequests(page).length, 1);
+  });
+}
+
+for (const [label, leave] of [
+  ['Not now', (page) => click(page, 'welcome-alerts-later')],
+  ['Escape', (page) => fire(page.dialog, 'cancel')]
+]) {
+  test('named pop-up: ' + label + ' after a pick and a ticked box saves nothing and never calls enable', async () => {
+    const page = atStep4({ askHome: '' });
+    click(page, 'welcome-continue-4');
+    await pickInAsk(page);
+    reliableBox(page).checked = true;
+    const before = page.requests.length;
+    leave(page);
+    await flush();
+    assert.deepEqual(sent(page).slice(before), ['POST ' + DONE_ADDRESS]);
+    assert.equal(page.notify.calls.enable.length, 0);
+    assert.equal(page.permissionCalls.length, 0);
+    assert.equal(page.requests.filter((r) => r.url === PROFILE_ADDRESS || r.url === ALERTS_ADDRESS).length, 0);
+  });
+}
+
+test('named pop-up: inside a Mac Dock app there is no pop-up and first-run-done goes out directly', () => {
+  const page = atStep4({ notify: makeNotify({ macDock: true }) });
+  click(page, 'welcome-continue-4');
+  assert.equal(page.dialog.showCalls, 0, 'showModal is never called');
+  assert.equal(doneRequests(page).length, 1);
+  assert.equal(page.notify.calls.enable.length, 0);
+
+  const browser = atStep4({ notify: makeNotify({ macDock: false }) });
+  click(browser, 'welcome-continue-4');
+  assert.equal(browser.dialog.showCalls, 1, 'a Mac browser tab still gets the pop-up');
+});
+
+test('named pop-up: after a failed first-run-done the pop-up frees Allow by the home area rule', async () => {
+  const page = atStep4({ askHome: '' });
+  click(page, 'welcome-continue-4');
+  await pickInAsk(page);
+  const before = page.requests.length;
+  click(page, 'welcome-alerts-allow');
+  await flush();
+  answer(page.requests[before], 200);
+  await flush();
+  answer(page.requests[before + 1], 500);
+  await flush();
+  assert.equal(page.dialog.open, false);
+  assert.equal(byId(page, 'welcome-alerts-allow').disabled, false, 'a place is known, so Allow is on');
+  assert.equal(reliableBox(page).disabled, false);
+  assert.equal(byId(page, 'welcome-error-4').textContent, SAVE_FAILED);
 });
