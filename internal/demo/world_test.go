@@ -184,3 +184,116 @@ func TestSyntheticAccountIdsAreFarFromRealOnes(t *testing.T) {
 		t.Fatalf("session prefix = %q", VisitorSessionPrefix)
 	}
 }
+
+func TestPracticeVotesUseVisitorAccount(t *testing.T) {
+	ctx := context.Background()
+	w := NewWorld("abcdefghijklmnopqrstuv", time.Now)
+
+	// The visitor's practice report. A confirm on it is refused as a self vote by
+	// the real service, whatever account the caller names.
+	res, err := w.PostPractice(ctx, practiceInput())
+	if err != nil {
+		t.Fatalf("PostPractice: %v", err)
+	}
+	own := res.Report.ID
+	_, err = w.Vote(ctx, service.CastVoteInput{
+		ReportID: own, AccountID: NeighbourAccountBase + 1, Kind: service.VoteKindContent, Value: service.VoteConfirm,
+		Latitude: PretendLat, Longitude: PretendLon,
+	})
+	if !errors.Is(err, service.ErrCannotVoteOwnReport) {
+		t.Fatalf("confirming the visitor's own practice report: err=%v, want ErrCannotVoteOwnReport", err)
+	}
+	if got := w.Activity().Posted; len(got) != 1 || got[0] != own {
+		t.Fatalf("Activity().Posted = %v, want [%d]", got, own)
+	}
+
+	// A report posted by someone else: the vote is recorded under the visitor,
+	// never under the account the caller named.
+	other := submitFlood(t, w, SeedReporterAccountBase, PretendLat, PretendLon)
+	if _, err := w.Vote(ctx, service.CastVoteInput{
+		ReportID: other, AccountID: 424242, Kind: service.VoteKindContent, Value: service.VoteConfirm,
+		Latitude: PretendLat, Longitude: PretendLon,
+	}); err != nil {
+		t.Fatalf("Vote: %v", err)
+	}
+	rows, err := w.q.CurrentVotesForReports(ctx, []int64{other})
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("rows=%v err=%v", rows, err)
+	}
+	if rows[0].AccountID != VisitorAccountID {
+		t.Fatalf("the vote was recorded for account %d, want the visitor %d", rows[0].AccountID, VisitorAccountID)
+	}
+	if got := w.Activity().Confirmed; len(got) != 1 || got[0] != other {
+		t.Fatalf("Activity().Confirmed = %v, want [%d]", got, other)
+	}
+
+	// Changing the mind moves the report from Confirmed to Disputed (one row per
+	// account, the newer wins, as in SQL).
+	if _, err := w.Vote(ctx, service.CastVoteInput{
+		ReportID: other, Kind: service.VoteKindContent, Value: service.VoteDispute,
+		Latitude: PretendLat, Longitude: PretendLon,
+	}); err != nil {
+		t.Fatalf("Vote dispute: %v", err)
+	}
+	act := w.Activity()
+	if len(act.Confirmed) != 0 || len(act.Disputed) != 1 || act.Disputed[0] != other {
+		t.Fatalf("Activity = %+v, want the report only under Disputed", act)
+	}
+
+	// The returned slices are copies.
+	act.Disputed[0] = -1
+	if w.Activity().Disputed[0] != other {
+		t.Fatal("Activity exposes the world's own slice")
+	}
+}
+
+func TestFarVoteSaysTooFar(t *testing.T) {
+	ctx := context.Background()
+	w := seededWorld(t)
+	var far int64
+	for _, r := range w.q.reports {
+		if trueKm(PretendLat, PretendLon, r.p.Latitude, r.p.Longitude) >= 1.2 {
+			far = r.id
+			break
+		}
+	}
+	if far == 0 {
+		t.Fatal("the seed holds no report beyond 1 km")
+	}
+	_, err := w.Vote(ctx, service.CastVoteInput{
+		ReportID: far, Kind: service.VoteKindContent, Value: service.VoteConfirm,
+		Latitude: PretendLat, Longitude: PretendLon,
+	})
+	if !errors.Is(err, service.ErrVoterTooFar) {
+		t.Fatalf("vote from the pretend position on a far report: err=%v, want ErrVoterTooFar", err)
+	}
+	const words = "Too far to vote. You need to be within 1 km of this report."
+	if got := service.TooFarMessage(); got != words {
+		t.Fatalf("TooFarMessage = %q, want %q", got, words)
+	}
+	if act := w.Activity(); len(act.Confirmed) != 0 || len(act.Disputed) != 0 {
+		t.Fatalf("a refused vote was recorded: %+v", act)
+	}
+}
+
+func TestNearSeedReportCanBeConfirmedByTheVisitor(t *testing.T) {
+	ctx := context.Background()
+	w := seededWorld(t)
+	var near int64
+	for _, r := range w.q.reports {
+		if trueKm(PretendLat, PretendLon, r.p.Latitude, r.p.Longitude) <= 0.85 && r.p.ExpiresAt.After(w.Now()) {
+			near = r.id
+			break
+		}
+	}
+	res, err := w.Vote(ctx, service.CastVoteInput{
+		ReportID: near, Kind: service.VoteKindContent, Value: service.VoteConfirm,
+		Latitude: PretendLat, Longitude: PretendLon,
+	})
+	if err != nil {
+		t.Fatalf("visitor confirm on a near seed report: %v", err)
+	}
+	if res.Trust.ConfirmedPlaces < 1 {
+		t.Fatalf("ConfirmedPlaces = %d after the visitor confirmed", res.Trust.ConfirmedPlaces)
+	}
+}
