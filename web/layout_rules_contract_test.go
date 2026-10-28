@@ -141,8 +141,12 @@ func layoutStripNot(part string) string {
 // outside an animation keyframe. A faded element is never text, a row, a card,
 // a chip or a pin.
 var opacityAllowed = []layoutAllow{
-	{"static/css/auth.css", ".globe-bg",
-		"the decorative globe behind the login screen: a mask picture with no text, drawn at 35% so it stays a quiet background (Phase 2 login gate). It is not text, a row, a card or a pin."},
+	// Amended 2026-10-29 by plan 05-07 (D-13, owner 2026-10-17): the entry moved
+	// from auth.css .globe-bg (a flat mask picture at 35%) to login-globe.css
+	// .globe-bg, the wrapper of the NASA Blue Marble globe, dimmed through
+	// --globe-dim: 0.5 in light and 0.4 in dark. Still one wrapper, still no text.
+	{"static/css/login-globe.css", ".globe-bg",
+		"the decorative NASA Blue Marble Earth behind the login screen: a canvas picture with no text, dimmed to 0.5 in the light theme and 0.4 in the dark theme (--globe-dim) so it stays a quiet background. The credit line is a sibling outside the wrapper and is not faded. It is not text, a row, a card or a pin."},
 }
 
 // TestNoOpacityText pins D-07 and UI-SPEC R7: nothing is faded. No rule

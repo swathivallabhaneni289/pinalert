@@ -1,0 +1,34 @@
+{{/*
+  The sign in globe (Phase 5 plan 07, D-13, D-14, UI-SPEC Surface 5). Three
+  pieces, each included by login_gate.html.tmpl only when the Low data view is
+  off, so a Low data device gets no markup, no stylesheet and no script:
+
+    login_globe_css     the stylesheet link, in the head, so the globe's box and
+                        the credit's reserved space exist from the first paint
+    login_globe         the markup, inside #login-gate after .login-column
+    login_globe_script  the loader, after auth.js, so Send is wired first
+
+  The markup never sits inside the sign in card, so a new card (Phase 8) can
+  replace the card without touching any of this. The credit is written with the
+  page and stays visibility hidden until the globe shows, so the card never
+  moves when the globe arrives. It sits outside the faded, hidden wrapper.
+  The libraries are not tags: their pinned addresses travel as data attributes
+  and the loader injects them after the page has loaded and gone idle.
+*/}}
+{{define "login_globe_css"}}<link rel="stylesheet" href="/static/css/login-globe.css?v={{.AssetVersion}}">{{end}}
+
+{{define "login_globe"}}
+    <div class="globe-area">
+      <div class="globe-bg" id="login-globe" aria-hidden="true">
+        <div class="globe-bg__map" id="login-globe-map"></div>
+      </div>
+      <p class="globe-credit" id="globe-credit">Earth pictures: <a href="https://visibleearth.nasa.gov/collection/1484/blue-marble" target="_blank" rel="noopener">NASA Blue Marble</a> via <a href="https://www.earthdata.nasa.gov/gibs" target="_blank" rel="noopener">NASA GIBS</a></p>
+    </div>
+{{end}}
+
+{{define "login_globe_script"}}<script src="/static/js/login-globe.js?v={{.AssetVersion}}" id="login-globe-script" defer
+          data-tiles="/globe/tiles/{z}/{y}/{x}.jpg"
+          data-lib-js="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"
+          data-lib-js-sri="sha256-RamwepGJzlYFTGIKlHzPQeKR5YyV6bYVM7dAqqZe5cs="
+          data-lib-css="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css"
+          data-lib-css-sri="sha256-qx5w1Z7EBGW65+cDDaLzzPKBM/1QLmK9WY7vut/XpzI="></script>{{end}}

@@ -214,7 +214,7 @@ func TestLoginGlobeStyleAndTiles(t *testing.T) {
 		}
 	}
 	for pattern, name := range map[string]string{
-		`var\s+TURN_SECONDS\s*=\s*120\b`:     "TURN_SECONDS = 120",
+		`var\s+TURN_SECONDS\s*=\s*120\b`:      "TURN_SECONDS = 120",
 		`var\s+START_CENTRE\s*=\s*\[80, 18\]`: "START_CENTRE = [80, 18]",
 		`var\s+GIVE_UP_MS\s*=\s*10000\b`:      "GIVE_UP_MS = 10000",
 		`var\s+MAX_ZOOM\s*=\s*3\b`:            "MAX_ZOOM = 3",

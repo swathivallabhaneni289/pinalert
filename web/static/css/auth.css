@@ -22,57 +22,6 @@
   padding: var(--space-lg);
 }
 
-/* Globe background (D-06): a continuous ambient rotation behind the login
-   card, never a blocking intro — the card and its form are focusable and
-   usable from first paint regardless of animation state (D-06), and this
-   background replays every time login is needed, not just on a visitor's
-   first-ever visit (D-07). The globe itself is a CSS mask painted from
-   --color-text-muted at reduced opacity — the same currentColor-via-mask
-   mechanism main.css's .icon-glyph already establishes for the category
-   glyphs — rather than an <img src="...">, whose loaded document is a
-   sealed sub-document the page's CSS cannot reach into (see main.css's
-   .icon-glyph comment block for the full reasoning). */
-.globe-bg {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.35;
-  pointer-events: none;
-}
-
-.globe-bg__mask {
-  width: min(80vmin, 640px);
-  height: min(80vmin, 640px);
-  background-color: var(--color-text-muted);
-  -webkit-mask-image: url("/static/img/globe.svg");
-  mask-image: url("/static/img/globe.svg");
-  -webkit-mask-size: contain;
-  mask-size: contain;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-position: center;
-  mask-position: center;
-  animation: globe-rotate 90s linear infinite;
-}
-
-@keyframes globe-rotate {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .globe-bg__mask {
-    animation: none;
-  }
-}
-
 .login-card,
 #check-inbox {
   position: relative;

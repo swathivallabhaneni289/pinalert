@@ -149,16 +149,16 @@ func p427CSSRules(css string) []p427Rule {
 	return rules
 }
 
-// p427CSSURLTargets returns the url targets of every rule whose head does not
-// contain .globe-bg__mask (the one named inert exception of the asset policy:
-// that element never renders on this page). Quotes are stripped and data: values
-// are skipped because their bytes are already inside the stylesheet.
+// p427CSSURLTargets returns the url targets of every rule. Quotes are stripped
+// and data: values are skipped because their bytes are already inside the
+// stylesheet.
+//
+// Amended 2026-10-29 by plan 05-07 (D-13, owner 2026-10-17): the one named inert
+// exception of the asset policy, .globe-bg__mask, is gone with the flat picture
+// globe it excused, and its fixture row in TestP427HelpersSelfCheck with it.
 func p427CSSURLTargets(css string) []string {
 	var out []string
 	for _, r := range p427CSSRules(css) {
-		if strings.Contains(r.head, ".globe-bg__mask") {
-			continue
-		}
 		for _, m := range p427URLValue.FindAllStringSubmatch(r.body, -1) {
 			target := strings.TrimSpace(m[1])
 			if strings.HasPrefix(target, "data:") {
@@ -202,7 +202,6 @@ func TestP427HelpersSelfCheck(t *testing.T) {
 	}
 	css := `.a { background: url("/static/icons/x.svg"); }
 @media (min-width: 600px) { .b { mask: url(/static/icons/y.svg); } }
-.globe-bg__mask { mask-image: url("/static/img/globe.svg"); }
 .c { background: url(data:image/svg+xml;base64,AAAA); }`
 	got := p427CSSURLTargets(css)
 	if strings.Join(got, ",") != "/static/icons/x.svg,/static/icons/y.svg" {

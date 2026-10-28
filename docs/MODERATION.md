@@ -264,8 +264,10 @@ construction, because the limits sit in the HTTP handlers (`TestSeededReportIsCl
 The Low data view page and everything it links are held under a byte budget so the view stays
 usable on a weak connection. `TestLowDataByteBudget` in `web/low_budget_contract_test.go`
 renders the real `/low` page, adds the raw bytes of every local stylesheet, script and icon file
-it links (each icon counted once, and the one inert globe rule excluded), and fails when the sum
-passes the budget.
+it links (each icon counted once), and fails when the sum
+passes the budget. Amended 2026-10-29 by Phase 5 plan 07: the one inert globe rule that was
+excluded here left auth.css with the flat picture globe, so nothing is excluded now. The real
+globe's styles live in `login-globe.css`, which the Low data page never links.
 
 Measured on 2026-10-16, after plans 04-24 and 04-25 made their last Low data edits:
 

@@ -8,14 +8,11 @@
   <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
+  {{if not .LowDataDefault}}{{template "login_globe_css" .}}{{end}}
   <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
 </head>
 <body>
-  <div class="login-gate" id="login-gate">
-    <div class="globe-bg" aria-hidden="true">
-      <div class="globe-bg__mask"></div>
-    </div>
-
+  <div class="login-gate{{if not .LowDataDefault}} has-globe{{end}}" id="login-gate">
     <div class="login-column">
     <div class="login-card" id="login-form-panel"{{if .Sent}} hidden{{end}}>
       {{if .DoneLine}}<p class="login-done" role="status">{{.DoneLine}}</p>{{end}}
@@ -44,11 +41,13 @@
       <a class="login-ways__low" href="/login?low=1">Low data view</a>
       <p class="login-ways__line">Text only, no map</p>
       {{end}}
-      <p class="login-ways__links"><a href="/disclaimer">Disclaimer</a> <a href="/policy">Policy</a></p>
+      {{template "login_ways_links" .}}
     </div>
     </div>
+    {{if not .LowDataDefault}}{{template "login_globe" .}}{{end}}
   </div>
 
   <script src="/static/js/auth.js?v={{.AssetVersion}}" defer></script>
+  {{if not .LowDataDefault}}{{template "login_globe_script" .}}{{end}}
 </body>
 </html>

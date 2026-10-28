@@ -144,9 +144,13 @@ func p421AssertInOrder(t *testing.T, label, body string, parts ...string) {
 	}
 }
 
+// Amended 2026-10-29 by plan 05-07 (D-03, UI-SPEC 4e): the quiet row now reads
+// Try the demo, Disclaimer, Policy, so the panel text and the panel links gain
+// Try the demo and /demo ahead of the two legal pages. Every earlier word and
+// link is kept, in the same order.
 const (
-	p421OffText = "Low data view Text only, no map Disclaimer Policy"
-	p421OnText  = "Low data view is on for this device. It opens after you sign in. Turn off Disclaimer Policy"
+	p421OffText = "Low data view Text only, no map Try the demo Disclaimer Policy"
+	p421OnText  = "Low data view is on for this device. It opens after you sign in. Turn off Try the demo Disclaimer Policy"
 )
 
 func TestLoginLowDataPanel(t *testing.T) {
@@ -158,8 +162,8 @@ func TestLoginLowDataPanel(t *testing.T) {
 		t.Fatalf("parsing page template: %v", err)
 	}
 
-	offLinks := []string{"/login?low=1", "/disclaimer", "/policy"}
-	onLinks := []string{"/login?low=0", "/disclaimer", "/policy"}
+	offLinks := []string{"/login?low=1", "/demo", "/disclaimer", "/policy"}
+	onLinks := []string{"/login?low=0", "/demo", "/disclaimer", "/policy"}
 
 	cases := []struct {
 		name       string

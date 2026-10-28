@@ -541,7 +541,7 @@ test('sizeGlobe tells a built map its new zoom, and a resize does it again', () 
   const c = ready({ width: 1440, innerHeight: 900 });
   const map = c.maps[0];
   const first = map.zooms.length;
-  assert.ok(first >= 1, 'the zoom was set when the map was built or sized');
+  assert.ok(map.options.zoom > 0 && map.options.zoom < 3, 'the map was built at a sensible globe zoom, got ' + map.options.zoom);
   c.sandbox.innerHeight = 700;
   c.fireWindow('resize');
   assert.ok(map.zooms.length > first, 'a resize sets the zoom again');
