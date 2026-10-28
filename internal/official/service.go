@@ -44,6 +44,8 @@ type Service struct {
 	ix        *areas.Index
 	now       func() time.Time
 	kicking   atomic.Bool
+	// newTicker builds Run's ticker; nil means a real time.Ticker. Only tests set it.
+	newTicker func(d time.Duration) (<-chan time.Time, func())
 }
 
 // NewService builds the SACHET client and the refresher over the database. The
@@ -67,9 +69,79 @@ func newService(r *Refresher, q *sqlcgen.Queries, ix *areas.Index) *Service {
 	return &Service{refresher: r, q: q, ix: ix, now: time.Now}
 }
 
-// Refresher returns the refresher the service owns, for the cron endpoint and
-// the ticker (plan 05-12).
+// Refresher returns the refresher the service owns.
 func (s *Service) Refresher() *Refresher { return s.refresher }
+
+// TickerInterval is the pause between the sweeps Run makes while the host is
+// awake (plan 05-12, D-15, research G1 layer 2). It is longer than MinRefreshGap,
+// so a sweep right after a cron call finds the feed not due and does nothing.
+const TickerInterval = 5 * time.Minute
+
+// RefreshAll runs every registered feed through RefreshIfDue, one after the
+// other in the refresher's fixed order, so each feed's minimum gap, single flight
+// and CAP bound apply however often this is called. A feed that failed carries
+// its closed word in ErrorClass; one failure does not stop the others. The cron
+// endpoint and the ticker call this and nothing else (the lazy kick refreshes
+// SACHET alone).
+func (s *Service) RefreshAll(ctx context.Context) []Result {
+	feeds := s.refresher.Feeds()
+	out := make([]Result, 0, len(feeds))
+	for _, feed := range feeds {
+		res, err := s.refresher.RefreshIfDue(ctx, feed)
+		res.Feed = feed
+		if err != nil && res.ErrorClass == "" {
+			res.ErrorClass = ErrorClass(err)
+		}
+		out = append(out, res)
+	}
+	return out
+}
+
+// Run keeps the feeds fresh while the host is awake: one sweep at start, because
+// the free host cold starts, then one every TickerInterval until ctx ends. A
+// sleeping host refreshes only when a request, usually the external cron, wakes
+// it. Each sweep is bounded by kickTimeout and a panic in one is logged and the
+// loop goes on. Like the moderation worker it takes a context so a test can end it.
+func (s *Service) Run(ctx context.Context) {
+	if ctx.Err() != nil {
+		return
+	}
+	s.sweep(ctx)
+	every := s.newTicker
+	if every == nil {
+		every = realTicker
+	}
+	ticks, stop := every(TickerInterval)
+	defer stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticks:
+			s.sweep(ctx)
+		}
+	}
+}
+
+// sweep is one RefreshAll on a context of its own deadline. The refresher logs a
+// failed run itself (feed name and class word), and nobody is waiting for the
+// result, so it is dropped.
+func (s *Service) sweep(ctx context.Context) {
+	defer func() {
+		if recover() != nil {
+			log.Printf("official: ticker sweep class=panic")
+		}
+	}()
+	sctx, cancel := context.WithTimeout(ctx, kickTimeout)
+	defer cancel()
+	_ = s.RefreshAll(sctx)
+}
+
+// realTicker is a time.Ticker as a channel and a stop function.
+func realTicker(d time.Duration) (<-chan time.Time, func()) {
+	t := time.NewTicker(d)
+	return t.C, t.Stop
+}
 
 // Alerts answers for one reader. lat and lon are both set or both nil; a point
 // outside every district counts as no point. The home area is read from the

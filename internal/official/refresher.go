@@ -216,6 +216,27 @@ func (r *Refresher) Register(feed Feed, f Fetcher, minGap time.Duration) {
 	r.fetchers[feed] = registration{fetcher: f, gap: minGap}
 }
 
+// Feeds lists the registered feeds in a fixed order: SACHET, then GDACS, then any
+// other by name. The order is what the cron summary and the ticker follow.
+func (r *Refresher) Feeds() []Feed {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]Feed, 0, len(r.fetchers))
+	for _, f := range []Feed{FeedSachet, FeedGdacs} {
+		if _, ok := r.fetchers[f]; ok {
+			out = append(out, f)
+		}
+	}
+	var rest []Feed
+	for f := range r.fetchers {
+		if f != FeedSachet && f != FeedGdacs {
+			rest = append(rest, f)
+		}
+	}
+	sort.Slice(rest, func(i, j int) bool { return rest[i] < rest[j] })
+	return append(out, rest...)
+}
+
 // Status returns the stored state of a feed.
 func (r *Refresher) Status(ctx context.Context, feed Feed) (FeedStatus, error) {
 	return r.feeds.status(ctx, feed)
