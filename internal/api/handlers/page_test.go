@@ -442,3 +442,61 @@ func TestPageRedirectsPastViewToEndedNearby(t *testing.T) {
 		}
 	}
 }
+
+// TestPagesCarryPushKey pins 03.3-UAT test 7 (plan 03.3-17, 2026-10-28): Nearby
+// and the Low data view carry the VAPID public key as data-push-key on the app
+// shell, next to data-account-id, so notify.js can register this device again
+// after a sign in to the same account. The key is public by design; it is drawn
+// once per page, in that one attribute, and an empty key draws an empty one.
+func TestPagesCarryPushKey(t *testing.T) {
+	tmpl, err := ParsePageTemplate()
+	if err != nil {
+		t.Fatalf("ParsePageTemplate: %v", err)
+	}
+	pages := []struct {
+		name   string
+		render func(cfg PageConfig) string
+	}{
+		{"Nearby", func(cfg PageConfig) string {
+			rec := httptest.NewRecorder()
+			Page(tmpl, cfg)(rec, newPageTestRequest())
+			if rec.Code != http.StatusOK {
+				t.Fatalf("Nearby status = %d, want 200", rec.Code)
+			}
+			return rec.Body.String()
+		}},
+		{"Low data", func(cfg PageConfig) string {
+			req := httptest.NewRequest(http.MethodGet, LowDataPath, nil)
+			req = req.WithContext(account.WithAccount(req.Context(), pageTestAccount))
+			rec := httptest.NewRecorder()
+			LowPage(tmpl, cfg)(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("Low data status = %d, want 200", rec.Code)
+			}
+			return rec.Body.String()
+		}},
+	}
+	const key = "BPk1-test_key"
+	for _, page := range pages {
+		cfg := PageConfig{FallbackLat: 12.9716, FallbackLon: 77.5946, DefaultRadiusKm: 10, PushPublicKey: key}
+		body := page.render(cfg)
+		tag := p18AppShellTag(t, body)
+		if !strings.Contains(tag, `data-push-key="`+key+`"`) {
+			t.Errorf("%s: app-shell tag %q does not carry data-push-key=%q", page.name, tag, key)
+		}
+		if !strings.Contains(tag, "data-account-id=") {
+			t.Errorf("%s: the key must ride on the element that carries data-account-id: %q", page.name, tag)
+		}
+		if n := strings.Count(body, key); n != 1 {
+			t.Errorf("%s: the key appears %d times in the page, want exactly 1 (the attribute)", page.name, n)
+		}
+		if n := strings.Count(body, "data-push-key"); n != 1 {
+			t.Errorf("%s: data-push-key appears %d times, want exactly 1", page.name, n)
+		}
+
+		empty := page.render(PageConfig{FallbackLat: 12.9716, FallbackLon: 77.5946, DefaultRadiusKm: 10})
+		if tag := p18AppShellTag(t, empty); !strings.Contains(tag, `data-push-key=""`) {
+			t.Errorf("%s: with push off the shell should carry data-push-key=\"\", got %q", page.name, tag)
+		}
+	}
+}
