@@ -15,7 +15,8 @@ import (
 	"context"
 	"errors"
 	"log"
-	"sync/atomic"
+	"sort"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -43,24 +44,65 @@ type Service struct {
 	q         *sqlcgen.Queries
 	ix        *areas.Index
 	now       func() time.Time
-	kicking   atomic.Bool
+	kicking   kickSet
 	// newTicker builds Run's ticker; nil means a real time.Ticker. Only tests set it.
 	newTicker func(d time.Duration) (<-chan time.Time, func())
 }
 
-// NewService builds the SACHET client and the refresher over the database. The
-// options come after the SACHET registration and the push hook, so a later plan
-// can add its own version hook or register another feed here without main.go
-// changing, and a test can replace the SACHET fetcher by registering its own.
+// kickSet records which feeds have a lazy refresh running, so each feed has one
+// run at a time on its own. The zero value is ready to use. Load reports whether
+// any feed is running.
+type kickSet struct {
+	mu   sync.Mutex
+	busy map[Feed]bool
+}
+
+// begin claims the feed's slot; false means a run of that feed is in flight.
+func (k *kickSet) begin(feed Feed) bool {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.busy[feed] {
+		return false
+	}
+	if k.busy == nil {
+		k.busy = map[Feed]bool{}
+	}
+	k.busy[feed] = true
+	return true
+}
+
+func (k *kickSet) end(feed Feed) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	delete(k.busy, feed)
+}
+
+// Load reports whether a lazy refresh of any feed is running.
+func (k *kickSet) Load() bool {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return len(k.busy) > 0
+}
+
+// NewService builds the SACHET and GDACS clients and the refresher over the
+// database. The options come after the SACHET registration, the push hook and the
+// GDACS registration, so a later plan can add its own version hook or register
+// another feed here without main.go changing, and a test can replace a fetcher by
+// registering its own.
 //
 // The push hook (plan 05-11) queues phone alerts inside the transaction of each
-// stored alert version, so it is wired here and nowhere else.
+// stored alert version, so it is wired here and nowhere else. GDACS (plan 05-21)
+// is a second feed of the same refresher with its own status row and a 15 minute
+// gap, so the cron door, the ticker and the lazy kick refresh it too; it never
+// passes through the alert store or the push hook.
 func NewService(pool TxBeginner, q *sqlcgen.Queries, cfg Config, opts ...RefresherOption) *Service {
 	ix := areas.Default()
 	client := NewSachetClient(ClientConfig{ContactEmail: cfg.ContactEmail, BaseURL: cfg.BaseURL})
-	all := make([]RefresherOption, 0, len(opts)+2)
+	gdacs := NewGdacsClient(ClientConfig{ContactEmail: cfg.ContactEmail, BaseURL: cfg.BaseURL})
+	all := make([]RefresherOption, 0, len(opts)+3)
 	all = append(all, WithSachet(client, ix))
 	all = append(all, WithVersionHook(PushEnqueueHook(areas.Default())))
+	all = append(all, WithGdacs(gdacs))
 	all = append(all, opts...)
 	return newService(NewRefresher(pool, q, all...), q, ix)
 }
@@ -81,8 +123,8 @@ const TickerInterval = 5 * time.Minute
 // other in the refresher's fixed order, so each feed's minimum gap, single flight
 // and CAP bound apply however often this is called. A feed that failed carries
 // its closed word in ErrorClass; one failure does not stop the others. The cron
-// endpoint and the ticker call this and nothing else (the lazy kick refreshes
-// SACHET alone).
+// endpoint and the ticker call this and nothing else (the lazy kick runs the same
+// feeds, each behind its own gate).
 func (s *Service) RefreshAll(ctx context.Context) []Result {
 	feeds := s.refresher.Feeds()
 	out := make([]Result, 0, len(feeds))
@@ -169,7 +211,18 @@ func (s *Service) Alerts(ctx context.Context, accountID int64, lat, lon *float64
 		home = s.homeArea(*cell)
 	}
 
-	in := ViewInput{Now: now, Status: status, Reader: reader, Home: home}
+	hazardStatus, err := s.refresher.Status(ctx, FeedGdacs)
+	if err != nil {
+		return View{}, err
+	}
+	in := ViewInput{Now: now, Status: status, Reader: reader, Home: home, HazardStatus: hazardStatus}
+	if state, _ := State(hazardStatus.LastSuccessAt, now); state == StateFresh && (reader != nil || home != nil) {
+		hazards, err := s.hazardsNear(ctx, now, reader, home)
+		if err != nil {
+			return View{}, err
+		}
+		in.Hazards = hazards
+	}
 	if state, _ := State(status.LastSuccessAt, now); state != StateUnavailable && (reader != nil || home != nil) {
 		var districts, states []int32
 		for _, a := range []*Area{reader, home} {
@@ -195,29 +248,36 @@ func (s *Service) Alerts(ctx context.Context, accountID int64, lat, lon *float64
 	return BuildView(in), nil
 }
 
-// Kick starts a background refresh of SACHET when the last attempt is more than
-// LazyKickAfter old. It returns at once, runs at most one refresh at a time on
-// a context of its own (the request that triggered it may end first), and never
-// reports an error; a failure is logged as the feed name and one class word.
-// The refresher's own minimum gap and single flight still apply, so however
-// many readers kick, NDMA is asked rarely.
+// Kick starts a background refresh of every registered feed (SACHET and, since
+// plan 05-21, GDACS), each only when its own last attempt is more than
+// LazyKickAfter old. It returns at once, runs at most one refresh of a feed at a
+// time on a context of its own (the request that triggered it may end first), and
+// never reports an error; a failure is logged as the feed name and one class
+// word. The refresher's own minimum gap per feed and single flight still apply,
+// so however many readers kick, the upstream services are asked rarely.
 func (s *Service) Kick() {
-	if !s.kicking.CompareAndSwap(false, true) {
+	for _, feed := range s.refresher.Feeds() {
+		s.kickFeed(feed)
+	}
+}
+
+func (s *Service) kickFeed(feed Feed) {
+	if !s.kicking.begin(feed) {
 		return
 	}
 	go func() {
-		defer s.kicking.Store(false)
+		defer s.kicking.end(feed)
 		defer func() {
 			if recover() != nil {
-				log.Printf("official: lazy refresh feed=%s class=panic", FeedSachet)
+				log.Printf("official: lazy refresh feed=%s class=panic", feed)
 			}
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), kickTimeout)
 		defer cancel()
 
-		st, err := s.refresher.Status(ctx, FeedSachet)
+		st, err := s.refresher.Status(ctx, feed)
 		if err != nil {
-			log.Printf("official: lazy refresh feed=%s class=%s", FeedSachet, ErrorClass(err))
+			log.Printf("official: lazy refresh feed=%s class=%s", feed, ErrorClass(err))
 			return
 		}
 		if st.LastAttemptAt != nil && s.now().Sub(*st.LastAttemptAt) < LazyKickAfter {
@@ -225,8 +285,117 @@ func (s *Service) Kick() {
 		}
 		// RefreshIfDue logs a failed run itself (feed name and class word), and
 		// a lazy read has nobody to tell, so its result is dropped.
-		_, _ = s.refresher.RefreshIfDue(ctx, FeedSachet)
+		_, _ = s.refresher.RefreshIfDue(ctx, feed)
 	}()
+}
+
+// hazardsNear reads the current GDACS hazards around the reader's and the home
+// districts. Each district's bounding box is a cheap first cut in SQL; the point
+// is then placed on a district in Go, and only hazards that land in one of the
+// wanted districts are returned, once each.
+func (s *Service) hazardsNear(ctx context.Context, now time.Time, areasWanted ...*Area) ([]StoredHazard, error) {
+	wanted := map[int]bool{}
+	for _, a := range areasWanted {
+		if a == nil {
+			continue
+		}
+		for _, c := range a.DistrictCodes {
+			wanted[c] = true
+		}
+	}
+	seen := map[int64]bool{}
+	var out []StoredHazard
+	for code := range wanted {
+		d, ok := s.ix.ByCode(code)
+		if !ok {
+			continue
+		}
+		rows, err := s.q.OfficialHazardsInBox(ctx, sqlcgen.OfficialHazardsInBoxParams{
+			EndedAfter: now.Add(-GdacsEndedKeep),
+			MinLat:     d.BBox[1], MaxLat: d.BBox[3],
+			MinLon: d.BBox[0], MaxLon: d.BBox[2],
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rows {
+			if seen[r.ID] {
+				continue
+			}
+			h := s.storedHazard(r)
+			if !wanted[h.DistrictCode] {
+				continue
+			}
+			seen[r.ID] = true
+			out = append(out, h)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
+
+// storedHazard converts one row to the view's input, placing its point on a
+// district (0 when it is in none) and re-checking the report link.
+func (s *Service) storedHazard(r sqlcgen.OfficialHazard) StoredHazard {
+	h := StoredHazard{
+		ID:           r.ID,
+		EventType:    r.EventType,
+		EventID:      r.EventID,
+		Name:         r.Name,
+		AlertLevel:   GdacsLevelWord(r.AlertLevel),
+		Country:      r.Country,
+		Lat:          r.Latitude,
+		Lon:          r.Longitude,
+		SeverityText: r.SeverityText,
+		ReportURL:    SafeGdacsURL(r.ReportUrl),
+	}
+	if r.FromDate.Valid {
+		h.FromDate = r.FromDate.Time.UTC()
+	}
+	if r.ToDate.Valid {
+		h.ToDate = r.ToDate.Time.UTC()
+	}
+	if d, ok := s.ix.Locate(r.Latitude, r.Longitude); ok {
+		h.DistrictCode = d.Code
+	}
+	return h
+}
+
+// PinsView is the answer to "which GDACS hazards may the map draw". Pins is empty
+// unless State is fresh, so an old hazard is never drawn as current (ROBUST-05,
+// ALERT-04). AgeSeconds is nil for a feed that never succeeded.
+type PinsView struct {
+	State      FreshState
+	AgeSeconds *int64
+	Pins       []StoredHazard
+}
+
+// Pins answers for the map. The hazards are the current ones: marked current by
+// GDACS and not ended more than GdacsEndedKeep ago. It needs no reader position:
+// the pins are the same for everyone.
+func (s *Service) Pins(ctx context.Context) (PinsView, error) {
+	now := s.now()
+	st, err := s.refresher.Status(ctx, FeedGdacs)
+	if err != nil {
+		return PinsView{}, err
+	}
+	state, age := State(st.LastSuccessAt, now)
+	out := PinsView{State: state, Pins: []StoredHazard{}}
+	if st.LastSuccessAt != nil && !st.LastSuccessAt.IsZero() {
+		secs := int64(age / time.Second)
+		out.AgeSeconds = &secs
+	}
+	if state != StateFresh {
+		return out, nil
+	}
+	rows, err := s.q.CurrentOfficialHazards(ctx, now.Add(-GdacsEndedKeep))
+	if err != nil {
+		return PinsView{}, err
+	}
+	for _, r := range rows {
+		out.Pins = append(out.Pins, s.storedHazard(r))
+	}
+	return out, nil
 }
 
 // homeArea turns a stored 5 character home cell into the districts found at its

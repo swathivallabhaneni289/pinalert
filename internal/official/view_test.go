@@ -744,8 +744,14 @@ func TestBuildViewHazardRows(t *testing.T) {
 		Home:         homeAreaGuntur(),
 		Hazards: []StoredHazard{
 			testHazard(1, nil),
-			testHazard(2, func(h *StoredHazard) { h.AlertLevel, h.EventType, h.Name = "Orange", "TC", "Tropical Cyclone ARNAB-26"; h.DistrictCode = 506 }),
-			testHazard(3, func(h *StoredHazard) { h.AlertLevel, h.EventType, h.Name = "Green", "FL", "Flood in India"; h.DistrictCode = 749 }),
+			testHazard(2, func(h *StoredHazard) {
+				h.AlertLevel, h.EventType, h.Name = "Orange", "TC", "Tropical Cyclone ARNAB-26"
+				h.DistrictCode = 506
+			}),
+			testHazard(3, func(h *StoredHazard) {
+				h.AlertLevel, h.EventType, h.Name = "Green", "FL", "Flood in India"
+				h.DistrictCode = 749
+			}),
 			testHazard(4, func(h *StoredHazard) { h.DistrictCode = 600 }), // another district
 			testHazard(5, func(h *StoredHazard) { h.DistrictCode = 0 }),   // outside every district
 		},
