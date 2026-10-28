@@ -9,8 +9,13 @@ import (
 	"time"
 )
 
+// Amended 2026-10-29 by plan 05-11 (D-11): official is a built kind, follow
+// stays reserved. The four 3.3 kinds, their order, their wire values and the
+// refusal of every unknown value are unchanged; only the count (four to five),
+// the new last entry and the reserved list (official and follow to follow alone)
+// moved.
 func TestPushKindsClosed(t *testing.T) {
-	built := []PushKind{PushKindCritical, PushKindReliable, PushKindChanged, PushKindConfirmedUpdate}
+	built := []PushKind{PushKindCritical, PushKindReliable, PushKindChanged, PushKindConfirmedUpdate, PushKindOfficial}
 	if len(PushKinds) != len(built) {
 		t.Fatalf("PushKinds has %d entries, want %d", len(PushKinds), len(built))
 	}
@@ -37,11 +42,14 @@ func TestPushKindsClosed(t *testing.T) {
 		}
 	}
 
-	if len(ReservedPushKinds) != 2 {
-		t.Fatalf("ReservedPushKinds has %d entries, want 2", len(ReservedPushKinds))
+	if len(ReservedPushKinds) != 1 {
+		t.Fatalf("ReservedPushKinds has %d entries, want 1", len(ReservedPushKinds))
 	}
-	if ReservedPushKinds[0] != PushKindOfficial || ReservedPushKinds[1] != PushKindFollow {
-		t.Errorf("ReservedPushKinds = %v, want official then follow", ReservedPushKinds)
+	if ReservedPushKinds[0] != PushKindFollow {
+		t.Errorf("ReservedPushKinds = %v, want follow alone", ReservedPushKinds)
+	}
+	if !PushKindOfficial.Valid() {
+		t.Error("official must be valid: it is built by plan 05-11")
 	}
 	for _, k := range ReservedPushKinds {
 		if k.Valid() {
