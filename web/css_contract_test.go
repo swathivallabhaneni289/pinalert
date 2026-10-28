@@ -768,6 +768,13 @@ var nonCategoryIcons = map[string]bool{
 	// TestPhase33IconsRegisteredAndUsed proves the files and the rules line up.
 	"static/icons/share.svg":       true,
 	"static/icons/square-plus.svg": true,
+	// Phase 5 plan 09 (D-07, UI-SPEC Design System): octagon-alert and
+	// triangle-alert, the shapes of the Extreme and Severe level chips of the
+	// Official alerts page, drawn by literal url("/static/icons/<name>") mask
+	// rules in official.css, same exemption reasoning as search.svg.
+	// TestPhase5IconsRegisteredAndUsed proves the files and the rules line up.
+	"static/icons/octagon-alert.svg":  true,
+	"static/icons/triangle-alert.svg": true,
 }
 
 // laterIcons lists the glyphs added after Phase 3.4 (plan 04-30: bell-off).
@@ -954,6 +961,60 @@ func TestPhase33IconsRegisteredAndUsed(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("no stylesheet masks %s with the literal %s", name, want)
+		}
+	}
+}
+
+// phase5Icons lists the two glyph files Phase 5 plan 09 adds for the level
+// chips of the Official alerts page (UI-SPEC Design System: Extreme is
+// octagon-alert, Severe is triangle-alert), both exempted through
+// nonCategoryIcons above.
+var phase5Icons = []string{"octagon-alert.svg", "triangle-alert.svg"}
+
+// TestPhase5IconsRegisteredAndUsed (plan 05-09) holds the two level chip glyphs
+// to the rules of TestPhase33IconsRegisteredAndUsed: each file exists, is
+// registered in nonCategoryIcons, has the licence line of search.svg, is a plain
+// stroke glyph and is drawn by a literal url("/static/icons/<name>") mask rule
+// in official.css, so the exemption cannot hide an orphan.
+func TestPhase5IconsRegisteredAndUsed(t *testing.T) {
+	if len(phase5Icons) != 2 {
+		t.Fatalf("phase5Icons holds %d names, want octagon-alert and triangle-alert", len(phase5Icons))
+	}
+	ref, err := fs.ReadFile(StaticFS, "static/icons/search.svg")
+	if err != nil {
+		t.Fatalf("reading the reference glyph static/icons/search.svg: %v", err)
+	}
+	refFirst, _, _ := strings.Cut(string(ref), "\n")
+	sheet, err := fs.ReadFile(StaticFS, "static/css/official.css")
+	if err != nil {
+		t.Fatalf("reading static/css/official.css: %v", err)
+	}
+	for _, name := range phase5Icons {
+		path := "static/icons/" + name
+		raw, err := fs.ReadFile(StaticFS, path)
+		if err != nil {
+			t.Errorf("%s is missing from the embedded tree: %v", path, err)
+			continue
+		}
+		if !nonCategoryIcons[path] {
+			t.Errorf("%s is not registered in nonCategoryIcons", path)
+		}
+		text := string(raw)
+		first, _, _ := strings.Cut(text, "\n")
+		if first != refFirst {
+			t.Errorf("%s first line %q differs from search.svg's licence line %q", path, first, refFirst)
+		}
+		for _, want := range []string{`viewBox="0 0 24 24"`, `stroke="currentColor"`, `stroke-width="2"`, `fill="none"`} {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s lacks %s", path, want)
+			}
+		}
+		if strings.Contains(text, "<script") || strings.Contains(text, "href") || strings.Contains(text, "<text") {
+			t.Errorf("%s holds a script, a link or text, which a mask glyph never carries (T-03-06)", path)
+		}
+		want := `url("/static/icons/` + name + `")`
+		if !strings.Contains(string(sheet), want) {
+			t.Errorf("official.css does not mask %s with the literal %s", name, want)
 		}
 	}
 }

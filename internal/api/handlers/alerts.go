@@ -11,9 +11,10 @@ import (
 // alertsTemplateName is the file executed by AlertsPage's ExecuteTemplate call.
 const alertsTemplateName = "alerts.html.tmpl"
 
-// alertsViewModel is exactly what alerts.html.tmpl reads. The page has no data
-// of its own yet: official alerts are not connected (Phase 5 supplies a
-// source), so the template carries the honest empty state and nothing else.
+// alertsViewModel is exactly what alerts.html.tmpl reads. The page holds no
+// alert data of its own: the shell is server rendered, and official-alerts.js
+// asks GET /api/official/alerts for the rest (Phase 5 plan 09), so the
+// template carries the account id and the empty blocks the script fills.
 type alertsViewModel struct {
 	AssetVersion string
 	Chrome       Chrome
@@ -27,11 +28,18 @@ type alertsViewModel struct {
 	Nav NavView
 }
 
-// AlertsPage handles GET /alerts: the Official alerts place (Phase 3.4, D-22).
-// It renders an honest empty state that says alerts are not connected yet and
-// points to the state disaster management authority. It must never say that no
-// alert is in force, because Pinalert is not looking, and that would be false
-// reassurance in an emergency (T-34-17).
+// AlertsPage handles GET /alerts: the Official alerts place (Phase 3.4, D-22),
+// filled by Phase 5 plan 09. It renders the shell only: the top bars, the status
+// line, the blocks for every state and the attribution. The server authors the
+// state of every answer (GET /api/official/alerts says fresh, stale or
+// unavailable, whether the area is known and which groups of alerts apply), and
+// the page script writes the sentences from that state alone.
+//
+// The page must never say that no alert is in force unless the feed is fresh,
+// the area is known and every group is empty: anywhere else it would be false
+// reassurance in an emergency (T-34-17, ALERT-04). So the template carries no
+// state sentence at all, and web/official_alerts_test.mjs pins every state
+// against the claim.
 //
 // Like Profile it is only reached through the gated r.Group, so a missing
 // account in the context is a routing bug, logged and answered with a 500.

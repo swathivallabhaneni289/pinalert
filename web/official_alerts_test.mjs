@@ -160,15 +160,23 @@ function buildPage({ withMarkup = true, account = '7', fixedLat, fixedLon, dataA
   if (fixedLat !== undefined) { main.setAttribute('data-fixed-lat', fixedLat); }
   if (fixedLon !== undefined) { main.setAttribute('data-fixed-lon', fixedLon); }
   if (dataApiBase !== undefined) { main.setAttribute('data-api-base', dataApiBase); }
+  // Nest the parts the way the template does, so a hidden block hides its words.
+  const parentOf = {
+    'official-notice-text': 'official-notice',
+    'official-title': 'official-section', 'official-districts': 'official-section', 'official-list': 'official-section',
+    'official-empty-title': 'official-empty', 'official-empty-body': 'official-empty',
+    'official-unavailable-title': 'official-unavailable', 'official-unavailable-body': 'official-unavailable',
+    'official-noarea-title': 'official-noarea', 'official-noarea-body': 'official-noarea',
+    'official-error-title': 'official-error', 'official-error-body': 'official-error', 'official-retry': 'official-error'
+  };
+  const startHidden = ['official-notice', 'official-section', 'official-skeleton', 'official-empty',
+    'official-unavailable', 'official-noarea', 'official-error'];
   for (const id of ids) {
-    const tag = id === 'official-retry' ? 'button' : (/-title$/.test(id) ? 'h2' : 'div');
-    const el = make(tag, id, main);
-    if (id !== 'official-status' && id !== 'official-attribution' && id !== 'official-districts' &&
-        id !== 'official-title' && id !== 'official-notice-text' && !/-(title|body)$/.test(id) && id !== 'official-retry') {
-      el.hidden = true;
-    }
+    const tag = id === 'official-retry' ? 'button' : (/-title$/.test(id) && id !== 'official-title' ? 'h2' : 'div');
+    make(tag, id, parentOf[id] ? doc.byId[parentOf[id]] : main);
+    if (startHidden.includes(id)) { doc.byId[id].hidden = true; }
   }
-  doc.byId['official-retry'].hidden = false;
+  doc.byId['official-retry'].textContent = 'Try again';
   return { doc, main };
 }
 
