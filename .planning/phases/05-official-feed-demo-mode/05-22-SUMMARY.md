@@ -68,7 +68,7 @@ RED, run once before Task 2: Go, 5 failing tests (the four named and TestOfficia
 
 ## Browser check
 
-Scratch server: a throwaway Go test serving the real `api.NewRouter` on 127.0.0.1:8794 over p5_22 (literal throwaway session secret, log style mailer, sign in through the real link flow), with `http.DefaultTransport` replaced by a transport that refuses and counts every outbound request. Seeded with psql: fresh gdacs and sachet status, three hazards (a Red earthquake near Vijayawada, an Orange cyclone over the Bay of Bengal, a Green flood in Assam, the last with a non allowed `http://` link) and four crowd reports around the reader. Playwright, geolocation Vijayawada (16.5062, 80.6480), WebKit and Chromium, 390x844 and 1470x830, light and dark, plus a reduced motion run (light, both engines, both sizes). Screenshots are in the scratch folder only. No live GDACS or SACHET call was made: the blocked transport recorded one refused request to www.gdacs.org, started by the lazy kick after I set the feed to 2 hours ago; it never left the process.
+Scratch server: a throwaway Go test serving the real `api.NewRouter` on 127.0.0.1:8794 over p5_22 (literal throwaway session secret, an in memory fake mailer from the api package's gate tests, so no mail was sent and no mailer key was invented; sign in through the real link flow), with `http.DefaultTransport` replaced by a transport that refuses and counts every outbound request. Seeded with psql: fresh gdacs and sachet status, three hazards (a Red earthquake near Vijayawada, an Orange cyclone over the Bay of Bengal, a Green flood in Assam, the last with a non allowed `http://` link) and four crowd reports around the reader. Playwright, geolocation Vijayawada (16.5062, 80.6480), WebKit and Chromium, 390x844 and 1470x830, light and dark, plus a reduced motion run (light, both engines, both sizes). Screenshots are in the scratch folder only. No live GDACS or SACHET call was made: the blocked transport recorded one refused request to www.gdacs.org, started by the lazy kick after I set the feed to 2 hours ago; it never left the process.
 
 All 8 combinations (engine x size x theme) gave the same result unless a column says otherwise.
 
@@ -141,7 +141,7 @@ None beyond the plan's register. T-05-114 (textContent only, TestOfficialPinsScr
 - `requirements` ROBUST-05, ROBUST-06 and ALERT-04 are not marked (project rule). STATE.md, ROADMAP.md and REQUIREMENTS.md are untouched.
 - The live GDACS feed is still unproven: no live call was made here by rule. The timeout fix is on main (`4bc7448e`), not in this branch's base, so the docs describe main after the merge.
 
-## Self-Check
+## Self-Check: PASSED
 
 - Files present: official-pins.js, official-pins.css, official_pins_contract_test.go, official_pins_test.mjs, this summary.
 - Commits present: f332a763, 889f7fda, 5d4d1992, 8bc1f2da.
