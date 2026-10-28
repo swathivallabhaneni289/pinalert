@@ -1,6 +1,7 @@
 package demo
 
 import (
+	"context"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -78,4 +79,12 @@ func (w *World) SessionFor(accountID int64) string {
 	session := VisitorSessionPrefix + strconv.FormatInt(accountID, 10)
 	w.q.BindSession(session, accountID)
 	return session
+}
+
+// Nearby reads the reports around q as the visitor sees them. The viewer is
+// always the visitor's synthetic account, whatever q says, so a caller cannot
+// ask what another account voted. The real service does the reading.
+func (w *World) Nearby(ctx context.Context, q service.NearbyQuery) ([]service.ReportView, error) {
+	q.ViewerAccountID = VisitorAccountID
+	return w.Reports.Nearby(ctx, q)
 }
