@@ -31,8 +31,8 @@ type OfficialAlertSeed struct {
 	HeadlineEN    string
 	AreaDesc      string
 	Tier          string // district, state or unplaced; defaults to unplaced
-	DistrictCodes []int  // stored as district rows (with StateCodes[0] when set)
-	StateCodes    []int  // stored as state rows when Tier is state
+	DistrictCodes []int  // stored as district rows
+	StateCodes    []int  // stored as state rows
 	SentAt        time.Time
 	ExpiresAt     time.Time
 	CancelledAt   *time.Time
@@ -41,9 +41,8 @@ type OfficialAlertSeed struct {
 }
 
 // SeedOfficialAlert inserts the alert and its area rows and returns the alert
-// id. A district tier alert gets one row per district code, each carrying the
-// first state code when one is given; a state tier alert gets one row per state
-// code.
+// id. Each district code is stored as a row of its own and each state code as a
+// row of its own, the way the refresher stores a placement.
 func SeedOfficialAlert(t *testing.T, pool *pgxpool.Pool, s OfficialAlertSeed) int64 {
 	t.Helper()
 
@@ -94,22 +93,15 @@ func SeedOfficialAlert(t *testing.T, pool *pgxpool.Pool, s OfficialAlertSeed) in
 	}
 
 	for _, d := range s.DistrictCodes {
-		var state *int
-		if len(s.StateCodes) > 0 {
-			state = &s.StateCodes[0]
-		}
 		if _, err := pool.Exec(ctx,
-			`INSERT INTO official_alert_areas (alert_id, district_lgd, state_lgd) VALUES ($1, $2, $3)`,
-			id, d, state); err != nil {
+			`INSERT INTO official_alert_areas (alert_id, district_lgd) VALUES ($1, $2)`, id, d); err != nil {
 			t.Fatalf("seeding district %d for official alert %d: %v", d, id, err)
 		}
 	}
-	if len(s.DistrictCodes) == 0 {
-		for _, st := range s.StateCodes {
-			if _, err := pool.Exec(ctx,
-				`INSERT INTO official_alert_areas (alert_id, state_lgd) VALUES ($1, $2)`, id, st); err != nil {
-				t.Fatalf("seeding state %d for official alert %d: %v", st, id, err)
-			}
+	for _, st := range s.StateCodes {
+		if _, err := pool.Exec(ctx,
+			`INSERT INTO official_alert_areas (alert_id, state_lgd) VALUES ($1, $2)`, id, st); err != nil {
+			t.Fatalf("seeding state %d for official alert %d: %v", st, id, err)
 		}
 	}
 	return id

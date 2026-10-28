@@ -200,25 +200,31 @@ func TestOfficialQueries(t *testing.T) {
 		if err != nil {
 			t.Fatalf("OfficialAlertAreas: %v", err)
 		}
-		var districts []int
+		var districts, states []int
 		for _, a := range areas {
-			if a.DistrictLgd == nil || a.StateLgd == nil || *a.StateLgd != 33 {
-				t.Errorf("area %+v, want a district with state 33", a)
-				continue
+			switch {
+			case a.DistrictLgd != nil && a.StateLgd == nil:
+				districts = append(districts, int(*a.DistrictLgd))
+			case a.StateLgd != nil && a.DistrictLgd == nil:
+				states = append(states, int(*a.StateLgd))
+			default:
+				t.Errorf("area %+v, want a district row or a state row", a)
 			}
-			districts = append(districts, int(*a.DistrictLgd))
 		}
 		sort.Ints(districts)
 		if len(districts) != 2 || districts[0] != 568 || districts[1] != 574 {
 			t.Errorf("districts %v, want [568 574]", districts)
 		}
+		if len(states) != 1 || states[0] != 33 {
+			t.Errorf("states %v, want [33]", states)
+		}
 
 		if err := q.DeleteOfficialAlertAreas(ctx, id); err != nil {
 			t.Fatalf("DeleteOfficialAlertAreas: %v", err)
 		}
-		d, s := int32(568), int32(33)
+		d := int32(568)
 		for i := 0; i < 2; i++ { // the second insert is a no-op, not an error
-			if err := q.InsertOfficialAlertArea(ctx, sqlcgen.InsertOfficialAlertAreaParams{AlertID: id, DistrictLgd: &d, StateLgd: &s}); err != nil {
+			if err := q.InsertOfficialAlertArea(ctx, sqlcgen.InsertOfficialAlertAreaParams{AlertID: id, DistrictLgd: &d}); err != nil {
 				t.Fatalf("InsertOfficialAlertArea: %v", err)
 			}
 		}

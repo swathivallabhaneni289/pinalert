@@ -82,9 +82,11 @@ CREATE TABLE official_alerts (
 -- Serves the in force read, which keeps only alerts that have not ended.
 CREATE INDEX idx_official_alerts_expires_at ON official_alerts (expires_at);
 
--- Where an alert applies. A district row carries the district's own code and
--- the code of its state; a state row carries the state code alone. The unique
--- index treats a missing code as 0 so a row cannot be stored twice.
+-- Where an alert applies. A district row carries a district code alone and a
+-- state row a state code alone; a district tier alert has district rows for the
+-- districts it names and state rows for their states, a state tier alert has
+-- state rows only. The unique index treats a missing code as 0 so a row cannot
+-- be stored twice.
 CREATE TABLE official_alert_areas (
     id           BIGSERIAL PRIMARY KEY,
     alert_id     BIGINT NOT NULL REFERENCES official_alerts(id),
