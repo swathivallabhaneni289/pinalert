@@ -45,6 +45,7 @@ How confirmations are counted, why a place is a precision 7 geohash cell, the 1 
    # export VAPID_PUBLIC_KEY="..."                   # optional, phone notifications; make the pair once with: go run ./cmd/vapidkeys, and keep it as host secrets
    # export VAPID_PRIVATE_KEY="..."                  # optional, set both or neither; one alone stops startup
    # export VAPID_SUBJECT="you@example.com"          # optional, an email or https address for the push services; falls back to CONTACT_EMAIL, then an https BASE_URL
+   # export OFFICIAL_REFRESH_TOKEN="..."             # optional, at least 32 characters; switches on POST /internal/official/refresh for the outside cron; unset means that route answers 404
    ```
    The server refuses to start without `SESSION_SECRET` unless `ENV=development` is also set —
    never let a missing secret silently fall back to an auto-generated one, which would invalidate
@@ -149,6 +150,10 @@ https, the push services the server accepts, what a lock screen shows, what the 
 checking it on real devices. [docs/TRUST-MODEL.md](./docs/TRUST-MODEL.md) says who gets which note.
 Never commit the keys. Phone notifications need migration 00011, so run `make migrate` once on an
 existing database after pulling.
+
+## Official alerts and the Demo
+
+Pinalert copies government alerts from NDMA SACHET onto Official alerts, a one line banner on Nearby and, for Severe and Extreme alerts at a person's home area, a silent phone note. The sign in screen offers Try the demo, a practice copy of the 2024 Vijayawada floods where nothing is saved. [docs/OFFICIAL-ALERTS.md](./docs/OFFICIAL-ALERTS.md) explains the sources and their credits, how the feed is fetched and kept honest, where an alert applies, how the Demo proves the real trust rule, and what is still open (NDMA has not been asked for written terms). Set `OFFICIAL_REFRESH_TOKEN` (at least 32 characters) on the host and add the same value as a GitHub secret, with the repository variable `PINALERT_BASE_URL`, to switch on the outside refresh. Official alerts need migrations 00012 and 00013, so run `make migrate` once on an existing database after pulling.
 
 ## Account access and logout
 

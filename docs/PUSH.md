@@ -10,7 +10,8 @@ A phone notification is a short note on the lock screen of a phone or a computer
 - Critical reports near my home area. On by default once On this device is on. Needs a home area.
 - Changes to reports I posted or voted on. Off by default.
 - A Reliable reporter posts near me. Off by default. The same switch feeds the bell.
-- How far from my home area. 1, 2, 5 or 10 km.
+- Severe official alerts for my area. On by default once there is a home area. These are government alerts copied from NDMA SACHET, not reports; see "Official alerts" below.
+- How far from my home area. 1, 2, 5 or 10 km. It applies to the report kinds, not to official alerts, which follow the alert's own district.
 
 Two small pop-ups ask in the app's own words before the browser's prompt. At the end of sign up one asks Get alerts for critical reports near {home area}?, and asks for the home area first when there is none. It has an unticked tick box, A Reliable reporter posts near me. The first time a person posts, confirms or disputes, another asks Tell you when this report changes? Each is asked once; the second is asked once per account on each browser. Neither appears in an iPhone Safari tab (alerts need the Home Screen app there) or in a Mac Dock app (see Honest limits). Refusing there changes nothing else.
 
@@ -68,6 +69,18 @@ The What is happening pick stays optional on the report form, as Phase 3.4 built
 
 Tapping a note opens that report on Nearby.
 
+## Official alerts
+
+Phase 5 added a second lane for government alerts. The trust side of it is in TRUST-MODEL.md under "Official alerts on the phone"; the whole design is in [OFFICIAL-ALERTS.md](./OFFICIAL-ALERTS.md). For whoever runs the server:
+
+- Its own outbox and worker. Rows go in the table `official_push_outbox` when a refresh stores an alert version, inside the same database transaction, and the official worker sends them through the same guarded sender and the same answer rules as the report worker. It starts with the report worker, only when the VAPID keys are set, and shuts down with it. Report notes and official notes never share a queue.
+- Who and when. A Severe or Extreme alert that names the person's home district, or an Extreme alert that covers their whole state. A state wide Severe alert queues nobody. It is checked again just before each send, and nothing is sent from a feed that is not fresh (the alert must have been seen, or the feed checked, in the last 30 minutes).
+- Silent. The site asks every official note for no sound and no vibration, like all the others. An iPhone, and some Android settings, can still decide otherwise.
+- Words. Closed tables only, for example "Cyclone warning for Ntr district" and "Extreme. Issued by IMD." No feed text reaches the lock screen. A tap opens Official alerts (`/alerts`) and nothing else.
+- Limits of its own. At most 3 official notes per account in a rolling 6 hours, at most 2000 people per alert, and a life of at most 2 hours. They never count toward the 4 an hour of the report kinds.
+- One note per alert series on an Apple device. SACHET sends an Update under a new guid that names the earlier alert, so an alert and its updates are one series, and they share one Topic and Tag. Android and desktop browsers replace the earlier note in place. An Apple endpoint ignores the tag, so it gets only the first push about a series and the rest stays on Official alerts. This is the owner's few notifications rule from 3.3 check 8. It is per account and series, and a device added later, or one whose first push failed, gets nothing more about that series; it only ever means fewer notes.
+- A sleeping host sends nothing, and no alert reaches a phone until some request or the outside cron wakes the server and the refresh stores it. The cron is set up in OFFICIAL-ALERTS.md.
+
 ## Honest limits
 
 - Sound and vibration. The site asks every notification for no sound and no vibration, and never sets a vibration pattern. It cannot force that. An iPhone follows its own settings, Settings, Notifications, Pinalert, and an Android phone or a computer follows the notification settings the person chose for the browser. Nothing in the app promises silence or a buzz.
@@ -93,13 +106,13 @@ The dispatcher reads each report fresh, decides who should get a note, and queue
 
 ## What the push service can see
 
-The words of a note travel encrypted, end to end between the server and the browser, so Google, Mozilla, Apple and Microsoft cannot read them. Three headers travel in the clear because the push service needs them: the Topic, which is r and the report id, the TTL, and the Urgency, which is high for Critical and normal for the rest. So a push service can see report ids, and how urgent each push is, and when and to which subscription it was sent. It cannot see the title, the body, the area or the distance.
+The words of a note travel encrypted, end to end between the server and the browser, so Google, Mozilla, Apple and Microsoft cannot read them. Three headers travel in the clear because the push service needs them: the Topic, which is r and the report id (for an official note it is a short hash of the alert series' first guid, so it names no place), the TTL, and the Urgency, which is high for Critical and normal for the rest (for an official note, high for Extreme and normal for Severe). So a push service can see report ids, and how urgent each push is, and when and to which subscription it was sent. It cannot see the title, the body, the area or the distance.
 
 ## Owner device checks
 
 None of these have been run. They need real devices and, for two of them, hosting that does not exist yet. They are written as steps for the owner.
 
-0. Before any of them, on the owner's own dev database, after saying yes: `make migrate`, which adds migration 00011 (the push tables and columns). Nothing else touches that database.
+0. Before any of them, on the owner's own dev database, after saying yes: `make migrate`, which adds migration 00011 (the push tables and columns), and, from Phase 5, 00012 (the official alert tables) and 00013 (the official outbox and the Settings column). Nothing else touches that database.
 
 1. Desktop, now, on `http://localhost`. Make a throwaway key pair with `go run ./cmd/vapidkeys` and export both values in the shell that starts a scratch server, together with a contact (`VAPID_SUBJECT`). Use a free port and a scratch database, not the dev server. Sign in on Chrome or Safari on the Mac, set a home area, open Settings, Notifications, turn on On this device and allow it. Close the tab. From a second account, post a Critical report with a pick near that home area. Expect a notification with no sound, titled with the pick and the area, reading Not confirmed yet.; tapping it opens the report on Nearby. The app can be installed from the browser's own install control and shows the white pin icon. Then have two people at different spots confirm it and expect the same notification to change in place to Confirmed by people nearby. This is for Chrome; Safari on a Mac is an Apple endpoint and keeps the first note (Honest limits). Stop the server and drop the scratch database afterwards, and do not keep the throwaway keys.
 
@@ -110,3 +123,5 @@ None of these have been run. They need real devices and, for two of them, hostin
 4. After checks 1 to 3, run the SQL above and compare the hosts with the table. Report any host that is not in it.
 
 5. On the real host, once it exists, leave the host quiet until it sleeps, then post a Critical report and note how long the first notification takes to arrive. The post wakes the host and pokes the dispatcher, so a note should follow within seconds of the host being up.
+
+6. Official alerts, after check 2 or 3 and with the host on https, the cron set up (the GitHub secret `OFFICIAL_REFRESH_TOKEN`, the variable `PINALERT_BASE_URL`, and the same token as a host secret) and the VAPID keys set. With the phone installed and a home area saved in a district that has a Severe or Extreme alert in force, expect one notification with no sound or vibration, titled with the event and the district and reading the level and the issuer; a tap opens Official alerts. Nothing arrives for a state wide Severe alert. If no real alert is in force, the owner may wait for one, because a test alert would have to be written into the database by hand. An iPhone follows its own settings for sound. Record how long the note took after the alert first showed on the feed.

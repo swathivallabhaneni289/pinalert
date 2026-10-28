@@ -30,7 +30,7 @@ const legalCacheControl = "private, max-age=300"
 // together with the text, never to an invented figure, and change
 // service.CurrentTermsVersion to the same day so everyone is asked to agree to
 // the new text (D-27, TestTermsVersionFollowsPolicyDate).
-const policyLastUpdated = "17 October 2026"
+const policyLastUpdated = "29 October 2026"
 
 // readerTemplateName is the one standalone page both addresses render (D-31):
 // a full width reader holding the Disclaimer and then the Policy.
