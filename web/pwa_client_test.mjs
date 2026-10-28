@@ -867,6 +867,76 @@ test('isMacDockApp: an installed app with a Windows or Android user agent is fal
   assert.equal(makeEnv({ userAgent: ANDROID_UA, displayStandalone: true }).Notify.isMacDockApp(), false);
 });
 
+// ---- WR-02 (03.3-REVIEW): Off in Settings is never undone by the load check ----
+
+// serverEnv is a page whose fake server keeps one row: a subscription post
+// adds it when the post arrives, an unsubscribe removes it. The subscription
+// post can be held back, so a test can put the load check between its status
+// answer and the arrival of its post.
+function serverEnv(extra = {}) {
+  const server = { registered: false };
+  server.held = new Promise((resolve) => { server.release = resolve; });
+  const env = makeEnv({
+    permission: 'granted',
+    subscribed: true,
+    subscribedKey: KEY_BYTES,
+    pushKey: KEY,
+    stored: { 'pinalert.pushIntent': '7' },
+    routes: {
+      [STATUS_URL]: () => ({ status: 200, body: { registered: server.registered } }),
+      [SUBSCRIPTION_URL]: () => server.held.then(() => { server.registered = true; return { status: 204 }; }),
+      [UNSUBSCRIBE_URL]: () => { server.registered = false; return { status: 204 }; }
+    },
+    ...extra
+  });
+  return { env, server };
+}
+
+test('disable: Off tapped while the load check is posting waits for it, so the endpoint stays off (WR-02)', async () => {
+  const { env, server } = serverEnv();
+  await settle();
+  assert.deepEqual(env.requests.map((r) => r.url), [STATUS_URL, SUBSCRIPTION_URL], 'the load check is posting');
+  let result = null;
+  env.Notify.disable().then((r) => { result = r; });
+  await settle();
+  assert.deepEqual(env.requests.map((r) => r.url), [STATUS_URL, SUBSCRIPTION_URL],
+    'disable sends nothing while the load check is out');
+  server.release();
+  await settle();
+  await settle();
+  assert.ok(result, 'disable answered');
+  assert.equal(result.ok, true);
+  assert.deepEqual(env.requests.map((r) => r.url), [STATUS_URL, SUBSCRIPTION_URL, UNSUBSCRIBE_URL]);
+  assert.equal(server.registered, false, 'the server ends with no row for this endpoint');
+  assert.equal(env.store.has('pinalert.pushIntent'), false);
+});
+
+test('reconnect: an intent flag cleared while the status request is out stops the re-register (WR-02)', async () => {
+  const env = makeEnv({
+    permission: 'granted',
+    subscribed: true,
+    subscribedKey: KEY_BYTES,
+    pushKey: KEY,
+    stored: { 'pinalert.pushIntent': '7' },
+    routes: {
+      [STATUS_URL]: () => { env.store.delete('pinalert.pushIntent'); return { status: 200, body: { registered: false } }; },
+      [SUBSCRIPTION_URL]: ok204
+    }
+  });
+  await settle();
+  assert.deepEqual(env.requests.map((r) => r.url), [STATUS_URL], 'no subscription post after the flag was cleared');
+});
+
+test('enable: never waits for the load check before its first browser call (WR-02)', async () => {
+  const { env, server } = serverEnv({ permission: 'default' });
+  await settle();
+  const before = env.calls.length;
+  env.Notify.enable(KEY);
+  assert.deepEqual(env.calls.slice(before), ['requestPermission'], 'the prompt is asked in the tap');
+  server.release();
+  await settle();
+});
+
 // ---- CR-02 (03.3-REVIEW): every browser push call inside enable has a time limit ----
 
 // fireTimers runs every timer still set once, the way time passing would.
