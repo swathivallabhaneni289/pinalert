@@ -160,7 +160,12 @@ func TestOnboardingFlowEndToEnd(t *testing.T) {
 	}
 	// Amended 2026-10-27 by quick 261027-t5w: there is no step 5 any more, so
 	// none of its parts may render.
-	for _, banned := range []string{"Demo", "welcome-flow@example.com",
+	//
+	// Amended 2026-10-29 by plan 05-18 (D-03): Phase 5 adds Try the demo to
+	// step 1 and the Disagree box, so "Demo" left this list; the rendered
+	// links are pinned in TestWelcomeOffersTheDemoForANewAccount. Every other
+	// case stays.
+	for _, banned := range []string{"welcome-flow@example.com",
 		`id="welcome-step-5`, `id="welcome-back-5"`, `data-step="5"`, "Step 5 of", "Get alerts when it matters", "Allow alerts"} {
 		if strings.Contains(body, banned) {
 			t.Errorf("/welcome holds %q", banned)
