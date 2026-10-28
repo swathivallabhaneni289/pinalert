@@ -44,7 +44,9 @@ const KEY = Buffer.from(KEY_BYTES).toString('base64url');
 //   or a promise of one, so a test can hold an answer back),
 //   manualTimers (true keeps every timer in env.timers until fireTimers runs it),
 //   hang ('getSubscription', 'unsubscribe' or 'subscribe': that browser call
-//   starts and never settles), nextPermission 'hang' (the prompt never answers).
+//   starts and never settles; 'firstGetSubscription': only the first
+//   getSubscription call hangs, the later ones answer), nextPermission 'hang'
+//   (the prompt never answers).
 function makeEnv(options = {}) {
   const o = {
     manualTimers: false,
@@ -130,7 +132,7 @@ function makeEnv(options = {}) {
       },
       getSubscription() {
         env.calls.push('getSubscription');
-        if (o.hang === 'getSubscription') {
+        if (o.hang === 'getSubscription' || (o.hang === 'firstGetSubscription' && env.calls.filter((c) => c === 'getSubscription').length === 1)) {
           return never();
         }
         return Promise.resolve(env.sub);
@@ -994,4 +996,33 @@ test('enable: with time limits in place the browser calls still start at once an
   assert.equal(result.ok, true);
   assert.deepEqual(env.calls.filter((c) => c !== 'fetch'), ['ready', 'getSubscription', 'unsubscribe', 'subscribe']);
   assert.equal(env.timers.filter((t) => t.live).length, 0, 'every limit was cleared once its call answered');
+});
+
+test('disable: Off still ends after the time limit when only the load check\'s getSubscription hangs (WR-02)', async () => {
+  const env = makeEnv({
+    permission: 'granted',
+    manualTimers: true,
+    hang: 'firstGetSubscription',
+    subscribed: true,
+    subscribedKey: KEY_BYTES,
+    pushKey: KEY,
+    stored: { 'pinalert.pushIntent': '7' },
+    routes: {
+      [STATUS_URL]: () => ({ status: 200, body: { registered: true } }),
+      [SUBSCRIPTION_URL]: ok204,
+      [UNSUBSCRIBE_URL]: ok204
+    }
+  });
+  await settle();
+  const on = await env.Notify.enable(KEY);
+  assert.equal(on.ok, true, 'On works while the load check is still stuck');
+  let off = null;
+  env.Notify.disable().then((r) => { off = r; });
+  for (let i = 0; i < 5; i++) {
+    await settle();
+    fireTimers(env);
+    await settle();
+  }
+  assert.ok(off !== null, 'Off ended instead of waiting forever');
+  assert.equal(off.ok, true);
 });

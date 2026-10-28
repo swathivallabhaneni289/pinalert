@@ -278,7 +278,7 @@
   // currentSubscription resolves to this browser's push subscription or null.
   function currentSubscription() {
     return readyRegistration().then(function (registration) {
-      return registration.pushManager.getSubscription();
+      return withTimeout(Promise.resolve(registration.pushManager.getSubscription()));
     });
   }
 
