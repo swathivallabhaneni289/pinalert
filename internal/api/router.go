@@ -482,8 +482,9 @@ func NewRouter(deps Deps) *chi.Mux {
 	// The session middleware runs for every request except the public sessionless
 	// routes in sessionSkipSet: the exact public app asset paths (plan 03.3-04, a
 	// launcher or manifest fetch without a cookie must not create a session) and
-	// the 85 globe tile paths (plan 05-04), everything under /demo (plan 05-10) and
-	// the cron's refresh POST (plan 05-12).
+	// the 85 globe tile paths (plan 05-04), everything under /demo (plan 05-10),
+	// the cron's refresh POST (plan 05-12) and the static files under /static
+	// (2026-10-29, follow up to plan 05-13).
 	r.Use(skipSessionFor(sessionSkipSet(), deps.Session.Middleware(deps.persistSession)))
 
 	// Local copies of the page and auth configs that carry the shared Chrome
@@ -951,7 +952,12 @@ func sessionSkipSet() sessionSkip {
 	// The cron's refresh door: an exact POST path, so a call neither sets a cookie
 	// nor writes a sessions row (plan 05-12, research G1, Pitfall 2).
 	post := map[string]bool{"/internal/official/refresh": true}
-	return sessionSkip{get: get, post: post, prefixes: []string{"/demo"}}
+	// "/static" (added 2026-10-29, Phase 5 follow up to plan 05-13, D-05): the
+	// stylesheets, scripts and icons. A browser fetches them with no cookie on a
+	// first visit to the Demo or the sign in page, and each fetch used to set a
+	// cookie and write a sessions row (12 rows for one Demo visit). The files are
+	// public and read nothing from a session.
+	return sessionSkip{get: get, post: post, prefixes: []string{"/demo", "/static"}}
 }
 
 // skipSessionFor wraps the session middleware so a request goes straight to the

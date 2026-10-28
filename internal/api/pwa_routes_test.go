@@ -128,6 +128,11 @@ func TestSkipSessionFor(t *testing.T) {
 // empty. It is asserted to be exactly ["/internal/official/refresh"], and that
 // path must be a registered route of the router. The prefixes stay exactly
 // ["/demo"] and every GET assertion is unchanged.
+//
+// Amended 2026-10-29 by the Phase 5 follow up to plan 05-13 (D-05): the prefixes
+// are now exactly ["/demo", "/static"], so a cookieless fetch of a stylesheet,
+// script or icon writes no sessions row, and /static/* must be a registered route.
+// Every other assertion is unchanged.
 func TestPWASkipSetMatchesRoutes(t *testing.T) {
 	mgr, err := session.NewManager([]byte("pwa-routes-test-secret-not-for-production"), false)
 	if err != nil {
@@ -184,8 +189,13 @@ func TestPWASkipSetMatchesRoutes(t *testing.T) {
 	// Amended 2026-10-29 by plan 05-10 (D-04, D-05): the prefix list was asserted
 	// empty; it is now exactly the Demo prefix. The POST set assertion above is
 	// unchanged.
-	if !slices.Equal(skip.prefixes, []string{"/demo"}) {
-		t.Errorf("sessionSkipSet prefixes = %v, want exactly [/demo]", skip.prefixes)
+	// Amended 2026-10-29 by the Phase 5 follow up to plan 05-13 (D-05): "/static"
+	// joins the Demo prefix, and the static route is a registered route.
+	if !slices.Equal(skip.prefixes, []string{"/demo", "/static"}) {
+		t.Errorf("sessionSkipSet prefixes = %v, want exactly [/demo /static]", skip.prefixes)
+	}
+	if !getRoutes["/static/*"] {
+		t.Errorf("/static/* is a skip set prefix but is not a registered GET route")
 	}
 	if len(handlers.PWAPublicPaths) != 10 {
 		t.Errorf("PWAPublicPaths has %d entries, want 10", len(handlers.PWAPublicPaths))

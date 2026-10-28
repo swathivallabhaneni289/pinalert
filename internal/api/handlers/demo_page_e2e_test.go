@@ -126,6 +126,19 @@ func TestDemoPageWritesNothing(t *testing.T) {
 		t.Fatalf("the page's own api base answers %d, want 200: %s", resp.StatusCode, body)
 	}
 
+	// Amended 2026-10-29 by the Phase 5 follow up to plan 05-13 (D-05): the
+	// browser fetches the page's stylesheets and scripts with no cookie as well,
+	// and those fetches must set no cookie and write no sessions row either.
+	for _, asset := range []string{"/static/css/demo.css", "/static/js/demo.js", "/static/js/api-base.js"} {
+		resp, body := demoPageGet(t, client, srv.URL+asset)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s = %d, want 200: %.80s", asset, resp.StatusCode, body)
+		}
+		if got := resp.Header.Values("Set-Cookie"); len(got) != 0 {
+			t.Fatalf("GET %s set a cookie: %v", asset, got)
+		}
+	}
+
 	if got := tableCounts(t, pool); !reflect.DeepEqual(before, got) {
 		t.Fatalf("opening the Demo changed the table row counts\nbefore: %v\nafter:  %v", before, got)
 	}
