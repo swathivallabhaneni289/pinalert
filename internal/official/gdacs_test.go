@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -289,7 +290,10 @@ func TestGdacsClientBounds(t *testing.T) {
 		if gdacsSearchPath != "/gdacsapi/api/events/geteventlist/SEARCH" {
 			t.Errorf("search path = %q", gdacsSearchPath)
 		}
-		if GdacsMaxBytes != 2<<20 || GdacsTimeout != 15*time.Second || GdacsMinGap != 15*time.Minute || GdacsEndedKeep != 48*time.Hour {
+		// Amended 2026-10-29 by quick 261029-6wb: GdacsTimeout is 40 s per request
+		// (was 15 s). The live service took 20.9 s for one request, and A and B now
+		// run at the same time, so a refresh takes as long as the slower one.
+		if GdacsMaxBytes != 2<<20 || GdacsTimeout != 40*time.Second || GdacsMinGap != 15*time.Minute || GdacsEndedKeep != 48*time.Hour {
 			t.Errorf("limits = %d %v %v %v", GdacsMaxBytes, GdacsTimeout, GdacsMinGap, GdacsEndedKeep)
 		}
 	})
@@ -304,6 +308,8 @@ func TestGdacsClientBounds(t *testing.T) {
 		if f.hits() != 2 {
 			t.Fatalf("%d requests, want 2 (A and B)", f.hits())
 		}
+		f.mu.Lock() // the two handlers ran at the same time; read what they recorded under the lock
+		defer f.mu.Unlock()
 		for i, p := range f.paths {
 			if p != gdacsSearchPath {
 				t.Errorf("request %d path = %q", i, p)
@@ -315,8 +321,23 @@ func TestGdacsClientBounds(t *testing.T) {
 			{"eventlist": {"EQ;TC;FL"}, "fromdate": {"2026-10-25"}, "todate": {"2026-10-28"},
 				"alertlevel": {"green;orange;red"}, "pagenumber": {"1"}, "pagesize": {"100"}},
 		}
+		// Amended 2026-10-29 by quick 261029-6wb: A and B now run at the same
+		// time, so the order they arrive in is not fixed. Each recorded query is
+		// matched to A or B by content (A is the one whose eventlist holds VO)
+		// instead of by arrival index; every assertion below is kept.
+		byRequest := make([]url.Values, 2)
+		for _, q := range f.queries {
+			if strings.Contains(q.Get("eventlist"), "VO") {
+				byRequest[0] = q
+			} else {
+				byRequest[1] = q
+			}
+		}
 		for i, w := range want {
-			got := f.queries[i]
+			got := byRequest[i]
+			if got == nil {
+				t.Fatalf("request %d never arrived", i)
+			}
 			if len(got) != len(w) {
 				t.Errorf("request %d has parameters %v, want exactly %v", i, got, w)
 			}
@@ -531,6 +552,151 @@ func TestGdacsFetcher(t *testing.T) {
 		_, err := fetch.Fetch(context.Background(), FeedStatus{})
 		if err == nil || ErrorClass(err) != "network" {
 			t.Fatalf("err = %v, want a network class error", err)
+		}
+	})
+}
+
+// pairServer is an upstream that routes by "VO" in the raw query: a request that
+// names volcanoes is request A, any other is request B. That works with either
+// way of writing the semicolons.
+func pairServer(t *testing.T, a, b http.HandlerFunc) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.RawQuery, "VO") {
+			a(w, r)
+			return
+		}
+		b(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// answerAfter serves body after d, or gives up when the request's context ends.
+func answerAfter(d time.Duration, body []byte) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(d):
+		case <-r.Context().Done():
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}
+}
+
+// TestGdacsRequestsRunTogether (quick 261029-6wb): request A and request B are in
+// flight at the same time, the call takes as long as the slower one, the first
+// failure ends the call at once and cancels the other request, and the caller's
+// deadline still bounds both.
+func TestGdacsRequestsRunTogether(t *testing.T) {
+	a, b := fixture(t, "gdacs_search_a.json"), fixture(t, "gdacs_search_b.json")
+
+	t.Run("A and B are in flight at the same time and the result is unchanged", func(t *testing.T) {
+		var inflight, maxInflight atomic.Int32
+		track := func(h http.HandlerFunc) http.HandlerFunc {
+			return func(w http.ResponseWriter, r *http.Request) {
+				n := inflight.Add(1)
+				defer inflight.Add(-1)
+				for {
+					m := maxInflight.Load()
+					if n <= m || maxInflight.CompareAndSwap(m, n) {
+						break
+					}
+				}
+				h(w, r)
+			}
+		}
+		srv := pairServer(t, track(answerAfter(300*time.Millisecond, a)), track(answerAfter(400*time.Millisecond, b)))
+		c := testGdacsClient(srv.URL, ClientConfig{}, 0)
+
+		begin := time.Now()
+		res, err := c.FetchHazards(context.Background(), gdacsNow)
+		took := time.Since(begin)
+		if err != nil {
+			t.Fatalf("FetchHazards: %v", err)
+		}
+		if got := maxInflight.Load(); got != 2 {
+			t.Errorf("at most %d requests were in flight together, want 2", got)
+		}
+		if took >= 650*time.Millisecond {
+			t.Errorf("the call took %v, want about the slower request (400 ms), not the sum (700 ms)", took)
+		}
+		if res.Seen != 13 {
+			t.Errorf("Seen = %d, want 13", res.Seen)
+		}
+		if got := strings.Join(hazardKeys(res.Hazards), ","); got != "TC:1001345,TC:1001338,EQ:1574196,EQ:1574148,EQ:1573845" {
+			t.Errorf("hazards = %s, want A's kept list first, then B's, once each", got)
+		}
+	})
+
+	// failFast: one request answers 500 at once; the other waits 2 s or until its
+	// own request context ends, and says which of the two happened.
+	failFast := func(t *testing.T, failA bool) {
+		ended := make(chan struct{}, 1)
+		slow := func(w http.ResponseWriter, r *http.Request) {
+			select {
+			case <-r.Context().Done():
+				ended <- struct{}{}
+			case <-time.After(2 * time.Second):
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"type":"FeatureCollection","features":[]}`))
+			}
+		}
+		boom := func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "boom", http.StatusInternalServerError) }
+		srv := pairServer(t, slow, boom) // A waits, B fails
+		if failA {
+			srv = pairServer(t, boom, slow) // A fails, B waits
+		}
+		c := testGdacsClient(srv.URL, ClientConfig{}, 0)
+
+		begin := time.Now()
+		res, err := c.FetchHazards(context.Background(), gdacsNow)
+		took := time.Since(begin)
+		if err == nil {
+			t.Fatal("no error")
+		}
+		if got := ErrorClass(err); got != "status" {
+			t.Errorf("class = %q, want status (the first real failure, not the other request's cancellation): %v", got, err)
+		}
+		if !strings.HasPrefix(err.Error(), "official: gdacs ") {
+			t.Errorf("error text = %q, want it to name gdacs", err.Error())
+		}
+		if len(res.Hazards) != 0 || res.Seen != 0 {
+			t.Errorf("a failed call returned %d hazards and Seen %d, want none", len(res.Hazards), res.Seen)
+		}
+		if took >= time.Second {
+			t.Errorf("the call took %v, want it to return at the failure and not wait for the other request", took)
+		}
+		select {
+		case <-ended:
+		case <-time.After(2 * time.Second):
+			t.Error("the other request's context never ended: it was not cancelled")
+		}
+	}
+	t.Run("a fast failure of B ends the call without waiting for A", func(t *testing.T) { failFast(t, false) })
+	t.Run("a fast failure of A ends the call without waiting for B", func(t *testing.T) { failFast(t, true) })
+
+	t.Run("the caller's deadline still bounds both requests", func(t *testing.T) {
+		wait := func(w http.ResponseWriter, r *http.Request) {
+			select {
+			case <-r.Context().Done():
+			case <-time.After(3 * time.Second):
+			}
+		}
+		srv := pairServer(t, wait, wait)
+		c := testGdacsClient(srv.URL, ClientConfig{}, 0) // the GdacsTimeout default applies
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+
+		begin := time.Now()
+		_, err := c.FetchHazards(ctx, gdacsNow)
+		took := time.Since(begin)
+		if got := ErrorClass(err); got != "timeout" {
+			t.Errorf("class = %q, want timeout (%v)", got, err)
+		}
+		if took >= time.Second {
+			t.Errorf("the call took %v, want it bounded by the caller's 200 ms", took)
 		}
 	})
 }
