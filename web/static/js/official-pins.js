@@ -348,22 +348,35 @@
     openFor(entry);
   }
 
+  // decorate gives the marker's element its name and its Enter and Space keys. It
+  // runs once per element: Leaflet makes the element only when the marker is
+  // added to a map that already has a view, which on a slow first fix is after
+  // this script has run, so it runs again on the marker's own add event.
+  function decorate(entry) {
+    var element = entry.marker.getElement();
+    if (!element || entry.decorated === element) {
+      return;
+    }
+    entry.decorated = element;
+    element.setAttribute('aria-label', pinName(entry.pin));
+    element.addEventListener('keydown', function (evt) {
+      onPinKey(entry, evt);
+    });
+  }
+
   // addPin puts one pin on the layer: a keyboard focusable marker with its name.
   function addPin(group, pin, key) {
     var icon = pinIcon(pin);
     var marker = L.marker([pin.lat, pin.lon], { icon: icon, keyboard: true });
-    var entry = { pin: pin, key: key, marker: marker, node: icon.options.html };
-    group.addLayer(marker);
-    var element = marker.getElement();
-    if (element) {
-      element.setAttribute('aria-label', pinName(pin));
-      element.addEventListener('keydown', function (evt) {
-        onPinKey(entry, evt);
-      });
-    }
+    var entry = { pin: pin, key: key, marker: marker, node: icon.options.html, decorated: null };
+    marker.on('add', function () {
+      decorate(entry);
+    });
     marker.on('click', function () {
       openFor(entry);
     });
+    group.addLayer(marker);
+    decorate(entry);
     return entry;
   }
 

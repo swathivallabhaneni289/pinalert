@@ -140,7 +140,10 @@ function loadLayer(options = {}) {
         handlers: {},
         zOffset: 0,
         on(type, fn) { (this.handlers[type] = this.handlers[type] || []).push(fn); return this; },
-        getElement() { return this.inGroup ? this.el : null; },
+        // With lateIcons the element exists only after the map has a view, as in
+        // Leaflet: the test calls markers' add handlers by hand (showIcons).
+        getElement() { return this.inGroup && (!options.lateIcons || this.shown) ? this.el : null; },
+        showIcons() { this.shown = true; (this.handlers.add || []).forEach((h) => h({ type: 'add' })); },
         setZIndexOffset(n) { this.zOffset = n; return this; },
         setIcon(icon) { this.icon = icon; return this; },
         addTo(group) { group.addLayer(this); return this; }
@@ -269,6 +272,19 @@ test('the pin is the flat rectangle with the word GDACS inside a 44px marker box
   assert.match(textOf(node), /GDACS/);
   assert.equal(byClass(node, 'official-pin__glyph').length, 1);
   assert.ok(byClass(node, 'official-pin__glyph')[0].className.includes('official-glyph--earthquake'));
+});
+
+test('a marker whose element appears later still gets its name and its keys', async () => {
+  const layer = await open(fresh([pin()]), { lateIcons: true });
+  const marker = markersOf(layer)[0];
+  assert.equal(marker.getElement(), null, 'no element yet, the map has no view');
+  marker.showIcons();
+  assert.equal(marker.el.getAttribute('aria-label'), 'GDACS, Earthquake in Vanuatu Islands, Red');
+  fire(marker.el, 'keydown', { key: 'Enter' });
+  assert.equal(layer.cards.length, 1, 'Enter opens the card once the element is there');
+  marker.showIcons();
+  fire(marker.el, 'keydown', { key: ' ' });
+  assert.equal(layer.cards.length, 2, 'the same element is not given a second key handler');
 });
 
 test('each hazard kind has its own glyph and no pin carries a severity class', async () => {
