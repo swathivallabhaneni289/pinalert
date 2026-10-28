@@ -76,6 +76,7 @@ Unchanged: **4, 8, 12, 16, 24, 32, 48, 64** (`--space-xs` to `--space-3xl`, with
 | GDACS pin | 28px high, width follows content (about 88px) inside a 44px high marker box | the official pin |
 | Official alerts laptop columns | `112px minmax(0, 2.6fr) minmax(0, 1.2fr) 112px 150px 20px` | Level, Alert, Issued by, Issued, Until, and a 20px chevron column (the 03.4 five column set plus the disclosure chevron) |
 | Globe | as sketch 009 A: 768px at 1440 by 900, 776px at 390 by 844 (within 2px; the executor matches the sketch's sizing function) | the sphere diameter |
+| Globe, amended | Amended 2026-10-29 (owner feedback, quick 261029-47j): the laptop is unchanged (828px at 1440 by 900 on the real page, as 05-07 measured). On a phone the whole sphere sits in a reserved box `--g: clamp(140px, min(100vw - 48px, (100svh - 404px) * 1.28), 300px)`, with the `100vh` value first and the `svh` value under `@supports`. The sphere is the box divided by 1.06: 283px in a 300px box at 390 by 844, about 174px in a 184px box at the iPhone SE's 375 by 548 visible area. This replaces 776px. | the sphere diameter and the box |
 
 **Exceptions:** none beyond the above.
 
@@ -376,10 +377,10 @@ Sketch `009-login-globe`, placement A, realistic Earth. The sketch's checks and 
 
 | Part | Value |
 |------|-------|
-| Placement | behind the sign in card, filling the sign in area; the card (`.login-card`, solid `--color-surface`) and the Low data panel sit above it and are unchanged |
+| Placement | behind the sign in card, filling the sign in area; the card (`.login-card`, solid `--color-surface`) and the Low data panel sit above it and are unchanged. Amended 2026-10-29 (owner feedback, quick 261029-47j): while the globe is on, the card, Check your inbox and the Low data panel are 65 percent glass with a 4px blur. The panel buttons are 65 percent page colour except on hover, and the column is transparent. The error line has a solid surface backing. All of it is solid without backdrop-filter, without color-mix, or under reduced transparency, and always in the Low data view. |
 | Earth | NASA Blue Marble pictures, one picture layer capped at zoom 3, globe projection, no labels, no borders, no glow, no gradient |
-| Size | the sphere diameter matches the sketch: 768px at 1440 by 900 and 776px at 390 by 844, sized from the sign in area (never the card, never a bare `100vh` or `100dvh`); on a phone it is wider than the screen on purpose (only its top and bottom show past the card) |
-| Dim | opacity on the `.globe-bg` wrapper only: **0.5 in light, 0.4 in dark** (today 0.35). The fade in is a keyframe from `opacity: 0` on an inner element. Never set from script. |
+| Size | the sphere diameter matches the sketch: 768px at 1440 by 900 and 776px at 390 by 844, sized from the sign in area (never the card, never a bare `100vh` or `100dvh`); on a phone it is wider than the screen on purpose (only its top and bottom show past the card). Amended 2026-10-29 (owner feedback, quick 261029-47j): on a phone the sphere is whole and centred above the card, overlapping the card's top by a fifth of the box. This replaces "wider than the screen on purpose". |
+| Dim | opacity on the `.globe-bg` wrapper only: **0.5 in light, 0.4 in dark** (today 0.35). Amended 2026-10-29 (owner feedback, quick 261029-47j): **1 in light and dark**, replacing 0.5 and 0.4; the opacity rule on the wrapper stays. The fade in is a keyframe from `opacity: 0` on an inner element. Never set from script. |
 | Turning | west to east, one turn every 2 minutes, India centred at the start (longitude 80, latitude 18), about 30 frames a second |
 | Interaction | none: `interactive: false`, `aria-hidden`, `pointer-events: none`; Tab skips it |
 
@@ -389,7 +390,7 @@ Sketch `009-login-globe`, placement A, realistic Earth. The sketch's checks and 
 |------|-------|
 | Words | **"Earth pictures: NASA Blue Marble via NASA GIBS"** with "NASA Blue Marble" and "NASA GIBS" as two links to NASA's pages |
 | Look | Label 14px, `--color-text`, solid `--color-bg` background (16.9 to 1 light, 17.7 to 1 dark, measured in the sketch; the plain credit over the photo measured under 4.5 to 1), each link a 44px tall target, semibold grey without an underline at rest (plan 42 look), links never padded into each other (the sketch tested and rejected padding inline links: the second line's padding covered the first line's words) |
-| Place | a laptop at least 1200px wide or 800px tall: the bottom right corner of the sign in area. Phones and shorter laptop windows: in the flow under the Low data panel, wrapping to two 44px rows when needed. |
+| Place | a laptop at least 1200px wide or 800px tall: the bottom right corner of the sign in area. Phones and shorter laptop windows: in the flow under the Low data panel, wrapping to two 44px rows when needed. Amended 2026-10-29 (owner feedback, quick 261029-47j): on phones the credit is centred under the Low data panel. |
 | No shift | written with the page and kept `visibility: hidden` until the globe shows (the same `.is-ready` class), so the card never moves when the globe arrives and its links take no focus until then |
 | Tab order | last on the page, after the card and the panel |
 | Policy | the GIBS acknowledgement sentence goes to the Policy page (Copywriting P5-C20) |

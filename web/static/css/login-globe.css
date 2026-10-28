@@ -10,26 +10,35 @@
  * hidden until the first full frame. The credit is written with the page and
  * kept visibility hidden, so it holds its space from the first paint and the
  * card never moves when the globe arrives.
+ *
+ * Amended 2026-10-29 by quick 261029-47j (owner: the phone globe was cut off
+ * and the boxes hid the Earth): the Earth shows at full strength in both
+ * themes, the sign in boxes are frosted glass while the globe is on, and on a
+ * phone the whole Earth sits in a box reserved above the card. The laptop
+ * placement is unchanged.
  */
 
-/* How strongly the globe shows: 0.5 in light, 0.4 in dark. Same selectors as
-   the theme blocks of main.css, so a manual choice beats the device setting. */
+/* How strongly the globe shows: full strength (1) in light and dark since the
+   owner's change of 2026-10-29; it was 0.5 in light and 0.4 in dark. Same
+   selectors as the theme blocks of main.css, so a manual choice beats the
+   device setting. The opacity stays on .globe-bg, so a later dim is one token
+   change. */
 :root {
-  --globe-dim: 0.5;
+  --globe-dim: 1;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --globe-dim: 0.4;
+    --globe-dim: 1;
   }
 }
 
 :root[data-theme="dark"] {
-  --globe-dim: 0.4;
+  --globe-dim: 1;
 }
 
 :root[data-theme="light"] {
-  --globe-dim: 0.5;
+  --globe-dim: 1;
 }
 
 /* The globe fills the sign in area behind the card. Corner placement for a
@@ -119,6 +128,69 @@
   color: var(--color-text);
 }
 
+/* Owner, 2026-10-29: while the globe is on (.login-gate.has-globe, written only
+   when Low data is off) the boxes over the Earth are frosted glass, so they
+   never hide it: 65 percent of the box colour plus a 4px blur. The solid colour
+   comes first for a browser that cannot read the mix; the fallbacks below
+   restore the solid for a browser without color-mix, without backdrop-filter,
+   or asking for reduced transparency. auth.css keeps its own solid look, so the
+   Low data page is untouched. */
+
+/* The column's opaque page colour backing would show instead of the Earth. */
+.login-gate.has-globe .login-column {
+  background: transparent;
+}
+
+/* Glass so the boxes never hide the Earth. #check-inbox shares the card rule in
+   auth.css by id, so it needs its own, or the card would turn solid after Send. */
+.login-gate.has-globe .login-card {
+  background: var(--color-surface);
+  background: color-mix(in srgb, var(--color-surface) 65%, transparent);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+.login-gate.has-globe #check-inbox {
+  background: var(--color-surface);
+  background: color-mix(in srgb, var(--color-surface) 65%, transparent);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+.login-gate.has-globe .login-ways {
+  background: var(--color-surface);
+  background: color-mix(in srgb, var(--color-surface) 65%, transparent);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+/* The buttons sit inside the blurred panel, so they take 65 percent of the page
+   colour with no blur of their own (a nested blur would only see the panel and
+   cost a second pass). Hover keeps the solid built look from auth.css. */
+.login-gate.has-globe .login-ways__low:not(:hover) {
+  background: var(--color-bg);
+  background: color-mix(in srgb, var(--color-bg) 65%, transparent);
+}
+
+.login-gate.has-globe .login-ways__off:not(:hover) {
+  background: var(--color-bg);
+  background: color-mix(in srgb, var(--color-bg) 65%, transparent);
+}
+
+.login-gate.has-globe .login-ways__links a:not(:hover) {
+  background: var(--color-bg);
+  background: color-mix(in srgb, var(--color-bg) 65%, transparent);
+}
+
+/* The red error line needs the solid surface for its contrast: on the glass it
+   measures about 2 to 1, on the solid surface 4.87 light and 5.46 dark. An empty
+   line takes no room and gets no backing. */
+.login-gate.has-globe .auth-error:not(:empty) {
+  background: var(--color-surface);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: 4px;
+}
+
 /* A phone, or a laptop window under 1200px wide and under 800px tall: the
    corner would sit under the Low data panel, so the credit goes in the page
    flow under the panel. The globe stays absolute against .login-gate and still
@@ -143,6 +215,166 @@
     z-index: 1;
     right: auto;
     bottom: auto;
+  }
+}
+
+/* Owner, 2026-10-29: on a phone the whole Earth shows in full, centred above the
+   card, in a box reserved here from the first paint, so the card never moves
+   when the Earth arrives or if it never does. The box is --g, 140px to 300px,
+   sized so the card's main button stays on the first screen; the sphere is the
+   box divided by 1.06 (the script reads the box). The card overlaps the lower
+   fifth of the box. Keep the query in step with PHONE_QUERY in login-globe.js.
+   The 100vh value comes first; the svh value sits in @supports because a second
+   custom property line would always win and would collapse the box where svh is
+   unknown. */
+@media (max-width: 899.98px) {
+  .login-gate.has-globe {
+    --g: clamp(140px, min(100vw - 48px, (100vh - 404px) * 1.28), 300px);
+    justify-content: flex-start;
+  }
+
+  @supports (height: 100svh) {
+    .login-gate.has-globe {
+      --g: clamp(140px, min(100vw - 48px, (100svh - 404px) * 1.28), 300px);
+    }
+  }
+
+  .login-gate.has-globe .globe-area {
+    display: contents;
+  }
+
+  .login-gate.has-globe .globe-bg {
+    position: relative;
+    inset: auto;
+    order: -1;
+    flex: none;
+    align-self: center;
+    width: var(--g);
+    height: var(--g);
+  }
+
+  .login-gate.has-globe .globe-bg__map {
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .login-gate.has-globe .login-column {
+    margin-top: calc(var(--g) * -0.22);
+  }
+
+  .login-gate.has-globe .globe-credit {
+    order: 1;
+    align-self: center;
+  }
+}
+
+/* Solid again without backdrop-filter. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .login-gate.has-globe .login-column {
+    background: var(--color-bg);
+  }
+
+  .login-gate.has-globe .login-card {
+    background: var(--color-surface);
+  }
+
+  .login-gate.has-globe #check-inbox {
+    background: var(--color-surface);
+  }
+
+  .login-gate.has-globe .login-ways {
+    background: var(--color-surface);
+  }
+
+  .login-gate.has-globe .login-ways__low:not(:hover) {
+    background: var(--color-bg);
+  }
+
+  .login-gate.has-globe .login-ways__off:not(:hover) {
+    background: var(--color-bg);
+  }
+
+  .login-gate.has-globe .login-ways__links a:not(:hover) {
+    background: var(--color-bg);
+  }
+}
+
+/* Solid again without color-mix. A value with var() is accepted when the sheet
+   is read and then computes to transparent, so the solid line above does not
+   fall back by itself (Safari 15.0 to 16.1 has the blur but not the mix). The
+   test value names no var(), because a var() would make any browser pass it. */
+@supports not (background: color-mix(in srgb, currentColor 65%, transparent)) {
+  .login-gate.has-globe .login-column {
+    background: var(--color-bg);
+  }
+
+  .login-gate.has-globe .login-card {
+    background: var(--color-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .login-gate.has-globe #check-inbox {
+    background: var(--color-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .login-gate.has-globe .login-ways {
+    background: var(--color-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .login-gate.has-globe .login-ways__low:not(:hover) {
+    background: var(--color-bg);
+  }
+
+  .login-gate.has-globe .login-ways__off:not(:hover) {
+    background: var(--color-bg);
+  }
+
+  .login-gate.has-globe .login-ways__links a:not(:hover) {
+    background: var(--color-bg);
+  }
+}
+
+/* A person who asks for less transparency keeps the solid boxes. */
+@media (prefers-reduced-transparency: reduce) {
+  .login-gate.has-globe .login-column {
+    background: var(--color-bg);
+  }
+
+  .login-gate.has-globe .login-card {
+    background: var(--color-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .login-gate.has-globe #check-inbox {
+    background: var(--color-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .login-gate.has-globe .login-ways {
+    background: var(--color-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .login-gate.has-globe .login-ways__low:not(:hover) {
+    background: var(--color-bg);
+  }
+
+  .login-gate.has-globe .login-ways__off:not(:hover) {
+    background: var(--color-bg);
+  }
+
+  .login-gate.has-globe .login-ways__links a:not(:hover) {
+    background: var(--color-bg);
   }
 }
 
