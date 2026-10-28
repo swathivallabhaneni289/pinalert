@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"pinalert/internal/account"
+	"pinalert/internal/service"
 	"pinalert/web"
 )
 
@@ -51,6 +52,20 @@ type PageConfig struct {
 	// HomeCentre is filled by api.NewRouter. When it is nil, or the account has
 	// no home area, the page starts at the configured fallback centre as always.
 	HomeCentre HomeCentreLookup
+	// AlertSettings is filled by api.NewRouter with the account service. Nearby
+	// and the Low data view read it per request to decide whether to render the
+	// first post or vote pop-up (the 03.3-UAT gap for test 4, owner 2026-10-27):
+	// the pop-up is drawn only while the account's Changes switch is off. A nil
+	// value is safe and means no pop-up, so a router built without it still
+	// serves both pages as before.
+	AlertSettings AlertSettingsLookup
+}
+
+// AlertSettingsLookup answers one account's alert settings
+// (service.AccountService.AlertSettings). The pages use only the Changes
+// switch from it.
+type AlertSettingsLookup interface {
+	AlertSettings(ctx context.Context, accountID int64) (service.AlertSettings, error)
 }
 
 // HomeCentreLookup answers the centre of an account's stored home area cell
