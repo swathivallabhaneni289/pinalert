@@ -23,6 +23,7 @@ import (
 
 	"pinalert/internal/api"
 	"pinalert/internal/api/handlers"
+	"pinalert/internal/areas"
 	"pinalert/internal/geocode"
 	"pinalert/internal/mailer"
 	"pinalert/internal/moderation"
@@ -488,9 +489,16 @@ func main() {
 		pushPolicy := push.DefaultEndpointPolicy()
 		pushSender := push.NewWebPushSender(pushCfg, push.NewGuardedClient(), pushPolicy)
 		pushWorker := service.NewPushWorker(queries, pushSender, service.WithPushWorkerPolicy(pushPolicy))
+		// The official lane of the phone channel (plan 05-16, D-11): it sends
+		// what plan 05-11 queued for Severe and Extreme official alerts, from the
+		// same sender and policy values, with one sweep at boot. It is a runner
+		// next to the 3.3 worker, so the shutdown waits for its current row too.
+		// Nothing runs when VAPID is off.
+		officialPushWorker := service.NewOfficialPushWorker(queries, pushSender, areas.Default(), service.WithOfficialPushWorkerPolicy(pushPolicy))
 		pushRunners = append(pushRunners,
 			pushDispatcher.Run,
 			pushWorker.Run,
+			officialPushWorker.Run,
 		)
 	}
 

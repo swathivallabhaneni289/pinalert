@@ -253,6 +253,95 @@ test('a tap falls back to a new window when the open one cannot be navigated', a
   assert.deepEqual([...w.calls.opened], ['/?report=3']);
 });
 
+// Amended 2026-10-29 by plan 05-16 (D-11): the three tests below add the one new
+// tap target, the exact string /alerts, for an official alert. No earlier case
+// above is changed; the old refusal list still holds.
+test('safeTarget accepts the exact string /alerts and refuses every near miss (Amended 2026-10-29 by plan 05-16, D-11)', () => {
+  const w = loadWorker();
+  const safe = (u) => vm.runInContext('safeTarget', w.sandbox)(u);
+  assert.equal(safe('/alerts'), '/alerts');
+  assert.equal(safe('/?report=12'), '/?report=12');
+  assert.equal(safe('/'), '/');
+  const refused = [
+    '/alerts/',
+    '/alerts?x=1',
+    '/alerts#a',
+    '//alerts',
+    'https://evil.example/alerts',
+    '/Alerts',
+    '/alerts ',
+    ' /alerts',
+    '/alerts\n',
+    '/alertsx',
+    '/alerts/../',
+    'javascript:alert(1)',
+    '',
+    undefined,
+    null,
+    42,
+    ['/alerts']
+  ];
+  for (const u of refused) assert.equal(safe(u), '/', String(u));
+});
+
+test('an official push shows one silent notification, no vibrate, no sound, and a tap opens /alerts (Amended 2026-10-29 by plan 05-16, D-11)', async () => {
+  const official = {
+    v: 1,
+    kind: 'official',
+    tag: 'official-AbCdEfGhIjKlMnOpQrStUv',
+    title: 'Cyclone warning for Ntr district',
+    body: 'Extreme. Issued by IMD.',
+    url: '/alerts'
+  };
+  const w = loadWorker();
+  const { waits } = dispatch(w, 'push', pushEvent(official));
+  assert.equal(waits.length, 1);
+  await Promise.all(waits);
+  assert.equal(w.calls.shown.length, 1);
+  const { title, options } = w.calls.shown[0];
+  assert.equal(title, official.title);
+  assert.deepEqual(Object.keys(options).sort(), ['badge', 'body', 'data', 'icon', 'lang', 'renotify', 'silent', 'tag']);
+  assert.equal(options.silent, true);
+  assert.equal(options.renotify, false);
+  assert.equal(options.tag, official.tag);
+  assert.equal(options.body, official.body);
+  assert.equal(options.data.url, '/alerts');
+  assert.equal('vibrate' in options, false);
+  assert.equal('sound' in options, false);
+
+  // A tap focuses then navigates an open window of this site to /alerts.
+  const open = loadWorker({ windowClients: [{ url: ORIGIN + '/' }] });
+  const tap = dispatch(open, 'notificationclick', {
+    notification: { close: () => {}, data: { url: '/alerts' } }
+  });
+  await Promise.all(tap.waits);
+  assert.deepEqual([...open.calls.focused], [ORIGIN + '/']);
+  assert.deepEqual([...open.calls.navigated], ['/alerts']);
+  assert.deepEqual([...open.calls.opened], []);
+
+  // With no window open, one is opened at /alerts.
+  const none = loadWorker();
+  const second = dispatch(none, 'notificationclick', {
+    notification: { close: () => {}, data: { url: '/alerts' } }
+  });
+  await Promise.all(second.waits);
+  assert.deepEqual([...none.calls.opened], ['/alerts']);
+});
+
+test('a near miss of /alerts in a push or a tap still opens / (Amended 2026-10-29 by plan 05-16, D-11)', async () => {
+  for (const bad of ['/alerts/', '/alerts?x=1', '//alerts', 'https://evil.example/alerts']) {
+    const w = loadWorker();
+    const { waits } = dispatch(w, 'push', pushEvent({ v: 1, kind: 'official', tag: 'official-x', title: 'T', body: 'B', url: bad }));
+    await Promise.all(waits);
+    assert.equal(w.calls.shown[0].options.data.url, '/', bad);
+
+    const tapped = loadWorker();
+    const tap = dispatch(tapped, 'notificationclick', { notification: { close: () => {}, data: { url: bad } } });
+    await Promise.all(tap.waits);
+    assert.deepEqual([...tapped.calls.opened], ['/'], bad);
+  }
+});
+
 const OLD_ENDPOINT = 'https://push.example/old';
 
 function changeEvent(key) {
