@@ -213,7 +213,11 @@ func TestReaderOpeners(t *testing.T) {
 	}
 
 	// The login screen keeps plain links to the standalone pages (D-29, D-31).
-	login := readerTemplate(t, "login_gate.html.tmpl")
+	//
+	// Amended 2026-10-29 by plan 05-07 (D-03, UI-SPEC 4e): the links moved into
+	// the login_ways_links partial the login screen includes, so the check reads
+	// the screen and the partial together. Every assertion is kept.
+	login := readerTemplate(t, "login_gate.html.tmpl") + readerTemplate(t, "login_ways_links.html.tmpl")
 	for _, want := range []string{`href="/disclaimer"`, `href="/policy"`} {
 		if !strings.Contains(login, want) {
 			t.Errorf("the login screen lost its plain link %s", want)

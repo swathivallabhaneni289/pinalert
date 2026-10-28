@@ -243,9 +243,10 @@ func TestLowDataAssetPolicy(t *testing.T) {
 		}
 		for _, rule := range parseCSSRules(css) {
 			for _, m := range p418URLPattern.FindAllStringSubmatch(rule.declBody, -1) {
-				if strings.Contains(rule.selectorHead, ".globe-bg__mask") {
-					continue
-				}
+				// Amended 2026-10-29 by plan 05-07 (D-13, owner 2026-10-17): the url()
+				// exemption for .globe-bg__mask is gone. The flat picture globe and its
+				// mask no longer exist, so every url() in a stylesheet this page links
+				// must be a shipped icon, with no named exception left.
 				targets++
 				target := m[1]
 				if !strings.HasPrefix(target, "/static/icons/") || !strings.HasSuffix(target, ".svg") {

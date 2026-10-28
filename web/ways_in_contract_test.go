@@ -98,6 +98,14 @@ func TestLoginLowDataPanelStyles(t *testing.T) {
 		t.Fatalf("login-ways panel is not closed")
 	}
 	panel := login[start : start+end]
+	// Amended 2026-10-29 by plan 05-07 (D-03, UI-SPEC 4e): the row of links is
+	// the login_ways_links partial now (Try the demo, Disclaimer, Policy), so the
+	// panel holds its include and the links are read from the partial's text. The
+	// partial is added to the panel text; every word asserted below is kept.
+	if !strings.Contains(panel, `{{template "login_ways_links" .}}`) {
+		t.Errorf("login-ways panel does not include the login_ways_links partial")
+	}
+	panel += p421ReadTemplate(t, "login_ways_links.html.tmpl")
 	for _, want := range []string{
 		"{{if .LowDataDefault}}", "{{else}}", "{{end}}",
 		`href="/login?low=0"`, `href="/login?low=1"`, `href="/disclaimer"`, `href="/policy"`,

@@ -130,6 +130,12 @@ func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
+		// The sign in globe's tile requests carry the page address as their
+		// referrer (MapLibre sets it itself), and the address holds the email
+		// after Send. same-origin sends no referrer to another host and still
+		// sends the Origin header on the same site POST (plan 05-07, D-13,
+		// sketch item 15).
+		w.Header().Set("Referrer-Policy", "same-origin")
 		if err := tmpl.ExecuteTemplate(w, loginGateTemplateName, vm); err != nil {
 			log.Printf("handlers: LoginGate: %v", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)

@@ -1,0 +1,13 @@
+{{/*
+  The quiet row of the sign in screen (Phase 5 plan 07, D-03, UI-SPEC 4e):
+  Try the demo, Disclaimer, Policy, in that order, three 44px outlined links with
+  no underline at rest (the plan 42 look, styled by .login-ways__links in
+  auth.css). No middle dot is drawn between bordered buttons. A partial so the
+  next sign in card (Phase 8) keeps the row.
+*/}}
+{{define "login_ways_links"}}<p class="login-ways__links">
+        {{/* Reserved: the explainer video link goes beside Try the demo. Not drawn yet. */}}
+        <a id="login-try-demo" href="/demo">Try the demo</a>
+        <a href="/disclaimer">Disclaimer</a>
+        <a href="/policy">Policy</a>
+      </p>{{end}}
