@@ -170,8 +170,14 @@ func TestReportFormPartialKeepsMainFormOrder(t *testing.T) {
 	if regexp.MustCompile(`\{\{\s*\.`).MatchString(lowBranch) {
 		t.Errorf("the Low data branch contains a template action that reads a view model field")
 	}
-	if n := strings.Count(rest, "{{"); n != 4 {
-		t.Errorf("the partial holds %d other template actions, want 4: the comment, the if, the else and the end", n)
+	// Amended 2026-10-29 by plan 05-13 (UI-SPEC 4c, T-05-73): the window branch
+	// wraps the Call 112 box and the What is happening picks in
+	// {{if not .Chrome.DemoPage}} ... {{end}}, so the Demo page draws neither
+	// (a tel link in a sandbox could dial real emergency services). That is two
+	// more actions, an if and its end, and neither reads a view model field the
+	// check above refuses: the old four are all still counted.
+	if n := strings.Count(rest, "{{"); n != 6 {
+		t.Errorf("the partial holds %d other template actions, want 6: the comment, the if, the else and the end, and the Demo guard's if and end", n)
 	}
 
 	inlined := strings.Replace(index, p410IncludeAction, partial, 1)

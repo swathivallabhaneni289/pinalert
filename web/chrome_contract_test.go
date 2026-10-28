@@ -58,6 +58,11 @@ func TestDisclaimerBarOnEveryFullPage(t *testing.T) {
 		// Amended 2026-10-17 by Phase 3.4 plan 10 (D-27): the first-time flow is
 		// a page of its own with no bar, no strip and no top wrapper.
 		"templates/welcome.html.tmpl": "none",
+		// Amended 2026-10-29 by plan 05-13 (D-05, UI-SPEC 4a): the Demo's Nearby
+		// page opens with its own strip, the Demo strip, then the top bar. It is
+		// the only strip there, so the notice strip is not drawn (the check
+		// below that keeps the notice strip to the Nearby page still holds).
+		"templates/demo.html.tmpl": "demo+top",
 	}
 
 	wrapped := func(call string) *regexp.Regexp {
@@ -79,6 +84,11 @@ func TestDisclaimerBarOnEveryFullPage(t *testing.T) {
 				stripFirst := regexp.MustCompile(`(?s)<body[^>]*>\s*` + regexp.QuoteMeta(chromeStripCall) + `\s*<div class="top-chrome">\s*` + regexp.QuoteMeta(chromeTopbarCall))
 				if !stripFirst.MatchString(text) {
 					t.Errorf("%s: <body> must open with the notice strip, then <div class=\"top-chrome\"> and the top bar call", path)
+				}
+			case "demo+top":
+				demoFirst := regexp.MustCompile(`(?s)<body[^>]*>\s*` + regexp.QuoteMeta(`{{template "demo_strip" .}}`) + `\s*<div class="top-chrome">\s*` + regexp.QuoteMeta(chromeTopbarCall))
+				if !demoFirst.MatchString(text) {
+					t.Errorf("%s: <body> must open with the Demo strip, then <div class=\"top-chrome\"> and the top bar call", path)
 				}
 			case "top":
 				if !wrapped(chromeTopbarCall).MatchString(text) {

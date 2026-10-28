@@ -1,0 +1,13 @@
+{{/*
+  The Demo strip (Phase 5, plan 13, UI-SPEC 4a). It is the first element of every
+  Demo page and the only strip there: the laptop Unofficial strip is not drawn in
+  the Demo, so two strips never stack. It exists for a safety reason, a visitor
+  must never take a pretend report for a real one, and it carries one action,
+  Exit demo. Exit is a link because it leaves the page; it is styled as the
+  built 44px outlined button, never an underlined link. The address is
+  .ExitHref, one of two constants chosen by the handler (T-05-69).
+*/}}
+{{define "demo_strip"}}<aside class="demo-strip" role="note" aria-label="Demo">
+  <p class="demo-strip__text">Demo. Nothing here is real.</p>
+  <a class="btn demo-strip__exit" href="{{.ExitHref}}" aria-label="Exit the demo">Exit demo</a>
+</aside>{{end}}

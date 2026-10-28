@@ -287,7 +287,10 @@ func TestPhoneBottomNavMarkup(t *testing.T) {
 	if !strings.Contains(nav[1], `{{if .Current}} aria-current="page"{{end}}`) {
 		t.Errorf("the bottom bar items must mark the current place with aria-current from the list")
 	}
-	report := regexp.MustCompile(`<a class="app-bar__item app-bar__item--report" href="/\?post=1" data-open-report>`)
+	// Amended 2026-10-29 by plan 05-13: the address is the expression whose else
+	// branch is the real /?post=1 (the Demo branch is /demo?post=1), so the link
+	// still carries the real address and data-open-report.
+	report := regexp.MustCompile(`<a class="app-bar__item app-bar__item--report" href="\{\{if \.Nav\.Demo\}\}/demo\?post=1\{\{else\}\}/\?post=1\{\{end\}\}" data-open-report>`)
 	if !report.MatchString(nav[1]) {
 		t.Errorf("the bottom bar needs the Report link to /?post=1 with data-open-report")
 	}

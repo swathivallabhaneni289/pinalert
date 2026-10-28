@@ -540,7 +540,10 @@ func NewRouter(deps Deps) *chi.Mux {
 	if demoStore == nil {
 		demoStore = demo.NewStore(demo.WithWorldSetup(demo.SeedSetup))
 	}
-	r.Mount("/demo", handlers.DemoRoutes(handlers.DemoConfig{Store: demoStore}))
+	// Plan 05-13: the same mount also serves the Demo's Nearby page (GET /demo),
+	// which renders with the page templates and the real Nearby page's
+	// configuration, so the Demo shows the real feed radius and vote distance.
+	r.Mount("/demo", handlers.DemoRoutes(handlers.DemoConfig{Store: demoStore, Template: deps.Template, Page: page}))
 	// The installable app assets (plan 03.3-04, T-03.3-05): the manifest, the
 	// service worker and the icons. Each is an exact GET path, never a prefix,
 	// taken from the one list handlers.PWAPublicPaths, which is also what builds

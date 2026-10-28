@@ -1,0 +1,240 @@
+{{/*
+  The Demo's Nearby page (Phase 5, plan 13; D-01, D-02, D-05; UI-SPEC Surface 4).
+
+  It mirrors index.html.tmpl so the real scripts find the ids they expect, and
+  it differs in exactly the ways the Demo needs:
+
+    - the Demo strip is the first element, and the laptop Unofficial strip is not
+      drawn;
+    - the shell names no account and no push key, and carries the Demo's API base
+      (data-api-base, read by api-base.js), a fixed pretend position
+      (data-fixed-lat, data-fixed-lon, data-fixed-place, read by the map, the
+      report window and the vote path instead of the browser's location) and the
+      Demo flag (data-demo);
+    - no app_head (it would register the service worker), no offline queue, no
+      geocoder search, no bell, no Settings, no person menu, no Flag, no Mute, no
+      reader window and no first-post pop-up;
+    - the list pane has no alert banner (plan 05-19 adds it) and no item for
+      reliable reporters, because the Demo has no real people to rate.
+
+  The post window is the real window; plan 05-17 finishes the practice flow. Its
+  place search is kept in the markup because report-form.js binds to it, and it
+  is hidden: the Demo never calls the geocoder, a tap on the map places the pin.
+*/}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/icons/app.svg" type="image/svg+xml">
+  <title>Pinalert Demo</title>
+  <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/modal.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/modal-map.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/feed.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/trust.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/app-bar.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/window.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/phone.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/demo.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin="anonymous" media="print" onload="this.media='all'">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css"
+        integrity="sha256-qx5w1Z7EBGW65+cDDaLzzPKBM/1QLmK9WY7vut/XpzI="
+        crossorigin="anonymous" media="print" onload="this.media='all'">
+  <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin>
+  <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
+</head>
+<body class="has-app-bar">
+  {{template "demo_strip" .}}
+  <div class="top-chrome">
+    {{template "app_topbar" .}}
+  </div>
+  <div id="notice-live" class="visually-hidden" role="status" aria-live="polite"></div>
+  <div class="app-shell" id="app-shell"
+       data-demo="1"
+       data-api-base="{{.APIBase}}"
+       data-fixed-lat="{{.FixedLat}}"
+       data-fixed-lon="{{.FixedLon}}"
+       data-fixed-place="{{.PretendPlace}}"
+       data-fallback-lat="{{.FixedLat}}"
+       data-fallback-lon="{{.FixedLon}}"
+       data-fallback-zoom="13"
+       data-default-radius-km="{{.DefaultRadiusKm}}"
+       data-vote-radius-km="{{.VoteRadiusKm}}"
+       data-poll-interval-ms="30000">
+
+    <section class="pane pane--map">
+      <div class="map-tools">
+        <div class="map-chips" role="group" aria-label="Filter by category">
+          <button type="button" class="map-chip" data-category="" aria-pressed="true">All</button>
+          <button type="button" class="map-chip" data-category="flood" aria-pressed="false">Flood</button>
+          <button type="button" class="map-chip" data-category="traffic" aria-pressed="false">Traffic</button>
+          <button type="button" class="map-chip" data-category="shelter_open" aria-pressed="false">Shelter</button>
+          <button type="button" class="map-chip" data-category="power_outage" aria-pressed="false">Power</button>
+        </div>
+      </div>
+      <div id="map"></div>
+      <p class="map-label" id="map-label" hidden></p>
+    </section>
+
+    <section class="pane pane--list" id="report-sheet" role="region" aria-label="Reports near you" data-snap="half">
+      <div class="sheet__handle-row">
+        <button type="button" class="sheet__handle" id="sheet-handle" aria-expanded="false"
+                aria-controls="report-sheet" aria-label="Show more of the list">
+          <span class="sheet__grabber" aria-hidden="true"></span>
+        </button>
+      </div>
+      <div class="list-head">
+        <p class="list-head__count" id="feed-count"></p>
+        <div class="show-control">
+          <button type="button" class="show-button" id="show-button" aria-haspopup="menu"
+                  aria-expanded="false" aria-controls="show-menu">
+            <span class="show-button__label" id="show-button-label">Show: All</span>
+            <span class="app-icon app-icon--chevron-down show-button__chevron" aria-hidden="true"></span>
+          </button>
+          <div class="show-menu" id="show-menu" role="menu" aria-label="Show" hidden>
+            <button type="button" class="show-menu__item" role="menuitemradio" aria-checked="true" data-show="all">
+              <span class="app-icon app-icon--check show-menu__check" aria-hidden="true"></span>
+              <span class="show-menu__word">All</span>
+            </button>
+            <button type="button" class="show-menu__item" role="menuitemradio" aria-checked="false" data-show="confirmed">
+              <span class="app-icon app-icon--check show-menu__check" aria-hidden="true"></span>
+              <span class="show-menu__word">Confirmed</span>
+            </button>
+            <button type="button" class="show-menu__item" role="menuitemradio" aria-checked="false" data-show="disputed">
+              <span class="app-icon app-icon--check show-menu__check" aria-hidden="true"></span>
+              <span class="show-menu__word">Disputed</span>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="notice-card" id="notice-card" hidden>
+        <div class="notice-card__row" id="notice-stale" hidden>
+          <p class="notice-card__text" id="notice-stale-text"></p>
+        </div>
+      </div>
+      <p class="visually-hidden" id="feed-status" role="status"></p>
+      <p class="place-line" id="place-line" hidden></p>
+      <p class="filter-line" id="filter-line" hidden></p>
+      <div class="feed-stale" id="feed-stale" hidden>
+        <p class="inline-note feed-stale__text" id="feed-stale-text"></p>
+        <button type="button" class="btn" id="feed-stale-retry">Retry now</button>
+      </div>
+      <ol id="report-list"></ol>
+      <div id="feed-skeleton">
+        <div class="skeleton-row"></div>
+        <div class="skeleton-row"></div>
+        <div class="skeleton-row"></div>
+        <div class="skeleton-row"></div>
+      </div>
+      <div class="empty-state" id="feed-empty" hidden>
+        <h2>No reports near you yet</h2>
+        <p>Nothing has been reported in your area recently. Post a report to share what you're seeing.</p>
+      </div>
+      <div class="empty-state" id="confirmed-empty" hidden>
+        <h2>No confirmed reports nearby</h2>
+        <p>Reports show here once people nearby confirm them.</p>
+      </div>
+      <div class="empty-state" id="disputed-empty" hidden>
+        <h2>No disputed reports nearby</h2>
+        <p>Reports only show up here if enough nearby people have disputed them.</p>
+      </div>
+      <div class="empty-state" id="filter-empty" hidden>
+        <h2>Nothing matches your filters</h2>
+        <p>Try another category or clear the filter.</p>
+        <button type="button" class="btn" id="filter-empty-clear">Clear filter</button>
+      </div>
+      <div class="error-state" id="feed-error" hidden>
+        <h2>Couldn't load reports</h2>
+        <p>Check your connection and try again.</p>
+        <button type="button" class="btn" id="feed-retry">Retry</button>
+      </div>
+    </section>
+
+    <section class="report-gone" id="report-gone" aria-labelledby="report-gone-title" hidden>
+      <button type="button" class="report-gone__back" id="report-gone-back" aria-label="Back"><span class="app-icon app-icon--arrow-left" aria-hidden="true"></span></button>
+      <h2 class="report-gone__title" id="report-gone-title" tabindex="-1">Report</h2>
+      <p class="report-gone__line">This report is no longer available</p>
+    </section>
+
+    <div class="modal-backdrop post-window" id="report-modal" hidden>
+      <div class="modal-panel post-window__panel" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <header class="post-window__head">
+          <div class="post-window__titles">
+            <h2 id="modal-title" class="post-window__title" tabindex="-1">Post a report</h2>
+            <p class="post-window__line">Say what is happening and where.</p>
+          </div>
+          <button type="button" class="post-window__close" id="close-report" aria-label="Close">
+            <span class="app-icon app-icon--x" aria-hidden="true"></span>
+          </button>
+        </header>
+        <p id="form-note" class="inline-note" hidden></p>
+
+        <div class="post-window__body">
+          <div class="post-window__map">
+            <div class="location-search-field" hidden>
+              <input type="search" id="location-search" name="location_search" autocomplete="off"
+                     autocapitalize="off" spellcheck="false" role="combobox" aria-expanded="false"
+                     aria-autocomplete="list" aria-controls="location-search-results"
+                     aria-label="Search an address or a landmark"
+                     placeholder="Search an address or a landmark" tabindex="-1">
+              <div id="location-search-results" role="listbox" aria-label="Place suggestions" hidden></div>
+            </div>
+            <p id="location-search-status" role="status" aria-live="polite" hidden></p>
+
+            <div id="modal-map"></div>
+            <p id="near-line"><strong id="near-place"></strong> Drag the pin or tap the map to move it.</p>
+            <p id="coord-readout" class="visually-hidden"></p>
+            <p id="location-notice" hidden>
+              Location access is off. Drag the map to your area, or tap the map to drop a pin.
+            </p>
+          </div>
+
+          <div class="post-window__form">
+            {{template "report_form.html.tmpl" .}}
+          </div>
+        </div>
+
+        <footer class="post-window__foot">
+          <p id="form-error" role="alert"></p>
+          <button type="button" class="btn" id="send-after-wait" hidden>Send after the wait</button>
+          <button type="button" id="submit-report" class="btn btn--primary">Post report</button>
+        </footer>
+      </div>
+    </div>
+
+    <div id="toast" role="status" aria-live="polite" hidden></div>
+  </div>
+
+  {{template "app_bottombar" .}}
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+          crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"
+          integrity="sha256-RamwepGJzlYFTGIKlHzPQeKR5YyV6bYVM7dAqqZe5cs="
+          crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"
+          integrity="sha256-Hmz4yz61/ZCYeaob82o4P7UGyaWy27+rq85lopTdH8s="
+          crossorigin="anonymous"></script>
+  <script src="/static/js/api-base.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/app.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/votes.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/visibility.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/trust.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/report-form.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/sheet.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/map.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/modal.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/ended-cards.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/show-menu.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/feed.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/map-tools.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/app-bar.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/demo.js?v={{.AssetVersion}}" defer></script>
+</body>
+</html>

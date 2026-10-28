@@ -75,23 +75,46 @@ func dm13Rule(t *testing.T, css, head string) string {
 	return rest[:end]
 }
 
-// dm13GuardOf returns the {{if ...}} line that opens the nearest block before
-// the needle, so a test can require that an element sits under a Demo guard.
-func dm13GuardOf(t *testing.T, text, needle string) string {
+var dm13ActionRe = regexp.MustCompile(`\{\{-?\s*(if|range|define|with|end|else)\b[^}]*\}\}`)
+
+// dm13GuardsOf returns the actions of every block that is open at the needle,
+// outermost first, so a test can require that an element sits under a Demo
+// guard. A block that has turned to its else branch is written "else of ...".
+func dm13GuardsOf(t *testing.T, text, needle string) []string {
 	t.Helper()
 	at := strings.Index(text, needle)
 	if at == -1 {
 		t.Fatalf("%q is not in the template", needle)
 	}
-	open := strings.LastIndex(text[:at], "{{if ")
-	if open == -1 {
-		return ""
+	var open []string
+	for _, loc := range dm13ActionRe.FindAllStringSubmatchIndex(text[:at], -1) {
+		action := text[loc[0]:loc[1]]
+		switch text[loc[2]:loc[3]] {
+		case "end":
+			if len(open) > 0 {
+				open = open[:len(open)-1]
+			}
+		case "else":
+			if len(open) > 0 && !strings.HasPrefix(open[len(open)-1], "else of ") {
+				open[len(open)-1] = "else of " + open[len(open)-1]
+			}
+		default:
+			open = append(open, action)
+		}
 	}
-	end := strings.Index(text[open:], "}}")
-	if end == -1 {
-		return ""
+	return open
+}
+
+// dm13UnderDemoGuard says whether the needle sits in the true branch of an
+// {{if not .Nav.Demo}} block.
+func dm13UnderDemoGuard(t *testing.T, text, needle string) bool {
+	t.Helper()
+	for _, g := range dm13GuardsOf(t, text, needle) {
+		if strings.Contains(g, "not .Nav.Demo") && !strings.HasPrefix(g, "else of ") {
+			return true
+		}
 	}
-	return text[open : open+end+2]
+	return false
 }
 
 // TestDemoPageMarkup pins the Demo Nearby page's frame: the strip first, the
@@ -200,18 +223,13 @@ func TestDemoNavHidesBellGearSearch(t *testing.T) {
 	bar := p13ReadTemplate(t, "app_bar.html.tmpl")
 	for _, needle := range []string{`place_search.html.tmpl" .}}`, `id="bell-trigger"`,
 		`class="app-topbar__gear"`, `template "account_header_menu" .`} {
-		guard := dm13GuardOf(t, bar, needle)
-		if !strings.Contains(guard, ".Nav.Demo") {
-			t.Errorf("%s is not under a Demo guard, the nearest {{if}} is %q", needle, guard)
+		if !dm13UnderDemoGuard(t, bar, needle) {
+			t.Errorf("%s is not under {{if not .Nav.Demo}}; the open blocks are %q", needle, dm13GuardsOf(t, bar, needle))
 		}
 	}
 	// The theme toggle stays on the laptop bar in the Demo.
-	toggle := strings.Index(bar, `template "theme_toggle.html.tmpl" .`)
-	if toggle == -1 {
-		t.Fatal("app_bar.html.tmpl no longer draws the theme toggle")
-	}
-	if guard := dm13GuardOf(t, bar, `template "theme_toggle.html.tmpl" .`); strings.Contains(guard, ".Nav.Demo") {
-		t.Errorf("the theme toggle must stay in the Demo, but it sits under %q", guard)
+	if dm13UnderDemoGuard(t, bar, `template "theme_toggle.html.tmpl" .`) {
+		t.Error("the theme toggle must stay in the Demo, but it sits under {{if not .Nav.Demo}}")
 	}
 
 	nav, err := os.ReadFile("../internal/api/handlers/nav.go")
