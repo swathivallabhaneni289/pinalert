@@ -2,6 +2,8 @@ package service_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"reflect"
 	"strings"
@@ -29,11 +31,13 @@ type fakeDeleteQuerier struct {
 	// scrubRows is how many rows ScrubDeletedAccount reports changed.
 	scrubRows int64
 
-	emailFor   string
-	cooldown   string
-	scrubArg   sqlcgen.ScrubDeletedAccountParams
-	revokeArg  sqlcgen.RevokeAccountSessionsParams
-	accountIDs map[string]int64
+	emailFor    string
+	cooldown    string
+	codesFor    string
+	throttleArg sqlcgen.ClearAuthThrottleParams
+	scrubArg    sqlcgen.ScrubDeletedAccountParams
+	revokeArg   sqlcgen.RevokeAccountSessionsParams
+	accountIDs  map[string]int64
 }
 
 var errBoom = errors.New("boom")
@@ -71,6 +75,18 @@ func (f *fakeDeleteQuerier) DeleteMagicLinkTokensForEmail(ctx context.Context, e
 func (f *fakeDeleteQuerier) DeleteEmailCooldownForEmail(ctx context.Context, email string) error {
 	f.cooldown = email
 	return f.step("DeleteEmailCooldownForEmail")
+}
+
+// Amended 2026-10-29 by Phase 7.1 plan 06 (T-07.1-22): the fake gained the two
+// auth row deletes. codesFor and throttleArg record what they were given.
+func (f *fakeDeleteQuerier) DeleteAuthCodesForEmail(ctx context.Context, email string) error {
+	f.codesFor = email
+	return f.step("DeleteAuthCodesForEmail")
+}
+
+func (f *fakeDeleteQuerier) ClearAuthThrottle(ctx context.Context, arg sqlcgen.ClearAuthThrottleParams) error {
+	f.throttleArg = arg
+	return f.step("ClearAuthThrottle")
 }
 
 func (f *fakeDeleteQuerier) DeleteAccountUpdates(ctx context.Context, accountID int64) error {
@@ -129,10 +145,17 @@ func (f *fakeDeleteQuerier) ScrubDeletedAccount(ctx context.Context, arg sqlcgen
 // Amended 2026-10-29 by plan 05-11 (T-05-62): DeleteAccountOfficialPushOutbox
 // now runs right after DeleteAccountPushOutbox, so the eleven steps became
 // twelve. Every old step and its order is kept.
+//
+// Amended 2026-10-29 by Phase 7.1 plan 06 (T-07.1-22): DeleteAuthCodesForEmail
+// now runs right after DeleteEmailCooldownForEmail, so the twelve steps became
+// thirteen. ClearAuthThrottle runs right after it only when a throttle keyer is
+// set (WithThrottleKeyer), so it is not in this list; wantDeleteOrderKeyed has
+// it. Every old step and its order is kept.
 var wantDeleteOrder = []string{
 	"AccountEmailForDelete",
 	"DeleteMagicLinkTokensForEmail",
 	"DeleteEmailCooldownForEmail",
+	"DeleteAuthCodesForEmail",
 	"DeleteAccountUpdates",
 	"DeleteAccountCursors",
 	"DeleteAccountMutes",
@@ -144,7 +167,59 @@ var wantDeleteOrder = []string{
 	"ScrubDeletedAccount",
 }
 
-// TestDeleteAccountOrder: the twelve steps run in the documented order, the
+// wantDeleteOrderKeyed is the order with a throttle keyer set.
+var wantDeleteOrderKeyed = []string{
+	"AccountEmailForDelete",
+	"DeleteMagicLinkTokensForEmail",
+	"DeleteEmailCooldownForEmail",
+	"DeleteAuthCodesForEmail",
+	"ClearAuthThrottle",
+	"DeleteAccountUpdates",
+	"DeleteAccountCursors",
+	"DeleteAccountMutes",
+	"DeleteAccountAlertSettings",
+	"DeleteAccountPushOutbox",
+	"DeleteAccountOfficialPushOutbox",
+	"DeleteAccountPushSubscriptions",
+	"RevokeAccountSessions",
+	"ScrubDeletedAccount",
+}
+
+// TestDeleteAccountClearsTheThrottleWithAKeyer: with a keyer the sign in
+// throttle row of the real address is cleared under scope sign_in and the
+// keyer's hash, right after the code rows; the code rows get the real address.
+func TestDeleteAccountClearsTheThrottleWithAKeyer(t *testing.T) {
+	q := newFakeDeleteQuerier("plain")
+	q.emailRow = sqlcgen.AccountEmailForDeleteRow{Email: "real@example.com"}
+	keyer := func(email string) string { return "key:" + email }
+	svc := service.NewAccountDeletionService(q, nil, service.WithThrottleKeyer(keyer))
+	if err := svc.DeleteAccount(context.Background(), 42); err != nil {
+		t.Fatalf("DeleteAccount: %v", err)
+	}
+	if !reflect.DeepEqual(q.calls, wantDeleteOrderKeyed) {
+		t.Fatalf("calls =\n%v\nwant\n%v", q.calls, wantDeleteOrderKeyed)
+	}
+	if q.codesFor != "real@example.com" {
+		t.Errorf("code rows deleted for %q, want the real address", q.codesFor)
+	}
+	want := sqlcgen.ClearAuthThrottleParams{Scope: "sign_in", KeyHash: "key:real@example.com"}
+	if q.throttleArg != want {
+		t.Errorf("ClearAuthThrottle arg = %+v, want %+v", q.throttleArg, want)
+	}
+
+	// Without a keyer the throttle is left alone.
+	plain := newFakeDeleteQuerier("plain")
+	if err := service.NewAccountDeletionService(plain, nil).DeleteAccount(context.Background(), 42); err != nil {
+		t.Fatalf("DeleteAccount: %v", err)
+	}
+	for _, c := range plain.calls {
+		if c == "ClearAuthThrottle" {
+			t.Errorf("ClearAuthThrottle ran without a keyer")
+		}
+	}
+}
+
+// TestDeleteAccountOrder: the thirteen steps run in the documented order, the
 // scrub last, each keyed by the account id (or the real address) it needs.
 func TestDeleteAccountOrder(t *testing.T) {
 	fixed := time.Date(2026, 10, 19, 8, 0, 0, 0, time.UTC)
@@ -264,13 +339,16 @@ func TestDeleteAccountRunsInOneTx(t *testing.T) {
 // actions.
 func TestDeleteAccountTouchesNoOtherPersonsData(t *testing.T) {
 	typ := reflect.TypeOf((*service.AccountDeleteQuerier)(nil)).Elem()
-	if typ.NumMethod() != len(wantDeleteOrder) {
-		t.Fatalf("AccountDeleteQuerier has %d methods, want %d", typ.NumMethod(), len(wantDeleteOrder))
+	// Amended 2026-10-29 by Phase 7.1 plan 06: the interface also holds
+	// ClearAuthThrottle, which runs only with a throttle keyer, so the method
+	// set is the keyed order.
+	if typ.NumMethod() != len(wantDeleteOrderKeyed) {
+		t.Fatalf("AccountDeleteQuerier has %d methods, want %d", typ.NumMethod(), len(wantDeleteOrderKeyed))
 	}
 	for i := 0; i < typ.NumMethod(); i++ {
 		m := typ.Method(i).Name
 		found := false
-		for _, w := range wantDeleteOrder {
+		for _, w := range wantDeleteOrderKeyed {
 			if w == m {
 				found = true
 			}
@@ -354,6 +432,87 @@ func TestDeleteAccountRemovesOfficialPushRows(t *testing.T) {
 	}
 	if n := count(b); n != 1 {
 		t.Errorf("the other account has %d official push rows after the failed delete, want 1", n)
+	}
+}
+
+// TestDeleteAccountRemovesAuthRows (Phase 7.1 plan 06, T-07.1-22, research
+// Pitfall 12): on a real database an account with a code row, a sign in
+// throttle row, a password and a username has none of them after DeleteAccount,
+// the username is free for another account to take, and another address's code
+// and throttle rows stay. It needs a database and skips without DATABASE_URL.
+func TestDeleteAccountRemovesAuthRows(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+
+	const (
+		addrA = "auth-del-a@example.com"
+		addrB = "auth-del-b@example.com"
+	)
+	a := testutil.SeedReporterAccount(t, pool, addrA, "auth-del-a-sess")
+	b := testutil.SeedReporterAccount(t, pool, addrB, "auth-del-b-sess")
+	testutil.MustExec(t, pool, `UPDATE accounts SET password_hash = '$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA',
+		username = 'gone.soon', username_screen = 'clear' WHERE id = $1`, a)
+
+	// The table requires 64 hex characters; a plain digest stands in for the
+	// sign in service's keyed hash.
+	keyer := func(email string) string {
+		sum := sha256.Sum256([]byte(email))
+		return hex.EncodeToString(sum[:])
+	}
+	hash := strings.Repeat("0", 64)
+	for _, addr := range []string{addrA, addrB} {
+		if _, err := q.IssueAuthCode(ctx, sqlcgen.IssueAuthCodeParams{
+			SessionID: "sess-" + addr, Purpose: "reset", Delivery: "code", Email: addr,
+			CodeHash: hash, ExpiresAt: time.Now().Add(10 * time.Minute),
+		}); err != nil {
+			t.Fatalf("IssueAuthCode %s: %v", addr, err)
+		}
+		if _, err := q.RecordAuthFailure(ctx, sqlcgen.RecordAuthFailureParams{
+			Scope: "sign_in", KeyHash: keyer(addr), Now: time.Now(), ForgetCutoff: time.Now().Add(-time.Hour),
+			FreeFailures: 5, BaseLockSeconds: 60, MaxLockSeconds: 3600,
+		}); err != nil {
+			t.Fatalf("RecordAuthFailure %s: %v", addr, err)
+		}
+	}
+	count := func(query string, args ...any) int {
+		var n int
+		if err := pool.QueryRow(ctx, query, args...).Scan(&n); err != nil {
+			t.Fatalf("counting: %v", err)
+		}
+		return n
+	}
+	codes := func(addr string) int { return count(`SELECT count(*) FROM auth_codes WHERE email = $1`, addr) }
+	throttles := func(addr string) int {
+		return count(`SELECT count(*) FROM auth_throttles WHERE key_hash = $1`, keyer(addr))
+	}
+	if codes(addrA) != 1 || throttles(addrA) != 1 {
+		t.Fatalf("seed failed: %d code rows and %d throttle rows for A", codes(addrA), throttles(addrA))
+	}
+
+	svc := service.NewAccountDeletionService(q, service.PgxAccountTx(pool), service.WithThrottleKeyer(keyer))
+	if err := svc.DeleteAccount(ctx, a); err != nil {
+		t.Fatalf("DeleteAccount: %v", err)
+	}
+	if n := codes(addrA); n != 0 {
+		t.Errorf("the deleted account still has %d code rows", n)
+	}
+	if n := throttles(addrA); n != 0 {
+		t.Errorf("the deleted account still has %d throttle rows", n)
+	}
+	if codes(addrB) != 1 || throttles(addrB) != 1 {
+		t.Errorf("the other address lost rows: %d code rows, %d throttle rows, want 1 and 1", codes(addrB), throttles(addrB))
+	}
+	var passwordNull, usernameNull bool
+	if err := pool.QueryRow(ctx, `SELECT password_hash IS NULL, username IS NULL AND username_screen IS NULL AND username_changed_at IS NULL
+		FROM accounts WHERE id = $1`, a).Scan(&passwordNull, &usernameNull); err != nil || !passwordNull || !usernameNull {
+		t.Errorf("password hash NULL = %v, username fields NULL = %v (%v), want both true", passwordNull, usernameNull, err)
+	}
+
+	// The name is free again: another account can take it.
+	accounts := service.NewAccountService(q)
+	if _, err := accounts.UpdateProfile(ctx, b, service.ProfileUpdate{Username: strPtr("gone.soon")}); err != nil {
+		t.Errorf("the freed username could not be taken: %v", err)
 	}
 }
 

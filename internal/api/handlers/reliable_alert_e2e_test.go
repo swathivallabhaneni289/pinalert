@@ -399,7 +399,15 @@ func TestReliableAlertStopsWhenSwitchedOff(t *testing.T) {
 	if r := p13alRead(t, w.pool, w.emailA); !r.found || !r.on {
 		t.Fatalf("stored after turning on again = %+v, want on", r)
 	}
-	meWant(t, "clear home area", meSend(t, w.a, http.MethodPatch, w.srv.URL+"/api/me/profile", `{"home_area":null}`), http.StatusOK)
+	// Amended 2026-10-29 by Phase 7.1 plan 06 (D-15): the route now refuses to
+	// clear the home area (400, the switch stays on). The "no home area, switch
+	// off" state is then set directly in the database; the assertions below and
+	// the silence after them are unchanged.
+	meWant(t, "clear home area", meSend(t, w.a, http.MethodPatch, w.srv.URL+"/api/me/profile", `{"home_area":null}`), http.StatusBadRequest)
+	if r := p13alRead(t, w.pool, w.emailA); !r.found || !r.on {
+		t.Fatalf("a refused clear changed the switch: %+v", r)
+	}
+	meRemoveHomeArea(t, w.pool, w.emailA)
 	if r := p13alRead(t, w.pool, w.emailA); !r.found || r.on || r.enabledAt != nil {
 		t.Errorf("stored after clearing the home area = %+v, want off with no enabled_at", r)
 	}

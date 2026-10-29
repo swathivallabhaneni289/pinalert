@@ -305,14 +305,17 @@ func TestClearingHomeAreaTurnsAlertsOff(t *testing.T) {
 	ctx := context.Background()
 	cell := "tdr1v"
 
+	// Amended 2026-10-29 by Phase 7.1 plan 06 (D-15): the clear subtest used to
+	// assert that clearing the home area turns the Reliable alert off. The home
+	// area can no longer be cleared through UpdateProfile, so the subtest now
+	// asserts the refusal and that nothing was written or switched off. The set
+	// and unchanged subtests below are unchanged.
 	t.Run("clear", func(t *testing.T) {
 		f := &fakeProfileQ{homeCell: &cell}
 		_, err := newAlertAccounts(f).UpdateProfile(ctx, 7, service.ProfileUpdate{HomeArea: service.HomeAreaChange{Action: service.HomeAreaClear}})
-		if err != nil {
-			t.Fatalf("UpdateProfile: %v", err)
-		}
-		if len(f.disables) != 1 || f.disables[0].AccountID != 7 || !f.disables[0].Now.Equal(alertsNow) {
-			t.Errorf("DisableReliableAlerts calls = %+v, want one for account 7 at the clock time", f.disables)
+		wantMessage(t, err, "home_area", service.HomeAreaRequiredMessage)
+		if len(f.disables) != 0 || len(f.profiles) != 0 {
+			t.Errorf("a refused clear wrote %d profiles and switched off %d alerts, want none", len(f.profiles), len(f.disables))
 		}
 	})
 	t.Run("set", func(t *testing.T) {
@@ -512,21 +515,24 @@ func TestCriticalDefaultMatchesSQL(t *testing.T) {
 // TestClearingHomeAreaKeepsCritical pins D-21 and UI-SPEC 2b: removing the home
 // area turns 3.2's Reliable switch off but leaves the stored Critical value, so
 // setting an area again brings Critical back as it was.
+//
+// Amended 2026-10-29 by Phase 7.1 plan 06 (D-15): the home area can no longer be
+// cleared through UpdateProfile, so the test now asserts the refusal, then reads
+// the settings of an account that already has no home area (an account from
+// before step 4 was required) with the fake seeded in that state. The
+// assertions about the stored Critical and Changes values are unchanged.
 func TestClearingHomeAreaKeepsCritical(t *testing.T) {
 	ctx := context.Background()
 	cell := "tdr1v"
 	f := &fakeProfileQ{homeCell: &cell, push: pushRow(true, true)}
+	_, err := newAlertAccounts(f).UpdateProfile(ctx, 7, service.ProfileUpdate{HomeArea: service.HomeAreaChange{Action: service.HomeAreaClear}})
+	wantMessage(t, err, "home_area", service.HomeAreaRequiredMessage)
+	if len(f.disables) != 0 || len(f.pushUpserts) != 0 {
+		t.Errorf("a refused clear switched off %d alerts and wrote %d push rows, want none", len(f.disables), len(f.pushUpserts))
+	}
+
+	f = &fakeProfileQ{push: pushRow(true, true)}
 	svc := newAlertAccounts(f)
-	_, err := svc.UpdateProfile(ctx, 7, service.ProfileUpdate{HomeArea: service.HomeAreaChange{Action: service.HomeAreaClear}})
-	if err != nil {
-		t.Fatalf("UpdateProfile: %v", err)
-	}
-	if len(f.disables) != 1 {
-		t.Errorf("DisableReliableAlerts calls = %d, want 1 (3.2 still turns Reliable off)", len(f.disables))
-	}
-	if len(f.pushUpserts) != 0 {
-		t.Errorf("clearing the area wrote the push row: %+v", f.pushUpserts)
-	}
 	got, err := svc.AlertSettings(ctx, 7)
 	if err != nil {
 		t.Fatalf("AlertSettings: %v", err)
@@ -636,26 +642,28 @@ func TestUpdateAlertSettingsOfficial(t *testing.T) {
 func TestClearingHomeAreaKeepsOfficial(t *testing.T) {
 	ctx := context.Background()
 	cell := "tdr1v"
+	// Amended 2026-10-29 by Phase 7.1 plan 06 (D-15): the clear is now refused
+	// (asserted first); the "no home area" state is seeded directly in the fake
+	// (homeCell nil), as it is for an account from before step 4 was required.
+	// The assertions about the kept official value are unchanged.
 	off := false
-	f := &fakeProfileQ{homeCell: &cell, official: &off}
+	g := &fakeProfileQ{homeCell: &cell, official: &off}
+	_, err := newAlertAccounts(g).UpdateProfile(ctx, 7, service.ProfileUpdate{HomeArea: service.HomeAreaChange{Action: service.HomeAreaClear}})
+	wantMessage(t, err, "home_area", service.HomeAreaRequiredMessage)
+
+	f := &fakeProfileQ{official: &off}
 	svc := newAlertAccounts(f)
-	if _, err := svc.UpdateProfile(ctx, 7, service.ProfileUpdate{HomeArea: service.HomeAreaChange{Action: service.HomeAreaClear}}); err != nil {
-		t.Fatalf("UpdateProfile: %v", err)
-	}
 	if len(f.officialUpserts) != 0 {
 		t.Errorf("clearing the area wrote the official row: %+v", f.officialUpserts)
 	}
 	got, err := svc.AlertSettings(ctx, 7)
 	if err != nil || got.OfficialPushOn || got.HasHomeArea {
-		t.Errorf("after clearing = %+v, %v; want official kept off, no home area", got, err)
+		t.Errorf("with no home area = %+v, %v; want official kept off, no home area", got, err)
 	}
 
 	on := true
-	f2 := &fakeProfileQ{homeCell: &cell, official: &on}
+	f2 := &fakeProfileQ{official: &on}
 	svc2 := newAlertAccounts(f2)
-	if _, err := svc2.UpdateProfile(ctx, 7, service.ProfileUpdate{HomeArea: service.HomeAreaChange{Action: service.HomeAreaClear}}); err != nil {
-		t.Fatalf("UpdateProfile: %v", err)
-	}
 	got, err = svc2.AlertSettings(ctx, 7)
 	if err != nil || !got.OfficialPushOn || got.HasHomeArea {
 		t.Errorf("after clearing (on) = %+v, %v; want official kept on, no home area", got, err)

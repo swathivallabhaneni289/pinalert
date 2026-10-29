@@ -32,6 +32,10 @@ type AccountDeleteQuerier interface {
 	AccountEmailForDelete(ctx context.Context, id int64) (sqlcgen.AccountEmailForDeleteRow, error)
 	DeleteMagicLinkTokensForEmail(ctx context.Context, email string) error
 	DeleteEmailCooldownForEmail(ctx context.Context, email string) error
+	// Phase 7.1 plan 06 (T-07.1-22): the typed code rows of the real address and
+	// its sign in throttle row go with the other personal rows.
+	DeleteAuthCodesForEmail(ctx context.Context, email string) error
+	ClearAuthThrottle(ctx context.Context, arg sqlcgen.ClearAuthThrottleParams) error
 	DeleteAccountUpdates(ctx context.Context, accountID int64) error
 	DeleteAccountCursors(ctx context.Context, accountID int64) error
 	DeleteAccountMutes(ctx context.Context, accountID int64) error
@@ -66,13 +70,28 @@ func PgxAccountTx(db TxBeginner) AccountTxFunc {
 // AccountDeletionService deletes an account by the rule written on
 // DeleteAccount.
 type AccountDeletionService struct {
-	q   AccountDeleteQuerier
-	tx  AccountTxFunc
-	now func() time.Time
+	q         AccountDeleteQuerier
+	tx        AccountTxFunc
+	now       func() time.Time
+	throttleK func(email string) string
 }
 
 // AccountDeleteOption configures an AccountDeletionService at construction.
 type AccountDeleteOption func(*AccountDeletionService)
+
+// signInThrottleScope is the one scope of the auth_throttles table (migration
+// 00014); the sign in service of plan 05 writes its rows under it.
+const signInThrottleScope = "sign_in"
+
+// WithThrottleKeyer sets the function that turns a real address into the key
+// hash of its sign in throttle row (the same keyed hash the sign in service
+// writes), so Delete my account can remove that row. Without a keyer no
+// throttle row is cleared.
+func WithThrottleKeyer(k func(email string) string) AccountDeleteOption {
+	return func(s *AccountDeletionService) {
+		s.throttleK = k
+	}
+}
 
 // WithAccountDeleteClock overrides the clock that stamps deleted_at and the
 // session revocation. Tests use it; production code never needs to.
@@ -110,7 +129,9 @@ func DeletedEmailFor(accountID int64) string {
 // cursors, mutes, alert settings, the queued phone alerts and phone alert
 // subscriptions (Phase 3.3), the queued official alert pushes (Phase 5), and
 // the magic link tokens and resend cooldown of
-// the real address.
+// the real address, and (Phase 7.1) its typed code rows and, when a throttle
+// keyer is set, its sign in throttle row. The scrub also clears the password
+// hash and frees the username.
 //
 // Its effect on other people: none. Reports and votes are not touched, so they
 // stay attributed to a row nobody can identify. Every confirmed count, every
@@ -141,6 +162,19 @@ func (s *AccountDeletionService) DeleteAccount(ctx context.Context, accountID in
 		}
 		if err := q.DeleteEmailCooldownForEmail(ctx, row.Email); err != nil {
 			return fmt.Errorf("service: DeleteAccount: account %d: deleting the resend cooldown: %w", accountID, err)
+		}
+		// Phase 7.1 (T-07.1-22, research Pitfall 12): the typed code rows ever
+		// written for the real address, and the address's sign in throttle row,
+		// are personal rows too. The scrub below clears the password hash and
+		// frees the username.
+		if err := q.DeleteAuthCodesForEmail(ctx, row.Email); err != nil {
+			return fmt.Errorf("service: DeleteAccount: account %d: deleting sign in codes: %w", accountID, err)
+		}
+		if s.throttleK != nil {
+			err := q.ClearAuthThrottle(ctx, sqlcgen.ClearAuthThrottleParams{Scope: signInThrottleScope, KeyHash: s.throttleK(row.Email)})
+			if err != nil {
+				return fmt.Errorf("service: DeleteAccount: account %d: clearing the sign in throttle: %w", accountID, err)
+			}
 		}
 		if err := q.DeleteAccountUpdates(ctx, accountID); err != nil {
 			return fmt.Errorf("service: DeleteAccount: account %d: deleting updates: %w", accountID, err)

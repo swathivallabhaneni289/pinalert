@@ -5,9 +5,11 @@
 // The home area keeps a place name and a geohash cell of precision 5, computed
 // here from the picked point. The point itself is never stored. The cell is
 // coarse (about 5 km). The name is the place name the person picked, kept as
-// sent after the checks below; the home area helper line asks for a town or an
-// area, but nothing here checks the granularity of the name, so a person who
-// picks a building or a street name has that name stored next to the cell.
+// sent after the checks below. The home area helper line asks for a town or an
+// area; the place search offers only those (kind=area), and since Phase 7.1
+// (SC4, "a town or area, never a street") the server also refuses a name whose
+// first part is a numbered street address (HomeAreaStreetMessage), so a caller
+// that bypasses the search cannot store a house or street address either.
 
 package service
 
@@ -27,6 +29,7 @@ import (
 	"github.com/mmcloughlin/geohash"
 	"golang.org/x/text/unicode/norm"
 
+	"pinalert/internal/geocode"
 	sqlcgen "pinalert/internal/store/sqlc"
 )
 
@@ -64,7 +67,9 @@ const (
 	// HomeAreaUnchanged leaves the stored home area as it is. It is the zero
 	// value, so an update that says nothing about the home area changes nothing.
 	HomeAreaUnchanged HomeAreaAction = iota
-	// HomeAreaClear removes the name and the cell together.
+	// HomeAreaClear removes the name and the cell together. Since Phase 7.1
+	// (D-15) ValidateProfileUpdate refuses it; the value stays so the clear
+	// code below can serve a data repair.
 	HomeAreaClear
 	// HomeAreaSet stores the place name and the cell computed from the point.
 	HomeAreaSet
@@ -84,8 +89,8 @@ type HomeAreaChange struct {
 	Input  HomeAreaInput
 }
 
-// ProfileUpdate is one edit of the optional rows. A nil DisplayName leaves the
-// name alone; an empty one after trimming clears it.
+// ProfileUpdate is one edit of the profile rows. A nil DisplayName leaves the
+// name alone; an empty one after trimming is refused (NameEmptyMessage).
 //
 // Names are not screened against a reserved word list yet; that waits for Phase 9,
 // when a name is first shown to anyone else (decided 2026-10-17 in Phase 3.2
@@ -241,17 +246,24 @@ func ValidateProfileUpdate(u ProfileUpdate) (ValidatedProfile, error) {
 		if utf8.RuneCountInString(name) > DisplayNameMaxRunes {
 			return v, ValidationError{Field: "display_name", Message: fmt.Sprintf("Keep your name to %d characters or fewer.", DisplayNameMaxRunes)}
 		}
-		v.SetName = true
-		if name != "" {
-			v.Name = &name
+		if name == "" {
+			// D-15: once step 4 is required the name can be changed, not
+			// emptied.
+			return v, ValidationError{Field: "display_name", Message: NameEmptyMessage}
 		}
+		v.SetName = true
+		v.Name = &name
 	}
 
 	switch u.HomeArea.Action {
 	case HomeAreaUnchanged:
 		// Nothing to do.
 	case HomeAreaClear:
-		v.HomeAction = HomeAreaClear
+		// D-15, D-06: the home area can be changed, not cleared. The
+		// HomeAreaClear value and the code that handles it in UpdateProfile stay
+		// in place, reachable only by a data repair that builds a
+		// ValidatedProfile by hand (research section 6).
+		return v, ValidationError{Field: "home_area", Message: HomeAreaRequiredMessage}
 	case HomeAreaSet:
 		in := u.HomeArea.Input
 		name, ok := cleanText(in.Name)
@@ -262,6 +274,8 @@ func ValidateProfileUpdate(u ProfileUpdate) (ValidatedProfile, error) {
 			return v, ValidationError{Field: "home_area", Message: fmt.Sprintf("Keep the place name to %d characters or fewer.", HomeAreaNameMaxRunes)}
 		case !finiteIn(in.Lat, -90, 90) || !finiteIn(in.Lon, -180, 180):
 			return v, ValidationError{Field: "home_area", Message: "That place has no usable position. Pick another."}
+		case homeAreaIsStreet(name):
+			return v, ValidationError{Field: "home_area", Message: HomeAreaStreetMessage}
 		}
 		cell := geohash.EncodeWithPrecision(in.Lat, in.Lon, HomeAreaCellPrecision)
 		v.HomeAction = HomeAreaSet
@@ -271,6 +285,26 @@ func ValidateProfileUpdate(u ProfileUpdate) (ValidatedProfile, error) {
 		return v, ValidationError{Field: "home_area", Message: "Say whether to keep, remove or save the home area."}
 	}
 	return v, nil
+}
+
+// NameEmptyMessage and HomeAreaRequiredMessage are the refusals of the two
+// clears (D-15, D-06). HomeAreaStreetMessage is the refusal of a home area
+// name that is a street address; the place search never offers one, so only a
+// caller that bypasses the search sees it.
+const (
+	NameEmptyMessage        = "Your name can't be empty."
+	HomeAreaRequiredMessage = "Choose a home area."
+	HomeAreaStreetMessage   = "Choose a town or area, not a street."
+)
+
+// homeAreaIsStreet reports whether the first part of a home area name (before
+// the first comma) is a numbered street address, such as "12th Main Road" or
+// "Banjara Hills Road No 12". A street word alone never refuses a name,
+// because the kind=area search itself offers localities named after roads
+// (MG Road, Station Road, Park Street, Grant Road).
+func homeAreaIsStreet(name string) bool {
+	first, _, _ := strings.Cut(name, ",")
+	return geocode.IsNumberedStreetAddress(first)
 }
 
 // finiteIn reports whether x is a real number inside [lo, hi].
@@ -451,6 +485,9 @@ func (s *AccountService) UpdateProfile(ctx context.Context, accountID int64, u P
 			return AccountProfile{}, fmt.Errorf("service: saving profile: %w", err)
 		}
 		if v.HomeAction == HomeAreaClear {
+			// Phase 7.1 (D-15): ValidateProfileUpdate no longer produces this
+			// action, so this branch is reachable only by data repair.
+			//
 			// With no home area there is no place to measure the Reliable
 			// reporter alert from, so it goes off with it (NOTIF-05, UI-SPEC E1).
 			// It stays off until the person turns it on again.

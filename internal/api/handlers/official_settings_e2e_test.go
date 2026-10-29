@@ -126,7 +126,11 @@ func TestOfficialPushSettingRoute(t *testing.T) {
 
 	// Clearing the home area keeps the stored value as it was.
 	meWant(t, "official off again", meSend(t, a, http.MethodPatch, alerts, `{"official_push":false}`), http.StatusOK)
-	meWant(t, "clear home area", meSend(t, a, http.MethodPatch, profile, `{"home_area":null}`), http.StatusOK)
+	// Amended 2026-10-29 by Phase 7.1 plan 06 (D-15): the route now refuses to
+	// clear the home area (400); the no home area state is set directly in the
+	// database. The assertions below are unchanged.
+	meWant(t, "clear home area", meSend(t, a, http.MethodPatch, profile, `{"home_area":null}`), http.StatusBadRequest)
+	meRemoveHomeArea(t, pool, emailA)
 	if _, on := p14osStored(t, pool, emailA); on {
 		t.Error("clearing the home area changed the stored official value")
 	}

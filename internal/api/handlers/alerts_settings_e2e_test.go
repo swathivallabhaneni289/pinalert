@@ -151,8 +151,19 @@ func TestAlertSettingsRoute(t *testing.T) {
 		t.Errorf("another account has a row: %+v", r)
 	}
 
-	// Removing the home area turns the alert off on the server.
-	meWant(t, "clear home area", meSend(t, a, http.MethodPatch, profile, `{"home_area":null}`), http.StatusOK)
+	// Amended 2026-10-29 by Phase 7.1 plan 06 (D-15): removing the home area
+	// through the route is now refused and leaves the alert on. The account is
+	// then put in the "no home area, alert off" state directly (as an account
+	// from before step 4 was required is), and the assertions below are
+	// unchanged.
+	refused := meWant(t, "clear home area", meSend(t, a, http.MethodPatch, profile, `{"home_area":null}`), http.StatusBadRequest)
+	if field, _ := p13alErrorField(t, refused); field != "home_area" {
+		t.Errorf("clear home area error field = %q, want home_area", field)
+	}
+	if still := p13alRead(t, pool, emailA); !still.on || still.enabledAt == nil {
+		t.Errorf("a refused clear changed the alert: %+v", still)
+	}
+	meRemoveHomeArea(t, pool, emailA)
 	off := p13alRead(t, pool, emailA)
 	if !off.found || off.on || off.enabledAt != nil {
 		t.Errorf("stored after clearing the home area = %+v, want off with no enabled_at", off)

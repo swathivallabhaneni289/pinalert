@@ -52,13 +52,12 @@ func TestValidateProfileUpdate(t *testing.T) {
 		wantField(t, err, "display_name")
 	})
 
-	t.Run("an empty name after trimming means clear", func(t *testing.T) {
-		v, err := service.ValidateProfileUpdate(service.ProfileUpdate{DisplayName: strPtr("   ")})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if !v.SetName || v.Name != nil {
-			t.Fatalf("an empty name must clear: %+v", v)
+	// Amended 2026-10-29 by Phase 7.1 plan 06 (D-15): an empty name after
+	// trimming used to mean clear; it is now refused with NameEmptyMessage.
+	t.Run("an empty name after trimming is refused", func(t *testing.T) {
+		for _, empty := range []string{"", "   "} {
+			_, err := service.ValidateProfileUpdate(service.ProfileUpdate{DisplayName: strPtr(empty)})
+			wantMessage(t, err, "display_name", "Your name can't be empty.")
 		}
 	})
 
@@ -116,16 +115,13 @@ func TestValidateProfileUpdate(t *testing.T) {
 		}
 	})
 
-	t.Run("clear keeps no name and no cell", func(t *testing.T) {
-		v, err := service.ValidateProfileUpdate(service.ProfileUpdate{
+	// Amended 2026-10-29 by Phase 7.1 plan 06 (D-15, D-06): a clear used to carry
+	// no name and no cell; it is now refused with HomeAreaRequiredMessage.
+	t.Run("clear is refused", func(t *testing.T) {
+		_, err := service.ValidateProfileUpdate(service.ProfileUpdate{
 			HomeArea: service.HomeAreaChange{Action: service.HomeAreaClear},
 		})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if v.HomeAction != service.HomeAreaClear || v.HomeName != nil || v.HomeCell != nil {
-			t.Fatalf("clear must carry nothing: %+v", v)
-		}
+		wantMessage(t, err, "home_area", "Choose a home area.")
 	})
 }
 
@@ -247,22 +243,25 @@ func TestAccountServiceProfileRoundTrip(t *testing.T) {
 		t.Fatalf("accounts must hold no latitude or longitude column: %d %v", pointColumns, err)
 	}
 
-	// An empty name clears the name only.
+	// Amended 2026-10-29 by Phase 7.1 plan 06 (D-15): an empty name and a
+	// removed home area used to be cleared here. UpdateProfile now refuses both
+	// and keeps what is stored. The statement that clears the name and the cell
+	// together is still checked, by running the update query directly the way a
+	// data repair would.
 	p, err = svc.UpdateProfile(ctx, id, service.ProfileUpdate{DisplayName: strPtr("")})
-	if err != nil {
-		t.Fatalf("UpdateProfile clear name: %v", err)
+	wantMessage(t, err, "display_name", service.NameEmptyMessage)
+	p, err = svc.Profile(ctx, id)
+	if err != nil || p.DisplayName == nil || p.HomeAreaName == nil {
+		t.Fatalf("a refused empty name must keep the name and the home area: %+v, %v", p, err)
 	}
-	if p.DisplayName != nil || p.HomeAreaName == nil {
-		t.Fatalf("clearing the name must keep the home area: %+v", p)
+	_, err = svc.UpdateProfile(ctx, id, service.ProfileUpdate{HomeArea: service.HomeAreaChange{Action: service.HomeAreaClear}})
+	wantMessage(t, err, "home_area", service.HomeAreaRequiredMessage)
+	p, err = svc.Profile(ctx, id)
+	if err != nil || p.HomeAreaName == nil {
+		t.Fatalf("a refused clear must keep the home area: %+v, %v", p, err)
 	}
-
-	// Removing the home area clears both columns.
-	p, err = svc.UpdateProfile(ctx, id, service.ProfileUpdate{HomeArea: service.HomeAreaChange{Action: service.HomeAreaClear}})
-	if err != nil {
-		t.Fatalf("UpdateProfile clear home area: %v", err)
-	}
-	if p.HomeAreaName != nil {
-		t.Fatalf("home area name not cleared: %+v", p)
+	if err := q.UpdateAccountProfile(ctx, sqlcgen.UpdateAccountProfileParams{SetHomeArea: true, ID: id}); err != nil {
+		t.Fatalf("repair clear: %v", err)
 	}
 	var cellIsNull bool
 	if err := pool.QueryRow(ctx, `SELECT home_area_cell IS NULL AND home_area_name IS NULL FROM accounts WHERE id = $1`, id).Scan(&cellIsNull); err != nil || !cellIsNull {
@@ -272,6 +271,77 @@ func TestAccountServiceProfileRoundTrip(t *testing.T) {
 	// An invalid update changes nothing.
 	if _, err := svc.UpdateProfile(ctx, id, service.ProfileUpdate{DisplayName: strPtr(strings.Repeat("a", 61))}); err == nil {
 		t.Fatal("a 61 character name must be refused")
+	}
+}
+
+// TestProfileRefusesClears (Phase 7.1 plan 06, D-15, D-06): once step 4 is
+// required the Name and the Home area can be changed but not cleared, and a
+// refusal writes nothing.
+func TestProfileRefusesClears(t *testing.T) {
+	ctx := context.Background()
+	cell := "tdr1v"
+
+	t.Run("empty names", func(t *testing.T) {
+		for _, empty := range []string{"", "   ", "\t "} {
+			f := &fakeProfileQ{homeCell: &cell}
+			_, err := newAlertAccounts(f).UpdateProfile(ctx, 7, service.ProfileUpdate{DisplayName: strPtr(empty)})
+			wantMessage(t, err, "display_name", "Your name can't be empty.")
+			if len(f.profiles) != 0 {
+				t.Errorf("%q: a refused clear wrote %d profiles", empty, len(f.profiles))
+			}
+		}
+	})
+
+	t.Run("cleared home area", func(t *testing.T) {
+		f := &fakeProfileQ{homeCell: &cell}
+		_, err := newAlertAccounts(f).UpdateProfile(ctx, 7, service.ProfileUpdate{HomeArea: service.HomeAreaChange{Action: service.HomeAreaClear}})
+		wantMessage(t, err, "home_area", "Choose a home area.")
+		if len(f.profiles) != 0 || len(f.disables) != 0 {
+			t.Errorf("a refused clear wrote %d profiles and %d alert switches", len(f.profiles), len(f.disables))
+		}
+	})
+
+	t.Run("a change is still fine", func(t *testing.T) {
+		f := &fakeProfileQ{homeCell: &cell}
+		if _, err := newAlertAccounts(f).UpdateProfile(ctx, 7, service.ProfileUpdate{DisplayName: strPtr("Asha")}); err != nil {
+			t.Fatalf("UpdateProfile: %v", err)
+		}
+		if len(f.profiles) != 1 {
+			t.Errorf("profile writes = %d, want 1", len(f.profiles))
+		}
+	})
+}
+
+// TestHomeAreaRefusesStreetName (Phase 7.1 plan 06, SC4, revision round 2
+// R2-W1): a home area name whose first part is a numbered street address is
+// refused, while locality names that merely hold a street word or a number
+// pass. The place search offers only areas, so this only stops a caller that
+// bypasses it.
+func TestHomeAreaRefusesStreetName(t *testing.T) {
+	pick := func(name string) service.ProfileUpdate {
+		return service.ProfileUpdate{HomeArea: service.HomeAreaChange{
+			Action: service.HomeAreaSet,
+			Input:  service.HomeAreaInput{Name: name, Lat: 12.9716, Lon: 77.5946},
+		}}
+	}
+	refused := []string{"12th Main Road, Indiranagar", "Banjara Hills Road No 12", "Plot 5, Madhapur", "Flat 3B, Koramangala"}
+	for _, name := range refused {
+		_, err := service.ValidateProfileUpdate(pick(name))
+		wantMessage(t, err, "home_area", "Choose a town or area, not a street.")
+	}
+	accepted := []string{
+		"Indiranagar, Bengaluru", "Sector 62, Noida", "5th Block, Koramangala",
+		"Park Street, Kolkata", "Grant Road, Mumbai", "MG Road, Bengaluru", "Station Road",
+	}
+	for _, name := range accepted {
+		v, err := service.ValidateProfileUpdate(pick(name))
+		if err != nil {
+			t.Errorf("%q was refused: %v", name, err)
+			continue
+		}
+		if v.HomeName == nil || *v.HomeName != name {
+			t.Errorf("%q stored as %v", name, v.HomeName)
+		}
 	}
 }
 
