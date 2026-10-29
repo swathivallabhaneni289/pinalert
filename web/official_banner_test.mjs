@@ -675,3 +675,36 @@ test('WR-B01: a new place hides the banner before its own answer comes', async (
   await flush();
   assert.equal(page.banner.hidden, false);
 });
+
+// ---- The Demo fails closed, and the shell base is checked (Phase 5 review fixes CR-B02, IN-B04) ----
+// Added 2026-10-29. The shell's data-demo is set after load: the script reads
+// it when it asks, as it reads data-api-base.
+
+test('CR-B02: on Demo Nearby with api-base.js missing the banner asks the shell own Demo base', () => {
+  const page = loadPage({ account: null, dataApiBase: '/demo/api/v/abc_DEF-123', demoPage: true });
+  page.shell.setAttribute('data-demo', '1');
+  page.centre(16.5, 80.6);
+  page.advance(1000);
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.requests[0].url, '/demo/api/v/abc_DEF-123/official/alerts?lat=16.5&lon=80.6');
+});
+
+test('CR-B02: a Demo shell with no usable base asks nothing and keeps the banner hidden', () => {
+  for (const bad of [undefined, '', 'https://evil.example/api', '//evil.example/api', '/']) {
+    const page = loadPage({ account: null, dataApiBase: bad, demoPage: true });
+    page.shell.setAttribute('data-demo', '1');
+    page.centre(16.5, 80.6);
+    page.advance(1000);
+    assert.equal(page.requests.length, 0, 'no request for base ' + JSON.stringify(bad));
+    assert.equal(page.banner.hidden, true);
+  }
+});
+
+test('IN-B04: a real shell whose data-api-base fails the check asks /api', () => {
+  for (const bad of ['//evil.example', 'https://evil.example/api']) {
+    const page = loadPage({ dataApiBase: bad });
+    page.centre(16.5, 80.6);
+    page.advance(1000);
+    assert.equal(page.requests[0].url, '/api/official/alerts?lat=16.5&lon=80.6', bad);
+  }
+});

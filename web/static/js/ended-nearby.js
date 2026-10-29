@@ -115,9 +115,24 @@ window.PinalertEndedNearby = (function () {
   // apiBase is where the report read goes: '/api' on every real page, the
   // visit's sandbox path on the Demo's My activity (plan 05-13, api-base.js).
   // The same rule as app.js.
+  //
+  // The Demo fails closed (Phase 5 review fix CR-B02): when api-base.js did not
+  // run, the base is read from the page root with the same check, and a page
+  // marked data-demo="1" with no usable base answers null, so the part is never
+  // read from the real /api with the Demo's pretend position.
+  var SAFE_BASE = /^\/(?!\/)[A-Za-z0-9\/_-]*$/;
+
   function apiBase() {
     var base = window.PinalertApiBase;
-    return typeof base === 'string' && base !== '' ? base : '/api';
+    if (typeof base === 'string' && base !== '') {
+      return base;
+    }
+    var page = document.querySelector('.profile-page') || document.getElementById('app-shell');
+    var own = page ? page.getAttribute('data-api-base') : null;
+    if (typeof own === 'string' && SAFE_BASE.test(own) && own.replace(/\/+$/, '') !== '') {
+      return own.replace(/\/+$/, '');
+    }
+    return page && page.getAttribute('data-demo') === '1' ? null : '/api';
   }
 
   function readRadius() {
@@ -449,7 +464,14 @@ window.PinalertEndedNearby = (function () {
     }
     var position = kept || fallbackCentre();
 
-    var url = apiBase() + '/reports' +
+    var base = apiBase();
+    if (base === null) {
+      if (quiet !== true) {
+        showState('error');
+      }
+      return Promise.resolve(null);
+    }
+    var url = base + '/reports' +
       '?lat=' + encodeURIComponent(position.lat) +
       '&lon=' + encodeURIComponent(position.lon) +
       '&radius_km=' + encodeURIComponent(readRadius()) +

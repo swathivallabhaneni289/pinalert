@@ -135,7 +135,11 @@ const IDS = {
 // Amended 2026-10-29 by plan 05-19: load takes an optional fixed pair, the
 // data-fixed-lat and data-fixed-lon the Demo's My activity writes on its page
 // root. Without it the page has none, as before, so every older case is as it was.
-function load({ search = '', position = null, radius = '12', answers = [], cells = [], pageAccount = '7', savedBy = '7', apiBase = null, fixed = null } = {}) {
+// Amended 2026-10-29 by the Phase 5 review fix (CR-B02): load takes optional
+// pageAttrs, more attributes of the page root (data-demo, data-api-base), which
+// querySelector('main[<attr>]') then finds as the browser would. Without them
+// the page has none, so every older case is as it was.
+function load({ search = '', position = null, radius = '12', answers = [], cells = [], pageAccount = '7', savedBy = '7', apiBase = null, fixed = null, pageAttrs = null } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -143,7 +147,12 @@ function load({ search = '', position = null, radius = '12', answers = [], cells
     createElementNS(ns, tag) { return new FakeEl(doc, tag); },
     createTextNode(text) { return { nodeType: 3, textContent: String(text), parentNode: null }; },
     getElementById(id) { return doc.byId[id] || null; },
-    querySelector(sel) { return sel === '.profile-page' || sel === '[data-account-id]' ? doc.page : null; },
+    querySelector(sel) {
+      if (sel === '.profile-page' || sel === '[data-account-id]') { return doc.page; }
+      const m = /^main\[([a-z-]+)(?:="([^"]*)")?\]$/.exec(sel);
+      if (m && doc.page.hasAttribute(m[1]) && (m[2] === undefined || doc.page.getAttribute(m[1]) === m[2])) { return doc.page; }
+      return null;
+    },
     querySelectorAll(sel) { return sel === '.activity-card__distance' ? cells : []; },
     addEventListener() {},
     removeEventListener() {},
@@ -154,6 +163,7 @@ function load({ search = '', position = null, radius = '12', answers = [], cells
   doc.page = new FakeEl(doc, 'main');
   doc.page.setAttribute('data-default-radius-km', radius);
   if (pageAccount !== null) { doc.page.setAttribute('data-account-id', pageAccount); }
+  if (pageAttrs !== null) { Object.entries(pageAttrs).forEach(([n, v]) => doc.page.setAttribute(n, v)); }
   if (fixed !== null) {
     if (fixed[0] !== undefined) { doc.page.setAttribute('data-fixed-lat', String(fixed[0])); }
     if (fixed[1] !== undefined) { doc.page.setAttribute('data-fixed-lon', String(fixed[1])); }
@@ -1012,4 +1022,41 @@ test('WR-06: focus the person moved elsewhere while the read was out is left alo
   elsewhere.focus();
   await settle();
   assert.equal(m.doc.activeElement, elsewhere);
+});
+
+// ---- The Demo fails closed (Phase 5 review fix CR-B02) ----
+// Added 2026-10-29. With api-base.js missing (no window.PinalertApiBase), the
+// part is read from the page root's own data-api-base, and a Demo page with no
+// usable base reads nothing, never the real /api.
+
+test('CR-B02: with api-base.js missing the part is read from the page own Demo base', async () => {
+  const base = '/demo/api/v/abc_DEF-123';
+  const m = load({
+    fixed: [16.5424, 80.6386], pageAccount: null,
+    pageAttrs: { 'data-demo': '1', 'data-api-base': base },
+    answers: [answer([])]
+  });
+  m.start();
+  await settle();
+  assert.equal(m.fetches.length, 1);
+  assert.equal(new URL(m.fetches[0].url, 'http://x').pathname, base + '/reports');
+});
+
+test('CR-B02: a Demo page with no usable base reads nothing and shows the load error', async () => {
+  for (const bad of [null, '', 'https://evil.example/api', '//evil.example/api', '/']) {
+    const attrs = { 'data-demo': '1' };
+    if (bad !== null) { attrs['data-api-base'] = bad; }
+    const m = load({ fixed: [16.5424, 80.6386], pageAccount: null, pageAttrs: attrs, answers: [answer([])] });
+    m.start();
+    await settle();
+    assert.equal(m.fetches.length, 0, 'no request for base ' + JSON.stringify(bad));
+    assert.equal(m.by('ended-error').hasAttribute('hidden'), false, 'the part says it could not load');
+  }
+});
+
+test('CR-B02: a real My activity page with no base still reads /api', async () => {
+  const m = load({ position: [12.97, 77.59], answers: [answer([])] });
+  m.start();
+  await settle();
+  assert.equal(new URL(m.fetches[0].url, 'http://x').pathname, '/api/reports');
 });

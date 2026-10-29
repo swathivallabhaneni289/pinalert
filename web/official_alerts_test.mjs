@@ -138,7 +138,9 @@ const ids = [
 
 // buildPage makes the markup of alerts.html.tmpl as the ids official-alerts.js
 // reads: every state block starts hidden, as the template ships them.
-function buildPage({ withMarkup = true, account = '7', fixedLat, fixedLon, dataApiBase, hazardLine = false } = {}) {
+// Amended 2026-10-29 by the Phase 5 review fix (CR-B02): demo marks the page root
+// data-demo="1", as demo_alerts.html.tmpl does; without it the page has none.
+function buildPage({ withMarkup = true, account = '7', fixedLat, fixedLon, dataApiBase, hazardLine = false, demo = false } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -164,6 +166,7 @@ function buildPage({ withMarkup = true, account = '7', fixedLat, fixedLon, dataA
   if (fixedLat !== undefined) { main.setAttribute('data-fixed-lat', fixedLat); }
   if (fixedLon !== undefined) { main.setAttribute('data-fixed-lon', fixedLon); }
   if (dataApiBase !== undefined) { main.setAttribute('data-api-base', dataApiBase); }
+  if (demo) { main.setAttribute('data-demo', '1'); }
   // Nest the parts the way the template does, so a hidden block hides its words.
   const parentOf = {
     'official-notice-text': 'official-notice',
@@ -1096,4 +1099,32 @@ test('WR-B01: a re-ask at the fresh limit that hangs shows no claim and gives wa
   showTab(page);
   await flush();
   assert.equal(page.requests.length, 3, 'the next load goes out');
+});
+
+// ---- The Demo fails closed, and the page base is checked (Phase 5 review fixes CR-B02, IN-B04) ----
+// Added 2026-10-29.
+
+test('CR-B02: on a Demo page with api-base.js missing the page asks its own Demo base', async () => {
+  const page = loadPage({ account: null, demo: true, dataApiBase: '/demo/api/v/abc_DEF-123', fixedLat: '16.5424', fixedLon: '80.6386' });
+  await flush();
+  assert.equal(page.requests.length, 1);
+  assert.ok(page.requests[0].url.startsWith('/demo/api/v/abc_DEF-123/official/alerts?lat=16.5424&lon=80.6386'), page.requests[0].url);
+});
+
+test('CR-B02: a Demo page with no usable base asks nothing and shows the load error', async () => {
+  for (const bad of [undefined, '', 'https://evil.example/api', '//evil.example/api', '/demo/../x y', '/']) {
+    const page = loadPage({ account: null, demo: true, dataApiBase: bad, fixedLat: '16.5424', fixedLon: '80.6386' });
+    await flush();
+    assert.equal(page.requests.length, 0, 'no request for base ' + JSON.stringify(bad));
+    assert.ok(shown(page, 'official-error'));
+    assertNoClaim(page, 'a Demo page with no base');
+  }
+});
+
+test('IN-B04: a real page whose data-api-base fails the check asks /api', async () => {
+  for (const bad of ['//evil.example', 'https://evil.example/api', 'javascript:alert(1)']) {
+    const page = loadPage({ dataApiBase: bad });
+    await flush();
+    assert.ok(page.requests[0].url.startsWith('/api/official/alerts'), bad + ' -> ' + page.requests[0].url);
+  }
 });

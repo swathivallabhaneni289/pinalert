@@ -91,8 +91,26 @@
     return window.Pinalert || null;
   }
 
+  // isDemoPage also reads the page itself (Phase 5 review fix CR-B02): when
+  // api-base.js failed to load, window.PinalertDemoPage is unset, but the page
+  // root still says data-demo="1", and an ended visit must still restart the
+  // Demo rather than leave the page asking a visit that is gone.
   function isDemoPage() {
-    return window.PinalertDemoPage === true;
+    if (window.PinalertDemoPage === true) {
+      return true;
+    }
+    var shell = typeof document.getElementById === 'function' ? document.getElementById('app-shell') : null;
+    if (shell && shell.getAttribute('data-demo') === '1') {
+      return true;
+    }
+    if (typeof document.querySelector !== 'function') {
+      return false;
+    }
+    try {
+      return !!document.querySelector('main[data-demo="1"]');
+    } catch (err) {
+      return false;
+    }
   }
 
   // reportInState finds the report with this id in the feed state, or null.

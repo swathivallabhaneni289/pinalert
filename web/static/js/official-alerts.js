@@ -273,15 +273,23 @@
     return null;
   }
 
+  // apiBase is window.PinalertApiBase (set by api-base.js), else the page's own
+  // data-api-base when it passes the same check as in api-base.js (T-05-74,
+  // Phase 5 review fix IN-B04), else /api. The Demo fails closed (Phase 5
+  // review fix CR-B02): a page marked data-demo="1" with no usable base answers
+  // null and the page asks nothing, never the real /api.
+  var SAFE_BASE = /^\/(?!\/)[A-Za-z0-9\/_-]*$/;
+
   function apiBase() {
     var base = window.PinalertApiBase;
-    if (typeof base !== 'string' || base === '') {
-      base = pageAttr('data-api-base');
+    if (typeof base === 'string' && base !== '') {
+      return base.replace(/\/+$/, '');
     }
-    if (base === '') {
-      base = DEFAULT_BASE;
+    var own = pageAttr('data-api-base');
+    if (SAFE_BASE.test(own) && own.replace(/\/+$/, '') !== '') {
+      return own.replace(/\/+$/, '');
     }
-    return base.replace(/\/+$/, '');
+    return pageAttr('data-demo') === '1' ? null : DEFAULT_BASE;
   }
 
   // ---- Showing and hiding -------------------------------------------------
@@ -683,11 +691,12 @@
     retryEl.disabled = true;
     showLoading();
     var point = areaSource();
-    var target = apiBase() + '/official/alerts';
+    var base = apiBase();
+    var target = base + '/official/alerts';
     if (point) {
       target += '?lat=' + encodeURIComponent(String(point.lat)) + '&lon=' + encodeURIComponent(String(point.lon));
     }
-    if (typeof fetch !== 'function') {
+    if (base === null || typeof fetch !== 'function') {
       requestOut = false;
       renderError();
       return;
