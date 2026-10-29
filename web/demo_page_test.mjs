@@ -365,3 +365,22 @@ test('CR-B02 demo.js: with api-base.js missing an ended visit still restarts the
   assert.equal(real.win.PinalertDemoEnded, undefined, 'never on a real page');
   assert.equal(shellPage.fetches.length + mainPage.fetches.length, 0, 'demo.js itself asks nothing');
 });
+
+// ---- Demo My activity's pretend position (Phase 5 review fix IN-B03) ----
+// Added 2026-10-29. Demo My activity writes the pretend point on its main page
+// root, not on #app-shell. votes.js takes it from there too, so Reopen never
+// reads the real voter cache on the Demo.
+
+test('IN-B03 votes.js: on Demo My activity the position comes from the main root, with no storage and no browser question', async () => {
+  const m = load({
+    shellAttrs: null,
+    mainAttrs: { 'data-demo': '1', 'data-api-base': DEMO_BASE, 'data-fixed-lat': PRETEND.lat, 'data-fixed-lon': PRETEND.lon },
+    scripts: ['api-base.js', 'app.js', 'votes.js']
+  });
+  let got = null;
+  await m.win.PinalertVotes.getVoterLocation({ fresh: false }).then((fix) => { got = fix; });
+  assert.equal(got.latitude, 16.5424);
+  assert.equal(got.longitude, 80.6386);
+  assert.equal(m.storage.reads + m.storage.writes, 0, 'the real voter cache is never read');
+  assert.equal(m.geo.calls, 0);
+});

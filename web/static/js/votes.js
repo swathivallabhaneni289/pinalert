@@ -249,9 +249,12 @@
 
   // The Demo page's pretend position, from data-fixed-lat and data-fixed-lon on
   // the page shell, or null when the page has no such pair (every real page) or
-  // either half is not a number. Both halves are needed.
+  // either half is not a number. Both halves are needed. Demo My activity writes
+  // the pair on its main page root instead of #app-shell, and it is read there
+  // too (Phase 5 review fix IN-B03), so Reopen there never reads the real
+  // voter cache.
   function fixedPosition() {
-    var shell = document.getElementById('app-shell');
+    var shell = pageCarrier('data-fixed-lat');
     if (!shell) {
       return null;
     }
