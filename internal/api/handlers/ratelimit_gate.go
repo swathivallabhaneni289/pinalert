@@ -565,7 +565,7 @@ var rateLimitedPageTemplate = template.Must(template.New("rate_limited_page").Pa
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
-  <title>{{.Title}} · Pinalert</title>
+  <title>{{.Title}} (Pinalert)</title>
   <link rel="icon" href="/icons/app.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
