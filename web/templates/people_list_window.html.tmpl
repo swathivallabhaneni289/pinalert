@@ -1,5 +1,5 @@
 {{define "people_list_window"}}
-{{/* Phase 9 plan 11 (UI-SPEC Surface 4): the one list window of Followers, Following and Blocked people. The profile opens it from its two count buttons and Settings opens it from its rows (plan 09-12). It is built like the Muted reports window: closed only by its X and Escape, the page behind it inert, focus on the title. The script fills the title, the subtitle and every row with textContent, so nothing here holds a person. The confirm box is its own native dialog, a direct child of the body, built like the Log out box. */}}
+{{/* Phase 9 plan 11 (UI-SPEC Surface 4): the one list window of Followers, Following, Muted people and Blocked people. The profile opens it from its two count buttons and Settings opens it from its rows (plan 09-12). It is built like the Muted reports window: closed only by its X and Escape, the page behind it inert, focus on the title. The script fills the title, the subtitle and every row with textContent, so nothing here holds a person. The confirm box is its own native dialog, a direct child of the body, built like the Log out box. */}}
 <div class="app-window app-window--edit people-list-window" id="people-list-window" hidden>
   <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="people-list-title">
     <div class="app-window__head">

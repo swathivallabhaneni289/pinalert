@@ -142,7 +142,7 @@ func TestPersonPageCopy(t *testing.T) {
 }
 
 // TestPeopleListWindowMarkup pins the shared list window of Followers,
-// Following and Blocked people (plan 09-11, UI-SPEC Surface 4): the ids the
+// Following, Muted people and Blocked people (plan 09-11, UI-SPEC Surface 4): the ids the
 // script reads, the X named Close, the words of the error state and the confirm
 // dialog built exactly like #settings-delete-confirm.
 func TestPeopleListWindowMarkup(t *testing.T) {
@@ -620,6 +620,27 @@ func TestPersonColumnHeadsAndHoverKeepContrast(t *testing.T) {
 		got := wcagContrastRatio(t, d["--color-text"], d["--color-surface"], "text on surface, "+name)
 		if got < 4.5 {
 			t.Errorf("%s theme: --color-text on --color-surface is %.2f to 1, want at least 4.5 (WR-T02)", name, got)
+		}
+	}
+}
+
+// TestListWindowCommentsNameMutedPeople pins review fix IN-T06 (2026-10-30):
+// since plan 09-20 the shared list window also serves Muted people, so the
+// comments that describe it must not list only three kinds.
+func TestListWindowCommentsNameMutedPeople(t *testing.T) {
+	for file, text := range map[string]string{
+		"people_list_window.html.tmpl": p421ReadTemplate(t, "people_list_window.html.tmpl"),
+		"settings.html.tmpl":           p421ReadTemplate(t, "settings.html.tmpl"),
+		"css/person.css":               p421ReadStatic(t, "css/person.css"),
+	} {
+		for _, stale := range []string{
+			"Followers, Following and Blocked people",
+			"Following, Followers and Blocked people",
+			"Followers, Following and Blocked\n   people",
+		} {
+			if strings.Contains(text, stale) {
+				t.Errorf("%s still describes the list window without Muted people: %q", file, stale)
+			}
 		}
 	}
 }

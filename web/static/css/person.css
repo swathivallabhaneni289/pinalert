@@ -605,8 +605,8 @@ a.person-report__body:hover .person-report__label {
   line-height: var(--line-height-label);
 }
 
-/* Surface 4 (plan 09-11): the rows of the Followers, Following and Blocked
-   people window. The list runs edge to edge inside the window body, so a row's
+/* Surface 4 (plan 09-11): the rows of the Followers, Following, Muted people
+   and Blocked people window. The list runs edge to edge inside the window body, so a row's
    hover fill reaches the window sides and its words line up with the body. */
 .people-list__subtitle {
   margin: 0;
