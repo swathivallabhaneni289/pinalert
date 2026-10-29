@@ -75,6 +75,7 @@
   var entries = {}; // pin id -> { pin, key, marker, node }
   var requestOut = false;
   var requestSeq = 0; // moves on when a request is sent and when it ends
+  var openId = null; // the pin id of the open card, or null
   var lastFetchAt = 0;
 
   // ---- Small helpers ------------------------------------------------------
@@ -336,10 +337,14 @@
       opener: element,
       onClose: function () {
         setChosen(entry, false);
+        if (openId === pin.id) {
+          openId = null;
+        }
       }
     });
     if (opened !== false) {
       setChosen(entry, true);
+      openId = pin.id;
     }
   }
 
@@ -387,7 +392,21 @@
     return entry;
   }
 
+  // closeOpenCard closes the open card through the map (Phase 5 review fix
+  // WR-B02): the card is a popup apart from the markers, so it must go with its
+  // pin, or it would stay up as if the hazard were current.
+  function closeOpenCard() {
+    if (openId === null) {
+      return;
+    }
+    openId = null;
+    if (typeof window.PinalertMap.closeCard === 'function') {
+      window.PinalertMap.closeCard();
+    }
+  }
+
   function clearAll() {
+    closeOpenCard();
     if (layer) {
       layer.clearLayers();
     }
@@ -423,6 +442,9 @@
         continue;
       }
       if (existing) {
+        if (openId === pin.id) {
+          closeOpenCard();
+        }
         group.removeLayer(existing.marker);
       }
       entries[pin.id] = addPin(group, pin, key);
@@ -431,6 +453,9 @@
     var ids = Object.keys(entries);
     for (var j = 0; j < ids.length; j += 1) {
       if (seen[ids[j]] !== true) {
+        if (openId !== null && String(openId) === ids[j]) {
+          closeOpenCard();
+        }
         group.removeLayer(entries[ids[j]].marker);
         delete entries[ids[j]];
       }

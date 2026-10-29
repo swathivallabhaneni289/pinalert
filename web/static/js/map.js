@@ -2311,6 +2311,16 @@ window.PinalertMap = (function () {
     return true;
   }
 
+  // closeCard closes the open GDACS card, if any, through its own close path
+  // (Phase 5 review fix WR-B02): the layer calls it when the pin of the open card
+  // is removed or replaced, or the layer is cleared.
+  function closeCard() {
+    if (map && officialPopup !== null) {
+      map.closePopup(officialPopup);
+    }
+    return true;
+  }
+
   // openOfficialPopup is the open path of the GDACS card. It sets the marks the
   // report path sets (the dialog name, data-popup-open on the popup, the page
   // and the pin, which trust.js and phone.css read) and puts focus on the card on
@@ -2453,6 +2463,7 @@ window.PinalertMap = (function () {
     focusMarker: focusMarker,
     openReport: openReport,
     addOverlay: addOverlay,
-    openCard: openCard
+    openCard: openCard,
+    closeCard: closeCard
   };
 }());

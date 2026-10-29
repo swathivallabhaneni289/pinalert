@@ -94,6 +94,7 @@ function loadLayer(options = {}) {
   const listeners = {};
   const overlays = [];
   const cards = [];
+  const closes = [];
   let now = NOW;
   let nextTimer = 1;
   const doc = {
@@ -153,7 +154,18 @@ function loadLayer(options = {}) {
   };
   const PinalertMap = options.noMap ? undefined : {
     addOverlay(layer) { overlays.push(layer); return options.overlayRefused ? false : true; },
-    openCard(latlng, node, name, opts) { cards.push({ latlng, node, name, opts }); return true; }
+    openCard(latlng, node, name, opts) { cards.push({ latlng, node, name, opts }); return true; },
+    // Amended 2026-10-29 by the Phase 5 review fix (WR-B02): the map closes the
+    // open card on request and runs its onClose once, as map.js does.
+    closeCard() {
+      closes.push(1);
+      const last = cards[cards.length - 1];
+      if (last && !last.closed) {
+        last.closed = true;
+        if (last.opts && typeof last.opts.onClose === 'function') { last.opts.onClose(); }
+      }
+      return true;
+    }
   };
   const sandbox = {
     console,
@@ -182,7 +194,7 @@ function loadLayer(options = {}) {
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox, { filename: 'official-pins.js' });
   const emit = (type, detail) => (listeners[type] || []).forEach((fn) => fn({ type, detail }));
-  return { doc, api: sandbox.PinalertOfficialPins, requests, overlays, cards, groups, advance, emit, intervals, sandbox };
+  return { doc, api: sandbox.PinalertOfficialPins, requests, overlays, cards, closes, groups, advance, emit, intervals, sandbox };
 }
 
 const flush = async () => { for (let i = 0; i < 8; i++) { await new Promise((r) => setImmediate(r)); } };
@@ -593,3 +605,50 @@ test('WR-B01: a body that never arrives is given up at the limit too', async () 
   await flush();
   assert.equal(layer.requests.length, 2);
 });
+
+// ---- An open card goes with its pin (Phase 5 review fix WR-B02) ----
+// Added 2026-10-29. The card is a popup apart from the markers, so whenever the
+// layer clears, or a redraw removes or replaces the pin of the open card, the
+// card is closed through the map.
+
+const openFirst = (layer) => fire(markersOf(layer)[0].el, 'keydown', { key: 'Enter' });
+
+test('WR-B02: a stale answer clears the layer and closes the open card', async () => {
+  const layer = await open(fresh([pin()]));
+  openFirst(layer);
+  assert.equal(layer.cards.length, 1);
+  layer.api.drawPins({ state: 'stale', pins: [] });
+  assert.equal(layer.closes.length, 1, 'the card is closed with its pin');
+  assert.equal(layer.cards[0].closed, true);
+});
+
+test('WR-B02: a failed refresh closes the open card too', async () => {
+  const layer = await open(fresh([pin()]));
+  openFirst(layer);
+  layer.advance(300000);
+  await flush();
+  answer(layer.requests[1], 500);
+  await flush();
+  assert.equal(layer.closes.length, 1);
+});
+
+test('WR-B02: a redraw that replaces or removes the pin of the open card closes it; an unchanged pin keeps it', async () => {
+  const layer = await open(fresh([pin(), pin({ id: 8, name: 'Flood in Assam', lat: 26.1, lon: 91.7 })]));
+  openFirst(layer);
+  layer.api.drawPins(fresh([pin(), pin({ id: 8, name: 'Flood in Assam', lat: 26.1, lon: 91.7 })]));
+  assert.equal(layer.closes.length, 0, 'nothing changed: the card stays');
+  layer.api.drawPins(fresh([pin({ id: 8, name: 'Flood in Assam', lat: 26.1, lon: 91.7, alert_level: 'red' }),
+    pin({ alert_level: 'orange', level_word: 'Orange' })]));
+  assert.equal(layer.closes.length, 1, 'the open pin changed level: its card goes');
+  const seven = markersOf(layer).find((m) => m.latlng[0] === 16.5);
+  fire(seven.el, 'keydown', { key: 'Enter' });
+  layer.api.drawPins(fresh([pin({ id: 8, name: 'Flood in Assam', lat: 26.1, lon: 91.7 })]));
+  assert.ok(layer.closes.length >= 2, 'the open pin left the answer: its card goes');
+});
+
+test('WR-B02: clearing with no card open asks the map for nothing', async () => {
+  const layer = await open(fresh([pin()]));
+  layer.api.drawPins({ state: 'unavailable' });
+  assert.equal(layer.closes.length, 0);
+});
+
