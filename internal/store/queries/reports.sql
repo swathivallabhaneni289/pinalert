@@ -153,9 +153,24 @@ WHERE request_account_id = sqlc.arg(account_id)::bigint
 -- (R-01, D-09). The same holds for the viewer's own mute (D-11):
 -- report_mutes has its primary key on (account_id, report_id), so it allows at
 -- most one such row and a report is never duplicated.
+--
+-- Amended 2026-10-29 by Phase 8 plan 08 (D-03, A-P8-2, review W8): comment_count
+-- is what everyone can see, comments that are clear and not deleted, at every
+-- level, replies included. A held (pending) comment is never counted, not even
+-- for its author, and viewer 0 counts the same, so the number is the same for
+-- every reader and equals the non placeholder rows CommentsForReport returns
+-- for viewer 0 (TestCommentCountMatchesList). viewer_commented is true when the
+-- viewer has such a comment on the report, the same clear and not deleted
+-- filter. Comments never feed a trust number (D-02): nothing here changes any
+-- other column. Phase 9 plan 09-10 adds its block filter to comment_count.
 SELECT r.id AS report_id, r.moderation_state, r.client_written_at,
        (f.id IS NOT NULL)::bool AS viewer_flagged,
-       (m.account_id IS NOT NULL)::bool AS viewer_muted
+       (m.account_id IS NOT NULL)::bool AS viewer_muted,
+       (SELECT count(*) FROM comments c
+         WHERE c.report_id = r.id AND c.deleted_at IS NULL AND c.moderation_state = 'clear')::int AS comment_count,
+       EXISTS (SELECT 1 FROM comments c
+                WHERE c.report_id = r.id AND c.account_id = sqlc.arg(viewer_account_id)::bigint
+                  AND c.deleted_at IS NULL AND c.moderation_state = 'clear')::bool AS viewer_commented
 FROM reports r
 LEFT JOIN report_flags f ON f.report_id = r.id AND f.account_id = sqlc.arg(viewer_account_id)::bigint
 LEFT JOIN report_mutes m ON m.report_id = r.id AND m.account_id = sqlc.arg(viewer_account_id)::bigint

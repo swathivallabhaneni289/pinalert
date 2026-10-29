@@ -339,6 +339,36 @@ func TestReportExtrasForReports(t *testing.T) {
 	if err != nil || len(empty) != 0 {
 		t.Errorf("empty id slice: %d rows, err %v; want 0 and nil", len(empty), err)
 	}
+
+	// Amended 2026-10-29 by Phase 8 plan 08 (D-02, D-03, review W8): the two
+	// comment columns. Every assertion above is unchanged. Report r1 gets the
+	// viewer's clear comment, another person's clear comment and another
+	// person's held comment: the count is 2 for everyone, and only the viewer
+	// has commented. Reports r2 and r3 have no comments, so 0 and false.
+	testutil.SeedComment(t, pool, testutil.CommentSeed{ReportID: r1, AccountID: viewer})
+	testutil.SeedComment(t, pool, testutil.CommentSeed{ReportID: r1, AccountID: other})
+	testutil.SeedComment(t, pool, testutil.CommentSeed{ReportID: r1, AccountID: other, State: "pending"})
+	for _, tc := range []struct {
+		as        int64
+		commented bool
+	}{{viewer, true}, {other, true}, {0, false}} {
+		rows, err := q.ReportExtrasForReports(ctx, sqlcgen.ReportExtrasForReportsParams{
+			ReportIds: []int64{r1, r2, r3}, ViewerAccountID: tc.as,
+		})
+		if err != nil {
+			t.Fatalf("extras with comments, viewer %d: %v", tc.as, err)
+		}
+		for _, r := range rows {
+			wantCount, wantCommented := int32(0), false
+			if r.ReportID == r1 {
+				wantCount, wantCommented = 2, tc.commented
+			}
+			if r.CommentCount != wantCount || r.ViewerCommented != wantCommented {
+				t.Errorf("viewer %d, report %d: comment_count %d viewer_commented %v, want %d and %v",
+					tc.as, r.ReportID, r.CommentCount, r.ViewerCommented, wantCount, wantCommented)
+			}
+		}
+	}
 }
 
 func TestClaimModerationChecksSingleClaimant(t *testing.T) {

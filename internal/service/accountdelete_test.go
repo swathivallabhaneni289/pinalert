@@ -36,6 +36,7 @@ type fakeDeleteQuerier struct {
 	throttleArg sqlcgen.ClearAuthThrottleParams
 	scrubArg    sqlcgen.ScrubDeletedAccountParams
 	revokeArg   sqlcgen.RevokeAccountSessionsParams
+	blankArg    sqlcgen.BlankAccountCommentsParams
 	accountIDs  map[string]int64
 }
 
@@ -81,6 +82,24 @@ func (f *fakeDeleteQuerier) DeleteAuthCodesForEmail(ctx context.Context, email s
 func (f *fakeDeleteQuerier) ClearAuthThrottle(ctx context.Context, arg sqlcgen.ClearAuthThrottleParams) error {
 	f.throttleArg = arg
 	return f.step("ClearAuthThrottle")
+}
+
+// Amended 2026-10-29 by Phase 8 plan 08 (A-P8-6): the fake gained the three
+// comment steps. blankArg records what BlankAccountComments was given.
+func (f *fakeDeleteQuerier) BlankAccountComments(ctx context.Context, arg sqlcgen.BlankAccountCommentsParams) (int64, error) {
+	f.blankArg = arg
+	f.accountIDs["BlankAccountComments"] = arg.AccountID
+	return 2, f.step("BlankAccountComments")
+}
+
+func (f *fakeDeleteQuerier) DeleteAccountCommentLikes(ctx context.Context, accountID int64) error {
+	f.accountIDs["DeleteAccountCommentLikes"] = accountID
+	return f.step("DeleteAccountCommentLikes")
+}
+
+func (f *fakeDeleteQuerier) DeleteAccountCommentFlags(ctx context.Context, accountID int64) error {
+	f.accountIDs["DeleteAccountCommentFlags"] = accountID
+	return f.step("DeleteAccountCommentFlags")
 }
 
 func (f *fakeDeleteQuerier) DeleteAccountUpdates(ctx context.Context, accountID int64) error {
@@ -150,10 +169,19 @@ func (f *fakeDeleteQuerier) ScrubDeletedAccount(ctx context.Context, arg sqlcgen
 // removed with its table, so the thirteen steps became twelve (eleven plus
 // ClearAuthThrottle in wantDeleteOrderKeyed). Every other step and its order is
 // kept.
+//
+// Amended 2026-10-29 by Phase 8 plan 08 (D-02, A-P8-6): BlankAccountComments,
+// DeleteAccountCommentLikes and DeleteAccountCommentFlags now run right after
+// the Phase 7.1 steps and before DeleteAccountUpdates, so the twelve steps
+// became fifteen (and thirteen became sixteen in wantDeleteOrderKeyed). Every
+// old step and its order is kept.
 var wantDeleteOrder = []string{
 	"AccountEmailForDelete",
 	"DeleteEmailCooldownForEmail",
 	"DeleteAuthCodesForEmail",
+	"BlankAccountComments",
+	"DeleteAccountCommentLikes",
+	"DeleteAccountCommentFlags",
 	"DeleteAccountUpdates",
 	"DeleteAccountCursors",
 	"DeleteAccountMutes",
@@ -171,6 +199,9 @@ var wantDeleteOrderKeyed = []string{
 	"DeleteEmailCooldownForEmail",
 	"DeleteAuthCodesForEmail",
 	"ClearAuthThrottle",
+	"BlankAccountComments",
+	"DeleteAccountCommentLikes",
+	"DeleteAccountCommentFlags",
 	"DeleteAccountUpdates",
 	"DeleteAccountCursors",
 	"DeleteAccountMutes",
@@ -244,6 +275,11 @@ func TestDeleteAccountOrder(t *testing.T) {
 	want := sqlcgen.ScrubDeletedAccountParams{ScrubbedEmail: "deleted-42@deleted.invalid", Now: wantNow, ID: 42}
 	if q.scrubArg != want {
 		t.Errorf("ScrubDeletedAccount arg = %+v, want %+v", q.scrubArg, want)
+	}
+	// Amended 2026-10-29 by Phase 8 plan 08 (A-P8-6): the comment blanking gets
+	// the account and the same clock.
+	if wantBlank := (sqlcgen.BlankAccountCommentsParams{Now: wantNow, AccountID: 42}); q.blankArg != wantBlank {
+		t.Errorf("BlankAccountComments arg = %+v, want %+v", q.blankArg, wantBlank)
 	}
 }
 
@@ -512,6 +548,118 @@ func TestDeleteAccountRemovesAuthRows(t *testing.T) {
 	accounts := service.NewAccountService(q)
 	if _, err := accounts.UpdateProfile(ctx, b, service.ProfileUpdate{Username: strPtr("gone.soon")}); err != nil {
 		t.Errorf("the freed username could not be taken: %v", err)
+	}
+}
+
+// failingScrubQuerier is a real querier whose scrub step fails, so a test can
+// see every earlier step roll back with the transaction.
+type failingScrubQuerier struct{ *sqlcgen.Queries }
+
+func (failingScrubQuerier) ScrubDeletedAccount(context.Context, sqlcgen.ScrubDeletedAccountParams) (int64, error) {
+	return 0, errBoom
+}
+
+// TestDeleteAccountComments (Phase 8 plan 08, A-P8-6, T-08-36): deleting an
+// account blanks its comment words and marks them deleted, removes the likes it
+// gave and its comment flags, keeps the other person's reply and likes on its
+// comments, and does all of it inside the one transaction. It needs a database
+// and skips without DATABASE_URL.
+func TestDeleteAccountComments(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+
+	a := testutil.SeedReporterAccount(t, pool, "comment-del-a@example.com", "comment-del-a-sess")
+	b := testutil.SeedReporterAccount(t, pool, "comment-del-b@example.com", "comment-del-b-sess")
+	testutil.SeedUsername(t, pool, a, "going_away", "clear")
+	testutil.SeedUsername(t, pool, b, "staying_on", "clear")
+	report := testutil.SeedHistoryReport(t, pool, "comment-del-b-sess", "low", "flood", time.Now().Add(time.Hour))
+
+	withReply := testutil.SeedComment(t, pool, testutil.CommentSeed{ReportID: report, AccountID: a, Body: "words that go"})
+	alone := testutil.SeedComment(t, pool, testutil.CommentSeed{ReportID: report, AccountID: a, Body: "more words that go"})
+	reply := testutil.SeedComment(t, pool, testutil.CommentSeed{ReportID: report, AccountID: b, ParentID: withReply, Body: "an answer that stays"})
+	b1 := testutil.SeedComment(t, pool, testutil.CommentSeed{ReportID: report, AccountID: b, Body: "b one"})
+	b2 := testutil.SeedComment(t, pool, testutil.CommentSeed{ReportID: report, AccountID: b, Body: "b two"})
+	for _, id := range []int64{b1, b2, reply} {
+		testutil.SeedCommentLike(t, pool, id, a) // three likes the account gave
+	}
+	testutil.SeedCommentLike(t, pool, withReply, b) // a like given to the account's comment
+	testutil.SeedCommentFlag(t, pool, b1, a)        // one flag the account sent
+	testutil.SeedCommentFlag(t, pool, withReply, b) // a flag on the account's comment
+
+	count := func(query string, args ...any) int {
+		t.Helper()
+		var n int
+		if err := pool.QueryRow(ctx, query, args...).Scan(&n); err != nil {
+			t.Fatalf("counting: %v", err)
+		}
+		return n
+	}
+	liveWords := func() int {
+		return count(`SELECT count(*) FROM comments WHERE account_id = $1 AND deleted_at IS NULL AND body <> ''`, a)
+	}
+
+	// A failed scrub rolls every comment step back.
+	failTx := func(ctx context.Context, fn func(q service.AccountDeleteQuerier) error) error {
+		return pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error { return fn(failingScrubQuerier{sqlcgen.New(tx)}) })
+	}
+	if err := service.NewAccountDeletionService(q, failTx).DeleteAccount(ctx, a); !errors.Is(err, errBoom) {
+		t.Fatalf("DeleteAccount with a failing scrub: want errBoom, got %v", err)
+	}
+	if liveWords() != 2 || count(`SELECT count(*) FROM comment_likes WHERE account_id = $1`, a) != 3 ||
+		count(`SELECT count(*) FROM comment_flags WHERE account_id = $1`, a) != 1 {
+		t.Fatalf("a failed deletion must change nothing: %d live comments, %d likes, %d flags",
+			liveWords(), count(`SELECT count(*) FROM comment_likes WHERE account_id = $1`, a),
+			count(`SELECT count(*) FROM comment_flags WHERE account_id = $1`, a))
+	}
+
+	if err := service.NewAccountDeletionService(q, service.PgxAccountTx(pool)).DeleteAccount(ctx, a); err != nil {
+		t.Fatalf("DeleteAccount: %v", err)
+	}
+	if n := liveWords(); n != 0 {
+		t.Errorf("the deleted account still has %d comments with words", n)
+	}
+	if n := count(`SELECT count(*) FROM comments WHERE account_id = $1 AND deleted_at IS NOT NULL AND body = ''`, a); n != 2 {
+		t.Errorf("blanked comments of the deleted account = %d, want 2", n)
+	}
+	if n := count(`SELECT count(*) FROM comment_likes WHERE account_id = $1`, a); n != 0 {
+		t.Errorf("likes the deleted account gave = %d, want 0", n)
+	}
+	if n := count(`SELECT count(*) FROM comment_flags WHERE account_id = $1`, a); n != 0 {
+		t.Errorf("flags the deleted account sent = %d, want 0", n)
+	}
+	// The other person's rows are untouched.
+	if n := count(`SELECT count(*) FROM comment_likes WHERE comment_id = $1 AND account_id = $2`, withReply, b); n != 1 {
+		t.Errorf("the other person's like on the account's comment = %d, want 1", n)
+	}
+	if n := count(`SELECT count(*) FROM comment_flags WHERE comment_id = $1 AND account_id = $2`, withReply, b); n != 1 {
+		t.Errorf("the other person's flag on the account's comment = %d, want 1", n)
+	}
+	if n := count(`SELECT count(*) FROM comments WHERE id = ANY($1) AND deleted_at IS NULL AND body <> ''`, []int64{reply, b1, b2}); n != 3 {
+		t.Errorf("the other person's comments with words = %d, want 3", n)
+	}
+
+	// What a reader sees: the answered comment is a placeholder with its reply,
+	// the unanswered one is gone, and nothing names the deleted account.
+	rows, err := q.CommentsForReport(ctx, sqlcgen.CommentsForReportParams{
+		ViewerAccountID: b, ReportID: report, RootCap: 100, ReplyCap: 1000,
+	})
+	if err != nil {
+		t.Fatalf("CommentsForReport: %v", err)
+	}
+	seen := map[int64]sqlcgen.CommentsForReportRow{}
+	for _, r := range rows {
+		seen[r.ID] = r
+	}
+	ph, ok := seen[withReply]
+	if !ok || ph.Gone != "deleted" || ph.Body != "" || ph.AuthorUsername != nil || ph.AuthorKind != "" {
+		t.Errorf("answered comment = listed %v %+v, want a deleted placeholder with no name", ok, ph)
+	}
+	if _, ok := seen[reply]; !ok {
+		t.Error("the other person's reply must stay listed under the placeholder")
+	}
+	if _, ok := seen[alone]; ok {
+		t.Error("the unanswered comment of the deleted account must not be listed")
 	}
 }
 

@@ -2004,3 +2004,218 @@ func TestMigration00017(t *testing.T) {
 		t.Errorf("after Up again: index count %d, want 1", got)
 	}
 }
+
+// TestMigration00018 covers the Phase 8 plan 08 migration (PAGE-02, D-02, D-12,
+// D-14): the file carries both goose markers, builds nothing concurrently and
+// names no ON DELETE, and on a database creates the four comment tables whose
+// checks refuse an over long or empty live body, a parent without a reply_to,
+// a repeated like, a repeated flag and a bad or repeated reason. Down drops the
+// four tables, Up brings them back.
+func TestMigration00018(t *testing.T) {
+	const file = "migrations/00018_add_comments.sql"
+	contents, err := MigrationsFS.ReadFile(file)
+	if err != nil {
+		t.Fatalf("reading embedded %s: %v", file, err)
+	}
+	text := string(contents)
+	up := strings.Index(text, "+goose Up")
+	down := strings.Index(text, "+goose Down")
+	if up < 0 || down < 0 || down < up {
+		t.Fatalf("%s must carry +goose Up then +goose Down", file)
+	}
+	var code []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		code = append(code, line)
+	}
+	joined := strings.ToUpper(strings.Join(code, "\n"))
+	if strings.Contains(joined, "CONCURRENTLY") {
+		t.Error("migration 00018 must not use CONCURRENTLY: goose runs it inside a transaction")
+	}
+	if strings.Contains(joined, "ON DELETE") {
+		t.Error("migration 00018 must not use ON DELETE")
+	}
+	tables := []string{"comments", "comment_likes", "comment_flags", "comment_moderation_actions"}
+	for _, tbl := range tables {
+		if !strings.Contains(text[up:down], "CREATE TABLE "+tbl+" ") {
+			t.Errorf("migration 00018 Up must create %s", tbl)
+		}
+		if !strings.Contains(text[down:], "DROP TABLE "+tbl+";") {
+			t.Errorf("migration 00018 Down must drop %s", tbl)
+		}
+	}
+	if strings.Contains(joined, "CREATE FUNCTION") {
+		t.Error("migration 00018 must reuse report_flag_reasons_distinct, not make a second function")
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping the database part of the 00018 migration test")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("opening database: %v", err)
+	}
+	// Closed by a cleanup registered first, so it runs after the row cleanup
+	// below (a defer would close the handle before that cleanup could use it).
+	t.Cleanup(func() { _ = db.Close() })
+
+	goose.SetBaseFS(MigrationsFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up: %v", err)
+	}
+
+	const sessionID = "migration-00018-session"
+	var accountA, accountB, reportID int64
+	t.Cleanup(func() {
+		_ = goose.Up(db, "migrations")
+		for _, tbl := range []string{"comment_moderation_actions", "comment_flags", "comment_likes"} {
+			_, _ = db.Exec("DELETE FROM "+tbl+" WHERE comment_id IN (SELECT id FROM comments WHERE report_id = $1)", reportID)
+		}
+		_, _ = db.Exec("UPDATE comments SET parent_id = NULL, reply_to_id = NULL WHERE report_id = $1", reportID)
+		_, _ = db.Exec("DELETE FROM comments WHERE report_id = $1", reportID)
+		_, _ = db.Exec("DELETE FROM reports WHERE id = $1", reportID)
+		_, _ = db.Exec("DELETE FROM sessions WHERE session_id = $1", sessionID)
+		_, _ = db.Exec("DELETE FROM accounts WHERE id IN ($1, $2)", accountA, accountB)
+	})
+
+	tableCount := func() int {
+		t.Helper()
+		n := 0
+		for _, tbl := range tables {
+			var reg sql.NullString
+			if err := db.QueryRow("SELECT to_regclass('public.' || $1)::text", tbl).Scan(&reg); err != nil {
+				t.Fatalf("to_regclass %s: %v", tbl, err)
+			}
+			if reg.Valid {
+				n++
+			}
+		}
+		return n
+	}
+	if got := tableCount(); got != len(tables) {
+		t.Errorf("after Up: %d of %d tables present", got, len(tables))
+	}
+
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00018-a@example.com') RETURNING id`).Scan(&accountA); err != nil {
+		t.Fatalf("inserting account a: %v", err)
+	}
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00018-b@example.com') RETURNING id`).Scan(&accountB); err != nil {
+		t.Fatalf("inserting account b: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO sessions (session_id) VALUES ($1)`, sessionID); err != nil {
+		t.Fatalf("inserting session: %v", err)
+	}
+	if err := db.QueryRow(`INSERT INTO reports (session_id, category, severity, description, latitude, longitude, geohash, expires_at)
+		VALUES ($1, 'road', 'info', 'for the 00018 test', 12.97, 77.59, 'tdr1w', now() + interval '1 hour')
+		RETURNING id`, sessionID).Scan(&reportID); err != nil {
+		t.Fatalf("inserting report: %v", err)
+	}
+
+	wantCode := func(label, code, query string, args ...any) {
+		t.Helper()
+		_, err := db.Exec(query, args...)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != code {
+			t.Errorf("%s: want SQLSTATE %s, got %v", label, code, err)
+		}
+	}
+
+	const insert = `INSERT INTO comments (report_id, account_id, body) VALUES ($1, $2, $3)`
+	wantCode("an empty live body", "23514", insert, reportID, accountA, "")
+	wantCode("a 281 character body", "23514", insert, reportID, accountA, strings.Repeat("a", 281))
+	if _, err := db.Exec(insert, reportID, accountA, strings.Repeat("a", 280)); err != nil {
+		t.Errorf("a 280 character body must be accepted: %v", err)
+	}
+	var root int64
+	if err := db.QueryRow(insert+` RETURNING id`, reportID, accountA, "the root").Scan(&root); err != nil {
+		t.Fatalf("inserting the root: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO comments (report_id, account_id, body, deleted_at) VALUES ($1, $2, '', now())`, reportID, accountA); err != nil {
+		t.Errorf("a deleted row with empty words must be accepted: %v", err)
+	}
+	wantCode("a deleted row that still holds words", "23514",
+		`INSERT INTO comments (report_id, account_id, body, deleted_at) VALUES ($1, $2, 'words', now())`, reportID, accountA)
+	wantCode("a parent without a reply_to", "23514",
+		`INSERT INTO comments (report_id, account_id, body, parent_id) VALUES ($1, $2, 'x', $3)`, reportID, accountB, root)
+	wantCode("a reply_to without a parent", "23514",
+		`INSERT INTO comments (report_id, account_id, body, reply_to_id) VALUES ($1, $2, 'x', $3)`, reportID, accountB, root)
+	wantCode("a comment that is its own parent", "23514",
+		`UPDATE comments SET parent_id = id, reply_to_id = id WHERE id = $1`, root)
+	wantCode("an unknown moderation state", "23514",
+		`INSERT INTO comments (report_id, account_id, body, moderation_state) VALUES ($1, $2, 'x', 'held')`, reportID, accountA)
+	wantCode("a pending row with no next_attempt_at", "23514",
+		`INSERT INTO comments (report_id, account_id, body, moderation_state) VALUES ($1, $2, 'x', 'pending')`, reportID, accountA)
+	wantCode("negative attempts", "23514",
+		`INSERT INTO comments (report_id, account_id, body, check_attempts) VALUES ($1, $2, 'x', -1)`, reportID, accountA)
+	wantCode("an unknown verdict", "23514",
+		`INSERT INTO comments (report_id, account_id, body, verdict) VALUES ($1, $2, 'x', 'maybe')`, reportID, accountA)
+	var reply int64
+	if err := db.QueryRow(`INSERT INTO comments (report_id, account_id, body, parent_id, reply_to_id) VALUES ($1, $2, 'a reply', $3, $3) RETURNING id`,
+		reportID, accountB, root).Scan(&reply); err != nil {
+		t.Errorf("a reply with both ids must be accepted: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO comments (report_id, account_id, body, moderation_state, next_attempt_at) VALUES ($1, $2, 'held', 'pending', now())`, reportID, accountB); err != nil {
+		t.Errorf("a pending row with next_attempt_at must be accepted: %v", err)
+	}
+
+	if _, err := db.Exec(`INSERT INTO comment_likes (comment_id, account_id) VALUES ($1, $2)`, root, accountB); err != nil {
+		t.Fatalf("first like: %v", err)
+	}
+	wantCode("a second like by the same account", "23505", `INSERT INTO comment_likes (comment_id, account_id) VALUES ($1, $2)`, root, accountB)
+
+	const flag = `INSERT INTO comment_flags (comment_id, account_id, reasons, note) VALUES ($1, $2, $3::text[], $4)`
+	wantCode("an unknown reason", "23514", flag, root, accountB, "{rude}", nil)
+	wantCode("a repeated reason", "23514", flag, root, accountB, "{spam,spam}", nil)
+	wantCode("an empty reason set", "23514", flag, root, accountB, "{}", nil)
+	wantCode("an empty note", "23514", flag, root, accountB, "{spam}", "")
+	wantCode("a 301 character note", "23514", flag, root, accountB, "{spam}", strings.Repeat("n", 301))
+	if _, err := db.Exec(flag, root, accountB, "{spam,abusive}", "a note"); err != nil {
+		t.Fatalf("first flag: %v", err)
+	}
+	wantCode("a second flag by the same account", "23505", flag, root, accountB, "{other}", nil)
+
+	wantCode("an unknown moderation action", "23514",
+		`INSERT INTO comment_moderation_actions (comment_id, moderator_account_id, action) VALUES ($1, $2, 'hide')`, root, accountA)
+	if _, err := db.Exec(`INSERT INTO comment_moderation_actions (comment_id, moderator_account_id, action) VALUES ($1, $2, 'keep')`, root, accountA); err != nil {
+		t.Errorf("a keep action must be accepted: %v", err)
+	}
+
+	// Down drops the four tables and leaves the helper function of 00010.
+	for _, tbl := range []string{"comment_moderation_actions", "comment_flags", "comment_likes"} {
+		if _, err := db.Exec("DELETE FROM " + tbl); err != nil {
+			t.Fatalf("emptying %s before Down: %v", tbl, err)
+		}
+	}
+	if _, err := db.Exec(`UPDATE comments SET parent_id = NULL, reply_to_id = NULL WHERE report_id = $1`, reportID); err != nil {
+		t.Fatalf("detaching replies before Down: %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM comments WHERE report_id = $1`, reportID); err != nil {
+		t.Fatalf("emptying comments before Down: %v", err)
+	}
+	version, err := goose.NumericComponent("00018_add_comments.sql")
+	if err != nil {
+		t.Fatalf("parsing version: %v", err)
+	}
+	if err := goose.DownTo(db, "migrations", version-1); err != nil {
+		t.Fatalf("goose down to %d: %v", version-1, err)
+	}
+	if got := tableCount(); got != 0 {
+		t.Errorf("after Down: %d comment tables still present", got)
+	}
+	var fn int
+	if err := db.QueryRow(`SELECT count(*) FROM pg_proc WHERE proname = 'report_flag_reasons_distinct'`).Scan(&fn); err != nil || fn != 1 {
+		t.Errorf("after Down: report_flag_reasons_distinct count %d (%v), want 1", fn, err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up again: %v", err)
+	}
+	if got := tableCount(); got != len(tables) {
+		t.Errorf("after Up again: %d of %d tables present", got, len(tables))
+	}
+}

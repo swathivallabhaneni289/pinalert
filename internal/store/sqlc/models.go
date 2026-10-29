@@ -62,6 +62,51 @@ type AuthThrottle struct {
 	LockedUntil   pgtype.Timestamptz
 }
 
+type Comment struct {
+	ID              int64
+	ReportID        int64
+	AccountID       int64
+	ParentID        *int64
+	ReplyToID       *int64
+	Body            string
+	CreatedAt       time.Time
+	DeletedAt       pgtype.Timestamptz
+	ModerationState string
+	NeedsReview     bool
+	CheckAttempts   int32
+	NextAttemptAt   pgtype.Timestamptz
+	LeaseUntil      pgtype.Timestamptz
+	LastError       *string
+	Verdict         *string
+	Scores          []byte
+	Model           *string
+	CheckedAt       pgtype.Timestamptz
+}
+
+type CommentFlag struct {
+	ID          int64
+	CommentID   int64
+	AccountID   int64
+	Reasons     []string
+	Note        *string
+	CreatedAt   time.Time
+	DismissedAt pgtype.Timestamptz
+}
+
+type CommentLike struct {
+	CommentID int64
+	AccountID int64
+	CreatedAt time.Time
+}
+
+type CommentModerationAction struct {
+	ID                 int64
+	CommentID          int64
+	ModeratorAccountID int64
+	Action             string
+	CreatedAt          time.Time
+}
+
 type EmailCooldown struct {
 	Email           string
 	LastRequestedAt time.Time
