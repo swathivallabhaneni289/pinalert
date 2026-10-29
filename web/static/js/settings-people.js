@@ -5,8 +5,9 @@
 //     PATCH /api/me/visibility. On 200 it says "Your profile is on. People can
 //     follow you while you hold the Reliable reporter tag." or "Your profile is
 //     off." politely. A refusal (422, the Name or username sentence, or a 429
-//     with the server's own sentence) puts the old value back and shows the
-//     server's sentence under the box. Any other failure puts the old value back
+//     with the server's own sentence, also rate_visibility, the bucket that
+//     limits turning the profile on too often) puts the old value back and shows
+//     the server's sentence under the box. Any other failure puts the old value back
 //     and shows "Couldn't save that. Try again."; offline nothing is sent and
 //     the built offline line shows.
 //   - Turning it off while the Followers count is above 0 asks first, in a small
