@@ -24,6 +24,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/mmcloughlin/geohash"
@@ -99,10 +100,11 @@ type HomeAreaChange struct {
 // ProfileUpdate is one edit of the profile rows. A nil DisplayName leaves the
 // name alone; an empty one after trimming is refused (NameEmptyMessage).
 //
-// Names are not screened against a reserved word list yet; that waits for Phase 9,
-// when a name is first shown to anyone else (decided 2026-10-17 in Phase 3.2
-// planning, orchestrator decision 5). Until then the name is shown to its owner
-// only, and html/template escapes it.
+// A name is screened against the reserved words and the abuse screen only
+// while the account's public profile is on (Phase 9 plan 09-04, research gap
+// G1): until a profile is public the name is shown to its owner only, and
+// html/template escapes it. SetProfilePublic screens the name when the profile
+// turns on, and UpdateProfile screens every later edit of it while it is on.
 //
 // Amended 2026-10-29 by Phase 7.1 plan 06 (D-07): Username is the public,
 // unique name. A nil Username leaves it alone; there is no way to clear one.
@@ -352,10 +354,29 @@ type AccountService struct {
 	q        ProfileQuerier
 	now      func() time.Time
 	screener TextScreener
+	public   PublicProfileReader
 }
 
 // AccountOption configures an AccountService at construction time.
 type AccountOption func(*AccountService)
+
+// PublicProfileReader reads whether an account's public profile is on and the
+// stored Name, so UpdateProfile knows when an edited Name becomes public.
+// *sqlcgen.Queries satisfies it.
+type PublicProfileReader interface {
+	GetPersonByID(ctx context.Context, id int64) (sqlcgen.GetPersonByIDRow, error)
+}
+
+var _ PublicProfileReader = (*sqlcgen.Queries)(nil)
+
+// WithPublicProfileReader sets the reader UpdateProfile uses to screen a Name
+// edit while the profile is on (G1). Without one a Name is never screened here,
+// the behaviour before Phase 9.
+func WithPublicProfileReader(r PublicProfileReader) AccountOption {
+	return func(a *AccountService) {
+		a.public = r
+	}
+}
 
 // WithAccountScreener sets the text screener a username goes through on save.
 // It is the same screener the report description and the flag note go through
@@ -481,6 +502,14 @@ func (s *AccountService) UpdateProfile(ctx context.Context, accountID int64, u P
 	if err != nil {
 		return AccountProfile{}, err
 	}
+	// G1: a Name that changes while the public profile is on is checked before
+	// anything is written (the username write below included), so a refusal
+	// changes nothing.
+	if v.SetName && v.Name != nil {
+		if err := s.screenNameEdit(ctx, accountID, *v.Name); err != nil {
+			return AccountProfile{}, err
+		}
+	}
 	// The username is written first: when it fails, the name and the home area
 	// of the same request are left unsaved, so the person sees one clear
 	// refusal and nothing half applied.
@@ -518,6 +547,34 @@ func (s *AccountService) UpdateProfile(ctx context.Context, accountID int64, u P
 		}
 	}
 	return s.Profile(ctx, accountID)
+}
+
+// screenNameEdit applies G1 to one Name edit: with no reader configured, a
+// deleted account, a Name that did not change or a profile that is off, nothing
+// is screened. While the profile is on the new Name goes through
+// ScreenPublicName and a failure becomes a ValidationError on display_name. A
+// read error fails the edit (fail closed), it never skips the screen.
+func (s *AccountService) screenNameEdit(ctx context.Context, accountID int64, name string) error {
+	if s.public == nil {
+		return nil
+	}
+	row, err := s.public.GetPersonByID(ctx, accountID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return fmt.Errorf("service: reading the profile switch: %w", err)
+	}
+	if !row.ProfilePublic || (row.DisplayName != nil && *row.DisplayName == name) {
+		return nil
+	}
+	switch ScreenPublicName(ctx, s.screener, name) {
+	case PublicNameRefused:
+		return ValidationError{Field: "display_name", Message: PublicNameEditRefusedMessage}
+	case PublicNameUnfinished:
+		return ValidationError{Field: "display_name", Message: PublicNameUnfinishedMessage}
+	}
+	return nil
 }
 
 // saveUsername stores a username that ValidateProfileUpdate already judged
