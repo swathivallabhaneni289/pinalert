@@ -1,6 +1,7 @@
 package web
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -28,6 +29,29 @@ func TestSharePageNamesItsIcon(t *testing.T) {
 		head = page[:i]
 	}
 	r08tMust(t, "share_status.html.tmpl head", head, `<link rel="icon" href="/icons/app.svg" type="image/svg+xml">`)
+}
+
+// TestTrustModelSharingRemovedReport (WR-T06): the public page answers a
+// removed report with "This report was removed" (D-06), so TRUST-MODEL's
+// Sharing section must not say a removed report answers like an unknown one.
+func TestTrustModelSharingRemovedReport(t *testing.T) {
+	doc := r08tReadRepo(t, "../docs/TRUST-MODEL.md")
+	if strings.Contains(doc, "held, removed or too old report answers like an unknown one") {
+		t.Errorf("TRUST-MODEL.md says a removed report answers like an unknown one; it says it was removed")
+	}
+	r08tMust(t, "TRUST-MODEL.md", doc,
+		"token for a held or too old report answers like an unknown one",
+		"a removed one says it was removed (D-06)")
+}
+
+// r08tReadRepo reads a file of the repository, relative to web/.
+func r08tReadRepo(t *testing.T, path string) string {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(raw)
 }
 
 // r08tMust fails when text lacks any of the needles.
