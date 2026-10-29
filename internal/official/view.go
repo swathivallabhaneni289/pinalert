@@ -237,8 +237,15 @@ func BuildView(in ViewInput) View {
 		secs := int64(hazardAge / time.Second)
 		v.HazardLastSuccessAt, v.HazardAgeSeconds = &t, &secs
 	}
-	if state == StateUnavailable || !v.AreaKnown {
+	// GDACS rows go by their own freshness (IN-S05 of the Phase 5 review): while
+	// SACHET is unavailable no alert is listed, but a fresh GDACS row on the
+	// reader's or the home district still is.
+	if !v.AreaKnown || (state == StateUnavailable && hazardState != StateFresh) {
 		return v
+	}
+	alerts := in.Alerts
+	if state == StateUnavailable {
+		alerts = nil
 	}
 
 	homeShown := in.Home != nil && (in.Reader == nil || !subset(in.Home.DistrictCodes, in.Reader.DistrictCodes))
@@ -268,7 +275,7 @@ func BuildView(in ViewInput) View {
 	// Each alert lands in exactly one section, the first that matches.
 	buckets := map[*section][]StoredAlert{}
 	var listed []StoredAlert
-	for _, a := range in.Alerts {
+	for _, a := range alerts {
 		if !a.ExpiresAt.After(in.Now) {
 			continue // an alert is gone by its own expiry in every state
 		}

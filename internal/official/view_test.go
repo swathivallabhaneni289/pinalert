@@ -909,6 +909,34 @@ func TestBuildViewEndedHazardListedNotCounted(t *testing.T) {
 	}
 }
 
+// TestBuildViewHazardsByTheirOwnFreshness pins IN-S05 of the Phase 5 review: a
+// fresh GDACS row in the reader's district is listed while SACHET is
+// unavailable, and no SACHET alert is listed then.
+func TestBuildViewHazardsByTheirOwnFreshness(t *testing.T) {
+	in := ViewInput{
+		Now:          viewNow,
+		Status:       FeedStatus{Feed: FeedSachet},
+		HazardStatus: hazardStatus(5 * time.Minute),
+		Reader:       readerArea(),
+		Alerts:       []StoredAlert{testAlert(9, withSeverity("Severe"))},
+		Hazards:      []StoredHazard{testHazard(1, func(h *StoredHazard) { h.ToDate = viewNow.Add(time.Hour) })},
+	}
+	v := BuildView(in)
+	if v.State != StateUnavailable {
+		t.Fatalf("state %q, want unavailable", v.State)
+	}
+	if len(v.Groups) != 1 || fmt.Sprint(rowIDs(v.Groups[0])) != "[1]" || v.Groups[0].Rows[0].Source != sourceGdacs {
+		t.Fatalf("groups = %+v, want only the GDACS row", v.Groups)
+	}
+	if v.Banner != nil {
+		t.Errorf("banner %+v while SACHET is unavailable", *v.Banner)
+	}
+	in.HazardStatus = FeedStatus{Feed: FeedGdacs}
+	if v := BuildView(in); len(v.Groups) != 0 {
+		t.Errorf("groups = %+v with both feeds unavailable, want none", v.Groups)
+	}
+}
+
 // TestHazardsNeverRaiseBanner: a GDACS event is an automatic estimate, so
 // however serious its level it is never the Nearby banner and never counts as
 // one of the "more" rows (D-12, T-05-111).
