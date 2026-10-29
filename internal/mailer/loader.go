@@ -24,7 +24,7 @@ const defaultFrom = "Pinalert <onboarding@resend.dev>"
 //     network.
 //   - RESEND_API_KEY unset and env is anything else (including ""): return
 //     an error naming RESEND_API_KEY. A silent degradation here means
-//     visitors quietly never receive their links in production, so the
+//     visitors quietly never receive their emailed codes in production, so the
 //     caller (cmd/server/main.go) must turn this into a startup fatal
 //     rather than let the server boot with a log-only mailer no real
 //     visitor can read.

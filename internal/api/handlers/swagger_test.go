@@ -331,15 +331,14 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 		}
 	}
 
-	// 01.1-04: the request-link endpoint that makes a session verified in
-	// the first place must itself be documented.
-	if _, ok := spec.Paths["/auth/request-link"]; !ok {
-		t.Errorf("docs/swagger.json is missing the /auth/request-link path")
-	}
-
 	// 2026-10-29, Phase 7.1 plan 07: the six code and password routes are
-	// documented, each as a post. The link path above stays until the cleanup
-	// plans remove the link flow.
+	// documented, each as a post.
+	// Amended 2026-10-29 by Phase 7.1 plan 14d: the request link path is no
+	// longer pinned, because the link flow is gone, and it must not be in the
+	// published reference.
+	if _, ok := spec.Paths["/auth/request-link"]; ok {
+		t.Errorf("docs/swagger.json still documents the retired /auth/request-link path")
+	}
 	for _, path := range []string{
 		"/auth/sign-up", "/auth/sign-up/code", "/auth/code/resend",
 		"/auth/sign-in", "/auth/reset", "/auth/reset/code",
