@@ -356,6 +356,38 @@ func TestOfficialPushRecipientCap(t *testing.T) {
 	}
 }
 
+// TestOfficialPushCandidatesFilteredByAreaFirst pins WR-S05 of the Phase 5
+// review: the candidate read is bounded only after it keeps the alert's area,
+// so many lower id accounts elsewhere cannot crowd out a person in the district.
+func TestOfficialPushCandidatesFilteredByAreaFirst(t *testing.T) {
+	w := newPushWorld(t)
+	old := recipientCap
+	recipientCap = 2
+	t.Cleanup(func() { recipientCap = old })
+
+	elsewhere := homeCell(t, w.ix, 568, false) // Chennai
+	for i := 0; i < recipientCap*candidateFactor+2; i++ {
+		w.person(fmt.Sprintf("far%d", i), elsewhere)
+	}
+	inNtr := w.person("ntr", homeCell(t, w.ix, 749, false))
+	edge := w.person("edge", homeCell(t, w.ix, 749, true))
+
+	const g = "1792000000000401"
+	w.save(version(g, "IN-1792000000000401_1", SeveritySevere), districts(749))
+	if got := w.queued(g); !sameIDs(got, inNtr, edge) {
+		t.Errorf("queued %v, want the two people in 749 (%d and %d) past the %d lower ids elsewhere",
+			got, inNtr, edge, recipientCap*candidateFactor+2)
+	}
+
+	// A state tier Extreme alert reaches the person in the state the same way.
+	const gs = "1792000000000402"
+	v := version(gs, "IN-1792000000000402_1", SeverityExtreme)
+	w.save(v, Placement{Tier: TierState, StateCodes: []int{28}})
+	if got := w.queued(gs); !sameIDs(got, inNtr, edge) {
+		t.Errorf("state alert queued %v, want %d and %d", got, inNtr, edge)
+	}
+}
+
 // TestWithdrawnFirstNeverListedOrPushed pins CR-S01 of the Phase 5 review at
 // the page and the queue: a Severe or Extreme alert whose Cancel, or whose
 // Update under another guid, was stored first is not listed, not counted, does

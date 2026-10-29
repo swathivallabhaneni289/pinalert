@@ -45,9 +45,12 @@ RETURNING COALESCE(official_push_on, true)::bool AS official_push_on;
 -- name: OfficialPushCandidates :many
 -- Who might be told: accounts with a home cell, not deleted, the switch on
 -- (COALESCE with true for an account with no settings row) and at least one live
--- device. Ordered by account id and bounded by row_cap; the caller turns each
--- home cell into districts and keeps the accounts whose districts meet the
--- alert's. It selects by cell, never by a coordinate.
+-- device, whose home cell lies under one of the given geohash prefixes (the
+-- caller passes the prefixes that cover the alert's districts, so the row cap
+-- applies only after the area filter: WR-S05 of the Phase 5 review). Ordered
+-- by account id and bounded by row_cap; the caller turns each home cell into
+-- districts and keeps the accounts whose districts meet the alert's. It
+-- selects by cell, never by a coordinate.
 SELECT a.id AS account_id,
        COALESCE(a.home_area_cell, '')::text AS home_area_cell
 FROM accounts a
@@ -55,6 +58,7 @@ LEFT JOIN account_alert_settings s ON s.account_id = a.id
 WHERE a.deleted_at IS NULL
   AND a.home_area_cell IS NOT NULL
   AND COALESCE(s.official_push_on, true)
+  AND left(a.home_area_cell, sqlc.arg(prefix_len)::int) = ANY(sqlc.arg(prefixes)::text[])
   AND EXISTS (
       SELECT 1
       FROM push_subscriptions p

@@ -105,7 +105,10 @@ func TestOfficialPushQueries(t *testing.T) {
 		revoked := officialPushPerson(t, pool, "op-revoked@example.com", "op-revoked-sess", "tf3bq")
 		testutil.MustExec(t, pool, `UPDATE sessions SET revoked_at = now() WHERE session_id = 'op-revoked-sess'`)
 
-		rows, err := q.OfficialPushCandidates(ctx, 100)
+		// Amended 2026-10-29 by the Phase 5 review fix (WR-S05): the read now takes
+		// the geohash prefixes of the alert's area; every old case is kept.
+		area := []string{"tf3b"}
+		rows, err := q.OfficialPushCandidates(ctx, sqlcgen.OfficialPushCandidatesParams{PrefixLen: 4, Prefixes: area, RowCap: 100})
 		if err != nil {
 			t.Fatalf("OfficialPushCandidates: %v", err)
 		}
@@ -116,9 +119,12 @@ func TestOfficialPushQueries(t *testing.T) {
 		if rows[0].HomeAreaCell != "tf3bq" {
 			t.Errorf("home cell = %q, want tf3bq", rows[0].HomeAreaCell)
 		}
-		one, err := q.OfficialPushCandidates(ctx, 1)
+		one, err := q.OfficialPushCandidates(ctx, sqlcgen.OfficialPushCandidatesParams{PrefixLen: 4, Prefixes: area, RowCap: 1})
 		if err != nil || len(one) != 1 || one[0].AccountID != ok {
 			t.Errorf("a row cap of 1 gave %+v (%v), want the lowest account id", one, err)
+		}
+		if far, err := q.OfficialPushCandidates(ctx, sqlcgen.OfficialPushCandidatesParams{PrefixLen: 4, Prefixes: []string{"tdr1"}, RowCap: 100}); err != nil || len(far) != 0 {
+			t.Errorf("prefixes of another area gave %+v (%v), want none", far, err)
 		}
 	})
 

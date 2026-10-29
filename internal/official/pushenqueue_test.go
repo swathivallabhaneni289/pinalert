@@ -190,6 +190,48 @@ func TestOfficialRecipientScope(t *testing.T) {
 // homeCell finds a precision 5 cell for the tests, by scanning the district's
 // bounding box. interior means every one of the five points sits in the
 // district; edge means a corner is in the district while the centre is not.
+// TestCoverPrefixesHoldEveryMatchingCell pins WR-S05 of the Phase 5 review: the
+// prefixes the candidate read filters by hold every home cell that the match in
+// Go would accept, for district and state alerts, so the SQL filter never drops
+// a person the alert reaches.
+func TestCoverPrefixesHoldEveryMatchingCell(t *testing.T) {
+	ix := areas.Default()
+	for _, saved := range []SavedVersion{
+		{Placement: Placement{Tier: TierDistrict, DistrictCodes: []int{749}}},
+		{Placement: Placement{Tier: TierDistrict, DistrictCodes: []int{568, 515}}},
+		{Placement: Placement{Tier: TierState, StateCodes: []int{28}}},
+	} {
+		in := map[string]bool{}
+		for _, p := range coverPrefixes(ix, saved) {
+			in[p] = true
+		}
+		var boxes [][4]float64
+		for _, d := range ix.Districts() {
+			if matchDistricts([]areas.District{d}, saved) {
+				boxes = append(boxes, d.BBox)
+			}
+		}
+		checked := 0
+		for _, b := range boxes {
+			for lat := b[1] - 0.1; lat <= b[3]+0.1; lat += 0.02 {
+				for lon := b[0] - 0.1; lon <= b[2]+0.1; lon += 0.02 {
+					cell := geohash.EncodeWithPrecision(lat, lon, 5)
+					if !matchDistricts(ix.CellDistricts(cell), saved) {
+						continue
+					}
+					checked++
+					if !in[cell[:candidatePrefixLen]] {
+						t.Fatalf("%+v: home cell %s matches but its prefix is not covered", saved.Placement, cell)
+					}
+				}
+			}
+		}
+		if checked == 0 {
+			t.Fatalf("%+v: no matching cell was checked", saved.Placement)
+		}
+	}
+}
+
 func homeCell(t *testing.T, ix *areas.Index, code int, edge bool) string {
 	t.Helper()
 	d, ok := ix.ByCode(code)
