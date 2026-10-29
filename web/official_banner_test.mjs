@@ -429,7 +429,10 @@ test('a timer fetches again after five minutes, not before', async () => {
   await flush();
   page.advance(290000);
   assert.equal(page.requests.length, 1);
-  page.advance(20000);
+  // Amended 2026-10-29 by the Phase 5 review fix (WR-B01): the clock stops 1 s
+  // after the refresh went out (it stopped 11 s after), so the answer below comes
+  // inside the new 10 second request limit. The checks are unchanged.
+  page.advance(10000);
   assert.equal(page.requests.length, 2);
   assert.equal(page.requests[1].url, page.requests[0].url);
   byId(page, 'notice-live').textContent = '';
@@ -627,4 +630,48 @@ test('the Demo banner follows the place on the visit API base and stores nothing
   assert.equal(page.requests.length, 1);
   assert.ok(page.requests[0].url.startsWith('/demo/api/v/abc/official/alerts?'), page.requests[0].url);
   assert.equal(page.store.size, 0);
+});
+
+// ---- A request that never answers, and a new place (Phase 5 review fix WR-B01) ----
+// Added 2026-10-29. Every banner request has a 10 second limit, and the banner
+// never sits over a place it was not fetched for.
+
+test('WR-B01: a banner request with no answer is given up at 10 seconds and the banner hides', async () => {
+  const page = loadPage();
+  page.sandbox.AbortController = class { constructor() { this.signal = { aborted: false }; } abort() { this.signal.aborted = true; } };
+  page.centre(16.5, 80.6);
+  page.advance(1000);
+  answer(page.requests[0], 200, view(pick()));
+  await flush();
+  assert.equal(page.banner.hidden, false);
+  page.advance(299000);
+  assert.equal(page.requests.length, 2, 'the five minute refresh is out');
+  assert.ok(page.requests[1].init.signal, 'the request carries an abort signal');
+  page.advance(9000);
+  await flush();
+  assert.equal(page.banner.hidden, false, 'inside the limit the banner stays');
+  page.advance(1000);
+  await flush();
+  assert.equal(page.banner.hidden, true, 'at the limit the feed cannot vouch for the alert');
+  assert.equal(page.requests[1].init.signal.aborted, true);
+  answer(page.requests[1], 200, view(pick()));
+  await flush();
+  assert.equal(page.banner.hidden, true, 'the late answer is dropped');
+});
+
+test('WR-B01: a new place hides the banner before its own answer comes', async () => {
+  const page = loadPage();
+  page.centre(16.5, 80.6);
+  page.advance(1000);
+  answer(page.requests[0], 200, view(pick()));
+  await flush();
+  assert.equal(page.banner.hidden, false);
+  page.centre(16.5, 80.6);
+  assert.equal(page.banner.hidden, false, 'the same place keeps the banner');
+  page.centre(13.08, 80.27);
+  assert.equal(page.banner.hidden, true, 'an alert never sits over a place it was not fetched for');
+  page.advance(1000);
+  answer(page.requests[1], 200, view(pick()));
+  await flush();
+  assert.equal(page.banner.hidden, false);
 });

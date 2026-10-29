@@ -38,6 +38,9 @@
   'use strict';
 
   var REFRESH_MS = 300000;
+  // A request with no answer, body included, is given up after this long
+  // (Phase 5 review fix WR-B01, the same limit as the report list in app.js).
+  var REQUEST_LIMIT_MS = 10000;
   var FEED_CENTRE_EVENT = 'pinalert:feed-centre';
   var DEFAULT_BASE = '/api';
   var CHOSEN_Z_OFFSET = 1000;
@@ -71,6 +74,7 @@
   var layer = null; // the layer group, made on the first draw
   var entries = {}; // pin id -> { pin, key, marker, node }
   var requestOut = false;
+  var requestSeq = 0; // moves on when a request is sent and when it ends
   var lastFetchAt = 0;
 
   // ---- Small helpers ------------------------------------------------------
@@ -433,27 +437,65 @@
 
   // loadPins makes the one request and draws the answer. A failed request or an
   // HTTP error clears the layer: with no answer, nothing is known to be current.
+  //
+  // Each request has a time limit (Phase 5 review fix WR-B01). The limit is the
+  // page's own timer, never the request's promise: WebKit can leave a request's
+  // promise unsettled, and a request that never ends must not keep the pins
+  // drawn as current or block every later load. At the limit the request is
+  // aborted, the layer is cleared and requestOut is let go; a late answer of a
+  // request that was given up is dropped.
   function loadPins() {
     if (requestOut || typeof fetch !== 'function') {
       return;
     }
     requestOut = true;
     lastFetchAt = Date.now();
-    fetch(apiBase() + '/official/pins', {
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' }
-    }).then(function (res) {
+    requestSeq += 1;
+    var mine = requestSeq;
+    var controller = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = null;
+    var expired = new Promise(function (resolve, reject) {
+      timer = setTimeout(function () {
+        timer = null;
+        reject(new Error('official pins: no answer in time'));
+        if (controller) {
+          controller.abort();
+        }
+      }, REQUEST_LIMIT_MS);
+    });
+    expired.catch(function () {});
+    var init = { credentials: 'same-origin', headers: { Accept: 'application/json' } };
+    if (controller) {
+      init.signal = controller.signal;
+    }
+    var answered = fetch(apiBase() + '/official/pins', init).then(function (res) {
       if (!res.ok) {
         throw new Error('status ' + res.status);
       }
-      return res.json();
-    }).then(function (body) {
-      requestOut = false;
+      return Promise.race([res.json(), expired]);
+    });
+    Promise.race([answered, expired]).then(function (body) {
+      if (mine !== requestSeq) {
+        return;
+      }
+      settled(timer);
       drawPins(body);
     }, function () {
-      requestOut = false;
+      if (mine !== requestSeq) {
+        return;
+      }
+      settled(timer);
       clearAll();
     });
+  }
+
+  // settled ends one request: its timer stops and the next load may go out.
+  function settled(timer) {
+    if (timer !== null) {
+      clearTimeout(timer);
+    }
+    requestSeq += 1;
+    requestOut = false;
   }
 
   document.addEventListener(FEED_CENTRE_EVENT, function () {

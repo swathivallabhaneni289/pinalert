@@ -46,6 +46,9 @@
   var SETTLE_MS = 500;
   // No two fetches for a changed place are closer than this.
   var MIN_GAP_MS = 1000;
+  // A request with no answer, body included, is given up after this long
+  // (Phase 5 review fix WR-B01, the same limit as the report list in app.js).
+  var REQUEST_LIMIT_MS = 10000;
 
   var bannerEl = document.getElementById('alert-banner');
   var levelEl = document.getElementById('alert-banner-level');
@@ -206,20 +209,48 @@
     }
     var target = apiBase() + '/official/alerts?lat=' + encodeURIComponent(String(lat)) +
       '&lon=' + encodeURIComponent(String(lon));
-    fetch(target, { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (res) {
+    // The time limit (Phase 5 review fix WR-B01) is the page's own timer, never
+    // the request's promise, which WebKit can leave unsettled: at the limit the
+    // request is aborted and the banner hides, as for any failed request.
+    var controller = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = null;
+    var expired = new Promise(function (resolve, reject) {
+      timer = setTimeout(function () {
+        timer = null;
+        reject(new Error('official banner: no answer in time'));
+        if (controller) {
+          controller.abort();
+        }
+      }, REQUEST_LIMIT_MS);
+    });
+    expired.catch(function () {});
+    var init = { credentials: 'same-origin', headers: { Accept: 'application/json' } };
+    if (controller) {
+      init.signal = controller.signal;
+    }
+    var answered = fetch(target, init).then(function (res) {
       if (!res.ok) {
         throw new Error('status ' + res.status);
       }
-      return res.json();
-    }).then(function (body) {
+      return Promise.race([res.json(), expired]);
+    });
+    Promise.race([answered, expired]).then(function (body) {
+      stopTimer(timer);
       if (mine === requestSeq) {
         render(body);
       }
     }, function () {
+      stopTimer(timer);
       if (mine === requestSeq) {
         hideQuiet();
       }
     });
+  }
+
+  function stopTimer(timer) {
+    if (timer !== null) {
+      clearTimeout(timer);
+    }
   }
 
   // ---- The place ----------------------------------------------------------
@@ -278,6 +309,11 @@
     if (samePlace(wanted, fetched)) {
       return;
     }
+    // The alert on show was fetched for another place: it goes now, before the
+    // new place is asked about, so it never sits over a place it was not
+    // fetched for (Phase 5 review fix WR-B01). The rank is kept, so the same
+    // alert coming back for the new place is not announced again.
+    hideQuiet();
     var delay = Math.max(SETTLE_MS, lastFetchAt + MIN_GAP_MS - Date.now());
     settleTimer = setTimeout(settle, delay);
   }

@@ -106,9 +106,9 @@ function loadLayer(options = {}) {
     for (;;) {
       const due = [...intervals.entries()].filter(([, t]) => t.next <= end).sort((a, b) => a[1].next - b[1].next)[0];
       if (!due) { break; }
-      const [, timer] = due;
+      const [id, timer] = due;
       now = timer.next;
-      timer.next += timer.every;
+      if (timer.once) { intervals.delete(id); } else { timer.next += timer.every; }
       timer.fn();
     }
     now = end;
@@ -167,7 +167,13 @@ function loadLayer(options = {}) {
     },
     setInterval(fn, every) { const id = nextTimer++; intervals.set(id, { fn, every, next: now + every }); return id; },
     clearInterval(id) { intervals.delete(id); },
-    setTimeout(fn) { fn(); return 0; },
+    // Amended 2026-10-29 by the Phase 5 review fix (WR-B01): a timeout waits for
+    // the clock the test moves, so the request time limit fires only when
+    // advance() reaches it. The script made no setTimeout call before the fix,
+    // so no older case depended on the old fire-at-once fake.
+    setTimeout(fn, ms) { const id = nextTimer++; intervals.set(id, { fn, every: 0, next: now + (ms || 0), once: true }); return id; },
+    clearTimeout(id) { intervals.delete(id); },
+    AbortController: class { constructor() { this.signal = { aborted: false }; } abort() { this.signal.aborted = true; } },
     CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init && init.detail; } }
   };
   if (PinalertMap) { sandbox.PinalertMap = PinalertMap; }
@@ -541,4 +547,46 @@ test('the layer never writes to the list, the counts or the shared store', async
   answer(layer.requests[0], 200, fresh([pin()]));
   await flush();
   assert.equal(layer.doc.activeElement, null, 'nothing took focus');
+});
+
+// ---- A request that never answers (Phase 5 review fix WR-B01) ----
+// Added 2026-10-29. Every pins request has a 10 second limit: at the limit it
+// is aborted, the layer is cleared (nothing is known to be current) and the
+// next load sends a new request.
+
+test('WR-B01: a pins request with no answer is given up at 10 seconds and the layer clears', async () => {
+  const layer = await open(fresh([pin()]));
+  assert.equal(markersOf(layer).length, 1);
+  assert.ok(layer.requests[0].init.signal, 'the request carries an abort signal');
+  layer.advance(300000);
+  await flush();
+  assert.equal(layer.requests.length, 2, 'the five minute refresh is out');
+  layer.advance(9000);
+  await flush();
+  assert.equal(markersOf(layer).length, 1, 'inside the limit the pins stay');
+  layer.advance(1000);
+  await flush();
+  assert.equal(markersOf(layer).length, 0, 'at the limit the pins drawn before are cleared');
+  assert.equal(layer.requests[1].init.signal.aborted, true, 'the hung request is aborted');
+  layer.api.loadPins();
+  await flush();
+  assert.equal(layer.requests.length, 3, 'a hung request never blocks the next load');
+  answer(layer.requests[1], 200, fresh([pin({ id: 8 })]));
+  await flush();
+  assert.equal(markersOf(layer).length, 0, 'the late answer of the given up request is dropped');
+  answer(layer.requests[2], 200, fresh([pin()]));
+  await flush();
+  assert.equal(markersOf(layer).length, 1);
+});
+
+test('WR-B01: a body that never arrives is given up at the limit too', async () => {
+  const layer = loadLayer();
+  await flush();
+  layer.requests[0].resolve({ ok: true, status: 200, json: () => new Promise(() => {}) });
+  await flush();
+  layer.advance(10000);
+  await flush();
+  layer.api.loadPins();
+  await flush();
+  assert.equal(layer.requests.length, 2);
 });

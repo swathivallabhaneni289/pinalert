@@ -1033,3 +1033,67 @@ test('CR-B01: a row that had ended before the answer does not ask every minute',
   await flush();
   assert.equal(page.requests.length, 1);
 });
+
+// ---- A request that never answers (Phase 5 review fix WR-B01) ----
+// Added 2026-10-29. A request with no answer is given up on the first minute
+// tick at least 10 seconds after it went out (the page keeps its one timer, the
+// minute tick): it is aborted, the load error shows, and later loads go out.
+
+const withAbort = (page) => {
+  page.sandbox.AbortController = class { constructor() { this.signal = { aborted: false }; } abort() { this.signal.aborted = true; } };
+  return page;
+};
+
+test('WR-B01: a load with no answer is given up on the next tick and never blocks Try again', async () => {
+  const page = withAbort(loadPage());
+  page.advance(1000);
+  el(page, 'official-retry').disabled = false;
+  fire(el(page, 'official-retry'), 'click'); // still out: nothing new
+  await flush();
+  assert.equal(page.requests.length, 1);
+  const first = page.requests[0];
+  page.advance(59000);
+  await flush();
+  assert.ok(shown(page, 'official-error'), 'the hung load becomes the load error');
+  assert.equal(status(page), 'Not checked');
+  assert.equal(el(page, 'official-retry').disabled, false);
+  fire(el(page, 'official-retry'), 'click');
+  await flush();
+  assert.equal(page.requests.length, 2, 'Try again sends a new request');
+  answer(first, 200, view());
+  await flush();
+  assert.equal(hasClaim(page), false, 'the late answer of the given up request is dropped');
+  answer(page.requests[1], 200, view());
+  await flush();
+  assert.ok(hasClaim(page));
+});
+
+test('WR-B01: the request carries an abort signal that the time limit aborts', async () => {
+  const page = withAbort(loadPage());
+  // The page made its first request before the fake was in place; ask again.
+  page.advance(60000);
+  await flush();
+  fire(el(page, 'official-retry'), 'click');
+  await flush();
+  const req = page.requests[1];
+  assert.ok(req.init.signal, 'the request carries an abort signal');
+  page.advance(60000);
+  await flush();
+  assert.equal(req.init.signal.aborted, true);
+});
+
+test('WR-B01: a re-ask at the fresh limit that hangs shows no claim and gives way', async () => {
+  const page = await open({}, view());
+  page.advance(26 * 60000);
+  await flush();
+  assert.equal(page.requests.length, 2);
+  assert.equal(hasClaim(page), false);
+  page.advance(60000);
+  await flush();
+  assert.ok(shown(page, 'official-error'));
+  assert.equal(hasClaim(page), false);
+  showTab(page, 'hidden');
+  showTab(page);
+  await flush();
+  assert.equal(page.requests.length, 3, 'the next load goes out');
+});

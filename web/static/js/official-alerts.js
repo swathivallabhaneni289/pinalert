@@ -48,6 +48,9 @@
   var RECHECK_NOT_FRESH_MS = 5 * 60000;
   // Showing the tab again asks again when the last request is this old.
   var SHOWN_AGAIN_MS = 60000;
+  // A request with no answer this long after it went out is given up on the
+  // next minute tick (Phase 5 review fix WR-B01).
+  var REQUEST_LIMIT_MS = 10000;
   var NEARBY_CENTRE_KEY = 'pinalert.nearbyCentre';
   var DEFAULT_BASE = '/api';
 
@@ -97,6 +100,8 @@
   var serverNowAtRender = 0; // the server clock when it was drawn, in ms
   var requestOut = false;
   var lastLoadAt = 0; // Date.now() when the last request was sent
+  var requestSeq = 0; // moves on with each request and when one is given up
+  var controller = null; // aborts the request that is out, when the browser can
   var detailCount = 0;
 
   // ---- Times --------------------------------------------------------------
@@ -687,19 +692,54 @@
       renderError();
       return;
     }
-    fetch(target, { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (res) {
+    requestSeq += 1;
+    var mine = requestSeq;
+    controller = typeof AbortController === 'function' ? new AbortController() : null;
+    var init = { credentials: 'same-origin', headers: { Accept: 'application/json' } };
+    if (controller) {
+      init.signal = controller.signal;
+    }
+    fetch(target, init).then(function (res) {
       if (!res.ok) {
         throw new Error('status ' + res.status);
       }
       return res.json();
     }).then(function (body) {
+      if (mine !== requestSeq) {
+        return;
+      }
       requestOut = false;
+      controller = null;
       retryEl.disabled = false;
       render(body);
     }, function () {
+      if (mine !== requestSeq) {
+        return;
+      }
       requestOut = false;
+      controller = null;
       renderError();
     });
+  }
+
+  // giveUpIfHung is the time limit of a request (Phase 5 review fix WR-B01). It
+  // runs on the minute tick, the page's one timer (no second timer, so no
+  // refetch loop): a request out for REQUEST_LIMIT_MS or more is aborted, its
+  // late answer is dropped, and the page shows the load error, so a request
+  // that never ends never blocks Try again or the next ask. The tick is not the
+  // request's promise, which WebKit can leave unsettled.
+  function giveUpIfHung() {
+    if (!requestOut || Date.now() - lastLoadAt < REQUEST_LIMIT_MS) {
+      return false;
+    }
+    requestSeq += 1;
+    requestOut = false;
+    if (controller) {
+      controller.abort();
+      controller = null;
+    }
+    renderError();
+    return true;
   }
 
   // ---- Asking again (Phase 5 review fix CR-B01) ---------------------------
@@ -743,7 +783,7 @@
   }
 
   function tick() {
-    if (!current) {
+    if (giveUpIfHung() || !current) {
       return;
     }
     var elapsed = Date.now() - renderedAt;
