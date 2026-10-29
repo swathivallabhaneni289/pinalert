@@ -203,6 +203,9 @@ window.PinalertComments = (function () {
     // Counts the Like answers. A list answer asked for before the latest Like
     // answer of a comment keeps that comment's like state (review fix WR-B05).
     var answerStamp = 0;
+    // Open capped threads whose read tail is read again after the answer
+    // being written (review fix round 3, SK2-01).
+    var pendingTails = [];
     var loadSeq = 0;
     var inflight = null;
     var pollTimer = null;
@@ -517,7 +520,7 @@ window.PinalertComments = (function () {
       // after coveredTo are still to be read.
       rec.thread = {
         wrap: wrap, ul: ul, toggle: toggle, more: more, moreError: moreErr, replyIds: [],
-        total: 0, coveredTo: 0, serverMore: false, busy: false
+        total: 0, coveredTo: 0, headLast: 0, serverMore: false, busy: false
       };
       toggle.addEventListener('click', function (evt) {
         evt.stopPropagation();
@@ -921,11 +924,65 @@ window.PinalertComments = (function () {
       if (!capped) {
         t.coveredTo = last;
         t.serverMore = false;
+        t.headLast = 0;
       } else {
+        // An open thread whose tail was read before has that tail read again
+        // after this answer, because counts alone cannot tell a reply that
+        // went from a new one (review fix round 3, SK2-01).
+        if (last > 0 && t.coveredTo > last && openThreads[rec.id] === true) {
+          pendingTails.push(rec);
+        }
         t.serverMore = t.total > t.replyIds.length || last >= t.coveredTo;
         t.coveredTo = Math.max(t.coveredTo, last);
+        t.headLast = last;
       }
       writeThread(rec);
+    }
+
+    // rereadTails reads again the tail of each open capped thread the answer
+    // just written (the replies after the first page), through placeReplies
+    // over the range the read covers. A reply gone from the tail leaves the
+    // screen, a new one lands in id order, and Show more replies stays only
+    // when the read itself left replies after it. A failed read leaves the
+    // thread as the poll wrote it.
+    function rereadTails() {
+      var recs = pendingTails;
+      pendingTails = [];
+      for (var i = 0; i < recs.length; i++) {
+        rereadTail(recs[i]);
+      }
+    }
+
+    function rereadTail(rec) {
+      var t = rec.thread;
+      if (!t || t.busy || nodes[rec.id] !== rec || !(t.headLast > 0)) {
+        return;
+      }
+      var after = t.headLast;
+      var sentStamp = answerStamp;
+      var call = request('GET', threadPath(rec.id, after));
+      call.promise.then(function (res) {
+        if (nodes[rec.id] !== rec || t.headLast !== after || t.busy) {
+          return;
+        }
+        if (!res.ok || !res.body || !Array.isArray(res.body.comments)) {
+          return;
+        }
+        var head = res.body.comments[0];
+        if (!head || String(head.id) !== String(rec.id)) {
+          return;
+        }
+        var replies = Array.isArray(head.replies) ? head.replies : [];
+        var more = res.body.more === true;
+        placeReplies(rec, replies, sentStamp, after, !more);
+        if (typeof head.reply_count === 'number') {
+          t.total = head.reply_count;
+        }
+        var next = typeof res.body.next_after === 'number' ? res.body.next_after : 0;
+        t.coveredTo = Math.max(after, next);
+        t.serverMore = more;
+        writeThread(rec);
+      }).catch(function () {});
     }
 
     function removeRoot(id) {
@@ -1096,6 +1153,7 @@ window.PinalertComments = (function () {
       }
       applyOpenState(body.comments_open !== false);
       mergeRoots(comments, body.more === true ? 'range' : 'all', 0, sentStamp);
+      rereadTails();
       if (!loadedMore) {
         more = body.more === true;
         nextAfter = typeof body.next_after === 'number' ? body.next_after : 0;
@@ -1112,6 +1170,7 @@ window.PinalertComments = (function () {
         total = body.comment_count;
       }
       mergeRoots(body.comments, body.more === true ? 'range' : 'all', after, sentStamp);
+      rereadTails();
       more = body.more === true;
       nextAfter = typeof body.next_after === 'number' ? body.next_after : 0;
       syncParts();

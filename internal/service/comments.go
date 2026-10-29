@@ -532,8 +532,13 @@ func (s *CommentService) ListReplies(ctx context.Context, reportID, viewerAccoun
 	if err != nil {
 		return CommentList{}, err
 	}
+	// A finished Rescue report answers the same as List: nothing, and closed
+	// (review fix round 3, SK2-03).
+	if rep.hidden {
+		return CommentList{Comments: []CommentView{}}, nil
+	}
 	out := CommentList{Open: rep.open, Comments: []CommentView{}}
-	if rep.hidden || rootID <= 0 {
+	if rootID <= 0 {
 		return out, nil
 	}
 

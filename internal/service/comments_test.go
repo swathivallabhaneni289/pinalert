@@ -786,6 +786,20 @@ func TestCommentFinishedRescueHidden(t *testing.T) {
 		t.Errorf("Delete on a finished Rescue report = %v, want nil", err)
 	}
 
+	// SK2-03 (round 3, 2026-10-29): the replies read answers as List does for a
+	// finished Rescue report, nothing and closed. Today a finished report is
+	// never open, so this pins the one rule rather than a reachable split.
+	t.Run("the replies read of a finished Rescue report answers as List does", func(t *testing.T) {
+		got, err := r.svc.ListReplies(ctx, finished, r.carol, existing, 0)
+		if err != nil {
+			t.Fatalf("ListReplies on a finished Rescue report = %v", err)
+		}
+		want := r.list(t, finished, r.carol)
+		if len(got.Comments) != 0 || got.Open || got.More || got.NextAfter != 0 || got.Count != want.Count {
+			t.Errorf("ListReplies = %+v, want the same as List %+v", got, want)
+		}
+	})
+
 	t.Run("a live Rescue report lists", func(t *testing.T) {
 		live := r.report(t, "rescue_needed", "critical", "clear", 6*time.Hour)
 		testutil.SeedComment(t, r.pool, testutil.CommentSeed{ReportID: live, AccountID: r.alice})
