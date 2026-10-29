@@ -115,7 +115,7 @@ func PublicStatusPage(tmpl *template.Template, cfg AuthConfig, svc *service.Shar
 		if err != nil {
 			// The token is a capability: it is never written to a log.
 			log.Printf("handlers: PublicStatusPage: public status failed")
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			writePublicStatusError(w)
 			return
 		}
 
@@ -152,17 +152,32 @@ func writePublicStatus(w http.ResponseWriter, tmpl *template.Template, vm public
 	var buf bytes.Buffer
 	if err := tmpl.ExecuteTemplate(&buf, publicStatusTemplate, vm); err != nil {
 		log.Printf("handlers: PublicStatusPage: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		writePublicStatusError(w)
 		return
 	}
 	h := w.Header()
 	h.Set("Content-Type", "text/html; charset=utf-8")
-	h.Set("Cache-Control", "no-store")
-	h.Set("X-Robots-Tag", "noindex, nofollow")
-	h.Set("Referrer-Policy", "no-referrer")
+	setPublicStatusPrivacyHeaders(h)
 	if retry {
 		h.Set("Retry-After", publicStatusRetryAfter)
 	}
 	w.WriteHeader(status)
 	_, _ = w.Write(buf.Bytes())
+}
+
+// setPublicStatusPrivacyHeaders sets the three headers every answer of the page
+// carries, a 500 included: never cached, never indexed, and no referrer sent
+// onward, so the link's token never leaves in a Referer header.
+func setPublicStatusPrivacyHeaders(h http.Header) {
+	h.Set("Cache-Control", "no-store")
+	h.Set("X-Robots-Tag", "noindex, nofollow")
+	h.Set("Referrer-Policy", "no-referrer")
+}
+
+// writePublicStatusError is the page's one 500: a plain text error with the
+// same privacy headers as every other answer (review IN-S02), so a crawler can
+// neither cache nor index the error.
+func writePublicStatusError(w http.ResponseWriter) {
+	setPublicStatusPrivacyHeaders(w.Header())
+	http.Error(w, "internal server error", http.StatusInternalServerError)
 }
