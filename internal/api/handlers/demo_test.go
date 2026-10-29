@@ -214,3 +214,43 @@ func TestDemoRateLimitPerIP(t *testing.T) {
 		}
 	}
 }
+
+func TestDemoSubmitRefusesMissingCoordinates(t *testing.T) {
+	h, visit := newDemoHandlerRouter(t, demoGenerousWrites)
+	path := "/demo/api/v/" + visit + "/reports"
+	before := demoReportCount(t, h, visit)
+
+	const head = `"category":"flood","severity":"low","description":"Water rising near the bridge"`
+	rows := []struct {
+		name    string
+		body    string
+		field   string
+		message string
+	}{
+		{"latitude absent", `{` + head + `,"longitude":80.6386}`, "latitude", "latitude is required."},
+		{"longitude absent", `{` + head + `,"latitude":16.5424}`, "longitude", "longitude is required."},
+		{"latitude null", `{` + head + `,"latitude":null,"longitude":80.6386}`, "latitude", "latitude is required."},
+		{"longitude null", `{` + head + `,"latitude":16.5424,"longitude":null}`, "longitude", "longitude is required."},
+		{"both absent", `{` + head + `}`, "latitude", "latitude is required."},
+		{"both null", `{` + head + `,"latitude":null,"longitude":null}`, "latitude", "latitude is required."},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			rec := demoServe(h, http.MethodPost, path, row.body)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("%s: status = %d, want 400; body=%s", row.name, rec.Code, rec.Body.String())
+			}
+			out := decodeDemoErr(t, rec)
+			if out.Error.Field != row.field || out.Error.Message != row.message {
+				t.Fatalf("%s: field=%q message=%q, want field=%q message=%q", row.name, out.Error.Field, out.Error.Message, row.field, row.message)
+			}
+		})
+	}
+
+	if got := demoReportCount(t, h, visit); got != before {
+		t.Fatalf("Demo report count after the refusals = %d, want %d", got, before)
+	}
+	if rec := demoServe(h, http.MethodPost, path, demoPracticeBody); rec.Code != http.StatusCreated {
+		t.Fatalf("practice post after the refusals = %d, want 201; body=%s", rec.Code, rec.Body.String())
+	}
+}

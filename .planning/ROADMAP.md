@@ -996,7 +996,7 @@ Plans:
 
 - [ ] TBD (promote with /gsd-review-backlog when ready)
 
-### Phase 999.11: Report submission accepts missing coordinates as 0,0 (BACKLOG, Phase 4 candidate)
+### Phase 999.11: Report submission accepts missing coordinates as 0,0 (DONE as quick task 261030-5tq, 2026-10-30)
 
 **Goal:** [Captured for future planning] A report posted without a latitude or longitude, or with null for either, is refused with a 400 that names the missing field, the way the vote endpoints already answer "latitude is required." Today `POST /api/reports` decodes a null or absent coordinate to 0 and files the report at 0,0: `SubmitReportRequest` holds plain float64 fields in `internal/api/handlers/reports.go` (lines 50 and 52, copied at lines 276 and 277) and `internal/service/report.go` only range checks them. Found by the plan 03-31 browser run and confirmed by the Phase 3 re-verification on 2026-10-13. It is an input validation gap and not a trust rule, so it fits Phase 4's robustness scope. The fix is pointer fields in the request type and a 400 in the handler, with the contract test written first.
 **Requirements:** TBD
