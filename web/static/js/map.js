@@ -206,16 +206,21 @@ window.PinalertMap = (function () {
     if (!popup) {
       return;
     }
-    var phone = phoneDetail();
+    // The detail pane is the phone's sheet, or the laptop panel while it is
+    // open (Phase 8 plan 07). The bubble stays the bubble otherwise.
+    var phone = detailInPane();
     popup.options.pane = phone ? 'detailPane' : 'popupPane';
     popup.options.autoPan = !reducedMotion && !phone;
     arrangeCard(card, phone);
-    // The report page (the history, Share and the comments mount) shows on the
-    // phone's detail sheet only. The laptop bubble stays as built until the
-    // laptop host plan (Phase 8 D-18), so its page stays hidden and fetches
-    // nothing there.
+    // The report page (the history, Share and the comments mount) shows in the
+    // detail pane only: the phone's sheet and the laptop panel. The laptop
+    // bubble keeps its look, so its page stays hidden and fetches nothing
+    // there. The Open report row is the bubble's alone.
     if (card && card.page) {
       card.page.setHosted(phone);
+    }
+    if (card && card.openRow) {
+      card.openRow.hidden = phone;
     }
   }
 
@@ -274,6 +279,222 @@ window.PinalertMap = (function () {
       place(flag);
     }
   }
+
+  // ---- The laptop report panel (Phase 8 plan 07) ----
+  // D-18 default A (owner, 2026-10-19: "the laptop ver looks good i dont want
+  // you to disturb that"): a pin tap opens the bubble exactly as built, and its
+  // one new row, Open report, opens the same card and page sections in a 520px
+  // panel that takes the Nearby list's place. D-01 option B (a pin tap opens the
+  // full report at once) is one plan away: see the plan's "If the owner picks
+  // B". The panel reuses the phone's detail pane host, which sits outside the
+  // map container, so Leaflet still owns open, close, focus return and both
+  // popup events and typing in the panel never reaches the map's key handlers.
+  var PANEL_ATTRIBUTE = 'data-report-panel';
+  var BACK_TO_LIST_LABEL = 'Back to the list';
+  var OPEN_REPORT_WORDS = 'Open report';
+  // True while the laptop panel is the report's home.
+  var panelOpen = false;
+  // True only while enterPanel closes and reopens the one popup so its card
+  // moves into the detail pane: that is not a close of the report. The address,
+  // the report link and the focus return stay as they are.
+  var hostSwitching = false;
+  // The timer every close in the panel starts. An open in the same turn clears
+  // it: a pin tap closes the open report first, which is a switch.
+  var panelExitTimer = 0;
+  // Who opened the report the panel closed last, for the focus return.
+  var panelOpener = null;
+  // Watches the open panel's popup container; see holdPanelPosition.
+  var panelPositionWatch = null;
+
+  // detailInPane says whether the open report shows in the detail pane: the
+  // phone's sheet, or the laptop panel while it is open.
+  function detailInPane() {
+    return phoneDetail() || panelOpen;
+  }
+
+  // openReportWords is the count words of the Open report row, from the
+  // server's comment_count only. A count that is not a whole number gives no
+  // words, so a made up number is never shown (D-03, SC4, T-08-30).
+  function openReportWords(count) {
+    if (typeof count !== 'number' || !isFinite(count) || count < 0 || Math.floor(count) !== count) {
+      return '';
+    }
+    if (count === 0) {
+      return 'No comments';
+    }
+    return count + ' comment' + (count === 1 ? '' : 's');
+  }
+
+  // openReportName is the row's accessible name: the words, then the count.
+  function openReportName(count) {
+    var words = openReportWords(count);
+    return words === '' ? OPEN_REPORT_WORDS : OPEN_REPORT_WORDS + ', ' + words;
+  }
+
+  // buildOpenReportRow makes the Open report row of the laptop bubble: the
+  // message icon, the words, the count and the chevron. The count is written
+  // later by writeOpenReportRow. Pressing it opens the panel for this report.
+  function buildOpenReportRow(reportId) {
+    var row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'popup-card__open-report';
+    var icon = document.createElement('span');
+    icon.className = 'popup-card__open-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    var label = document.createElement('span');
+    label.className = 'popup-card__open-label';
+    Pinalert.setText(label, OPEN_REPORT_WORDS);
+    var count = document.createElement('span');
+    count.className = 'popup-card__open-count';
+    count.hidden = true;
+    var chevron = document.createElement('span');
+    chevron.className = 'popup-card__open-chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+    row.appendChild(icon);
+    row.appendChild(label);
+    row.appendChild(count);
+    row.appendChild(chevron);
+    row.setAttribute('aria-label', OPEN_REPORT_WORDS);
+    row.addEventListener('click', function () {
+      enterPanel(reportId);
+    });
+    return { el: row, count: count };
+  }
+
+  // writeOpenReportRow rewrites the row's count and name from the report the
+  // server sent. It builds nothing and moves no focus.
+  function writeOpenReportRow(card, report) {
+    if (!card || !card.openRow) {
+      return;
+    }
+    var words = openReportWords(report.comment_count);
+    if (card.openCount.textContent !== words) {
+      Pinalert.setText(card.openCount, words);
+    }
+    card.openCount.hidden = words === '';
+    card.openRow.setAttribute('aria-label', openReportName(report.comment_count));
+  }
+
+  // replaceAllPlacements applies the current placement to every bound popup,
+  // the loop a resize runs (A59, A68), so a popup first opened after the host
+  // changed opens in the right pane.
+  function replaceAllPlacements() {
+    var ids = Object.keys(markers);
+    for (var i = 0; i < ids.length; i++) {
+      applyPanPadding(markers[ids[i]].getPopup());
+      applyPopupPlacement(markers[ids[i]].getPopup(), cards[ids[i]]);
+    }
+  }
+
+  // enterPanel moves the open report into the laptop panel. The same card node
+  // moves to the detail pane: the popup closes and opens again with the host
+  // switch flag up, so no address, history entry, report link or focus return
+  // is touched (T-08-32). It does nothing on a phone, where the card is
+  // already the page.
+  function enterPanel(id) {
+    var marker = markers[String(id)];
+    if (phoneDetail() || panelOpen || !map || !marker) {
+      return false;
+    }
+    var opener = popupOpener;
+    panelOpen = true;
+    document.documentElement.setAttribute(PANEL_ATTRIBUTE, 'true');
+    hostSwitching = true;
+    try {
+      replaceAllPlacements();
+      marker.closePopup();
+      marker.openPopup();
+    } finally {
+      hostSwitching = false;
+    }
+    // The reopen above would otherwise record the pin as the opener.
+    if (opener && popupOpener) {
+      popupOpener = opener;
+    }
+    return true;
+  }
+
+  // exitPanel puts the list back and the bubble as the placement for the next
+  // pin tap, then returns focus to the pin or the row that opened the bubble,
+  // but only when focus was in the panel or lost, never when the reader has
+  // moved it on purpose.
+  function exitPanel() {
+    panelExitTimer = 0;
+    if (!panelOpen) {
+      return;
+    }
+    panelOpen = false;
+    document.documentElement.removeAttribute(PANEL_ATTRIBUTE);
+    replaceAllPlacements();
+    var opener = panelOpener;
+    panelOpener = null;
+    var active = document.activeElement;
+    var host = document.querySelector('.report-view-host');
+    if (opener && (!active || active === document.body || (host && host.contains(active)))) {
+      returnFocusToOpener(opener);
+    }
+  }
+
+  // panelNoteClose runs on every close of a report popup. A close in the panel
+  // is settled a turn later, so an open that follows at once (a pin tap) can
+  // cancel it and the panel stays.
+  function panelNoteClose(opener) {
+    if (!panelOpen || hostSwitching) {
+      return;
+    }
+    panelOpener = opener;
+    if (panelExitTimer) {
+      window.clearTimeout(panelExitTimer);
+    }
+    panelExitTimer = window.setTimeout(exitPanel, 0);
+  }
+
+  // panelNoteOpen runs on every open of a report popup: an open right after a
+  // close in the panel is the switch to another report.
+  function panelNoteOpen() {
+    if (panelExitTimer) {
+      window.clearTimeout(panelExitTimer);
+      panelExitTimer = 0;
+    }
+  }
+
+  // holdPanelPosition keeps Leaflet's inline left and transform off the open
+  // popup while it is the panel. Leaflet writes both on every open, update,
+  // zoom and view reset, and an inline style outranks the stylesheet, so a
+  // watcher on the container clears them as they are written (before the next
+  // paint). Clearing an empty value changes nothing, so it cannot loop. The
+  // bottom and the width Leaflet writes are beaten in the stylesheet itself.
+  function clearLeafletOffsets(el) {
+    if (el.style.left) {
+      el.style.left = '';
+    }
+    if (el.style.transform) {
+      el.style.transform = '';
+    }
+  }
+
+  function holdPanelPosition(container) {
+    releasePanelPosition();
+    if (!container || !panelOpen) {
+      return;
+    }
+    clearLeafletOffsets(container);
+    if (typeof MutationObserver !== 'function') {
+      return;
+    }
+    panelPositionWatch = new MutationObserver(function () {
+      clearLeafletOffsets(container);
+    });
+    panelPositionWatch.observe(container, { attributes: true, attributeFilter: ['style'] });
+  }
+
+  function releasePanelPosition() {
+    if (panelPositionWatch) {
+      panelPositionWatch.disconnect();
+      panelPositionWatch = null;
+    }
+  }
+  // ---- End of the laptop report panel (Phase 8 plan 07) ----
 
   // hasVectorBasemap reports whether this browser can render the
   // OpenFreeMap vector basemap through the MapLibre bridge: both vendor
@@ -829,7 +1050,8 @@ window.PinalertMap = (function () {
   // only (D-20, A21). The header is the badge row (badge, severity label)
   // then the state line (state label, reporter words) (A80), then come the
   // title, the meta lines, the trust block and the actions. The
-  // card has no footer and no comments link (A11). The report text is the
+  // card has no comments link (A11); its last row is Open report, with the
+  // server's comment count (Phase 8 plan 07). The report text is the
   // title and reports have no edit path, so it is written once here. Every
   // other field is written by updatePopupCard, which this builder ends with.
   function buildPopupCard(report) {
@@ -951,6 +1173,15 @@ window.PinalertMap = (function () {
     body.appendChild(trust.el);
     body.appendChild(fade);
     body.appendChild(actions);
+    // The laptop bubble's one new row (Phase 8 plan 07, D-18 A): Open report,
+    // with the server's comment count. It comes before the page node, which stays
+    // the last child (research Pitfall 5b), and it is hidden in the detail pane.
+    // Only a card with a page has one, so the Demo and a failed report-page.js
+    // load get none.
+    var openReport = page ? buildOpenReportRow(report.id) : null;
+    if (openReport) {
+      body.appendChild(openReport.el);
+    }
     if (page) {
       body.appendChild(page.el);
     }
@@ -974,6 +1205,8 @@ window.PinalertMap = (function () {
       actions: actions,
       flag: flagControl,
       page: page,
+      openRow: openReport ? openReport.el : null,
+      openCount: openReport ? openReport.count : null,
       approximate: false,
       observer: null,
       frame: 0
@@ -1053,6 +1286,8 @@ window.PinalertMap = (function () {
     // Last, so the page reads the same report the rest of the card now shows.
     // It writes into its own nodes and never rebuilds, moves focus or touches
     // the comments mount point.
+    // The Open report row's count words, from the server's comment_count only.
+    writeOpenReportRow(card, report);
     if (card.page) {
       card.page.update(report);
     }
@@ -1128,6 +1363,12 @@ window.PinalertMap = (function () {
     var id = reportIdForPopup(popup);
     popupOpener = { id: id, kind: listOpenerId !== null && listOpenerId === id ? 'list' : 'marker' };
     listOpenerId = null;
+    // An open right after a close in the laptop panel is a switch: the panel stays.
+    panelNoteOpen();
+    // In the laptop panel the anchor is Back to the list; the phone's stays Back.
+    if (close && panelOpen && !phoneDetail()) {
+      close.setAttribute('aria-label', BACK_TO_LIST_LABEL);
+    }
     // The report page starts its history read. It touches no focus, address or
     // history entry.
     if (id !== null && cards[id] && cards[id].page) {
@@ -1151,7 +1392,14 @@ window.PinalertMap = (function () {
     openedWhileHidden = !card || card.offsetParent === null;
     // The address and, on a phone, the map view to come back to (plan 39).
     // It runs before the strip centring below moves the map.
-    noteReportOpened(id);
+    // The host switch of the laptop panel (enterPanel) is not a new open: the
+    // address already names this report.
+    if (!hostSwitching) {
+      noteReportOpened(id);
+    }
+    if (panelOpen && !phoneDetail()) {
+      holdPanelPosition(container);
+    }
     refreshPanPadding();
     applyPanPadding(popup);
     panPopupIntoView(popup);
@@ -1346,8 +1594,17 @@ window.PinalertMap = (function () {
     }
     var pressedClose = closePressHadFocus;
     var hadFocus = popupFocusInside || pressedClose;
+    // The host switch of the laptop panel is not a close the reader made, so no
+    // focus goes back to the opener for it.
+    if (hostSwitching) {
+      hadFocus = false;
+    }
     var opener = popupOpener;
     closePressHadFocus = false;
+    // A close in the laptop panel is settled a turn later (a pin tap is a
+    // switch and keeps the panel); the host switch of enterPanel is no close.
+    releasePanelPosition();
+    panelNoteClose(opener);
 
     document.documentElement.removeAttribute('data-popup-open');
     if (el) {
@@ -1380,13 +1637,17 @@ window.PinalertMap = (function () {
     // resolve from Active, a take back off Past, a fade). Keeping the link
     // then would send report=ID on every poll and could bring the pin back
     // with no popup.
-    if (id !== null && String(id) === openedFocusId && !resizeClosing) {
-      endLinkOnClose();
+    if (!hostSwitching) {
+      if (id !== null && String(id) === openedFocusId && !resizeClosing) {
+        endLinkOnClose();
+      }
     }
 
     // The report's address ends, or moves to the next report when one opens in
     // the same turn (plan 39).
-    noteReportClosed();
+    if (!hostSwitching) {
+      noteReportClosed();
+    }
   }
 
   // endLinkOnClose ends a report link when its popup closes (CR-01): the
@@ -1531,7 +1792,7 @@ window.PinalertMap = (function () {
   // moveend of its own pan is skipped (clearingTools), so only a later, separate
   // move can clear the count.
   function keepCardClearOfTools(popup) {
-    if (clearingTools || !map || !popup || !popup.isOpen() || phoneDetail()) {
+    if (clearingTools || !map || !popup || !popup.isOpen() || phoneDetail() || panelOpen) {
       return;
     }
     if (map.dragging && map.dragging.moving()) {
@@ -1581,6 +1842,10 @@ window.PinalertMap = (function () {
     // On a phone the detail is a fixed sheet, so there is nothing to pan into
     // view.
     if (phoneDetail()) {
+      return;
+    }
+    // The laptop panel is fixed too.
+    if (panelOpen) {
       return;
     }
     if (map.dragging && map.dragging.moving()) {
