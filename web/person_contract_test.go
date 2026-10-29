@@ -104,12 +104,16 @@ func TestPersonPageCopy(t *testing.T) {
 		// P9-C15 Blocked by you.
 		"You blocked ",
 		"They can't see your profile or follow you. Their reports still show in the feed.",
-		"Unblock",
-		// P9-C6, P9-C7 the buttons and the menu.
-		"Follow", "Following", "More", "Edit in Settings", "Remove follower", "Block",
+		">Unblock</button>",
+		// P9-C6, P9-C7 the buttons and the menu. Amended 2026-10-30 by the
+		// review fix IN-T03: each is matched as visible element text, so an id,
+		// a field name or an aria-label that happens to hold the word cannot
+		// satisfy it.
+		">Follow</button>", ">Following</button>", "<span>More</span>",
+		">Edit in Settings</a>", ">Remove follower</button>", ">Block</button>",
 		// Surface 5, the part of the section this plan draws.
 		"Recent reports", "Reports from the last 30 days, newest first.",
-		"stars",
+		`person-stars__word">stars</span>`,
 	} {
 		if !strings.Contains(tmpl, want) {
 			t.Errorf("person.html.tmpl lacks the sentence %q", want)
@@ -142,7 +146,7 @@ func TestPersonPageCopy(t *testing.T) {
 }
 
 // TestPeopleListWindowMarkup pins the shared list window of Followers,
-// Following and Blocked people (plan 09-11, UI-SPEC Surface 4): the ids the
+// Following, Muted people and Blocked people (plan 09-11, UI-SPEC Surface 4): the ids the
 // script reads, the X named Close, the words of the error state and the confirm
 // dialog built exactly like #settings-delete-confirm.
 func TestPeopleListWindowMarkup(t *testing.T) {
@@ -579,6 +583,129 @@ func TestPersonBellMarkup(t *testing.T) {
 			if strings.Contains(strings.ToLower(text), bad) {
 				t.Errorf("the bell wording holds %q: every phone note is silent (D-10)", bad)
 			}
+		}
+	}
+}
+
+// TestPersonColumnHeadsAndHoverKeepContrast pins review fix WR-T02 (2026-10-30).
+// The laptop Recent reports column heads and a hovered row's line sit on
+// --color-surface, where the muted grey reads 4.34 to 1 in the light theme.
+// Muted text stays on --color-bg only; on the surface the text takes
+// --color-text, which clears 4.5 to 1 in both themes.
+func TestPersonColumnHeadsAndHoverKeepContrast(t *testing.T) {
+	rules := p26Rules(t, "person.css")
+	heads := p26Find(rules, "", ".person-report-cols")
+	if len(heads) == 0 {
+		heads = p26Find(rules, "min-width", ".person-report-cols")
+	}
+	if len(heads) == 0 {
+		t.Fatalf("person.css: no .person-report-cols rule")
+	}
+	for _, r := range heads {
+		if c := r.Decls["color"]; c != "" && c != "var(--color-text)" {
+			t.Errorf(".person-report-cols color is %q, want var(--color-text): muted text sits only on --color-bg (WR-T02)", c)
+		}
+		if r.Decls["background"] == "var(--color-surface)" && r.Decls["color"] != "var(--color-text)" {
+			t.Errorf(".person-report-cols is on the surface colour and must take var(--color-text) (WR-T02)")
+		}
+	}
+	hover := p26Find(rules, "", "a.person-report__body:hover .person-report__label")
+	if len(hover) == 0 {
+		t.Errorf("person.css: a hovered row's line must switch to var(--color-text) while the row is on the surface colour (WR-T02)")
+	}
+	for _, r := range hover {
+		if r.Decls["color"] != "var(--color-text)" {
+			t.Errorf("hovered row line color is %q, want var(--color-text) (WR-T02)", r.Decls["color"])
+		}
+	}
+	main := p16ParseCSS("static/css/main.css", p16ReadStatic(t, "static/css/main.css"))
+	for name, head := range map[string]string{"light": ":root", "dark": ":root[data-theme=\"dark\"]"} {
+		d := p16Rule(t, main, "", head).Decls
+		got := wcagContrastRatio(t, d["--color-text"], d["--color-surface"], "text on surface, "+name)
+		if got < 4.5 {
+			t.Errorf("%s theme: --color-text on --color-surface is %.2f to 1, want at least 4.5 (WR-T02)", name, got)
+		}
+	}
+}
+
+// TestPersonPageHasOneH1AtEachSize pins review fix IN-T02 (2026-10-30). Under
+// 900px the top bar title is the h1, so the username there is a plain line and
+// the username h1 is not drawn; from 900px the top bar title is not drawn, so
+// the username h1 shows. The not found and You blocked states draw no username,
+// so on the laptop the top bar title is clipped in, never display none, the way
+// app-bar.css does it for Nearby.
+func TestPersonPageHasOneH1AtEachSize(t *testing.T) {
+	tmpl := p421ReadTemplate(t, "person.html.tmpl")
+	if !strings.Contains(tmpl, `<p class="person-username person-username--phone">{{.Profile.Username}}</p>`) {
+		t.Errorf("person.html.tmpl lacks the phone username line (IN-T02)")
+	}
+	rules := p26Rules(t, "person.css")
+	if !p26Has(rules, "", "h1.person-username", "display", "none") {
+		t.Errorf("person.css: the username h1 must be hidden under 900px (IN-T02)")
+	}
+	if !p26Has(rules, "min-width: 900px", "h1.person-username", "display", "block") {
+		t.Errorf("person.css: the username h1 must show from 900px (IN-T02)")
+	}
+	if !p26Has(rules, "min-width: 900px", ".person-username--phone", "display", "none") {
+		t.Errorf("person.css: the phone username line must be hidden from 900px (IN-T02)")
+	}
+	for _, head := range []string{
+		"body:has(#person-not-found) .app-topbar__title",
+		"body:has(#person-load-failed) .app-topbar__title",
+		"body:has(#person-blocked:not([hidden])) .app-topbar__title",
+	} {
+		found := p26Find(rules, "min-width: 900px", head)
+		if len(found) == 0 {
+			t.Errorf("person.css: no laptop rule %q seats the top bar title as the h1 of a state page (IN-T02)", head)
+		}
+		for _, r := range found {
+			if r.Decls["display"] != "block" || r.Decls["clip"] != "rect(0, 0, 0, 0)" || r.Decls["position"] != "absolute" {
+				t.Errorf("person.css: the state heading rule must clip, not remove, the title: %v (IN-T02)", r.Decls)
+			}
+		}
+	}
+}
+
+// TestListWindowCommentsNameMutedPeople pins review fix IN-T06 (2026-10-30):
+// since plan 09-20 the shared list window also serves Muted people, so the
+// comments that describe it must not list only three kinds.
+func TestListWindowCommentsNameMutedPeople(t *testing.T) {
+	for file, text := range map[string]string{
+		"people_list_window.html.tmpl": p421ReadTemplate(t, "people_list_window.html.tmpl"),
+		"settings.html.tmpl":           p421ReadTemplate(t, "settings.html.tmpl"),
+		"css/person.css":               p421ReadStatic(t, "css/person.css"),
+	} {
+		for _, stale := range []string{
+			"Followers, Following and Blocked people",
+			"Following, Followers and Blocked people",
+			"Followers, Following and Blocked\n   people",
+		} {
+			if strings.Contains(text, stale) {
+				t.Errorf("%s still describes the list window without Muted people: %q", file, stale)
+			}
+		}
+	}
+}
+
+// TestModerationDocRetentionNamesPhase9Items pins review fix WR-T04
+// (2026-10-30): the Retention section of docs/MODERATION.md says the Policy
+// page names what Phase 9 keeps, so it must list the same items the Policy
+// does: the switch time, ended follows with their reason, a cleared rating that
+// stays stored, and the permanent bar on rating.
+func TestModerationDocRetentionNamesPhase9Items(t *testing.T) {
+	raw, err := os.ReadFile("../docs/MODERATION.md")
+	if err != nil {
+		t.Fatalf("reading docs/MODERATION.md: %v", err)
+	}
+	doc := strings.Join(strings.Fields(string(raw)), " ")
+	for _, want := range []string{
+		"the profile switch with the time it was switched on",
+		"each follow kept with an end time and a reason after it ends",
+		"A rating its rater clears with Remove my rating stays stored, marked cleared with the time",
+		"the account is also barred from rating for good, and the moderator and the time are kept on the account",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("docs/MODERATION.md Retention lacks %q (WR-T04)", want)
 		}
 	}
 }

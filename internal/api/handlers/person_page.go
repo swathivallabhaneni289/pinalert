@@ -46,6 +46,12 @@ type personViewModel struct {
 	BlockedByYou bool
 	PageTitle    string
 
+	// LoadFailed draws the "Couldn't load this profile" state when the profile
+	// read failed (status 500). RetryHref is the escaped /u/ address the Try
+	// again link returns to.
+	LoadFailed bool
+	RetryHref  string
+
 	// AccountID is the READER's own account id, never the profile owner's. It
 	// is written as data-account-id so position.js can return the position
 	// Nearby kept for this account (plan 09-11); it is zero on the not found
@@ -179,9 +185,15 @@ func PersonPage(tmpl *template.Template, people *service.PeopleService, reports 
 			vm.PageTitle = "Pinalert: Profile not found"
 			vm.Nav = navFor(navPerson, navTitle(personTitleOther), navBack("/"))
 		case err != nil:
+			// UI-SPEC Surface 6 (P9-C12): a failed read is a framed state with a
+			// Try again link, not a bare line. The box holds no profile and no
+			// stored text; the link goes back to the same address.
 			log.Printf("handlers: PersonPage: %v", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
+			status = http.StatusInternalServerError
+			vm.LoadFailed = true
+			vm.RetryHref = "/u/" + url.PathEscape(chi.URLParam(r, "username"))
+			vm.PageTitle = "Pinalert: Couldn't load this profile"
+			vm.Nav = navFor(navPerson, navTitle(personTitleOther), navBack("/"))
 		default:
 			vm.Profile = profile
 			vm.BlockedByYou = profile.BlockedByYou

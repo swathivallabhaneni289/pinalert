@@ -656,6 +656,12 @@ var sizeOnlyNamed = map[string]string{
 	// Recent reports is for the aligned laptop rows; the phone cards carry the
 	// same words inside each card, as My activity does.
 	".person-report-cols": "phone profile: the column head row is for the aligned laptop rows; phone cards carry the same facts inside each card (UI-SPEC 5b, 5c).",
+	// Added 2026-10-30 by the Phase 9 review fix IN-T02: the profile shows its
+	// username once at each size. Under 900px the top bar title is the page's h1
+	// and the username is a plain line; from 900px the top bar title is not drawn
+	// and the username is the h1. The same words, the same place, one heading.
+	"h1.person-username":      "laptop profile: the username is the page's h1 from 900px; under 900px the top bar title is the h1 and the username is the plain line below (review fix IN-T02).",
+	".person-username--phone": "phone profile: the username as a plain line under the top bar title, which is the phone's h1; the laptop shows the same words as the h1 (review fix IN-T02).",
 	".leaflet-container .leaflet-detail-pane .leaflet-popup-tip-container":                          "phone detail sheet: a sheet has no pointer tip; the laptop popup keeps it (kept as built, UI-SPEC Not designed here).",
 	".leaflet-container .leaflet-detail-pane .popup-card__pills > .icon-badge":                      "phone detail sheet: the badge repeats the heading's glyph; kept as built (UI-SPEC Not designed here).",
 	".leaflet-container .leaflet-detail-pane .popup-card__meta > .icon-glyph":                       "phone detail sheet: the meta glyph is dropped at sheet width; kept as built (UI-SPEC Not designed here).",

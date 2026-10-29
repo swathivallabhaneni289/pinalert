@@ -401,11 +401,14 @@ without the report text (borderline results at submit, and every result the back
 finishes, see Text check), and moderator actions without the report text. Phase 8 adds comments
 (the words, with the screen verdict and scores), the likes an account gave, comment flags with
 their notes, and comment moderator actions without the comment text. Deleting an account blanks
-its comments and removes its likes and flags. Phase 9 adds the profile switch, who follows whom
-(each follow kept with an end time and a reason after it ends, until the account goes), the Notify
-me choice with the time it was switched on, blocks, mutes, and the star ratings an account gave
-(the person rated, the stars, the time, and for a removed rating the moderator who removed it and
-when). Deleting an account removes its follows, blocks, mutes, bell choices and the ratings it gave
+its comments and removes its likes and flags. Phase 9 adds the profile switch with the time it was
+switched on, who follows whom (each follow kept with an end time and a reason after it ends, until
+the account goes), the Notify me choice with the time it was switched on, blocks, mutes, and the
+star ratings an account gave (the person rated, the stars, the time, and for a removed rating the
+moderator who removed it and when). A rating its rater clears with Remove my rating stays stored,
+marked cleared with the time, and the moderator screen still lists it as cleared. When a moderator
+removes every rating one account gave, the account is also barred from rating for good, and the
+moderator and the time are kept on the account. Deleting an account removes its follows, blocks, mutes, bell choices and the ratings it gave
 and received in the one transaction, and switches its profile off. A report's share token stays with the report. An expired report only
 stops showing in the lists. The Policy page says the same in general and offers removal through
 the contact line when `CONTACT_EMAIL` is set. One small gap: the Policy page lists the scores

@@ -340,7 +340,9 @@ func TestPolicyNamesNearbyCentre(t *testing.T) {
 // the address and the email, codes included.
 func TestPolicyNamesHomeSquareScreeningAndMail(t *testing.T) {
 	keeps := r71tPolicySection(t, "What Pinalert keeps")
-	const home = "<li>The name of your home area, a town or area and never a street, and a rough square about 5 km wide around it, used for alerts.</li>"
+	// Amended 2026-10-30 by the Phase 9 review fix (WR-T04): the line ends with
+	// the sentence that the area's name also shows on a profile that is on.
+	const home = "<li>The name of your home area, a town or area and never a street, and a rough square about 5 km wide around it, used for alerts. The name of the area, never the square, is also shown on your profile while Let others follow me is on.</li>"
 	if !strings.Contains(keeps, home) {
 		t.Errorf("the Policy's keeps list does not name the home area square:\n%s", home)
 	}
@@ -350,8 +352,13 @@ func TestPolicyNamesHomeSquareScreeningAndMail(t *testing.T) {
 	if strings.Contains(others, "<li>Report and username checks: OpenAI, as described above.</li>") {
 		t.Errorf("the other services list names OpenAI for report and username checks only; comments are checked too")
 	}
+	// Amended 2026-10-30 by the Phase 9 review fix (WR-T03): the Name on a
+	// public profile goes to the same check, so the line names name checks too.
+	if strings.Contains(others, "<li>Report, comment and username checks: OpenAI, as described above.</li>") {
+		t.Errorf("the other services list names OpenAI for report, comment and username checks only; names are checked too")
+	}
 	for _, line := range []string{
-		"<li>Report, comment and username checks: OpenAI, as described above.</li>",
+		"<li>Report, comment, username and name checks: OpenAI, as described above.</li>",
 		"<li>Sign in emails: Resend sends them, so it sees your email address and the email, including any code.</li>",
 	} {
 		if !strings.Contains(others, line) {
