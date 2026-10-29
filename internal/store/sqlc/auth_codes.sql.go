@@ -226,6 +226,27 @@ func (q *Queries) LockCredentialAddress(ctx context.Context, addressKey string) 
 	return err
 }
 
+const markAuthCodePasswordSet = `-- name: MarkAuthCodePasswordSet :exec
+UPDATE auth_codes
+SET purpose = 'reset'
+WHERE id = $1
+  AND purpose = 'signup'
+  AND used_at IS NOT NULL
+  AND password_hash IS NULL
+`
+
+// Phase 7.1 review fix round 4 (skeptic SK3-03): a Create account confirm that
+// only set a password on an account the old emailed link had made did not create
+// anything, so the kept row is marked as a password set (purpose reset) and the
+// sign in page after a lost answer says "Password set", not "Account created".
+// Only the confirm writes it, on the row it just spent; the row holds no hash,
+// so the purpose constraints still hold. The page never asks whether an
+// address has an account; it reads this browser's own row.
+func (q *Queries) MarkAuthCodePasswordSet(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, markAuthCodePasswordSet, id)
+	return err
+}
+
 const pruneAuthCodes = `-- name: PruneAuthCodes :execrows
 DELETE FROM auth_codes WHERE expires_at < $1::timestamptz
 `

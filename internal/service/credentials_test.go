@@ -295,6 +295,19 @@ func (f *credFakeQuerier) DeleteAuthCodesForEmail(_ context.Context, email strin
 	return nil
 }
 
+// MarkAuthCodePasswordSet marks the spent row as a password set (review fix
+// round 4, skeptic SK3-03), as the real query does.
+func (f *credFakeQuerier) MarkAuthCodePasswordSet(_ context.Context, id int64) error {
+	f.log("MarkAuthCodePasswordSet")
+	for i := range f.codes {
+		r := &f.codes[i]
+		if r.id == id && r.purpose == service.PurposeSignUp && r.used != nil && r.passwordHash == nil {
+			r.purpose = service.PurposeReset
+		}
+	}
+	return nil
+}
+
 // DeleteOtherAuthCodesForEmail is the confirm's delete: every row of the
 // address but the spent one (review fix round 3, skeptic SK2-01).
 func (f *credFakeQuerier) DeleteOtherAuthCodesForEmail(_ context.Context, arg sqlcgen.DeleteOtherAuthCodesForEmailParams) error {

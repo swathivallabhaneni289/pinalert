@@ -195,6 +195,13 @@ func (s *CredentialService) ConfirmSignUp(ctx context.Context, sessionID, rawCod
 			if err != nil {
 				return err
 			}
+			// Nothing was created here, only a password set. Mark the kept row so
+			// a page reloaded after a lost answer says "Password set" (review
+			// fix round 4, skeptic SK3-03). The confirm knows this branch; the
+			// page never asks the account table.
+			if err := q.MarkAuthCodePasswordSet(ctx, row.ID); err != nil {
+				return fmt.Errorf("service: marking the code as a password set: %w", err)
+			}
 			if _, err := NewSessionService(q, WithSessionClock(s.now)).LogOutAllDevices(ctx, accountID); err != nil {
 				return err
 			}

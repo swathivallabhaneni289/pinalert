@@ -34,6 +34,9 @@ type CredentialQuerier interface {
 	IssueAuthCode(ctx context.Context, arg sqlcgen.IssueAuthCodeParams) (int64, error)
 	BumpAuthCodeAttempt(ctx context.Context, arg sqlcgen.BumpAuthCodeAttemptParams) (sqlcgen.BumpAuthCodeAttemptRow, error)
 	ConsumeAuthCode(ctx context.Context, id int64) (int64, error)
+	// MarkAuthCodePasswordSet marks the kept row of a Create account confirm that
+	// only set a password on an existing account (review fix round 4, SK3-03).
+	MarkAuthCodePasswordSet(ctx context.Context, id int64) error
 	RetireAuthCode(ctx context.Context, id int64) error
 	GetLatestAuthCode(ctx context.Context, arg sqlcgen.GetLatestAuthCodeParams) (sqlcgen.GetLatestAuthCodeRow, error)
 	DeleteAuthCodesForEmail(ctx context.Context, email string) error

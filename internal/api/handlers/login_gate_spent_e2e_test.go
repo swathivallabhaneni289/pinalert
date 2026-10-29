@@ -70,7 +70,7 @@ func assertSpentPage(t *testing.T, resp *http.Response, body, email, line string
 }
 
 func TestLoginGateSpentCode(t *testing.T) {
-	srv, mailer, _ := newE2EServer(t)
+	srv, mailer, pool := newE2EServer(t)
 
 	t.Run("create account confirmed but the answer was lost", func(t *testing.T) {
 		const email = "gate-spent-create@example.com"
@@ -113,6 +113,30 @@ func TestLoginGateSpentCode(t *testing.T) {
 
 		resp, body := loginGatePage(t, revNoFollow(browser), srv, "")
 		assertSpentPage(t, resp, body, email, spentResetLine)
+	})
+
+	t.Run("password set on an account from the old link says password set", func(t *testing.T) {
+		// Review fix round 4 (skeptic SK3-03): nothing was created, so the line is
+		// "Password set", decided by the confirm's own branch.
+		const email = "gate-spent-legacy@example.com"
+		seedLegacyAccount(t, pool, email)
+		browser := newJarClient(t)
+		getLoginPage(t, browser, srv)
+		if status := signUpRequest(t, browser, srv, email, e2eTestPassword); status != http.StatusOK {
+			t.Fatalf("sign up status = %d, want 200", status)
+		}
+		lost := revCookieCopy(t, browser, srv)
+		if status := confirmSignUpCode(t, lost, srv, mailer.codeFor(t, email)); status != http.StatusOK {
+			t.Fatalf("confirm status = %d, want 200", status)
+		}
+		resp, body := loginGatePage(t, revNoFollow(browser), srv, "")
+		assertSpentPage(t, resp, body, email, spentResetLine)
+		if strings.Contains(body, spentCreateLine) {
+			t.Errorf("a password set on an old account says the account was created")
+		}
+		if status := signInRequest(t, browser, srv, email, e2eTestPassword); status != http.StatusOK {
+			t.Fatalf("sign in after the spent page = %d, want 200", status)
+		}
 	})
 
 	t.Run("a wrong code keeps the code screen", func(t *testing.T) {

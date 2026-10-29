@@ -55,6 +55,21 @@ WHERE id = sqlc.arg(id)
   AND used_at IS NULL
   AND expires_at > now();
 
+-- name: MarkAuthCodePasswordSet :exec
+-- Phase 7.1 review fix round 4 (skeptic SK3-03): a Create account confirm that
+-- only set a password on an account the old emailed link had made did not create
+-- anything, so the kept row is marked as a password set (purpose reset) and the
+-- sign in page after a lost answer says "Password set", not "Account created".
+-- Only the confirm writes it, on the row it just spent; the row holds no hash,
+-- so the purpose constraints still hold. The page never asks whether an
+-- address has an account; it reads this browser's own row.
+UPDATE auth_codes
+SET purpose = 'reset'
+WHERE id = sqlc.arg(id)
+  AND purpose = 'signup'
+  AND used_at IS NOT NULL
+  AND password_hash IS NULL;
+
 -- name: RetireAuthCode :exec
 -- Marks a row used when its email did not go out (the ceiling refused it or
 -- the provider failed), so a reload of the sign in page does not show a code
