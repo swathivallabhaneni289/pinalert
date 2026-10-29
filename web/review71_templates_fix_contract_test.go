@@ -109,3 +109,73 @@ func TestLoginCardTitleNoRing(t *testing.T) {
 		t.Errorf("#login-title lost tabindex -1: %s", tag)
 	}
 }
+
+// TestReliableTickBoxSharedLook (WR-T01 with WR-B04): the Reliable reporter tick
+// box looks the same in the installed app's ask on Nearby as in the sign up
+// pop-up: a flex row at least 44px high, a 20px box, the text colour and 16px
+// above Not now and Allow. Before the fix the rules were scoped to the sign up
+// pop-up's ids and lived in welcome.css, which Nearby does not link, so on
+// Nearby the label was an inline line with a 12px box against the buttons. The
+// shared rules live in auth.css, which both pages link, scoped to the Log out
+// box class both pop-ups use, and welcome.css keeps no copy.
+func TestReliableTickBoxSharedLook(t *testing.T) {
+	auth := r71tRules(t, "static/css/auth.css")
+	const labelHead = ".logout-confirm .welcome-ask__check"
+	const boxHead = `.logout-confirm .welcome-ask__check input[type="checkbox"]`
+	if r, ok := r71tFind(auth, "", labelHead); !ok {
+		t.Errorf("auth.css has no %s rule, so the tick box on Nearby is unstyled", labelHead)
+	} else {
+		p16MustDecl(t, labelHead, r, map[string]string{
+			"display":     "flex",
+			"align-items": "center",
+			"gap":         "var(--space-sm)",
+			"min-height":  "var(--touch-target-min)",
+			"margin":      "0 0 var(--space-md)",
+			"color":       "var(--color-text)",
+			"font-size":   "var(--font-size-body)",
+			"line-height": "var(--line-height-body)",
+			"cursor":      "pointer",
+		})
+	}
+	if r, ok := r71tFind(auth, "", boxHead); !ok {
+		t.Errorf("auth.css has no %s rule, so the box on Nearby is the small native one", boxHead)
+	} else {
+		p16MustDecl(t, boxHead, r, map[string]string{"flex": "none", "width": "20px", "height": "20px", "margin": "0"})
+	}
+	// The installed ask's title leaves 16px to the tick box, as the sign up
+	// pop-up's does, not the Log out box's 24px.
+	if r, ok := r71tFind(auth, "", "#installed-alerts-ask-title"); !ok {
+		t.Errorf("auth.css has no #installed-alerts-ask-title rule")
+	} else {
+		p16MustDecl(t, "#installed-alerts-ask-title", r, map[string]string{"margin-bottom": "var(--space-md)"})
+	}
+
+	// Both pages link auth.css, so both pop-ups get the one rule.
+	for _, page := range []string{"index.html.tmpl", "welcome.html.tmpl"} {
+		if !strings.Contains(stripReadTemplate(t, page), `<link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">`) {
+			t.Errorf("%s does not link auth.css", page)
+		}
+	}
+	// One rule: welcome.css keeps no id scoped copy, and no other stylesheet
+	// names the tick box.
+	welcome := stripCSSComments(p16ReadStatic(t, "static/css/welcome.css"))
+	for _, gone := range []string{"welcome-ask__check", "#welcome-alerts-reliable"} {
+		if strings.Contains(welcome, gone) {
+			t.Errorf("welcome.css still holds %q; the look lives in auth.css only", gone)
+		}
+	}
+	for _, r := range p16AllCSS(t) {
+		if strings.Contains(r.Head, "welcome-ask__check") && r.File != "static/css/auth.css" {
+			t.Errorf("%s names the tick box (%q); auth.css holds its only rules", r.File, r.Head)
+		}
+	}
+
+	// The markup the script reads is unchanged: the box keeps its id inside the
+	// shared label class in both pop-ups.
+	p13MustContain(t, "installed_alerts_ask.html.tmpl", stripReadTemplate(t, "installed_alerts_ask.html.tmpl"),
+		`<label class="welcome-ask__check"><input type="checkbox" id="installed-alerts-ask-reliable"><span>A Reliable reporter posts near me</span></label>`,
+		`<h2 class="logout-confirm__title" id="installed-alerts-ask-title" tabindex="-1">`,
+		`<dialog id="installed-alerts-ask" class="logout-confirm"`)
+	p13MustContain(t, "welcome.html.tmpl", stripReadTemplate(t, "welcome.html.tmpl"),
+		`<label class="welcome-ask__check"><input type="checkbox" id="welcome-alerts-reliable"><span>A Reliable reporter posts near me</span></label>`)
+}

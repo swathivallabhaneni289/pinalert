@@ -771,6 +771,36 @@ html:has(.logout-confirm[open]) {
   margin-bottom: 0;
 }
 
+/* The Reliable reporter tick box of the two alerts pop-ups: the sign up one on
+   the first time flow and the installed app's one on Nearby (Phase 7.1 review
+   fix WR-T01 with WR-B04, 2026-10-29). Both pages link this file, so the box
+   looks the same in both: a 44px row, a 20px box and 16px above Not now and
+   Allow. The label is never hidden, so it needs no hidden guard. */
+.logout-confirm .welcome-ask__check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: var(--touch-target-min);
+  margin: 0 0 var(--space-md);
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  cursor: pointer;
+}
+
+.logout-confirm .welcome-ask__check input[type="checkbox"] {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+}
+
+/* The installed app's ask leaves 16px under its title, as the sign up pop-up
+   does (welcome.css), instead of the Log out box's 24px. */
+#installed-alerts-ask-title {
+  margin-bottom: var(--space-md);
+}
+
 /* Three classes outrank chrome.css's .inline-error:not([hidden]), which loads
    after this file. */
 .logout-confirm .inline-error:not([hidden]) {

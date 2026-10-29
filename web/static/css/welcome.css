@@ -578,9 +578,9 @@
 }
 
 /* The alerts pop-up (plan 03.3-19). Its box, title and buttons are the Log out
-   box's, from auth.css; these rules only lay out what the pop-up adds: the home
-   area search (shown when no area is known) and the Reliable reporter tick box.
-   They are scoped to the pop-up's id, add no colour and no motion, and the field
+   box's, from auth.css, and so is the Reliable reporter tick box since the Phase
+   7.1 review fix; these rules only lay out the home area search (shown when no
+   area is known) and the space under the title. They are scoped to the pop-up's id, add no colour and no motion, and the field
    and the results keep the window.css look. */
 #welcome-alerts-ask-title {
   margin-bottom: var(--space-md);
@@ -604,24 +604,9 @@
   overflow-y: auto;
 }
 
-#welcome-alerts-ask .welcome-ask__check {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  min-height: var(--touch-target-min);
-  margin: 0 0 var(--space-md);
-  color: var(--color-text);
-  font-size: var(--font-size-body);
-  line-height: var(--line-height-body);
-  cursor: pointer;
-}
-
-#welcome-alerts-reliable {
-  flex: none;
-  width: 20px;
-  height: 20px;
-  margin: 0;
-}
+/* The Reliable reporter tick box takes its look from auth.css, shared with the
+   installed app's ask on Nearby, which does not link this file (Phase 7.1
+   review fix WR-T01, 2026-10-29). */
 
 @media (forced-colors: active) {
   .welcome {
