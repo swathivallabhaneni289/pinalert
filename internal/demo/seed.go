@@ -255,7 +255,9 @@ const SampleKeyPrefix = "sample-"
 // SampleAlert is an invented official alert for the Demo's Official alerts page
 // and banner (D-05). It is plain data: plan 05-19 turns it into the stored alert
 // values with times relative to the moment it is read. Every value is marked as
-// a sample, and the text is invented, not copied from any issuer's message.
+// a sample, and the text is invented, not copied from any issuer's message. The
+// issuer is a made up "Sample ..." name, never a real one, so a cropped row
+// cannot pass for a real warning (IN-S08 of the Phase 5 review).
 type SampleAlert struct {
 	// Key is unique and starts with SampleKeyPrefix.
 	Key string
@@ -288,7 +290,7 @@ var SampleAlerts = []SampleAlert{
 		Severity:   "Extreme",
 		Event:      "Flood warning",
 		HeadlineEN: "Sample: very high water expected along the Budameru and low lying parts of the city",
-		Issuer:     "CWC",
+		Issuer:     "Sample river office",
 		Area:       "NTR",
 		Tier:       "district",
 		IssuedAgo:  40 * time.Minute,
@@ -303,7 +305,7 @@ var SampleAlerts = []SampleAlert{
 		Severity:   "Severe",
 		Event:      "Heavy rain warning",
 		HeadlineEN: "Sample: heavy to very heavy rain likely over the district for the next day",
-		Issuer:     "IMD Amaravati",
+		Issuer:     "Sample weather office",
 		Area:       "NTR",
 		Tier:       "district",
 		IssuedAgo:  3 * time.Hour,
@@ -318,7 +320,7 @@ var SampleAlerts = []SampleAlert{
 		Severity:   "Moderate",
 		Event:      "Lightning",
 		HeadlineEN: "Sample: thunder and lightning likely at isolated places across the state",
-		Issuer:     "Andhra Pradesh SDMA",
+		Issuer:     "Sample state authority",
 		Area:       "Andhra Pradesh",
 		Tier:       "state",
 		IssuedAgo:  90 * time.Minute,

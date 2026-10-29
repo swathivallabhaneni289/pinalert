@@ -118,3 +118,27 @@ func TestDemoAreaShownAsNTR(t *testing.T) {
 		t.Errorf("Demo banner = %+v, want the area NTR district", v.Banner)
 	}
 }
+
+// TestDemoRowsNameNoRealIssuer pins IN-S08 of the Phase 5 review: a cropped
+// screenshot of a Demo row must not read as a real warning, so no sample names
+// a real issuer (UI-SPEC: a pretend alert must not look official).
+func TestDemoRowsNameNoRealIssuer(t *testing.T) {
+	v := SampleView(nil, time.Date(2026, 10, 29, 6, 0, 0, 0, time.UTC))
+	rows := 0
+	for _, g := range v.Groups {
+		for _, r := range g.Rows {
+			rows++
+			for _, real := range []string{"IMD", "CWC", "SDMA", "NDMA", "Amaravati"} {
+				if strings.Contains(r.Issuer, real) {
+					t.Errorf("Demo row %d is issued by %q, which names %s", r.ID, r.Issuer, real)
+				}
+			}
+			if !strings.HasPrefix(r.Issuer, "Sample ") {
+				t.Errorf("Demo row %d issuer %q does not say it is a sample", r.ID, r.Issuer)
+			}
+		}
+	}
+	if rows == 0 {
+		t.Fatalf("the Demo view lists no rows")
+	}
+}
