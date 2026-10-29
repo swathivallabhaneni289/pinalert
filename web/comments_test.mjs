@@ -1510,3 +1510,66 @@ test('SK-01: a thread the server sends whole still drops a reply that went', asy
   assert.deepEqual(threadIds(li), ['b']);
   assert.equal(find(li, 'comment-thread__toggle').textContent, 'View 1 reply');
 });
+
+// ---- review fix round 3, SK2-01 (2026-10-29): an open capped thread whose
+// tail was read rereads that tail at the next poll, so a reply gone from it
+// leaves the screen and a new reply beyond the first 100 becomes reachable
+// without reopening the panel. ----
+
+function openedLongThread(page) {
+  const [li] = page.items();
+  find(li, 'comment-thread__toggle').fire('click');
+  const more = find(li, 'comment-thread__more');
+  more.fire('click');
+  return { li, more };
+}
+
+test('SK2-01: a gone reply and a new reply in the read tail of an open thread follow the poll', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { replies: replyRange(2, 101), reply_count: 150 })]);
+  const { li, more } = openedLongThread(page);
+  lastFetch(env).reply(200, body([cm(1, { reply_count: 150, replies: replyRange(102, 151) })], { more: false, next_after: 151 }));
+  await flush();
+  assert.equal(threadIds(li).length, 150);
+  assert.equal(more.hidden, true);
+
+  // Reply 120 goes and reply 152 is posted by someone else: the counts agree.
+  env.advance(30000);
+  lastFetch(env).reply(200, body([cm(1, { replies: replyRange(2, 101), reply_count: 150 })]));
+  await flush();
+  const call = lastFetch(env);
+  assert.equal(call.address, '/api/reports/r1/comments?replies_of=1&reply_after=101', 'the read tail is read again');
+  call.reply(200, body([cm(1, { reply_count: 150, replies: replyRange(102, 152).filter((c) => c.id !== 120) })], { more: false, next_after: 152 }));
+  await flush();
+  const ids = threadIds(li);
+  assert.equal(ids.length, 150);
+  assert.equal(ids.includes('reply 120'), false, 'the gone reply left the screen');
+  assert.equal(ids[149], 'reply 152', 'the new reply is on the screen');
+  assert.equal(more.hidden, true);
+});
+
+test('SK2-01: a reread tail longer than one page keeps Show more replies', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { replies: replyRange(2, 101), reply_count: 150 })]);
+  const { li, more } = openedLongThread(page);
+  lastFetch(env).reply(200, body([cm(1, { reply_count: 150, replies: replyRange(102, 151) })], { more: false, next_after: 151 }));
+  await flush();
+  env.advance(30000);
+  lastFetch(env).reply(200, body([cm(1, { replies: replyRange(2, 101), reply_count: 300 })]));
+  await flush();
+  lastFetch(env).reply(200, body([cm(1, { reply_count: 300, replies: replyRange(102, 201) })], { more: true, next_after: 201 }));
+  await flush();
+  assert.equal(threadIds(li).length, 200, 'the held tail stays');
+  assert.equal(more.hidden, false, 'replies after the page read are still to be read');
+});
+
+test('SK2-01: a thread never read past the first 100 is not read again', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { replies: replyRange(2, 101), reply_count: 101 })]);
+  find(page.items()[0], 'comment-thread__toggle').fire('click');
+  const before = env.fetches.length;
+  env.advance(30000);
+  lastFetch(env).reply(200, body([cm(1, { replies: replyRange(2, 101), reply_count: 101 })]));
+  await flush();
+  assert.equal(env.fetches.length, before + 1, 'only the poll itself went out');
+});
