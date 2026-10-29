@@ -543,6 +543,12 @@
     if (row.original_language_only) {
       alert.appendChild(make('span', 'official-tag', 'Original language'));
     }
+    // A GDACS row whose end has passed is listed, marked Ended, and not counted
+    // as in force (WR-S04).
+    var ended = row.ended === true;
+    if (ended) {
+      alert.appendChild(make('span', 'official-tag', 'Ended'));
+    }
     if (row.area_text) {
       alert.appendChild(make('span', 'official-row__area', String(row.area_text)));
     }
@@ -573,7 +579,7 @@
     var until = make('span', 'official-row__until');
     var endClock = clockWithDay(row.expires_at, serverNowAtRender);
     if (endClock !== '') {
-      until.appendChild(prefix('Until '));
+      until.appendChild(prefix(ended ? 'Ended ' : 'Until '));
       if (row.expires_inferred) {
         until.appendChild(make('span', 'official-about', 'about '));
       }
@@ -605,20 +611,61 @@
     }
   }
 
+  // countRows counts the rows in force: a GDACS row marked ended is listed but
+  // never counted (WR-S04). countListed counts every row drawn.
   function countRows(view) {
+    return countWhere(view, function (r) {
+      return !r || r.ended !== true;
+    });
+  }
+
+  function countListed(view) {
+    return countWhere(view, function () {
+      return true;
+    });
+  }
+
+  function countWhere(view, keep) {
     var total = 0;
     for (var k = 0; k < view.groups.length; k += 1) {
       var rows = view.groups[k] && view.groups[k].rows;
-      total += Array.isArray(rows) ? rows.length : 0;
+      if (!Array.isArray(rows)) {
+        continue;
+      }
+      for (var r = 0; r < rows.length; r += 1) {
+        if (keep(rows[r])) {
+          total += 1;
+        }
+      }
     }
     return total;
+  }
+
+  // gdacsOnly is the answer with only its GDACS rows, for an unavailable SACHET
+  // feed whose GDACS feed is fresh (IN-S05), or null when there are none to
+  // draw. No SACHET row is ever drawn from an unavailable feed.
+  function gdacsOnly(view) {
+    if (view.hazards_state !== 'fresh') {
+      return null;
+    }
+    var groups = [];
+    for (var g = 0; g < view.groups.length; g += 1) {
+      var source = view.groups[g];
+      var rows = source && Array.isArray(source.rows) ? source.rows : [];
+      var kept = rows.filter(function (r) {
+        return !!r && r.source === 'gdacs';
+      });
+      groups.push({ label: source ? source.label : '', rows: kept });
+    }
+    var only = { groups: groups };
+    return countListed(only) > 0 ? only : null;
   }
 
   // renderGroups draws the column head row (laptop) and the groups in the order
   // the server sent them. A group with no rows is not drawn.
   function renderGroups(view) {
     listEl.textContent = '';
-    if (countRows(view) === 0) {
+    if (countListed(view) === 0) {
       return;
     }
     var head = make('div', 'official-columns');
@@ -674,6 +721,17 @@
     if (view.state === 'unavailable') {
       unavailableTitleEl.textContent = 'Official alerts could not be checked';
       setHidden(unavailableEl, false);
+      // Fresh GDACS rows are still drawn under the notice, by the GDACS state
+      // alone (IN-S05), under their own title: never In force now, which is
+      // the SACHET claim, and never a SACHET row.
+      var hazards = gdacsOnly(view);
+      if (hazards) {
+        setTitle('Hazard events from GDACS', countRows(hazards));
+        setHidden(districtsEl, true);
+        renderGroups(hazards);
+        setHidden(listEl, false);
+        setHidden(sectionEl, false);
+      }
       return;
     }
     if (view.state === 'stale') {
@@ -685,7 +743,8 @@
       return;
     }
     var rows = countRows(view);
-    if (view.state === 'fresh' && rows === 0) {
+    var listed = countListed(view);
+    if (view.state === 'fresh' && listed === 0) {
       showState(emptyEl, emptyTitleEl, 'No official alerts in force for your area', emptyBodyEl,
         'Nothing is in force for where you are or for your home area. ' +
         'Check your state disaster management authority for anything else.');
@@ -695,13 +754,18 @@
       setTitle('Last known alerts', rows);
       districtsEl.textContent = 'As of ' + clockWithDay(view.last_success_at, serverNowAtRender);
       setHidden(districtsEl, false);
+    } else if (rows === 0) {
+      // Only GDACS rows that have ended (WR-S04): listed, but nothing is said
+      // to be in force, and the page does not claim that nothing is.
+      setTitle('Recently ended', 0);
+      setHidden(districtsEl, true);
     } else {
       setTitle('In force now', rows);
       districtsEl.textContent = typeof view.districts_line === 'string' ? view.districts_line : '';
       setHidden(districtsEl, districtsEl.textContent === '');
     }
     renderGroups(view);
-    setHidden(listEl, rows === 0);
+    setHidden(listEl, listed === 0);
     setHidden(sectionEl, false);
   }
 

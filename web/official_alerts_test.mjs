@@ -1237,3 +1237,68 @@ test('WR-B08: any other failure keeps the load error and never restarts anything
   await flush();
   assert.equal(ended, 0, 'only a 404 says the visit is gone');
 });
+
+// ---- GDACS rows after the server fixes WR-S04 and IN-S05 (browser side) ----
+// Added 2026-10-29 for WR-S04-browser and IN-S05-browser. The answer can carry
+// GDACS rows marked ended: true (listed, never counted as in force), a missing
+// GDACS date is an empty string, and fresh GDACS rows can come with a SACHET
+// state of unavailable. These fakes supply those shapes directly.
+
+const gdacs = (over = {}) => row({
+  id: 900, source: 'gdacs', level: 'severe', level_word: 'Orange', badge: 'GDACS', headline: 'Earthquake in Krishna district',
+  issuer: 'GDACS', area_text: '', issued_at: '2026-10-28T04:30:00Z', expires_at: '2026-10-28T04:30:00Z', ended: true, ...over
+});
+
+test('WR-S04-browser: an ended GDACS row is listed, marked Ended and not counted in In force now', async () => {
+  const page = await open({}, view({ groups: [group('reader', 'Where you are: Ntr district', [row(), gdacs()])], count: 1 }));
+  assert.equal(el(page, 'official-title').textContent, 'In force now 1', 'only the row in force is counted');
+  const rows = rowsOf(page);
+  assert.equal(rows.length, 2, 'the ended row is still listed');
+  const ended = textOf(rows[1]);
+  assert.ok(/Ended/.test(ended), ended);
+  assert.ok(!/Until/.test(ended), 'an ended row never says Until: ' + ended);
+  assert.ok(!/Ended/.test(textOf(rows[0])), 'a row in force is not marked');
+});
+
+test('WR-S04-browser: with only ended rows the page neither claims nothing is in force nor says In force now', async () => {
+  const page = await open({}, view({ groups: [group('reader', 'Where you are', [gdacs()])], count: 0 }));
+  assertNoClaim(page, 'only ended rows');
+  assert.equal(hasInForce(page), false);
+  assert.equal(el(page, 'official-title').textContent, 'Recently ended');
+  assert.equal(rowsOf(page).length, 1);
+});
+
+test('WR-S04-browser: an empty GDACS date draws no date at all', async () => {
+  const page = await open({}, view({ groups: [group('reader', 'Where you are', [row(), gdacs({ issued_at: '', expires_at: '', ended: false })])], count: 2 }));
+  const text = textOf(rowsOf(page)[1]);
+  assert.ok(!/Issued \d|ago|Until|0001|Jan/.test(text.replace('Issued by', '')), text);
+});
+
+test('IN-S05-browser: fresh GDACS rows are drawn under the unavailable notice, with no SACHET claim', async () => {
+  const page = await open({}, view({
+    state: 'unavailable', age_seconds: 25200, last_success_at: '2026-10-29T03:40:00Z',
+    hazards_state: 'fresh', hazards_age_seconds: 300, hazards_last_success_at: '2026-10-29T10:29:00Z',
+    groups: [group('reader', 'Where you are: Ntr district', [gdacs({ ended: false, expires_at: '2026-10-29T15:05:00Z' })])], count: 1
+  }));
+  assert.ok(shown(page, 'official-unavailable'), 'the SACHET feed still says it could not be checked');
+  assert.ok(shown(page, 'official-section'));
+  assert.equal(rowsOf(page).length, 1);
+  assert.equal(el(page, 'official-title').textContent, 'Hazard events from GDACS 1');
+  assert.equal(hasInForce(page), false, 'no In force now: that is the SACHET claim');
+  assertNoClaim(page, 'unavailable with GDACS rows');
+});
+
+test('IN-S05-browser: under the unavailable notice nothing is drawn unless the GDACS feed is fresh, and never a SACHET row', async () => {
+  for (const hazards of ['stale', 'unavailable', undefined]) {
+    const page = await open({}, view({
+      state: 'unavailable', age_seconds: 25200, last_success_at: '2026-10-29T03:40:00Z', hazards_state: hazards,
+      groups: [group('reader', 'Where you are', [gdacs({ ended: false }), row()])], count: 2
+    }));
+    assert.equal(shown(page, 'official-section'), false, String(hazards));
+  }
+  const page = await open({}, view({
+    state: 'unavailable', age_seconds: 25200, last_success_at: '2026-10-29T03:40:00Z', hazards_state: 'fresh',
+    groups: [group('reader', 'Where you are', [row()])], count: 1
+  }));
+  assert.equal(shown(page, 'official-section'), false, 'a SACHET row is never drawn from an unavailable feed');
+});
