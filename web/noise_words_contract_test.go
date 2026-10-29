@@ -53,6 +53,9 @@ var noiseCheckedFiles = []string{
 	"static/js/settings-alerts.js",
 	"templates/changes_ask.html.tmpl",
 	"static/js/changes-ask.js",
+	// Phase 9 plan 08: the profile page and its script are scanned too.
+	"templates/person.html.tmpl",
+	"static/js/person.js",
 }
 
 var (

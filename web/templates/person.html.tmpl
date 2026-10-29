@@ -11,7 +11,6 @@
   <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/app-bar.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/places.css?v={{.AssetVersion}}">
-  <link rel="stylesheet" href="/static/css/legal.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/window.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/updates.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/phone.css?v={{.AssetVersion}}">
@@ -116,14 +115,11 @@
   </dialog>
   {{end}}
 
-  {{template "reader_dialog.html.tmpl" .}}
-
   {{template "app_bottombar" .}}
 
   <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/app-bar.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/updates.js?v={{.AssetVersion}}" defer></script>
-  <script src="/static/js/reader.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/person.js?v={{.AssetVersion}}" defer></script>
 </body>
 </html>

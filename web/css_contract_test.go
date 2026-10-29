@@ -808,6 +808,14 @@ var nonCategoryIcons = map[string]bool{
 	// (comments_contract_test.go) checks the file, its licence line and the
 	// literal mask url in comments.css instead.
 	"static/icons/thumbs-up-filled.svg": true,
+	// Phase 9 plan 08 (UI-SPEC Design System): star-filled, the Lucide star
+	// with its fill kept, the glyph before the stars total of a profile header,
+	// drawn by a literal url("/static/icons/star-filled.svg") mask rule in
+	// person.css, same exemption reasoning as search.svg.
+	// TestNewIconsAreRegisteredAndUsed checks it through laterIcons, so the
+	// exemption cannot hide an orphan. Its fill does not break the stroke rules
+	// of that check: it keeps the same stroke attributes as every other glyph.
+	"static/icons/star-filled.svg": true,
 }
 
 // laterIcons lists the glyphs added after Phase 3.4 (plan 04-30: bell-off).
@@ -823,7 +831,11 @@ var nonCategoryIcons = map[string]bool{
 //
 // Amended 2026-10-29 by Phase 8 plan 17 (D-02): thumbs-up.svg joins the list,
 // masked by comments.css for the Like button. No other assertion changed.
-var laterIcons = []string{"bell-off.svg", "share-2.svg", "link.svg", "thumbs-up.svg"}
+//
+// Phase 9 plan 08 (UI-SPEC Design System): star-filled.svg joins the list,
+// masked by person.css for the stars total of a profile header. No other
+// assertion changed.
+var laterIcons = []string{"bell-off.svg", "share-2.svg", "link.svg", "thumbs-up.svg", "star-filled.svg"}
 
 // phase34Icons lists the ten Phase 3.4 glyph files, all exempted through
 // nonCategoryIcons above.

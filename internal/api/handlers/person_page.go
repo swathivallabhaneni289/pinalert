@@ -18,8 +18,8 @@ const personTemplateName = "person.html.tmpl"
 
 // navPerson is the key of the profile page in the app bars. Like Settings it is
 // not a main place, so no bottom bar item is current; unlike Settings the phone
-// top bar keeps its gear (UI-SPEC 1a), so it must not be NavSettings, which
-// hides the gear.
+// top bar keeps its gear (UI-SPEC 1a), so it must not reuse the Settings key,
+// which hides the gear.
 const navPerson = "person"
 
 // The phone top bar titles (P9-C2, UI-SPEC 1a).
@@ -38,7 +38,6 @@ const (
 type personViewModel struct {
 	AssetVersion string
 	Chrome       Chrome
-	Legal        LegalText
 	Nav          NavView
 	Profile      service.PersonProfile
 	NotFound     bool
@@ -79,7 +78,6 @@ func PersonPage(tmpl *template.Template, people *service.PeopleService, cfg Page
 		vm := personViewModel{
 			AssetVersion: cfg.AssetVersion,
 			Chrome:       chrome,
-			Legal:        legalTextFor(chrome),
 		}
 		status := http.StatusOK
 
