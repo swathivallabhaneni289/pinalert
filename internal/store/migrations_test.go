@@ -3018,3 +3018,188 @@ func TestMigration00023(t *testing.T) {
 		t.Errorf("after Up again: %d of 2 columns, %d of 3 indexes, %d old indexes", c, i, o)
 	}
 }
+
+// TestMigration00024 pins the follow push migration (Phase 9 plan 25, D-09): the
+// outbox kind list and the one first alert index learn the follow kind, and
+// push_report_progress gains the follow pass columns. Up, Down and Up again.
+func TestMigration00024(t *testing.T) {
+	const file = "migrations/00024_add_follow_push.sql"
+	contents, err := MigrationsFS.ReadFile(file)
+	if err != nil {
+		t.Fatalf("reading embedded %s: %v", file, err)
+	}
+	text := string(contents)
+	up := strings.Index(text, "+goose Up")
+	down := strings.Index(text, "+goose Down")
+	if up < 0 || down < 0 || down < up {
+		t.Fatalf("%s must carry +goose Up then +goose Down", file)
+	}
+	var code []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		code = append(code, line)
+	}
+	if strings.Contains(strings.ToUpper(strings.Join(code, "\n")), "CONCURRENTLY") {
+		t.Error("migration 00024 must not use CONCURRENTLY: goose runs it inside a transaction")
+	}
+	for _, name := range []string{"'critical', 'reliable', 'changed', 'confirmed_update', 'follow'",
+		"DROP INDEX uq_push_outbox_first", "WHERE kind IN ('critical', 'reliable', 'follow')",
+		"ADD COLUMN follow_state TEXT", "follow_at ", "follow_state IS NULL OR follow_state IN ('fanned', 'capped')"} {
+		if !strings.Contains(text[:down], name) {
+			t.Errorf("migration 00024 Up must contain %s", name)
+		}
+	}
+	for _, want := range []string{"DELETE FROM push_outbox WHERE kind = 'follow'", "WHERE kind IN ('critical', 'reliable');",
+		"'critical', 'reliable', 'changed', 'confirmed_update'));", "DROP COLUMN follow_at", "DROP COLUMN follow_state"} {
+		if !strings.Contains(text[down:], want) {
+			t.Errorf("migration 00024 Down must contain %q", want)
+		}
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping the database part of the 00024 migration test")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("opening database: %v", err)
+	}
+	defer db.Close()
+
+	goose.SetBaseFS(MigrationsFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up: %v", err)
+	}
+
+	var a, report int64
+	const sessionID = "migration-00024-session"
+	t.Cleanup(func() {
+		_ = goose.Up(db, "migrations")
+		if report != 0 {
+			_, _ = db.Exec("DELETE FROM push_outbox WHERE report_id = $1", report)
+			_, _ = db.Exec("DELETE FROM push_report_progress WHERE report_id = $1", report)
+			_, _ = db.Exec("DELETE FROM reports WHERE id = $1", report)
+		}
+		if a != 0 {
+			_, _ = db.Exec("DELETE FROM sessions WHERE account_id = $1", a)
+			_, _ = db.Exec("DELETE FROM accounts WHERE id = $1", a)
+		}
+	})
+
+	count := func(query string) (n int) {
+		t.Helper()
+		if err := db.QueryRow(query).Scan(&n); err != nil {
+			t.Fatalf("counting with %q: %v", query, err)
+		}
+		return
+	}
+	columns := func() int {
+		t.Helper()
+		return count(`SELECT count(*) FROM information_schema.columns
+			WHERE table_schema = 'public' AND table_name = 'push_report_progress'
+			  AND column_name IN ('follow_state', 'follow_at')`)
+	}
+	indexDef := func() string {
+		t.Helper()
+		var def string
+		if err := db.QueryRow(`SELECT indexdef FROM pg_indexes WHERE indexname = 'uq_push_outbox_first'`).Scan(&def); err != nil {
+			t.Fatalf("reading uq_push_outbox_first: %v", err)
+		}
+		return def
+	}
+	if got := columns(); got != 2 {
+		t.Errorf("after Up: %d of 2 progress columns", got)
+	}
+	if def := indexDef(); !strings.Contains(def, "'follow'") {
+		t.Errorf("after Up: the first alert index is %q, want it to name follow", def)
+	}
+
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00024-a@example.com') RETURNING id`).Scan(&a); err != nil {
+		t.Fatalf("inserting account: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO sessions (session_id, account_id) VALUES ($1, $2)`, sessionID, a); err != nil {
+		t.Fatalf("inserting session: %v", err)
+	}
+	if err := db.QueryRow(`INSERT INTO reports
+		(session_id, category, severity, description, latitude, longitude, geohash, created_at, expires_at)
+		VALUES ($1, 'flood', 'medium', 'migration test report', 12.9716, 77.5946, 'tdr1v8y',
+		        now() - interval '1 hour', now() + interval '5 hours') RETURNING id`, sessionID).Scan(&report); err != nil {
+		t.Fatalf("inserting report: %v", err)
+	}
+
+	wantCode := func(label, code, query string, args ...any) {
+		t.Helper()
+		_, err := db.Exec(query, args...)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != code {
+			t.Errorf("%s: want SQLSTATE %s, got %v", label, code, err)
+		}
+	}
+	// The kind CHECK accepts follow; the one index covers all three first alert kinds.
+	if _, err := db.Exec(`INSERT INTO push_outbox (account_id, report_id, kind, expires_at) VALUES ($1, $2, 'follow', now() + interval '1 hour')`,
+		a, report); err != nil {
+		t.Fatalf("follow must be accepted by the kind check: %v", err)
+	}
+	wantCode("a second follow row", "23505",
+		`INSERT INTO push_outbox (account_id, report_id, kind, expires_at) VALUES ($1, $2, 'follow', now() + interval '1 hour')`, a, report)
+	wantCode("a reliable row beside the follow row", "23505",
+		`INSERT INTO push_outbox (account_id, report_id, kind, expires_at) VALUES ($1, $2, 'reliable', now() + interval '1 hour')`, a, report)
+	wantCode("a critical row beside the follow row", "23505",
+		`INSERT INTO push_outbox (account_id, report_id, kind, expires_at) VALUES ($1, $2, 'critical', now() + interval '1 hour')`, a, report)
+	wantCode("an unknown kind", "23514",
+		`INSERT INTO push_outbox (account_id, report_id, kind, expires_at) VALUES ($1, $2, 'followed', now() + interval '1 hour')`, a, report)
+	// A follow row is not a changed row: it carries no update id.
+	wantCode("a follow row with an update id", "23514",
+		`INSERT INTO push_outbox (account_id, report_id, kind, update_id, expires_at) VALUES ($1, $2, 'follow', 7, now() + interval '1 hour')`, a, report)
+	// follow_state has the shape of reliable_state.
+	wantCode("an unknown follow state", "23514",
+		`INSERT INTO push_report_progress (report_id, follow_state) VALUES ($1, 'sent')`, report)
+	wantCode("an unknown reliable state still refused", "23514",
+		`INSERT INTO push_report_progress (report_id, reliable_state) VALUES ($1, 'sent')`, report)
+	if _, err := db.Exec(`INSERT INTO push_report_progress (report_id, follow_state, follow_at) VALUES ($1, 'fanned', now())`, report); err != nil {
+		t.Errorf("follow_state fanned must be accepted: %v", err)
+	}
+
+	version, err := goose.NumericComponent("00024_add_follow_push.sql")
+	if err != nil {
+		t.Fatalf("parsing version: %v", err)
+	}
+	if err := goose.DownTo(db, "migrations", version-1); err != nil {
+		t.Fatalf("goose down to %d: %v", version-1, err)
+	}
+	if got := columns(); got != 0 {
+		t.Errorf("after Down: %d progress columns still present", got)
+	}
+	if def := indexDef(); strings.Contains(def, "'follow'") {
+		t.Errorf("after Down: the first alert index is %q, want the two kind form", def)
+	}
+	if n := count(`SELECT count(*) FROM push_outbox WHERE kind = 'follow'`); n != 0 {
+		t.Errorf("after Down: %d follow rows, want 0", n)
+	}
+	wantCode("follow after Down", "23514",
+		`INSERT INTO push_outbox (account_id, report_id, kind, expires_at) VALUES ($1, $2, 'follow', now() + interval '1 hour')`, a, report)
+	// The old index is back: a reliable row is accepted once and a critical one beside it is refused.
+	if _, err := db.Exec(`INSERT INTO push_outbox (account_id, report_id, kind, expires_at) VALUES ($1, $2, 'reliable', now() + interval '1 hour')`,
+		a, report); err != nil {
+		t.Fatalf("a reliable row after Down: %v", err)
+	}
+	wantCode("a critical row beside the reliable row after Down", "23505",
+		`INSERT INTO push_outbox (account_id, report_id, kind, expires_at) VALUES ($1, $2, 'critical', now() + interval '1 hour')`, a, report)
+	if _, err := db.Exec(`DELETE FROM push_outbox WHERE report_id = $1`, report); err != nil {
+		t.Fatalf("clearing the outbox: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up again: %v", err)
+	}
+	if got := columns(); got != 2 {
+		t.Errorf("after Up again: %d of 2 progress columns", got)
+	}
+	if def := indexDef(); !strings.Contains(def, "'follow'") {
+		t.Errorf("after Up again: the first alert index is %q, want it to name follow", def)
+	}
+}

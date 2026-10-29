@@ -145,7 +145,7 @@ LEFT JOIN push_outbox f
        ON cl.kind = 'confirmed_update'
       AND f.account_id = cl.account_id
       AND f.report_id = cl.report_id
-      AND f.kind IN ('critical', 'reliable')
+      AND f.kind IN ('critical', 'reliable', 'follow')
 ORDER BY CASE cl.kind
              WHEN 'critical' THEN 0
              WHEN 'confirmed_update' THEN 1
@@ -184,7 +184,7 @@ type ClaimDuePushesRow struct {
 // write must present. update_kind is the kind of the 3.2 row a changed push
 // carries (NULL once 3.2 pruned it). first_kind is, for a confirmed_update row
 // only, the kind of the same account's critical or reliable row for the same
-// report (at most one, by uq_push_outbox_first; NULL for every other kind and
+// report (critical, reliable or follow; at most one, by uq_push_outbox_first; NULL for every other kind and
 // once the first row was pruned); the worker uses it as the base kind of a
 // confirmed update. The joins run after the update because an UPDATE cannot
 // join to the table it updates in its own FROM clause.
@@ -274,7 +274,7 @@ SELECT COUNT(*)::bigint
 FROM push_outbox
 WHERE account_id = $1::bigint
   AND state = 'sent'
-  AND kind IN ('critical', 'reliable', 'changed')
+  AND kind IN ('critical', 'reliable', 'follow', 'changed')
   AND sent_at > $2::timestamptz
 `
 
@@ -283,8 +283,9 @@ type CountAccountPushesInWindowParams struct {
 	Since     time.Time
 }
 
-// The per account hourly cap: sent rows of kinds critical, reliable and changed
-// after since. Confirmed updates do not count.
+// The per account hourly cap: sent rows of kinds critical, reliable, follow and
+// changed after since (a follow push counts, D-25 of Phase 9). Confirmed updates
+// do not count.
 func (q *Queries) CountAccountPushesInWindow(ctx context.Context, arg CountAccountPushesInWindowParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countAccountPushesInWindow, arg.AccountID, arg.Since)
 	var column_1 int64
@@ -413,6 +414,60 @@ func (q *Queries) DeletePushSubscriptionsForSession(ctx context.Context, session
 	return result.RowsAffected(), nil
 }
 
+const deleteQueuedFollowPush = `-- name: DeleteQueuedFollowPush :execrows
+DELETE FROM push_outbox o
+USING reports r, sessions s
+WHERE o.kind = 'follow'
+  AND o.state = 'queued'
+  AND (o.lease_until IS NULL OR o.lease_until <= now())
+  AND o.account_id = $1::bigint
+  AND r.id = o.report_id
+  AND s.session_id = r.session_id
+  AND s.account_id = $2::bigint
+`
+
+type DeleteQueuedFollowPushParams struct {
+	FollowerID int64
+	FolloweeID int64
+}
+
+// Plan 09-26: the same for one follower and one followee (Unfollow, Remove
+// follower, Block, Mute, the bell turned off). Only rows not yet sent and not
+// held by a worker are deleted.
+func (q *Queries) DeleteQueuedFollowPush(ctx context.Context, arg DeleteQueuedFollowPushParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteQueuedFollowPush, arg.FollowerID, arg.FolloweeID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteQueuedFollowPushesForFollowee = `-- name: DeleteQueuedFollowPushesForFollowee :execrows
+DELETE FROM push_outbox o
+USING reports r, sessions s
+WHERE o.kind = 'follow'
+  AND o.state = 'queued'
+  AND (o.lease_until IS NULL OR o.lease_until <= now())
+  AND r.id = o.report_id
+  AND s.session_id = r.session_id
+  AND s.account_id = $1::bigint
+`
+
+// Plan 09-26 (SC5, D-24): when a person's followers are ended (the profile went
+// private or was deleted, Remove all followers, a rating or a removal dropped the
+// Reliable tag), every follow push still waiting about a report this person
+// posted is deleted, for all their followers. Only rows not yet sent and not held
+// by a worker are touched: a sent row is history, and a held row is checked by
+// its worker at send time. The reporter is read from the report's session, the
+// same join PushReportFacts uses.
+func (q *Queries) DeleteQueuedFollowPushesForFollowee(ctx context.Context, followeeID int64) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteQueuedFollowPushesForFollowee, followeeID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const enqueueChangedFromUpdates = `-- name: EnqueueChangedFromUpdates :execrows
 INSERT INTO push_outbox (account_id, report_id, kind, update_id, expires_at, created_at, next_attempt_at)
 SELECT u.account_id, u.report_id, 'changed', u.id, r.expires_at,
@@ -431,7 +486,7 @@ WHERE u.account_id = $2::bigint
           FROM push_outbox o
           WHERE o.account_id = u.account_id
             AND o.report_id = u.report_id
-            AND o.kind IN ('critical', 'reliable')
+            AND o.kind IN ('critical', 'reliable', 'follow')
       )
   )
 ON CONFLICT (account_id, update_id) WHERE kind = 'changed' DO NOTHING
@@ -447,8 +502,9 @@ type EnqueueChangedFromUpdatesParams struct {
 // reached_live, hidden, resolved, fading and (Phase 8 plan 15, D-16)
 // comment_on_yours and reply_to_yours. Rows of kind more and reliable_nearby
 // are never pushed as changes. A reached_live row is skipped
-// when the account already has a critical or reliable row for that report: the
-// in place confirmed update carries that news, so the person never gets both
+// when the account already has a critical, reliable or follow row for that
+// report: the in place confirmed update carries that news, so the person never
+// gets both
 // (UI-SPEC 3c). expires_at comes from the report. Once per update row.
 func (q *Queries) EnqueueChangedFromUpdates(ctx context.Context, arg EnqueueChangedFromUpdatesParams) (int64, error) {
 	result, err := q.db.Exec(ctx, enqueueChangedFromUpdates, arg.Now, arg.AccountID, arg.Since)
@@ -466,7 +522,7 @@ SELECT o.account_id, o.report_id, 'confirmed_update',
        $2::timestamptz
 FROM push_outbox o
 WHERE o.report_id = $3::bigint
-  AND o.kind IN ('critical', 'reliable')
+  AND o.kind IN ('critical', 'reliable', 'follow')
   AND o.state = 'sent'
   AND o.sent_unconfirmed
 ON CONFLICT (account_id, report_id) WHERE kind = 'confirmed_update' DO NOTHING
@@ -478,12 +534,56 @@ type EnqueueConfirmedUpdatesParams struct {
 	ReportID  int64
 }
 
-// The in place confirmed update: for each critical or reliable row of the
-// report that was sent with the words Not confirmed yet, queue one
+// The in place confirmed update: for each critical, reliable or follow row of
+// the report that was sent with the words Not confirmed yet, queue one
 // confirmed_update row. A sent row whose words did not say that, and a row
 // still queued, get none. Once per account and report.
 func (q *Queries) EnqueueConfirmedUpdates(ctx context.Context, arg EnqueueConfirmedUpdatesParams) (int64, error) {
 	result, err := q.db.Exec(ctx, enqueueConfirmedUpdates, arg.ExpiresAt, arg.Now, arg.ReportID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const enqueueFollowFromUpdates = `-- name: EnqueueFollowFromUpdates :execrows
+INSERT INTO push_outbox (account_id, report_id, kind, expires_at, created_at, next_attempt_at)
+SELECT u.account_id, u.report_id, 'follow',
+       $1::timestamptz,
+       $2::timestamptz,
+       $2::timestamptz
+FROM updates u
+JOIN accounts a ON a.id = u.account_id
+WHERE u.report_id = $3::bigint
+  AND u.kind = 'followed_posted'
+  AND a.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1
+      FROM push_subscriptions p
+      JOIN sessions ps ON ps.session_id = p.session_id
+      WHERE p.account_id = u.account_id
+        AND ps.revoked_at IS NULL
+  )
+ON CONFLICT (account_id, report_id) WHERE kind IN ('critical', 'reliable', 'follow') DO NOTHING
+`
+
+type EnqueueFollowFromUpdatesParams struct {
+	ExpiresAt time.Time
+	Now       time.Time
+	ReportID  int64
+}
+
+// One bell row, two channels, for the follow note (Phase 9 plan 25, D-09,
+// research 5.2): for every followed_posted updates row of the report whose
+// account has a live subscription, queue a follow push. The bell step
+// (refreshFollowedPosts) wrote the row under the one notify predicate and every
+// send time recheck; push only follows it. A critical or follow row already
+// queued for the pair wins through the shared unique index, and a reliable row
+// queued first for the pair makes this a no op, so a person gets one first alert
+// per report. A sibling of EnqueueReliableFromUpdates, with the same expiry
+// argument and the same ON CONFLICT clause.
+func (q *Queries) EnqueueFollowFromUpdates(ctx context.Context, arg EnqueueFollowFromUpdatesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, enqueueFollowFromUpdates, arg.ExpiresAt, arg.Now, arg.ReportID)
 	if err != nil {
 		return 0, err
 	}
@@ -500,7 +600,7 @@ VALUES (
     $5::timestamptz,
     $5::timestamptz
 )
-ON CONFLICT (account_id, report_id) WHERE kind IN ('critical', 'reliable') DO NOTHING
+ON CONFLICT (account_id, report_id) WHERE kind IN ('critical', 'reliable', 'follow') DO NOTHING
 RETURNING id
 `
 
@@ -513,8 +613,10 @@ type EnqueueInitialPushParams struct {
 }
 
 // Queues the first alert of an account for a report. One initial alert per
-// account and report whatever the kind: the dispatcher enqueues critical before
-// reliable, so critical wins (UI-SPEC 3c). A repeat returns no row.
+// account and report whatever the kind: the dispatcher enqueues critical, then
+// follow, then reliable, so critical wins (UI-SPEC 3c) and follow beats reliable
+// (Phase 9 plan 25). A repeat returns no row. The ON CONFLICT predicate is the
+// one of uq_push_outbox_first, word for word.
 func (q *Queries) EnqueueInitialPush(ctx context.Context, arg EnqueueInitialPushParams) (int64, error) {
 	row := q.db.QueryRow(ctx, enqueueInitialPush,
 		arg.AccountID,
@@ -546,7 +648,7 @@ WHERE u.report_id = $3::bigint
       WHERE p.account_id = u.account_id
         AND ps.revoked_at IS NULL
   )
-ON CONFLICT (account_id, report_id) WHERE kind IN ('critical', 'reliable') DO NOTHING
+ON CONFLICT (account_id, report_id) WHERE kind IN ('critical', 'reliable', 'follow') DO NOTHING
 `
 
 type EnqueueReliableFromUpdatesParams struct {
@@ -689,12 +791,13 @@ func (q *Queries) GetPushKindSettings(ctx context.Context, accountID int64) (Get
 
 const getPushReportProgress = `-- name: GetPushReportProgress :one
 SELECT report_id, critical_state, critical_at, reliable_state, reliable_at,
-       area_lookup_at, evaluated_at
+       area_lookup_at, evaluated_at, follow_state, follow_at
 FROM push_report_progress
 WHERE report_id = $1::bigint
 `
 
 // Where a report stands in the fan out. No row means it was never looked at.
+// follow_state and follow_at are the follow pass (Phase 9 plan 25).
 func (q *Queries) GetPushReportProgress(ctx context.Context, reportID int64) (PushReportProgress, error) {
 	row := q.db.QueryRow(ctx, getPushReportProgress, reportID)
 	var i PushReportProgress
@@ -706,6 +809,8 @@ func (q *Queries) GetPushReportProgress(ctx context.Context, reportID int64) (Pu
 		&i.ReliableAt,
 		&i.AreaLookupAt,
 		&i.EvaluatedAt,
+		&i.FollowState,
+		&i.FollowAt,
 	)
 	return i, err
 }
@@ -749,6 +854,29 @@ type MarkCriticalFanoutParams struct {
 // never overwritten (the cap is sticky).
 func (q *Queries) MarkCriticalFanout(ctx context.Context, arg MarkCriticalFanoutParams) error {
 	_, err := q.db.Exec(ctx, markCriticalFanout, arg.ReportID, arg.State, arg.Now)
+	return err
+}
+
+const markFollowFanout = `-- name: MarkFollowFanout :exec
+INSERT INTO push_report_progress (report_id, follow_state, follow_at)
+VALUES ($1::bigint, $2::text, $3::timestamptz)
+ON CONFLICT (report_id) DO UPDATE
+SET follow_state = EXCLUDED.follow_state,
+    follow_at = EXCLUDED.follow_at
+WHERE push_report_progress.follow_state IS NULL
+`
+
+type MarkFollowFanoutParams struct {
+	ReportID int64
+	State    string
+	Now      time.Time
+}
+
+// Records the follow pass of a report once (Phase 9 plan 25, review W2): written
+// only while the stored state is NULL, so a pass that found nobody is not
+// repeated on every later evaluation and a fanned report is never overwritten.
+func (q *Queries) MarkFollowFanout(ctx context.Context, arg MarkFollowFanoutParams) error {
+	_, err := q.db.Exec(ctx, markFollowFanout, arg.ReportID, arg.State, arg.Now)
 	return err
 }
 

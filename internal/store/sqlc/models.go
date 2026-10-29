@@ -285,6 +285,8 @@ type PushReportProgress struct {
 	ReliableAt    pgtype.Timestamptz
 	AreaLookupAt  pgtype.Timestamptz
 	EvaluatedAt   pgtype.Timestamptz
+	FollowState   *string
+	FollowAt      pgtype.Timestamptz
 }
 
 type PushSubscription struct {
