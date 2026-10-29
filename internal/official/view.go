@@ -16,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"pinalert/internal/areas"
 	"pinalert/internal/service"
@@ -718,18 +717,12 @@ func langLabel(raw string) (label, code string) {
 }
 
 // titleName turns the boundary file's upper case state name into the words the
-// page shows: each word capitalised, "and" and "of" kept lower case, "&" kept.
+// page shows: each word capitalised, "and" and "of" kept lower case, "&" read
+// as "and" and a comma as a space, the same words as the lock screen.
 func titleName(s string) string {
-	words := strings.Fields(strings.ToLower(s))
-	for i, w := range words {
-		if i > 0 && (w == "and" || w == "of") {
-			continue
-		}
-		r := []rune(w)
-		r[0] = unicode.ToUpper(r[0])
-		words[i] = string(r)
-	}
-	return strings.Join(words, " ")
+	// One function for the page and the lock screen (IN-S07 of the Phase 5
+	// review), so a state reads the same in both places.
+	return service.OfficialStateWords(s)
 }
 
 func contains(xs []int, x int) bool {

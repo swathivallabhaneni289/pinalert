@@ -669,8 +669,13 @@ func TestBuildViewRowFacts(t *testing.T) {
 
 func TestTitleName(t *testing.T) {
 	cases := map[string]string{
-		"ANDHRA PRADESH":                   "Andhra Pradesh",
-		"JAMMU & KASHMIR":                  "Jammu & Kashmir",
+		"ANDHRA PRADESH": "Andhra Pradesh",
+		// Amended 2026-10-29 by the Phase 5 review fix (IN-S07): the page now
+		// uses the lock screen's state words, so "&" reads "and" (the case is
+		// kept, its words changed), and the boundary name of state code 38 with
+		// its commas reads as the lock screen says it.
+		"JAMMU & KASHMIR":                  "Jammu and Kashmir",
+		"DADRA,NAGAR HAVELI,DAMAN & DIU":   "Dadra Nagar Haveli Daman and Diu",
 		"DADRA NAGAR HAVELI DAMAN AND DIU": "Dadra Nagar Haveli Daman and Diu",
 		"":                                 "",
 	}
