@@ -456,6 +456,50 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 			p15Assert429(t, strings.ToUpper(rt.method)+" "+rt.path, op)
 		}
 	}
+	// Amended 2026-10-29 by Phase 9 plan 07 (D-01, D-03, D-06, D-12): the twelve
+	// people routes are pinned with the answers each can give. Every one is
+	// gated, so each carries 401, and every one is limited per account, so each
+	// carries a 429 with Retry-After.
+	for _, rt := range []struct {
+		path, method string
+		codes        []string
+	}{
+		{"/people/{username}", "get", []string{"200", "401", "404", "429"}},
+		{"/people/{username}/followers", "get", []string{"200", "400", "401", "404", "429"}},
+		{"/people/{username}/following", "get", []string{"200", "400", "401", "404", "429"}},
+		{"/people/{username}/reports", "get", []string{"200", "400", "401", "404", "429"}},
+		{"/people/{username}/follow", "post", []string{"204", "401", "404", "409", "429"}},
+		{"/people/{username}/unfollow", "post", []string{"204", "401", "404", "429"}},
+		{"/people/{username}/remove-follower", "post", []string{"204", "401", "404", "429"}},
+		{"/people/{username}/block", "post", []string{"204", "401", "404", "429"}},
+		{"/people/{username}/unblock", "post", []string{"204", "401", "404", "429"}},
+		{"/me/followers/remove-all", "post", []string{"204", "401", "429"}},
+		{"/me/blocked", "get", []string{"200", "401", "429"}},
+		{"/me/visibility", "patch", []string{"200", "400", "401", "422", "429"}},
+	} {
+		ops, ok := spec.Paths[rt.path]
+		if !ok {
+			t.Errorf("docs/swagger.json is missing the %s path", rt.path)
+			continue
+		}
+		op, ok := ops[rt.method]
+		if !ok {
+			t.Errorf("docs/swagger.json is missing the %s %s operation", rt.path, rt.method)
+			continue
+		}
+		var parsed struct {
+			Responses map[string]json.RawMessage `json:"responses"`
+		}
+		if err := json.Unmarshal(op, &parsed); err != nil {
+			t.Fatalf("parsing %s %s: %v", rt.method, rt.path, err)
+		}
+		for _, code := range rt.codes {
+			if _, ok := parsed.Responses[code]; !ok {
+				t.Errorf("docs/swagger.json %s %s is missing the %s response", rt.method, rt.path, code)
+			}
+		}
+		p15Assert429(t, strings.ToUpper(rt.method)+" "+rt.path, op)
+	}
 	for _, gone := range []string{"/moderation/comments", "/moderation/comments/{id}/keep", "/moderation/comments/{id}/remove"} {
 		if _, ok := spec.Paths[gone]; ok {
 			t.Errorf("docs/swagger.json documents %s, which carries no swag annotation by design", gone)

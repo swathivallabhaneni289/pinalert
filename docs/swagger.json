@@ -891,6 +891,50 @@
                 }
             }
         },
+        "/me/blocked": {
+            "get": {
+                "description": "Returns the usernames of the people the signed in account blocked, newest first, at most\n500. A person whose new username is still being checked is left out until it clears.\nRequires a session verified by email; an unverified caller receives 401.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "people"
+                ],
+                "summary": "List the people the caller blocked",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.BlockedPeopleResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/me/consent": {
             "post": {
                 "description": "Records that the signed in account agreed to the current version of the Disclaimer\nand Policy text. Send no body or an empty object. A repeat call for the same version\nkeeps the first agreed time. A different version is stored with a new time.\nRequires a session verified by email; an unverified caller receives 401.",
@@ -1017,6 +1061,56 @@
                         "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/me/followers/remove-all": {
+            "post": {
+                "description": "Ends every follow of the signed in account at once. Send no body or an empty object. It\nanswers 204 even when nobody follows the account.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "people"
+                ],
+                "summary": "Remove every follower",
+                "responses": {
+                    "204": {
+                        "description": "All followers removed"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
                         }
                     },
                     "500": {
@@ -1382,6 +1476,82 @@
                 }
             }
         },
+        "/me/visibility": {
+            "patch": {
+                "description": "Saves whether the signed in account has a public profile that others can follow. Turning\nit on needs a clear username and a name that can be shown in public; a username or name\nthat is refused, or that could not be checked just now, answers 422 with the field\nprofile_public and the reason, and the switch stays off. Turning it off ends every\nfollower, and turning it on later starts with none. The answer is the saved state.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "people"
+                ],
+                "summary": "Turn Let others follow me on or off",
+                "parameters": [
+                    {
+                        "description": "The switch",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.VisibilityRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.VisibilityResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/official/alerts": {
             "get": {
                 "description": "Returns the official alerts (NDMA SACHET) that cover the reader and whether that answer can be trusted right now.\nThe optional lat and lon (both or neither) are the position Nearby is using. The server turns them into a\ndistrict at once and keeps no reader location: it is neither stored nor logged. The home area saved on the\naccount is read in the same way and is never returned.\nThe server authors every fact in the answer: state (fresh within 30 minutes of the last good check, stale up to\n6 hours, unavailable after that or never), age_seconds from the server clock, the group labels, the row count,\nthe districts line, each row's level, authority badge, issuer and times, and the banner pick. The page recomputes none of it.\nGroups come in this order: where the reader is, the home area when it is another district, state level alerts\nfor the state, and alerts that could not be placed. Within a group the order is Extreme, Severe, Moderate, Minor,\nUnknown, newest first. Near identical alerts are one row with grouped_count.\nWhen the state is stale, rows still inside their own expiry are sent as the last known ones and banner is null.\nWhen it is unavailable no rows are sent. Only a fresh answer with area_known true and no rows may be read as\n\"no official alerts in force\".\nA read also starts a background refresh of the feed when the last attempt is over 10 minutes old; it never delays the answer.",
@@ -1459,6 +1629,621 @@
                     },
                     "503": {
                         "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/people/{username}": {
+            "get": {
+                "description": "Returns the profile header of the person with this username: name, home area, stars,\nthe reporter tag, the member since line and the two counts, every string written by the\nserver. A person who has not turned on a public profile, one whose username is still\nbeing checked, one who has deleted the account and one who blocked the caller all get\nthe same 404 as a username that does not exist, so nobody can tell who opted in. A person\nthe caller blocked returns only the username with blocked_by_you true. Your own profile\nalways opens. The counts include people who are shown only as a number.\nRequires a session verified by email; an unverified caller receives 401.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "people"
+                ],
+                "summary": "Read a person's profile",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Username",
+                        "name": "username",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.PersonProfileResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/people/{username}/block": {
+            "post": {
+                "description": "Blocks a person. Every follow between the two of you ends and neither can follow the\nother. The blocked person gets the same 404 as an unknown username on your profile. Send\nno body or an empty object. A person you may not see answers the same 404 as the profile.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "people"
+                ],
+                "summary": "Block a person",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Username",
+                        "name": "username",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Blocked"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/people/{username}/follow": {
+            "post": {
+                "description": "Starts following a person who turned on a public profile and holds the Reliable reporter\ntag. Send no body or an empty object. Following someone already followed changes nothing\nand answers 204. A person you cannot follow right now (yourself, someone you blocked, or\nsomeone who is not a Reliable reporter) answers 409 with the field follow; so does the\nlimit of 200 people. A person you may not see answers the same 404 as the profile.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "people"
+                ],
+                "summary": "Follow a person",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Username",
+                        "name": "username",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Following"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/people/{username}/followers": {
+            "get": {
+                "description": "Returns the named people who follow this person, newest first, 50 per page. People who\nare not named (private, pending, deleted or blocked) are counted in others_count with\nthe sentence others_text. Pass the next value as after to read the next page. The same\n404 as the profile is returned for a person the caller may not see.\nRequires a session verified by email; an unverified caller receives 401.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "people"
+                ],
+                "summary": "List the people who follow a person",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Username",
+                        "name": "username",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cursor from the previous page",
+                        "name": "after",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.PeopleListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/people/{username}/following": {
+            "get": {
+                "description": "Returns the named people this person follows, newest first, 50 per page, with the same\nrules as the Followers list.\nRequires a session verified by email; an unverified caller receives 401.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "people"
+                ],
+                "summary": "List the people a person follows",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Username",
+                        "name": "username",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cursor from the previous page",
+                        "name": "after",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.PeopleListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/people/{username}/remove-follower": {
+            "post": {
+                "description": "Ends the follow of the person with this username on the signed in account. Send no body\nor an empty object. A well formed username that matches nobody answers 204 and changes\nnothing. A malformed username answers the same 404 as the profile.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "people"
+                ],
+                "summary": "Remove one follower",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Username of the follower",
+                        "name": "username",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Removed"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/people/{username}/reports": {
+            "get": {
+                "description": "Returns the reports this person posted in the last 30 days, newest first, at most 100\n(cut is true when more existed). A live report carries its id, words, description and\nposting time. A finished report is blurred to about 5 km on the server and carries no\nid, no description and no time, only the date it ended. No row carries a coordinate.\nWith lat and lon (both or neither) a live row also says how far away it is from that\npoint. The same 404 as the profile is returned for a person the caller may not see.\nRequires a session verified by email; an unverified caller receives 401.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "people"
+                ],
+                "summary": "List a person's recent reports",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Username",
+                        "name": "username",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "number",
+                        "description": "Your latitude, with lon",
+                        "name": "lat",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Your longitude, with lat",
+                        "name": "lon",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ProfileReportsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/people/{username}/unblock": {
+            "post": {
+                "description": "Undoes a block. Send no body or an empty object. A well formed username that matches\nnobody, or someone you did not block, answers 204 and changes nothing. A malformed\nusername answers the same 404 as the profile. Follows that ended with the block do not\ncome back.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "people"
+                ],
+                "summary": "Unblock a person",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Username",
+                        "name": "username",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Unblocked"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/people/{username}/unfollow": {
+            "post": {
+                "description": "Stops following a person. Send no body or an empty object. A well formed username that\nmatches nobody, or someone you do not follow, answers 204 and changes nothing, so this\nroute reveals nothing. A malformed username answers the same 404 as the profile.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "people"
+                ],
+                "summary": "Stop following a person",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Username",
+                        "name": "username",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Not following"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
@@ -2753,6 +3538,17 @@
                 }
             }
         },
+        "handlers.BlockedPeopleResponse": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.PersonEntryResponse"
+                    }
+                }
+            }
+        },
         "handlers.CastVoteRequest": {
             "type": "object",
             "properties": {
@@ -3915,6 +4711,136 @@
                 }
             }
         },
+        "handlers.PeopleListResponse": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.PersonEntryResponse"
+                    }
+                },
+                "next": {
+                    "type": "string",
+                    "example": ""
+                },
+                "others_count": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "others_text": {
+                    "type": "string",
+                    "example": "and 2 others"
+                }
+            }
+        },
+        "handlers.PersonEntryResponse": {
+            "type": "object",
+            "properties": {
+                "username": {
+                    "type": "string",
+                    "example": "ravi_m"
+                }
+            }
+        },
+        "handlers.PersonProfileResponse": {
+            "type": "object",
+            "properties": {
+                "blocked_by_you": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "can_follow": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "followers_count": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "followers_text": {
+                    "type": "string",
+                    "example": "12 Followers"
+                },
+                "followers_word": {
+                    "type": "string",
+                    "example": "Followers"
+                },
+                "following": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "following_count": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "following_text": {
+                    "type": "string",
+                    "example": "3 Following"
+                },
+                "following_word": {
+                    "type": "string",
+                    "example": "Following"
+                },
+                "follows_you": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "home_area_name": {
+                    "type": "string",
+                    "example": "Indiranagar, Bengaluru"
+                },
+                "initial": {
+                    "type": "string",
+                    "example": "A"
+                },
+                "is_self": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "member_since": {
+                    "type": "string",
+                    "example": "Member since October 2026"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Asha"
+                },
+                "profile_public": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "reliable": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "stars_label": {
+                    "type": "string",
+                    "example": "3.6 stars"
+                },
+                "stars_number": {
+                    "type": "string",
+                    "example": "3.6"
+                },
+                "state_line": {
+                    "description": "StateLine is the line under the buttons on your own page and empty on\nanyone else's.",
+                    "type": "string",
+                    "example": ""
+                },
+                "tag_sentence": {
+                    "type": "string",
+                    "example": "7 of their last 9 reports were confirmed."
+                },
+                "tag_word": {
+                    "type": "string",
+                    "example": "Reliable reporter"
+                },
+                "username": {
+                    "type": "string",
+                    "example": "asha_k"
+                }
+            }
+        },
         "handlers.PlaceResponse": {
             "type": "object",
             "properties": {
@@ -3952,6 +4878,105 @@
                     "type": "string",
                     "maxLength": 280,
                     "example": "The road is open again from the north side."
+                }
+            }
+        },
+        "handlers.ProfileReportRowResponse": {
+            "type": "object",
+            "properties": {
+                "area_line": {
+                    "type": "string",
+                    "example": "Near Benz Circle"
+                },
+                "category": {
+                    "type": "string",
+                    "example": "flood"
+                },
+                "category_word": {
+                    "type": "string",
+                    "example": "Flood"
+                },
+                "description": {
+                    "description": "Description is present on a live row only.",
+                    "type": "string",
+                    "example": "Water rising fast near the market bridge."
+                },
+                "disputed_line": {
+                    "type": "string",
+                    "example": "Disputed: may not be true"
+                },
+                "distance_text": {
+                    "type": "string",
+                    "example": "About 2 km"
+                },
+                "ended_on": {
+                    "description": "EndedOn is present on a finished row only: the date, never a time.",
+                    "type": "string",
+                    "example": "12 October 2026"
+                },
+                "finished_title": {
+                    "type": "string",
+                    "example": "Flood, Critical"
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 42
+                },
+                "live": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "posted_at": {
+                    "description": "PostedAt is present on a live row only.",
+                    "type": "string",
+                    "example": "2026-09-05T14:03:00.000Z"
+                },
+                "severity": {
+                    "type": "string",
+                    "enum": [
+                        "low",
+                        "medium",
+                        "critical"
+                    ],
+                    "example": "critical"
+                },
+                "severity_word": {
+                    "type": "string",
+                    "example": "Critical"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "ongoing",
+                        "not_confirmed",
+                        "disputed",
+                        "resolved",
+                        "expired"
+                    ],
+                    "example": "ongoing"
+                },
+                "status_word": {
+                    "type": "string",
+                    "example": "Ongoing"
+                }
+            }
+        },
+        "handlers.ProfileReportsResponse": {
+            "type": "object",
+            "properties": {
+                "cut": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "cut_text": {
+                    "type": "string",
+                    "example": ""
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.ProfileReportRowResponse"
+                    }
                 }
             }
         },
@@ -4670,6 +5695,24 @@
                         "wait"
                     ],
                     "example": "available"
+                }
+            }
+        },
+        "handlers.VisibilityRequest": {
+            "type": "object",
+            "properties": {
+                "profile_public": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "handlers.VisibilityResponse": {
+            "type": "object",
+            "properties": {
+                "profile_public": {
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },
