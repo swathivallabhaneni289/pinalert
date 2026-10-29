@@ -26,6 +26,8 @@ type Account struct {
 	UsernameScreen    *string
 	UsernameChangedAt pgtype.Timestamptz
 	PasswordEpoch     int64
+	ProfilePublic     bool
+	ProfilePublicAt   pgtype.Timestamptz
 }
 
 type AccountAlertSetting struct {
@@ -38,6 +40,14 @@ type AccountAlertSetting struct {
 	ChangesPushOn    bool
 	ChangesEnabledAt pgtype.Timestamptz
 	OfficialPushOn   bool
+}
+
+type AccountFollow struct {
+	FollowerID int64
+	FolloweeID int64
+	CreatedAt  time.Time
+	EndedAt    pgtype.Timestamptz
+	EndReason  *string
 }
 
 type AuthCode struct {
@@ -221,6 +231,12 @@ type OfficialPushOutbox struct {
 	CreatedAt     time.Time
 	ExpiresAt     time.Time
 	SentAt        pgtype.Timestamptz
+}
+
+type PersonBlock struct {
+	BlockerID int64
+	BlockedID int64
+	CreatedAt time.Time
 }
 
 type PushOutbox struct {

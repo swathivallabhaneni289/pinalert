@@ -54,6 +54,10 @@ type AccountDeleteQuerier interface {
 	// (Phase 5 plan 05-11), a sibling table of the push outbox.
 	DeleteAccountOfficialPushOutbox(ctx context.Context, accountID int64) (int64, error)
 	DeleteAccountPushSubscriptions(ctx context.Context, accountID int64) (int64, error)
+	// Phase 9 plan 02 (research G6): the person's follows and blocks, in both
+	// directions, are hard deleted.
+	DeleteAccountFollows(ctx context.Context, accountID int64) (int64, error)
+	DeleteAccountBlocks(ctx context.Context, accountID int64) (int64, error)
 	RevokeAccountSessions(ctx context.Context, arg sqlcgen.RevokeAccountSessionsParams) (int64, error)
 	ScrubDeletedAccount(ctx context.Context, arg sqlcgen.ScrubDeletedAccountParams) (int64, error)
 }
@@ -146,7 +150,17 @@ func DeletedEmailFor(accountID int64) string {
 // likes and comment flags it gave are deleted. A comment others replied to
 // reads as a placeholder with no name afterwards.
 //
-// Its effect on other people: none. Reports and votes are not touched, so they
+// Amended 2026-10-29 by Phase 9 plan 02 (research G6): after the Phase 5 and 8
+// steps and just before the sessions are revoked, the person's follows (both
+// directions, active and ended) and blocks (both directions) are hard deleted,
+// and the scrub switches the profile off. A deleted person has no public
+// profile, so a row naming them in someone else's lists or block list would
+// point at nobody. This is the one place deleting an account changes another
+// person's lists: a follower's following list and a followee's follower list
+// each lose the row.
+//
+// Its effect on other people: none beyond the follow and block rows above.
+// Reports and votes are not touched, so they
 // stay attributed to a row nobody can identify. Every confirmed count, every
 // Resolve answer, every ClassifyOutcome result and every reporter rating that
 // another account sees is unchanged, because the inputs of all of them (votes,
@@ -226,6 +240,15 @@ func (s *AccountDeletionService) DeleteAccount(ctx context.Context, accountID in
 		}
 		if _, err := q.DeleteAccountPushSubscriptions(ctx, accountID); err != nil {
 			return fmt.Errorf("service: DeleteAccount: account %d: deleting push subscriptions: %w", accountID, err)
+		}
+		// Phase 9 plan 02 (research G6, T-09-07): the person's place in the social
+		// graph goes in the same transaction and before the scrub, after every
+		// earlier step.
+		if _, err := q.DeleteAccountFollows(ctx, accountID); err != nil {
+			return fmt.Errorf("service: DeleteAccount: account %d: deleting follows: %w", accountID, err)
+		}
+		if _, err := q.DeleteAccountBlocks(ctx, accountID); err != nil {
+			return fmt.Errorf("service: DeleteAccount: account %d: deleting blocks: %w", accountID, err)
 		}
 		now := pgtype.Timestamptz{Time: s.now(), Valid: true}
 		if _, err := q.RevokeAccountSessions(ctx, sqlcgen.RevokeAccountSessionsParams{Now: now, AccountID: &accountID}); err != nil {
