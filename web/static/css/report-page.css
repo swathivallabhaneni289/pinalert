@@ -1,0 +1,254 @@
+/*
+ * Pinalert - report-page.css
+ *
+ * Owned by Phase 8 plan 05 (PAGE-01, UI-SPEC Surface 1 and Surface 4). The
+ * look of the report page body that report-page.js builds: the Share row, the
+ * section headings, the "What happened so far" list with its time column, dot
+ * and connector, its skeleton and its error block, and the empty mount point
+ * the comments take later. It links after trust.css and carries no media
+ * query of its own beyond reduced motion: where the page sits (the phone's
+ * detail sheet today, the laptop panel in a later plan) is the host's CSS.
+ *
+ * Colours, type and spacing come from the main.css tokens. The page is shown
+ * on the phone's severity tinted sheet, so its small text takes --color-text,
+ * never the muted token (UI-SPEC P8-R8: muted text sits only on the page
+ * colour). Every rule that sets display carries :not([hidden]) so the
+ * hidden attribute still hides the element. There is no opacity on text and no
+ * animation that a scroll triggers.
+ */
+
+/* The page, its sections and the empty comments mount point. The sections are
+   24px apart and have no box or rule. The mount point takes its gap only once
+   the comments put something in it. */
+.report-page:not([hidden]) {
+  display: block;
+  margin-top: var(--space-lg);
+}
+
+.report-page__timeline:not([hidden]) {
+  display: block;
+}
+
+.report-page__comments:not(:empty) {
+  margin-top: var(--space-lg);
+}
+
+/* Three classes and the ancestor field, so the heading outranks the popup's
+   own reset. */
+.leaflet-container .report-page .report-page__heading {
+  margin: 0 0 var(--space-12);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+/* ---- Share: the outlined button under Confirm and Dispute ---- */
+
+/* A full width row of its own in the actions group, the .vote-btn look on the
+   page colour with the hairline, like Confirm at rest. Share is never greyed
+   by distance: it carries no aria-disabled rule. */
+.popup-card__actions .report-page__share:not([hidden]) {
+  display: flex;
+  width: 100%;
+  min-height: var(--touch-target-min);
+  margin-top: var(--space-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.popup-card__actions .report-page__share:not([hidden])::before {
+  content: "";
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  -webkit-mask-image: url("/static/icons/share-2.svg");
+  mask-image: url("/static/icons/share-2.svg");
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+.popup-card__actions .report-page__share:not([hidden]):hover,
+.popup-card__actions .report-page__share:not([hidden]):active {
+  background: var(--color-bg);
+  border-color: currentColor;
+}
+
+/* ---- What happened so far ---- */
+
+.report-timeline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One row: the time, the dot and its connector, the sentence. The row gap is
+   12px and the bottom padding 16px on every row but the last. */
+.report-timeline__row:not([hidden]) {
+  display: grid;
+  grid-template-columns: 88px 12px minmax(0, 1fr);
+  column-gap: var(--space-12);
+  margin: 0;
+  padding: 0 0 var(--space-md);
+}
+
+.report-timeline__row:not([hidden]):last-child {
+  padding-bottom: 0;
+}
+
+.leaflet-container .report-page .report-timeline__time {
+  display: block;
+  text-align: right;
+  white-space: nowrap;
+  font-size: var(--font-size-label);
+  line-height: var(--space-lg);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+}
+
+.leaflet-container .report-page .report-timeline__text {
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+/* The dot cell stretches the height of its row. The dot is its ::before, 12px
+   round and centred on the first line of the sentence; the connector is its
+   ::after, 2px wide, running down to the next row's dot and absent on the
+   last row. The tone is a class on the cell: neutral is the muted token, good
+   and bad are the tone tokens. The dot is never the only cue, the sentence
+   beside it says the same. */
+.report-timeline__dot {
+  position: relative;
+  align-self: stretch;
+  width: 12px;
+}
+
+.report-timeline__dot::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: var(--color-text-muted);
+}
+
+.report-timeline__dot--good::before {
+  background-color: var(--color-tone-good);
+}
+
+.report-timeline__dot--bad::before {
+  background-color: var(--color-tone-bad);
+}
+
+.report-timeline__row:not(:last-child) .report-timeline__dot::after {
+  content: "";
+  position: absolute;
+  top: 18px;
+  bottom: calc(-1 * (var(--space-md) + 6px));
+  left: 5px;
+  width: 2px;
+  background-color: var(--color-border);
+}
+
+/* ---- Loading: three skeleton rows (the app's skeleton look) ---- */
+
+.report-timeline__bar {
+  display: block;
+  height: var(--space-md);
+  margin-top: var(--space-xs);
+  border-radius: 6px;
+  background-color: var(--color-surface);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.report-timeline__bar--time {
+  justify-self: end;
+  width: var(--space-3xl);
+}
+
+.report-timeline__bar--dot {
+  width: 12px;
+  height: 12px;
+  margin-top: 6px;
+  border-radius: 50%;
+}
+
+.report-timeline__bar--text {
+  width: 100%;
+}
+
+/* ---- Error and offline: in place of the list ---- */
+
+.report-timeline__error:not([hidden]) {
+  display: block;
+}
+
+.leaflet-container .report-page .report-timeline__error-title {
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.leaflet-container .report-page .report-timeline__error-line {
+  margin: var(--space-xs) 0 var(--space-12);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text);
+}
+
+/* The 44px outlined Try again button. */
+.report-page__retry:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+  padding: 0 var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.report-page__retry:not([hidden]):hover,
+.report-page__retry:not([hidden]):active {
+  border-color: currentColor;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .report-timeline__bar {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .report-timeline__dot::before {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+
+  .report-timeline__row:not(:last-child) .report-timeline__dot::after {
+    forced-color-adjust: none;
+    background-color: GrayText;
+  }
+}

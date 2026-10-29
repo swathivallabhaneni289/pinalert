@@ -399,6 +399,15 @@ func TestReadOnlyLabelsRoundedControlsNot(t *testing.T) {
 		if r.File == "static/css/modal.css" && r.Head == ".post-window .call-box__disc" {
 			continue
 		}
+		// Amended 2026-10-29 by Phase 8 plan 05 (UI-SPEC Surface 4, Radii: 50
+		// percent is for discs): the 12px dot of a "What happened so far" row
+		// and its loading twin are drawings, not controls. The dot is aria-hidden
+		// and cannot be pressed, and the sentence beside it carries the meaning.
+		// report-page.css is exempted for exactly these two heads and nothing
+		// else.
+		if r.File == "static/css/report-page.css" && (r.Head == ".report-timeline__dot::before" || r.Head == ".report-timeline__bar--dot") {
+			continue
+		}
 		exempt := false
 		for _, name := range exemptControls {
 			if strings.Contains(r.Head, name) {
