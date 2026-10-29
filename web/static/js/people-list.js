@@ -44,7 +44,8 @@ window.PinalertPeopleList = (function () {
   var CHANGED_HEADER = 'Pinalert-Changed';
   // The calm line when the server says the tap changed nothing, for example the
   // person changed their username since the list was read (09-REVIEW IN-B03).
-  var NOTHING_CHANGED_LINE = 'That person is no longer listed under that name. The list is up to date now.';
+  var CURSOR_REFUSED_LINE = 'That page could not be read.';
+  var NOTHING_CHANGED_LINE ='That person is no longer listed under that name. The list is up to date now.';
   var UNBLOCK_FAILED = 'Couldn\'t unblock. Try again.';
   var UNMUTE_FAILED = 'Couldn\'t unmute. Try again.';
   // The two lists whose rows are plain (no link) and end in an outlined button
@@ -405,6 +406,9 @@ window.PinalertPeopleList = (function () {
         return false;
       }
       if (!answer.ok) {
+        if (!first && answer.status === 400) {
+          return startAgain(answer);
+        }
         failLoad(first);
         return false;
       }
@@ -415,6 +419,24 @@ window.PinalertPeopleList = (function () {
         failLoad(first);
       }
       return false;
+    });
+  }
+
+  // startAgain answers a Show more the server refused with a 400: the cursor no
+  // longer opens (one issued before a server restart). Sending the same cursor
+  // again can never work, so the list is read again from the top with an empty
+  // cursor, and the server's own sentence is shown once in the window's message
+  // place after the read (the read clears it). If the read from the top fails
+  // too, the whole list shows its error state with Try again, which also starts
+  // from the top, so nothing loops (skeptic SK-W02, 2026-10-30).
+  function startAgain(answer) {
+    var error = answer && answer.body && answer.body.error;
+    var sentence = error && typeof error.message === 'string' && error.message !== '' ? error.message : CURSOR_REFUSED_LINE;
+    return load('').then(function (read) {
+      if (read && open_) {
+        showActionError(sentence);
+      }
+      return read;
     });
   }
 
