@@ -191,6 +191,26 @@ window.PinalertPeopleList = (function () {
     });
   }
 
+  // refusalLine is the line for a failed answer: the server's own sentence for
+  // a 409 or a 429 when it sent one, the built line otherwise (09-REVIEW IN-B01).
+  function refusalLine(answer, fallback) {
+    var error = answer && answer.body && answer.body.error;
+    if ((answer.status === 409 || answer.status === 429) && error &&
+        typeof error.message === 'string' && error.message !== '') {
+      return error.message;
+    }
+    return fallback;
+  }
+
+  // rejectionLine is the line for a call that did not get an answer: the
+  // offline line when the signal is gone, the built line otherwise.
+  function rejectionLine(fallback) {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return MESSAGE_OFFLINE;
+    }
+    return fallback;
+  }
+
   function listUrl(after) {
     var base;
     if (kind === 'blocked') {
@@ -424,7 +444,7 @@ window.PinalertPeopleList = (function () {
     return post(PEOPLE_URL + encodeURIComponent(name) + undo.path).then(function (answer) {
       if (!answer.ok) {
         settle();
-        showActionError(undo.failed);
+        showActionError(refusalLine(answer, undo.failed));
         return false;
       }
       busy = false;
@@ -449,7 +469,7 @@ window.PinalertPeopleList = (function () {
       return true;
     }, function () {
       settle();
-      showActionError(undo.failed);
+      showActionError(rejectionLine(undo.failed));
       return false;
     });
   }
@@ -512,7 +532,7 @@ window.PinalertPeopleList = (function () {
     }
     return post(REMOVE_ALL_URL).then(function (answer) {
       if (!answer.ok) {
-        return fail(REMOVE_ALL_FAILED);
+        return fail(refusalLine(answer, REMOVE_ALL_FAILED));
       }
       settle();
       closeConfirm();
@@ -525,7 +545,7 @@ window.PinalertPeopleList = (function () {
       }
       return true;
     }, function () {
-      return fail(REMOVE_ALL_FAILED);
+      return fail(rejectionLine(REMOVE_ALL_FAILED));
     });
   }
 

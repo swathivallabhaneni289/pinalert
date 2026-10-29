@@ -200,7 +200,7 @@ window.PinalertSettingsPeople = (function () {
       }
       return true;
     }, function () {
-      return fail(MESSAGE_FAILED);
+      return fail(offline() ? MESSAGE_OFFLINE : MESSAGE_FAILED);
     });
   }
 

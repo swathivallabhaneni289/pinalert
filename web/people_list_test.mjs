@@ -139,7 +139,7 @@ function load({ route }) {
   };
   const navigator = { onLine: true };
   vm.runInNewContext(source, { document, window, fetch, navigator, Promise, encodeURIComponent });
-  return { api: window.PinalertPeopleList, els, calls, sinks, state, confirm, pageBody };
+  return { api: window.PinalertPeopleList, els, calls, sinks, state, confirm, pageBody, navigator };
 }
 
 const opener = () => {
@@ -346,6 +346,53 @@ test('a refused Unblock keeps the row and shows the sentence', async () => {
   assert.equal(rowsOf(h).length, 1);
   assert.equal(h.els['people-list-action-error'].hidden, false);
   assert.equal(h.els['people-list-action-error'].textContent, 'Couldn\'t unblock. Try again.');
+});
+
+// 2026-10-30 (09-REVIEW IN-B01): the server's 429 or 409 sentence and the
+// offline line are shown here as on the profile page.
+test('a 429 on Unblock shows the server sentence and a dropped signal shows the offline line', async () => {
+  const wait = 'You are doing that too fast. Try again in a minute.';
+  const a = load({
+    route: (method) => (method === 'GET'
+      ? { status: 200, body: { entries: [{ username: 'first_x' }] } }
+      : { status: 429, body: { error: { field: 'people', message: wait } } })
+  });
+  a.api.open({ kind: 'blocked', opener: opener() });
+  await flush();
+  rowsOf(a)[0].querySelector('button').fire('click');
+  await flush();
+  assert.equal(a.els['people-list-action-error'].textContent, wait);
+  assert.equal(rowsOf(a).length, 1);
+
+  let h = null;
+  h = load({
+    route: (method) => {
+      if (method === 'GET') { return { status: 200, body: { entries: [{ username: 'first_x' }] } }; }
+      h.navigator.onLine = false;
+      return Promise.reject(new Error('network down'));
+    }
+  });
+  h.api.open({ kind: 'blocked', opener: opener() });
+  await flush();
+  rowsOf(h)[0].querySelector('button').fire('click');
+  await flush();
+  assert.equal(h.els['people-list-action-error'].textContent,
+    'You\'re offline, so this wasn\'t saved. Try again when you have a signal.');
+});
+
+test('a 429 on Remove all shows the server sentence inside the box', async () => {
+  const wait = 'You are doing that too fast. Try again in a minute.';
+  const h = load({
+    route: (method) => (method === 'GET'
+      ? { status: 200, body: LIST }
+      : { status: 429, body: { error: { field: 'people', message: wait } } })
+  });
+  h.api.open({ kind: 'followers', username: 'asha_k', own: true, opener: opener() });
+  await flush();
+  h.els['people-list-remove-all'].fire('click');
+  h.els['people-list-confirm-go'].fire('click');
+  await flush();
+  assert.equal(h.els['people-list-confirm-error'].textContent, wait);
 });
 
 test('Remove all followers asks first, Cancel sends nothing, confirm posts once and shows the empty state', async () => {

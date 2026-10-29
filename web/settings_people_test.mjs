@@ -111,7 +111,7 @@ function load(options = {}) {
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox, { filename: 'settings-people.js' });
-  return { ...page, requests, opens, api: sandbox.PinalertSettingsPeople };
+  return { ...page, requests, opens, navigator: sandbox.navigator, api: sandbox.PinalertSettingsPeople };
 }
 
 const flush = async () => { for (let i = 0; i < 8; i++) { await new Promise((r) => setImmediate(r)); } };
@@ -204,6 +204,20 @@ test('offline sends nothing and shows the built offline line', async () => {
   flip(page);
   await flush();
   assert.equal(page.requests.length, 0);
+  assert.equal(el(page, 'settings-profile-switch').checked, false);
+  assert.equal(el(page, 'settings-people-error').textContent,
+    'You\'re offline, so this wasn\'t saved. Try again when you have a signal.');
+});
+
+// 2026-10-30 (09-REVIEW IN-B01): a call that fails because the signal dropped
+// while it was out shows the offline line, not the generic one.
+test('a call lost when the signal drops shows the offline line', async () => {
+  const page = load({ on: false });
+  flip(page);
+  await flush();
+  page.navigator.onLine = false;
+  page.requests[0].reject(new Error('network'));
+  await flush();
   assert.equal(el(page, 'settings-profile-switch').checked, false);
   assert.equal(el(page, 'settings-people-error').textContent,
     'You\'re offline, so this wasn\'t saved. Try again when you have a signal.');
