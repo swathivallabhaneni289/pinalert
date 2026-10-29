@@ -661,7 +661,12 @@ func main() {
 	// default behaviour, so a second Ctrl-C during the shutdown grace ends the
 	// process at once instead of being swallowed (skeptic IN-01).
 	context.AfterFunc(runCtx, stopSignals)
-	var pushRunners []func(context.Context)
+	// The follow sweep (plan 09-06, SC5) ends the stored follows of a person who
+	// stops being a Reliable reporter or followable. It runs whether or not phone
+	// alerts are configured, on the same runCtx, so it stops with the others. No
+	// SignalSource yet: plan 09-14 wires the ratings source into every tag reader.
+	followSweep := service.NewFollowSweep(queries)
+	runners := []func(context.Context){followSweep.Run}
 	if pushOn {
 		pushPolicy := push.DefaultEndpointPolicy()
 		pushSender := push.NewWebPushSender(pushCfg, push.NewGuardedClient(), pushPolicy)
@@ -672,7 +677,7 @@ func main() {
 		// next to the 3.3 worker, so the shutdown waits for its current row too.
 		// Nothing runs when VAPID is off.
 		officialPushWorker := service.NewOfficialPushWorker(queries, pushSender, areas.Default(), service.WithOfficialPushWorkerPolicy(pushPolicy))
-		pushRunners = append(pushRunners,
+		runners = append(runners,
 			pushDispatcher.Run,
 			pushWorker.Run,
 			officialPushWorker.Run,
@@ -688,7 +693,7 @@ func main() {
 	}
 
 	log.Printf("pinalert listening on :%s", port)
-	if err := serveUntilDone(runCtx, srv.ListenAndServe, srv.Shutdown, shutdownGrace, pushRunners...); err != nil {
+	if err := serveUntilDone(runCtx, srv.ListenAndServe, srv.Shutdown, shutdownGrace, runners...); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 	log.Printf("pinalert stopped")
