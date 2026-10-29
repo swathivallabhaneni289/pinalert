@@ -255,6 +255,23 @@
   color: var(--color-text-muted);
 }
 
+/* The card is Leaflet popup content on the phone and the laptop, where
+   trust.css's ".leaflet-container .leaflet-popup-content p" and Leaflet's own
+   ".leaflet-popup-content p" zero every paragraph margin and outrank the one
+   class rules above. These carry three classes, as trust.css asks of popup
+   spacing rules, so the 4px under each line and the 12px that sets the honesty
+   line apart hold (Phase 5 review fix WR-T03, 2026-10-29). */
+.leaflet-container .official-card .official-card__line,
+.leaflet-container .official-card .official-card__detail,
+.leaflet-container .official-card .official-card__honesty,
+.leaflet-container .official-card .official-card__credit {
+  margin: 0 0 var(--space-xs);
+}
+
+.leaflet-container .official-card .official-card__honesty {
+  margin-top: var(--space-12);
+}
+
 /* The one action: an outlined 44px link, never underlined text. */
 .official-card__link {
   display: inline-flex;
