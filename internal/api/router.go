@@ -42,6 +42,12 @@ type Deps struct {
 	// it (such as swagger_test.go's) still compiles and still serves
 	// every route that does not touch voting.
 	Votes *service.VotingService
+	// Ratings is the tapped ratings service (Phase 9 plan 14). It is the one
+	// signal source cmd/server/main.go hands to every reader of a reporter tag,
+	// and here it backs the two rating routes and the profile's rating fields.
+	// Nil, which every Deps{} literal that does not set it gives, leaves the
+	// profile without rating fields and both rating routes answering 404.
+	Ratings *service.RatingService
 
 	AuthService *service.AuthService
 	Auth        handlers.AuthConfig
@@ -738,6 +744,12 @@ func NewRouter(deps Deps) *chi.Mux {
 	var peopleOpts []service.PeopleOption
 	if deps.Reports != nil {
 		peopleOpts = append(peopleOpts, service.WithPeopleScreener(deps.Reports.Screener()))
+	}
+	// Plan 14: the same ratings source every other tag reader uses, so the
+	// profile reads the tag every other surface reads. A nil Ratings adds no
+	// option (a typed nil pointer in the interface would not be a nil interface).
+	if deps.Ratings != nil {
+		peopleOpts = append(peopleOpts, service.WithPeopleSignals(deps.Ratings))
 	}
 	people := service.NewPeopleService(deps.Sessions, peopleOpts...)
 	// Delete my account (plan 03.2-09): built from the sessions store and the

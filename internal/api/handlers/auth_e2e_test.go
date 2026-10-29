@@ -170,12 +170,17 @@ func newAuthE2EServer(t *testing.T) (*httptest.Server, *pgxpool.Pool, *recording
 	}
 
 	queries := sqlcgen.New(pool)
+	// Amended 2026-10-29 by Phase 9 plan 14 (D-02): the same ratings source
+	// cmd/server/main.go wires, so the Activity read in this suite runs the wired
+	// path.
+	ratings := service.NewRatingService(queries)
 	fm := &recordingMailer{}
 	deps := api.Deps{
 		Session:     mgr,
 		Sessions:    queries,
-		Reports:     service.NewReportService(queries),
-		AuthService: service.NewAuthService(queries, fm, "https://pinalert.example"),
+		Reports:     service.NewReportService(queries, service.WithReportSignals(ratings)),
+		AuthService: service.NewAuthService(queries, fm, "https://pinalert.example", service.WithAuthSignals(ratings)),
+		Ratings:     ratings,
 		Auth:        handlers.AuthConfig{AssetVersion: "test"},
 		Template:    tmpl,
 		// Amended 2026-10-29 by Phase 7.1 plan 08: the code and password
