@@ -346,6 +346,12 @@ func buildFinishedView(in viewInput) ReportView {
 	v.History = BuildHistoryFacts(c.view, c.closure, viewerIsReporter, outcome, c.tally.ConfirmCells, in.Report.CreatedAt, in.Report.ExpiresAt)
 	centre := in.Centre
 	v.Report, v.Approximate = CoarsenFinishedRescue(v.Report, true, &centre)
+	// A blurred report lists no comments (CommentService.List, 03.1 D-23), so
+	// its views say 0 as well: the count matches the list, and it tells no
+	// stranger how much a rescue was discussed (review WR-S03).
+	if v.Approximate {
+		v.CommentCount = 0
+	}
 	return v
 }
 

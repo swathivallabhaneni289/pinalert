@@ -720,6 +720,51 @@ func TestCommentFinishedRescueHidden(t *testing.T) {
 	})
 }
 
+// TestCommentCountHiddenOnFinishedRescue proves review WR-S03 (2026-10-29): a
+// finished Rescue report lists no comments (03.1 D-23), so every view of it
+// says 0 comments too, the same number List answers, whether it faded or was
+// resolved. A finished report of another category keeps its real count.
+func TestCommentCountHiddenOnFinishedRescue(t *testing.T) {
+	r := newCmsRig(t)
+	reports := service.NewReportService(r.q)
+
+	focusCount := func(t *testing.T, id int64) int {
+		t.Helper()
+		res, err := reports.Focus(context.Background(), service.FocusQuery{
+			ReportID: id, Latitude: 16.5062, Longitude: 80.6480, ViewerAccountID: r.carol,
+		})
+		if err != nil || res.Status != service.FocusOK || res.View == nil {
+			t.Fatalf("Focus(%d) = %+v, %v, want a view", id, res, err)
+		}
+		return res.View.CommentCount
+	}
+
+	past := r.report(t, "rescue_needed", "critical", "clear", -time.Hour)
+	resolved := r.report(t, "rescue_needed", "critical", "clear", 6*time.Hour)
+	for _, id := range []int64{past, resolved} {
+		testutil.SeedComment(t, r.pool, testutil.CommentSeed{ReportID: id, AccountID: r.alice})
+		testutil.SeedComment(t, r.pool, testutil.CommentSeed{ReportID: id, AccountID: r.carol})
+	}
+	r.resolve(t, resolved, time.Minute)
+
+	for name, id := range map[string]int64{"faded": past, "resolved": resolved} {
+		t.Run(name, func(t *testing.T) {
+			listed := r.list(t, id, r.carol).Count
+			if got := focusCount(t, id); got != 0 || listed != 0 {
+				t.Errorf("finished Rescue: Focus count %d, List count %d, want both 0", got, listed)
+			}
+		})
+	}
+
+	t.Run("a finished flood report keeps its count", func(t *testing.T) {
+		flood := r.report(t, "flood", "low", "clear", -time.Hour)
+		testutil.SeedComment(t, r.pool, testutil.CommentSeed{ReportID: flood, AccountID: r.alice})
+		if got, listed := focusCount(t, flood), r.list(t, flood, r.carol).Count; got != 1 || listed != 1 {
+			t.Errorf("past flood: Focus count %d, List count %d, want both 1", got, listed)
+		}
+	})
+}
+
 func TestCommentFlag(t *testing.T) {
 	r := newCmsRig(t)
 	ctx := context.Background()
