@@ -54,6 +54,16 @@ type UpdatesQuerier interface {
 	// D-12). The Reliable reporter alert skips their reports; nothing else reads
 	// it here.
 	MutedPeopleIDs(ctx context.Context, muterID int64) ([]int64, error)
+	// The follow note (Phase 9 plan 22, D-09). NotifyFollowsFor lists the
+	// reader's Notify me follows, FolloweeStanding says who is still followable,
+	// InsertFollowedPostedAlert writes the note, and for the list
+	// PublicProfilePathsForViewer names the people the reader may still see and
+	// ActiveFollowsAmong says which follows are still active.
+	NotifyFollowsFor(ctx context.Context, arg sqlcgen.NotifyFollowsForParams) ([]sqlcgen.NotifyFollowsForRow, error)
+	FolloweeStanding(ctx context.Context, accountIds []int64) ([]sqlcgen.FolloweeStandingRow, error)
+	InsertFollowedPostedAlert(ctx context.Context, arg sqlcgen.InsertFollowedPostedAlertParams) (int64, error)
+	PublicProfilePathsForViewer(ctx context.Context, arg sqlcgen.PublicProfilePathsForViewerParams) ([]sqlcgen.PublicProfilePathsForViewerRow, error)
+	ActiveFollowsAmong(ctx context.Context, arg sqlcgen.ActiveFollowsAmongParams) ([]int64, error)
 }
 
 var _ UpdatesQuerier = (*sqlcgen.Queries)(nil)
@@ -112,8 +122,9 @@ func NewUpdatesService(q UpdatesQuerier, reports NearbyReader, opts ...UpdatesOp
 //     with the moderation state, ViewOf) and write only what DecideUpdate says:
 //     a silent baseline, a silent adoption, one state event or one fading event.
 //
-//  5. Run the Reliable reporter alert step (refreshReliableAlerts). An empty
-//     followed set ends step 2 to 4 early; the alert step does not depend on it.
+//  5. Run the follow note step (refreshFollowedPosts), then the Reliable
+//     reporter alert step (refreshReliableAlerts). An empty followed set ends
+//     step 2 to 4 early; neither alert step depends on it.
 func (s *UpdatesService) Refresh(ctx context.Context, accountID int64) error {
 	now := s.now().UTC()
 
@@ -129,13 +140,27 @@ func (s *UpdatesService) Refresh(ctx context.Context, accountID int64) error {
 		return err
 	}
 
+	// The follow note step (PROF-03, D-09) runs before the Reliable reporter step
+	// because follow wins the one first alert slot a report has per account: a
+	// person who follows a Reliable reporter with the bell on gets the follow
+	// note, never two. The step hands back the report ids it actually wrote, and
+	// the Reliable step skips exactly those (review W3), so a follow note that
+	// was not written, for example over the hourly ceiling, never costs the
+	// reader the Reliable alert. A failure here does not stop the Reliable step;
+	// the first error is the one returned.
+	followed, followErr := s.refreshFollowedPosts(ctx, accountID, now)
+
 	// The Reliable reporter alert step (NOTIF-05, D-26) comes last, with the same
 	// now. It measures from the account's home area and writes only through
 	// MayNotifyAboutReport and InsertReliableAlert, and it ends quietly when the
 	// reader has not switched it on, so every update above works without it
 	// (D-28).
-	if err := s.refreshReliableAlerts(ctx, accountID, now); err != nil {
-		return fmt.Errorf("service: Refresh: reliable alerts: %w", err)
+	reliableErr := s.refreshReliableAlerts(ctx, accountID, now, followed)
+	if followErr != nil {
+		return fmt.Errorf("service: Refresh: follow notes: %w", followErr)
+	}
+	if reliableErr != nil {
+		return fmt.Errorf("service: Refresh: reliable alerts: %w", reliableErr)
 	}
 	return nil
 }
@@ -390,6 +415,18 @@ func (s *UpdatesService) List(ctx context.Context, accountID int64, limit int) (
 		}
 	}
 
+	// The names of the follow notes (plan 09-22, D-09, D-20, research Q9). One
+	// read of the reporters' public usernames and one of the reader's active
+	// follows, and only when the page holds a follow note, so every other list
+	// costs nothing more. A follow note names its person only while the person is
+	// public with a clear username and does not block the reader, and the reader
+	// still follows them; the words are built here at read time and nothing is
+	// stored.
+	followNames, activeFollows, err := s.followNoteNames(ctx, accountID, rows, reporterByReport)
+	if err != nil {
+		return UpdatesPage{}, err
+	}
+
 	for _, row := range rows {
 		kind := UpdateKind(row.Kind)
 		item := UpdateItem{
@@ -438,6 +475,28 @@ func (s *UpdatesService) List(ctx context.Context, accountID int64, limit int) (
 			continue
 		}
 
+		// A follow note reads as gone, with no username, no category and no report
+		// link, as soon as any of three things stops being true: the report is still
+		// live (Active or Disputed, so a Resolved or expired report never carries
+		// its reporter's name or a way to its exact point, D-20), the person is
+		// public with a clear username, and the reader still follows them. The row
+		// itself stays as history (research Q9).
+		var followName string
+		if kind == UpdateFollowedPosted {
+			live := view == FeedViewActive || view == FeedViewDisputed
+			if reporter := reporterByReport[rep.ID]; reporter != nil {
+				followName = followNames[*reporter]
+				live = live && activeFollows[*reporter]
+			} else {
+				live = false
+			}
+			if !live || followName == "" {
+				item.Event = UnavailableLine
+				page.Items = append(page.Items, item)
+				continue
+			}
+		}
+
 		trust := BuildTrust(TrustInput{
 			Rows:              reportV,
 			ReportID:          rep.ID,
@@ -458,6 +517,14 @@ func (s *UpdatesService) List(ctx context.Context, accountID int64, limit int) (
 		item.Severity = meta.Severity
 		item.Event = EventLine(kind)
 		item.Trust = UpdateTrustLine(kind, trust, view, confirmed)
+		if kind == UpdateFollowedPosted {
+			// Line 1 names the person, line 2 is the category and severity words
+			// and never the report's own text (UI-SPEC 2a).
+			item.Event = FollowedPostedLine(followName)
+			item.ReportLine = FollowedPostedDetail(CategoryWord(meta.Category), SeverityWord(meta.Severity))
+			page.Items = append(page.Items, item)
+			continue
+		}
 		// Q1 owner confirmed 2026-10-18: rows show the report's first line. If the
 		// owner says no, delete this one assignment.
 		item.ReportLine = ReportFirstLine(Report{
@@ -471,6 +538,54 @@ func (s *UpdatesService) List(ctx context.Context, accountID int64, limit int) (
 		page.Items = append(page.Items, item)
 	}
 	return page, nil
+}
+
+// followNoteNames reads, for the follow notes of one page, which reporters the
+// reader may still see named and which of them the reader still follows. The
+// first map is account id to username (public, opted in, clear username, not
+// blocking the reader; PublicProfilePathsForViewer is the one place that rule
+// lives), the second is the set of people with an active follow from the reader.
+// Both are nil when the page has no follow note, and neither read is made then.
+// Reading a map for an account that is not in it gives the empty answer, so a
+// person who went private, was deleted, blocked the reader or is no longer
+// followed reads as gone.
+func (s *UpdatesService) followNoteNames(ctx context.Context, accountID int64, rows []sqlcgen.UpdatesForAccountRow, reporterByReport map[int64]*int64) (map[int64]string, map[int64]bool, error) {
+	var people []int64
+	seen := map[int64]struct{}{}
+	for _, row := range rows {
+		if UpdateKind(row.Kind) != UpdateFollowedPosted || row.ReportID == nil {
+			continue
+		}
+		reporter := reporterByReport[*row.ReportID]
+		if reporter == nil {
+			continue
+		}
+		if _, dup := seen[*reporter]; dup {
+			continue
+		}
+		seen[*reporter] = struct{}{}
+		people = append(people, *reporter)
+	}
+	if len(people) == 0 {
+		return nil, nil, nil
+	}
+	nameRows, err := s.q.PublicProfilePathsForViewer(ctx, sqlcgen.PublicProfilePathsForViewerParams{AccountIds: people, ViewerID: accountID})
+	if err != nil {
+		return nil, nil, fmt.Errorf("service: List: reading follow note names: %w", err)
+	}
+	names := make(map[int64]string, len(nameRows))
+	for _, nr := range nameRows {
+		names[nr.ID] = nr.Username
+	}
+	followRows, err := s.q.ActiveFollowsAmong(ctx, sqlcgen.ActiveFollowsAmongParams{FollowerID: accountID, FolloweeIds: people})
+	if err != nil {
+		return nil, nil, fmt.Errorf("service: List: reading follows: %w", err)
+	}
+	active := make(map[int64]bool, len(followRows))
+	for _, id := range followRows {
+		active[id] = true
+	}
+	return names, active, nil
 }
 
 // MarkRead marks the account's own unread updates up to and including upTo as
