@@ -30,6 +30,24 @@ func TestTrustModelSaysARefusedCursorStartsTheListAgain(t *testing.T) {
 	}
 }
 
+// TestModerationDocSaysWhatTheVisibilityBucketCharges pins SK-I02: the doc says
+// the bucket charges every request that asks for on, as the code does, and no
+// longer says it charges only a real off to on turn.
+func TestModerationDocSaysWhatTheVisibilityBucketCharges(t *testing.T) {
+	doc := round2Doc(t, "MODERATION.md")
+	for _, want := range []string{
+		"takes a token for every request that asks for on, including a request that finds the profile already on",
+		"it still spends a token",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("docs/MODERATION.md lacks %q", want)
+		}
+	}
+	if strings.Contains(doc, "takes a token only when the profile goes from off to on") {
+		t.Error("docs/MODERATION.md still says the Visibility bucket charges only a real off to on turn")
+	}
+}
+
 // TestTrustModelSaysThePeopleCursorIsSealedAndBound pins SK-W03.
 func TestTrustModelSaysThePeopleCursorIsSealedAndBound(t *testing.T) {
 	trust := round2Doc(t, "TRUST-MODEL.md")

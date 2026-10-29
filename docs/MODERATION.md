@@ -361,8 +361,11 @@ reads are bounded to slow scraping of the follow graph, and actions are bounded 
 churn. A rating also has the once in 24 hours change rule on top (`RatingChangeGap`, see
 TRUST-MODEL.md). Amended 2026-10-30 by Phase 9 plan 27.
 
-The Visibility row (review WR-E02) takes a token only when the profile goes from off to on, because
-each switch on can send the Name to the screener; turning it off is never refused by it. A refusal
+The Visibility row (review WR-E02) takes a token for every request that asks for on, including a
+request that finds the profile already on, because the handler takes the token before it knows the
+stored state; that request calls no screener and changes nothing, but it still spends a token.
+Each real switch on can send the Name to the screener, which is why the bucket exists; turning it
+off is never refused by it. Amended 2026-10-30 (skeptic SK-I02). A refusal
 is a 429 with the field `rate_visibility`, the same body shape and Retry-After as
 `rate_people_action`. The profile page `/u/{username}` takes its token from the People reads bucket
 (review WR-E01), the same one the JSON profile and lists use, so a person cannot walk the pages
