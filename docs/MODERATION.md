@@ -307,7 +307,7 @@ What each removal does.
   fails, and then stamps each rating. The removal is permanent: that account cannot rate again
   (`TestRemovedRaterCannotRateAgain`). It affects every reporter that rater rated.
 - Follows. When a removal brings a reporter back to Reliable reporter, the follows that were ended
-  with the reason tag_lost since the earliest removed rating was written are restored
+  with the reason tag_lost since the earliest removed rating was first written are restored
   (`TestModeratorRemovalRestoresFollows`). A follow comes back only if the reporter still has a
   public profile and a clear username, neither side is deleted, no block exists in either
   direction and the follower is under the following cap. When the reporter is not Reliable again,
@@ -342,6 +342,7 @@ side by side in `cmd/server/main.go`.
 | People reads (profiles, lists) | account | 60 | 1 per second | `peopleReadBurst`, `peopleReadEvery` |
 | People actions (follow, block, mute, notify and the rest) | account | 20 | 1 per 3 seconds | `peopleActionBurst`, `peopleActionEvery` |
 | Star ratings and removing your own rating | account | 10 | 1 per 30 seconds | `rateBurst`, `rateEvery` |
+| Visibility (turning the profile on; turning it off is never limited) | account | 6 | 1 per 20 seconds | `visibilityBurst`, `visibilityEvery` |
 | Network backstop, reports | client address | 2000 | 1 per second | `ipBackstopReportBurst`, `ipBackstopReportEvery` |
 | Network backstop, votes | client address | 2000 | 1 per 150 milliseconds | `ipBackstopVoteBurst`, `ipBackstopVoteEvery` |
 | Network backstop, flags | client address | 1000 | 1 per 1.2 seconds | `ipBackstopFlagBurst`, `ipBackstopFlagEvery` |
@@ -354,11 +355,19 @@ beside it does the same for each action family. Phase 8 added the comment, like 
 to both (a comment Flag spends the report Flag bucket and backstop). Amended 2026-10-29 by Phase 8
 plan 19.
 
-Phase 9 added the three people rows. They are per account only and have no network backstop,
+Phase 9 added the four people rows. They are per account only and have no network backstop,
 because many phones share one carrier address: the lists are public to every signed in account, so
 reads are bounded to slow scraping of the follow graph, and actions are bounded to slow follow
 churn. A rating also has the once in 24 hours change rule on top (`RatingChangeGap`, see
 TRUST-MODEL.md). Amended 2026-10-30 by Phase 9 plan 27.
+
+The Visibility row (review WR-E02) takes a token only when the profile goes from off to on, because
+each switch on can send the Name to the screener; turning it off is never refused by it. A refusal
+is a 429 with the field `rate_visibility`, the same body shape and Retry-After as
+`rate_people_action`. The profile page `/u/{username}` takes its token from the People reads bucket
+(review WR-E01), the same one the JSON profile and lists use, so a person cannot walk the pages
+round the JSON limit. When that bucket is empty the page answers a 429 page with Retry-After, never
+JSON. Amended 2026-10-30 by the Phase 9 round 2 fixes.
 
 - The network backstop has one bucket per action family, so votes from a shared carrier address
   can never use up report posting from it. Each family is sized so that about 100 accounts behind
