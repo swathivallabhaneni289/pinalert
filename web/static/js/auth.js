@@ -30,6 +30,8 @@
   var SIGNING_IN_LABEL = 'Signing in\u2026';
   var CHECKING_LABEL = 'Checking\u2026';
   var MAX_CLIENT_TRIES = 5;
+  // How long one request may take, the body read included (review fix WR-B01).
+  var REQUEST_TIMEOUT_MS = 10000;
   var NEXT_PATHS = ['/', '/low'];
 
   function byId(id) {
@@ -225,19 +227,55 @@
   // ---- Requests -------------------------------------------------------------------
 
   // postJSON always resolves: status 0 stands for a request that never got an answer.
+  // The time limit covers the body read too, so a request WebKit leaves unsettled
+  // (an iPhone tab suspended on the way to Mail) still ends and frees its button,
+  // as request() in welcome.js and settings.js does (review fix WR-B01).
   function postJSON(path, body) {
-    return fetch(path, {
+    var controller = typeof AbortController === 'function' ? new AbortController() : null;
+    var init = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
-    }).then(function (res) {
-      return res.json().catch(function () {
-        return {};
-      }).then(function (data) {
-        return { ok: res.ok, status: res.status, body: data || {} };
+    };
+    if (controller !== null) {
+      init.signal = controller.signal;
+    }
+    var noAnswer = { ok: false, status: 0, body: {} };
+    return new Promise(function (resolve) {
+      var settled = false;
+      var timer = setTimeout(function () {
+        timer = null;
+        if (controller !== null) {
+          controller.abort();
+        }
+        finish(noAnswer);
+      }, REQUEST_TIMEOUT_MS);
+      function finish(result) {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (timer !== null) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        resolve(result);
+      }
+      var call;
+      try {
+        call = fetch(path, init);
+      } catch (err) {
+        call = Promise.reject(err);
+      }
+      Promise.resolve(call).then(function (res) {
+        return res.json().catch(function () {
+          return {};
+        }).then(function (data) {
+          finish({ ok: res.ok, status: res.status, body: data || {} });
+        });
+      }).then(null, function () {
+        finish(noAnswer);
       });
-    }, function () {
-      return { ok: false, status: 0, body: {} };
     });
   }
 

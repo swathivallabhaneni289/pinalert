@@ -217,6 +217,9 @@ function load(options) {
   ['localStorage', 'sessionStorage', 'history'].forEach((name) => {
     Object.defineProperty(sandbox, name, { get() { touched.push(name); return {}; } });
   });
+  // Amended 2026-10-29 by the Phase 7.1 review fix (browser): options.globals adds
+  // members to the sandbox (an AbortController, a Date), for the WR-B01 and WR-B02 cases.
+  Object.assign(sandbox, (options && options.globals) || {});
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox, { filename: 'auth.js' });
@@ -928,4 +931,87 @@ test('the script holds the two pinned sentences once and never mentions the aler
   assert.equal(count('?sent='), 0);
   assert.equal(source.includes('\u2014'), false);
   assert.equal(source.includes('\u2013'), false);
+});
+
+// Phase 7.1 review fix (browser), WR-B01: every request of the card has a time
+// limit that also covers reading the body, as request() in welcome.js has. A
+// request WebKit leaves unsettled (an iPhone tab suspended on the way to Mail)
+// ends after 10 s as a request with no answer: the button is free again, the
+// offline line shows, and a second press posts again.
+test('WR-B01: a request that never settles ends after 10 s and frees its button', async () => {
+  const aborted = [];
+  class FakeAbort {
+    constructor() { this.signal = { aborted: false }; }
+    abort() { this.signal.aborted = true; aborted.push(true); }
+  }
+  const page = load({ start: 'create', globals: { AbortController: FakeAbort } });
+  await fillCreate(page, 'priya@example.com', 'pinalert-demo');
+  submit(page, 'create');
+  assert.equal(page.requests.length, 1);
+  assert.ok(page.requests[0].init.signal, 'the request carries an abort signal');
+  page.advance(9999);
+  await flush();
+  assert.equal(byId(page, 'create-submit').getAttribute('aria-busy'), 'true', 'still waiting before the limit');
+  page.advance(1);
+  await flush();
+  assert.equal(byId(page, 'create-submit').getAttribute('aria-busy'), null);
+  assert.equal(text(page, 'create-submit'), 'Email me a code');
+  assert.equal(text(page, 'create-error'), "You're offline. Try again when you have a signal.");
+  assert.equal(byId(page, 'create-error').hidden, false);
+  assert.deepEqual(aborted, [true], 'the stuck request is aborted');
+  submit(page, 'create');
+  assert.equal(page.requests.length, 2, 'a second press posts again');
+  // A late answer to the first request changes nothing.
+  answer(page.requests[0], 200, { sent: true });
+  await flush();
+  assert.deepEqual(shownPanel(page), ['create']);
+  assertClean(page);
+});
+
+test('WR-B01: the limit covers the body read, and the timer goes once the answer is in', async () => {
+  const page = load({ start: 'signin' });
+  byId(page, 'signin-email').value = 'priya@example.com';
+  byId(page, 'signin-password').value = 'pinalert-demo';
+  submit(page, 'signin');
+  // Headers came back, the body never does.
+  page.requests[0].resolve({ ok: true, status: 200, json: () => new Promise(() => {}) });
+  await flush();
+  assert.equal(byId(page, 'signin-submit').getAttribute('aria-busy'), 'true');
+  page.advance(10000);
+  await flush();
+  assert.equal(byId(page, 'signin-submit').getAttribute('aria-busy'), null);
+  assert.equal(text(page, 'signin-submit'), 'Sign in');
+  assert.ok(text(page, 'signin-error').includes("You're offline."));
+  assert.deepEqual(page.assigned, []);
+
+  // A request answered in time leaves no timer behind.
+  const quick = load({ start: 'signin' });
+  submit(quick, 'signin');
+  answer(quick.requests[0], 400, { error: { field: 'credentials', message: 'x' } });
+  await flush();
+  assert.equal(quick.timers.size, 0, 'the limit timer is cleared once the answer is in');
+  assertClean(page);
+});
+
+test('WR-B01: Resend and the code submit are bounded too', async () => {
+  const page = load({ start: 'create' });
+  await toCodeScreen(page);
+  byId(page, 'code-input').value = '123456';
+  submit(page, 'code');
+  page.advance(10000);
+  await flush();
+  assert.equal(byId(page, 'code-submit').getAttribute('aria-busy'), null);
+  assert.equal(text(page, 'code-submit'), 'Create account');
+  assert.equal(text(page, 'code-error'), "You're offline. Try again when you have a signal.");
+
+  page.advance(45000);
+  click(page, 'code-resend');
+  const before = page.requests.length;
+  assert.equal(page.requests[before - 1].url, '/api/auth/code/resend');
+  page.advance(10000);
+  await flush();
+  assert.equal(byId(page, 'code-resend').getAttribute('aria-busy'), null);
+  assert.equal(text(page, 'code-resend'), 'Resend code');
+  click(page, 'code-resend');
+  assert.equal(page.requests.length, before + 1, 'Resend can be pressed again');
 });
