@@ -581,6 +581,38 @@ Phase 5 added the one kind that is not about a crowd report: a Severe or Extreme
 
 No part of this claims that an official alert is correct. Pinalert copies SACHET and says so; the list of what can go wrong is under "Limits and open questions" in OFFICIAL-ALERTS.md.
 
+## Signing in
+
+Phase 7.1 replaced the emailed link with an email and a password. This section says how sign in works, what it limits, and where it is weaker than it could be. Everything here sits under the crowd rules above: signing in decides who an account is, and the vote, place and score rules are untouched. The cost of one more account in "Honest limits" is still one more email address that can receive a code.
+
+The rules.
+
+- An account is an email and a password. The email is proved once, at sign up, by a 6 digit code typed in from the email. After that, sign in is the email and the password only. There is no emailed link anywhere.
+- A forgotten password is reset with the same kind of code. A reset ends every session of the account, on every device, and clears the wrong password lock, so the owner of an address can always get back in.
+- A password is stored only as an argon2id hash (19456 KiB of memory, 2 passes, 1 lane), with a random salt, and a 3 slot limit on hashes running at once. The password itself is never stored or logged. A sign in for an address with no account does the same work against a dummy hash, so time does not give the answer away.
+- A code is stored only as a keyed hash (HMAC with a key made from `SESSION_SECRET`). It lasts 10 minutes, allows 5 tries, works once, and belongs to the browser that asked for it. Each try is counted before the code is compared, so a parallel guess cannot beat the limit. Asking for a new code replaces the old one.
+- Every answer is the same whether or not an address has an account: the page, the status, the headers and the words. When an account already exists, Create account emails its owner to say so instead of sending a code. When none exists, Forgot password emails to say so. `TestEnumerationSignInIdentical` and its neighbours compare the raw bytes.
+- A new session id is made at every successful sign in, so a planted cookie never becomes a signed in one (`TestFixationFreshSessionID`).
+
+The limits.
+
+- Wrong passwords: 5 free tries per address, then a lock of 5 minutes that doubles on each further failure up to 60 minutes. The count is kept in the database under a keyed hash of the address, and is forgotten after 30 minutes with no failure. A right password clears it. `TestLimitsLockScheduleReachesCap` pins the schedule.
+- Per device: each browser has its own buckets for sign in, for sending codes and for trying codes, so one noisy phone is held back without touching anyone else.
+- Per network address: a bucket by IP exists only when the host's client IP header is confirmed and named in `CLIENT_IP_HEADER`. Without it, a shared carrier address (CGNAT) is never counted as one person, which is the point (`TestLimitsDeviceBucketCGNAT`).
+- Code emails: one per address every 45 seconds, 5 an hour for each address (Create account and Forgot password share the count), and a cap for browsers that send no cookie at all.
+- Email ceiling: at most 90 sends a day in total, so Resend's free 100 cannot be used up. 20 of those are kept for Forgot password emails, so an attacker spending the rest on Create account cannot stop a real person getting back in (`TestMailerCeilingReservesResetSends`).
+
+Why the password minimum is 8. The owner chose an easy sign up (D-13): 8 to 128 characters, with a list of the most common passwords refused. NIST SP 800-63B-4 asks for 15 characters when a password is the only sign in factor, and that is recorded here as the stricter option. The slow hash, the per address lock and the common password list are what stand in for the extra length. If this site is ever promoted widely, raising the minimum is a change to `PasswordMinRunes` in `internal/auth/policy.go` plus the words on the sign up card that name the number.
+
+Honest limits of sign in.
+
+- Credential stuffing is bounded weakly when no client IP header is set. A script that drops cookies and shares one network address is held back only by the per address lock and the cost of each hash. That is why `CLIENT_IP_HEADER` must be set, after the README canary check, before the site is shared publicly. The accepted gap is T-07.1-03.
+- A targeted lockout is accepted. Anyone who knows an address can keep it locked by failing its password on purpose. The owner of the address gets back in through Forgot password, because a reset clears the lock, and the flow ends as drawn, with "Password set. Sign in to continue.". This was chosen over a lock that cannot be triggered from outside, which would let a guesser try forever.
+- A typed code can be read over a shoulder or from a shared inbox. The code is bound to one browser and works once, but anyone who sees both the email and the page in time can use it.
+- Email alias tricks (a plus sign, dots) and disposable addresses are not blocked. See "Out of scope for this model".
+- The daily ceiling protects the Resend quota, not the inbox of a person. A hostile sender can still make an address receive up to 5 codes an hour.
+- Usernames are public. They are checked as they are typed, screened like other free text (see MODERATION.md), and a name that could not be judged is saved as pending. Phase 8 and Phase 9 show only names whose screen word is clear, and re-check pending ones first.
+
 ## Where the roadmap words are met
 
 | Roadmap words | What ships | Where in code | Test |
@@ -606,6 +638,7 @@ The visible form of "confirmed by N nearby" is the counter `N confirmed`, with t
 - Phase 8's report page reuses the trust block unchanged and places the reporter words with the same helper as the other surfaces, `createStateLine`. It and Phase 9's followable profiles show finished reports, so they call `CoarsenFinishedRescue` through the shared read and never copy a report's coordinates or description by another route.
 - Phase 4's Low data view should read `facts` for the rows of its trust block, not the older sentence fields. The server already writes every word of a row.
 - Phase 3.3 built the phone channel on `MayNotifyAboutReport`. Phase 5 added the official alert kind and its Settings row beside that pipeline rather than on it, in an outbox and worker of its own, because an alert has no report, no vote and no resolver verdict to ask. Phase 9 adds the follow kind through `MayNotifyAboutReport`, driven by its Notify me bell; every kind except the Reliable one needs a Live report, so if a followed person's Provisional report is to be pushed the function has to give the follow kind the Reliable kind's allowance, in that one place and with its test. Each of the two added a migration of its own and a row to the closed lists, and neither writes a second visibility rule.
+- Phase 7.1 gave every account a unique, public username. Phases 8 and 9 read names through the one batched read `AccountService.UsernamesFor`, show a name only when its screen word is clear, and check for a username themselves in any route that needs one, because the gate passes every `/api/` path for every account. See "Signing in".
 
 ## Keeping this document true
 

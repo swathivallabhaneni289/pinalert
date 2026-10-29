@@ -38,6 +38,13 @@ import (
 // changes, so everyone is asked again for the new text (D-27). It is the day
 // the Policy was last updated in YYYY-MM-DD form and must equal the "Last
 // updated" date the Policy shows (TestTermsVersionFollowsPolicyDate).
+//
+// Phase 7.1 (plan 17, research Pitfall 11): the Policy now names the password
+// hash, the public username, the name, the home area name and the username
+// screening, so this version moves together with the Policy date and every
+// account passes the terms step once more, in the same fill in visit as step 4.
+// Phase 5 plan 20 had already set 2026-10-29; nothing was deployed between,
+// so no account agreed to the in between text and the date stays the same.
 const CurrentTermsVersion = "2026-10-29"
 
 // HomeAreaCellPrecision is the geohash precision of the stored home area cell.

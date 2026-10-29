@@ -264,15 +264,20 @@ Decision below.
   Render's now-limited free tiers) rather than a paid plan. Auto-moderation uses OpenAI's
   Moderation API (`omni-moderation-latest`, free) rather than Google's Perspective API (shutting
   down Dec 31, 2026).
-- **Access model** (revised 2026-09-10 — see Key Decisions): Mandatory email verification (magic link)
-  before a visitor can submit a report or vote — reverses Phase 1's original anonymous/no-signup
-  model. Decided during Phase 2 discussion after the user raised a real vote-stuffing concern
-  (multiple devices/sessions from one person); weighed against the independence predicate
-  (distinct session + distinct geohash cell) already planned for Phase 2/3, but the user judged
-  the accountability gap worth closing directly rather than relying on location-diversity alone.
-  Session-first, IP-secondary rate limiting (originally reconsidered after research flagged CGNAT
-  — shared carrier IPs — as a real India-specific collateral-damage risk) still applies underneath
-  the login gate.
+- **Access model** (revised 2026-09-10, changed again 2026-10-29 in Phase 7.1; see Key Decisions): An
+  account is an email and a password. The email is proved once, at sign up, by a 6-digit code typed
+  in from the email; a forgotten password is reset with the same kind of typed code. There is no
+  emailed link anywhere. Every account has a required public Username, a Name and a Home area
+  (a town or area, never a street). A person must have an account before they can submit a report
+  or vote, which reverses Phase 1's original anonymous/no-signup model. That was decided during
+  Phase 2 discussion after the user raised a real vote-stuffing concern (multiple devices or
+  sessions from one person); weighed against the independence predicate (distinct session +
+  distinct geohash cell) already planned for Phase 2/3, but the user judged the accountability gap
+  worth closing directly rather than relying on location-diversity alone. Session-first,
+  IP-secondary rate limiting (originally reconsidered after research flagged CGNAT, shared carrier
+  IPs, as a real India-specific collateral-damage risk) still applies underneath the login gate,
+  and the wrong-password limits are per address and per device so a shared carrier address is not
+  locked out.
 - **Legal**: This is a public, unofficial emergency-information app — India's IT Rules 2021
   intermediary-safe-harbor conditions apply the moment it's public, regardless of real traffic.
   Research confidence on specific applicability is LOW; get an actual legal/mentor review before

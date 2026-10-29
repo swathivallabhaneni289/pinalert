@@ -31,7 +31,7 @@ const (
 )
 
 // newRevServer is the shared harness: a moderator list holding mod@example.com
-// and an open per IP request-link bucket (every test client is 127.0.0.1).
+// and generous sign in limits (every test client is 127.0.0.1).
 func newRevServer(t *testing.T) (*httptest.Server, *recordingMailer, *pgxpool.Pool) {
 	t.Helper()
 	return newE2EServerWith(t, func(d *api.Deps, _ *sqlcgen.Queries) {
