@@ -183,3 +183,92 @@ func TestCoarsenBoundAcrossIndia(t *testing.T) {
 	}
 	t.Logf("worst coarse error over India = %.3f km", worst)
 }
+
+func TestCoarsePointAt(t *testing.T) {
+	t.Run("precision 5 cell and centre", func(t *testing.T) {
+		lat, lon, cell := CoarsePointAt(13.0827, 80.2707, 5)
+		if want := geohash.EncodeWithPrecision(13.0827, 80.2707, 5); cell != want || len(cell) != 5 {
+			t.Fatalf("cell = %q, want %q", cell, want)
+		}
+		cLat, cLon := geohash.DecodeCenter(cell)
+		if lat != cLat || lon != cLon {
+			t.Errorf("point = (%v, %v), want the cell centre (%v, %v)", lat, lon, cLat, cLon)
+		}
+	})
+
+	t.Run("CoarsePoint is precision 6", func(t *testing.T) {
+		la, lo, c := CoarsePoint(13.0827, 80.2707)
+		la2, lo2, c2 := CoarsePointAt(13.0827, 80.2707, 6)
+		if la != la2 || lo != lo2 || c != c2 {
+			t.Errorf("CoarsePoint = (%v, %v, %q), CoarsePointAt 6 = (%v, %v, %q)", la, lo, c, la2, lo2, c2)
+		}
+	})
+
+	t.Run("precision 5 cell is about 5 km", func(t *testing.T) {
+		box := geohash.BoundingBox(geohash.EncodeWithPrecision(20, 78, 5))
+		if got := box.MaxLng - box.MinLng; math.Abs(got-360.0/8192) > 1e-9 {
+			t.Errorf("cell width = %v degrees, want %v", got, 360.0/8192)
+		}
+		if got := box.MaxLat - box.MinLat; math.Abs(got-180.0/4096) > 1e-9 {
+			t.Errorf("cell height = %v degrees, want %v", got, 180.0/4096)
+		}
+	})
+}
+
+func TestCoarsenFinishedForProfile(t *testing.T) {
+	centre := &GeoPoint{Lat: 13.10, Lon: 80.30}
+
+	t.Run("flood is blurred to precision 5 with no text", func(t *testing.T) {
+		in := p31Rescue()
+		in.Category = CategoryFlood
+		got := CoarsenFinishedForProfile(in, centre)
+		wantLat, wantLon, wantCell := CoarsePointAt(in.Latitude, in.Longitude, 5)
+		if got.Latitude != wantLat || got.Longitude != wantLon || got.Geohash != wantCell || len(got.Geohash) != 5 {
+			t.Errorf("point = (%v, %v, %q), want (%v, %v, %q)", got.Latitude, got.Longitude, got.Geohash, wantLat, wantLon, wantCell)
+		}
+		if got.Description != "" {
+			t.Errorf("description = %q, want empty", got.Description)
+		}
+		if got.DistanceKm == nil {
+			t.Fatal("distance is nil, want a coarse distance")
+		}
+		if want := haversineKm(centre.Lat, centre.Lon, wantLat, wantLon); math.Abs(*got.DistanceKm-want) > 1e-9 {
+			t.Errorf("distance = %v, want %v", *got.DistanceKm, want)
+		}
+		if in.Description == "" || *in.DistanceKm != 1.234 {
+			t.Errorf("input was modified: %+v", in)
+		}
+	})
+
+	t.Run("rescue keeps precision 6 and no text", func(t *testing.T) {
+		in := p31Rescue()
+		got := CoarsenFinishedForProfile(in, centre)
+		_, _, wantCell := CoarsePointAt(in.Latitude, in.Longitude, 6)
+		if got.Geohash != wantCell || len(got.Geohash) != 6 {
+			t.Errorf("geohash = %q, want %q", got.Geohash, wantCell)
+		}
+		if got.Description != "" {
+			t.Errorf("description = %q, want empty", got.Description)
+		}
+	})
+
+	t.Run("no centre means no distance", func(t *testing.T) {
+		got := CoarsenFinishedForProfile(p31Rescue(), nil)
+		if got.DistanceKm != nil {
+			t.Errorf("distance = %v, want nil", *got.DistanceKm)
+		}
+	})
+
+	t.Run("idempotent", func(t *testing.T) {
+		for _, cat := range []Category{CategoryFlood, CategoryRescueNeeded, CategoryShelterOpen} {
+			in := p31Rescue()
+			in.Category = cat
+			once := CoarsenFinishedForProfile(in, centre)
+			twice := CoarsenFinishedForProfile(once, centre)
+			if once.Latitude != twice.Latitude || once.Longitude != twice.Longitude || once.Geohash != twice.Geohash ||
+				once.Description != twice.Description || *once.DistanceKm != *twice.DistanceKm {
+				t.Errorf("%s: not idempotent: %+v then %+v", cat, once, twice)
+			}
+		}
+	})
+}

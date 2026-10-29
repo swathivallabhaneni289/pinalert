@@ -26,9 +26,48 @@ type GeoPoint struct {
 // point, and that 6 character cell string. It is idempotent: the centre of a
 // cell lies inside the same cell.
 func CoarsePoint(lat, lon float64) (float64, float64, string) {
-	cell := geohash.EncodeWithPrecision(lat, lon, ApproxGeohashPrecision)
+	return CoarsePointAt(lat, lon, ApproxGeohashPrecision)
+}
+
+// ProfileCoarsePrecision is the geohash precision of a finished report on a
+// profile (plan 09-05, D-07). A precision 5 cell is 25 bits, 13 for longitude
+// and 12 for latitude, about 4.9 km wide and 4.9 km tall at the equator, so
+// "about 5 km", the same grid as the stored home area (RESEARCH A4).
+const ProfileCoarsePrecision = 5
+
+// CoarsePointAt returns the centre of the geohash cell of the given precision
+// that holds the point, and that cell string. It is idempotent, like CoarsePoint.
+func CoarsePointAt(lat, lon float64, precision uint) (float64, float64, string) {
+	cell := geohash.EncodeWithPrecision(lat, lon, precision)
 	cLat, cLon := geohash.DecodeCenter(cell)
 	return cLat, cLon, cell
+}
+
+// CoarsenFinishedForProfile blurs a finished report that is listed on a person's
+// profile. A profile ties many reports to one public username, so every finished
+// report is blurred here, not only Rescue: precision 5 is about 5 km, the same
+// grid as the stored home area (RESEARCH A4), and a finished Rescue report keeps
+// its stricter precision 6 (03.1 D-23). Latitude, longitude, geohash,
+// description and distance all change together, like CoarsenFinishedRescue. The
+// distance is measured from centre to the coarse point, never to the exact one,
+// and is nil when centre is nil. Report is passed by value and the pointer
+// DistanceKm of the input is never written through. It is idempotent.
+func CoarsenFinishedForProfile(r Report, centre *GeoPoint) Report {
+	precision := uint(ProfileCoarsePrecision)
+	if r.Category == CategoryRescueNeeded {
+		precision = ApproxGeohashPrecision
+	}
+	lat, lon, cell := CoarsePointAt(r.Latitude, r.Longitude, precision)
+	r.Latitude = lat
+	r.Longitude = lon
+	r.Geohash = cell
+	r.Description = ""
+	r.DistanceKm = nil
+	if centre != nil {
+		d := haversineKm(centre.Lat, centre.Lon, lat, lon)
+		r.DistanceKm = &d
+	}
+	return r
 }
 
 // CoarsenFinishedRescue blurs a finished Rescue report and says whether it did.
