@@ -50,8 +50,10 @@
   border-radius: 8px;
   background: var(--color-bg);
   color: var(--color-text);
-  font-size: var(--font-size-label);
-  line-height: var(--line-height-label);
+  /* Body 16px, as the UI-SPEC Typography table sets the Demo buttons
+     (Phase 5 review fix IN-T02, 2026-10-29). */
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
   font-weight: var(--font-weight-semibold);
   text-decoration: none;
   white-space: nowrap;
