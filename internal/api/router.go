@@ -739,9 +739,7 @@ func NewRouter(deps Deps) *chi.Mux {
 	if deps.Reports != nil {
 		peopleOpts = append(peopleOpts, service.WithPeopleScreener(deps.Reports.Screener()))
 	}
-	people := service.NewPeopleService(deps.Sessions, peopleOpts...)
-	_ = people // the people routes use it from the next commit of this plan
-	// Delete my account (plan 03.2-09): built from the sessions store and the
+	people := service.NewPeopleService(deps.Sessions, peopleOpts...)	// Delete my account (plan 03.2-09): built from the sessions store and the
 	// optional transaction seam.
 	// With a CredentialService, deleting an account also clears the sign in
 	// throttle row of the address, through the service's own keyed hash.
@@ -999,6 +997,24 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.Post("/api/reports/{id}/unmute", handlers.UnmuteReport(mutes))
 		// GET /api/me/muted-reports lists the caller's mutes for Settings.
 		r.Get("/api/me/muted-reports", handlers.GetMutedReports(mutes))
+		// The twelve Phase 9 people routes (plan 07), flat literal paths in the
+		// gated group. Every read goes through the per account PeopleRead bucket
+		// and every action through the per account PeopleAction bucket; nothing
+		// is keyed on the network address (CGNAT). Every route that reads a
+		// person answers one byte equal 404 for any person the caller may not
+		// see (handlers.writePersonNotFound).
+		r.With(rateGate.PeopleReadMiddleware()).Get("/api/people/{username}", handlers.PersonProfile(people))
+		r.With(rateGate.PeopleReadMiddleware()).Get("/api/people/{username}/followers", handlers.PersonFollowers(people))
+		r.With(rateGate.PeopleReadMiddleware()).Get("/api/people/{username}/following", handlers.PersonFollowing(people))
+		r.With(rateGate.PeopleReadMiddleware()).Get("/api/people/{username}/reports", handlers.PersonReports(people, deps.Reports))
+		r.With(rateGate.PeopleActionMiddleware()).Post("/api/people/{username}/follow", handlers.FollowPerson(people))
+		r.With(rateGate.PeopleActionMiddleware()).Post("/api/people/{username}/unfollow", handlers.UnfollowPerson(people))
+		r.With(rateGate.PeopleActionMiddleware()).Post("/api/people/{username}/remove-follower", handlers.RemoveFollower(people))
+		r.With(rateGate.PeopleActionMiddleware()).Post("/api/people/{username}/block", handlers.BlockPerson(people))
+		r.With(rateGate.PeopleActionMiddleware()).Post("/api/people/{username}/unblock", handlers.UnblockPerson(people))
+		r.With(rateGate.PeopleActionMiddleware()).Post("/api/me/followers/remove-all", handlers.RemoveAllFollowers(people))
+		r.With(rateGate.PeopleReadMiddleware()).Get("/api/me/blocked", handlers.BlockedPeopleList(people))
+		r.With(rateGate.PeopleActionMiddleware()).Patch("/api/me/visibility", handlers.UpdateVisibility(people))
 		// GET /api/geocode (plan 07-03). Registered as a flat literal path,
 		// not under an r.Route mount — see this router's own doc comments
 		// above for why every /api/* path here is flat, gated or not.

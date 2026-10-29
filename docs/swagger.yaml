@@ -39,6 +39,13 @@ definitions:
         example: true
         type: boolean
     type: object
+  handlers.BlockedPeopleResponse:
+    properties:
+      entries:
+        items:
+          $ref: '#/definitions/handlers.PersonEntryResponse'
+        type: array
+    type: object
   handlers.CastVoteRequest:
     properties:
       latitude:
@@ -1055,6 +1062,103 @@ definitions:
         example: true
         type: boolean
     type: object
+  handlers.PeopleListResponse:
+    properties:
+      entries:
+        items:
+          $ref: '#/definitions/handlers.PersonEntryResponse'
+        type: array
+      next:
+        example: ""
+        type: string
+      others_count:
+        example: 2
+        type: integer
+      others_text:
+        example: and 2 others
+        type: string
+    type: object
+  handlers.PersonEntryResponse:
+    properties:
+      username:
+        example: ravi_m
+        type: string
+    type: object
+  handlers.PersonProfileResponse:
+    properties:
+      blocked_by_you:
+        example: false
+        type: boolean
+      can_follow:
+        example: true
+        type: boolean
+      followers_count:
+        example: 12
+        type: integer
+      followers_text:
+        example: 12 Followers
+        type: string
+      followers_word:
+        example: Followers
+        type: string
+      following:
+        example: false
+        type: boolean
+      following_count:
+        example: 3
+        type: integer
+      following_text:
+        example: 3 Following
+        type: string
+      following_word:
+        example: Following
+        type: string
+      follows_you:
+        example: false
+        type: boolean
+      home_area_name:
+        example: Indiranagar, Bengaluru
+        type: string
+      initial:
+        example: A
+        type: string
+      is_self:
+        example: false
+        type: boolean
+      member_since:
+        example: Member since October 2026
+        type: string
+      name:
+        example: Asha
+        type: string
+      profile_public:
+        example: true
+        type: boolean
+      reliable:
+        example: true
+        type: boolean
+      stars_label:
+        example: 3.6 stars
+        type: string
+      stars_number:
+        example: "3.6"
+        type: string
+      state_line:
+        description: |-
+          StateLine is the line under the buttons on your own page and empty on
+          anyone else's.
+        example: ""
+        type: string
+      tag_sentence:
+        example: 7 of their last 9 reports were confirmed.
+        type: string
+      tag_word:
+        example: Reliable reporter
+        type: string
+      username:
+        example: asha_k
+        type: string
+    type: object
   handlers.PlaceResponse:
     properties:
       matched_query:
@@ -1093,6 +1197,81 @@ definitions:
         example: The road is open again from the north side.
         maxLength: 280
         type: string
+    type: object
+  handlers.ProfileReportRowResponse:
+    properties:
+      area_line:
+        example: Near Benz Circle
+        type: string
+      category:
+        example: flood
+        type: string
+      category_word:
+        example: Flood
+        type: string
+      description:
+        description: Description is present on a live row only.
+        example: Water rising fast near the market bridge.
+        type: string
+      disputed_line:
+        example: 'Disputed: may not be true'
+        type: string
+      distance_text:
+        example: About 2 km
+        type: string
+      ended_on:
+        description: 'EndedOn is present on a finished row only: the date, never a
+          time.'
+        example: 12 October 2026
+        type: string
+      finished_title:
+        example: Flood, Critical
+        type: string
+      id:
+        example: 42
+        type: integer
+      live:
+        example: true
+        type: boolean
+      posted_at:
+        description: PostedAt is present on a live row only.
+        example: "2026-09-05T14:03:00.000Z"
+        type: string
+      severity:
+        enum:
+        - low
+        - medium
+        - critical
+        example: critical
+        type: string
+      severity_word:
+        example: Critical
+        type: string
+      status:
+        enum:
+        - ongoing
+        - not_confirmed
+        - disputed
+        - resolved
+        - expired
+        example: ongoing
+        type: string
+      status_word:
+        example: Ongoing
+        type: string
+    type: object
+  handlers.ProfileReportsResponse:
+    properties:
+      cut:
+        example: false
+        type: boolean
+      cut_text:
+        example: ""
+        type: string
+      rows:
+        items:
+          $ref: '#/definitions/handlers.ProfileReportRowResponse'
+        type: array
     type: object
   handlers.ProfileResponse:
     properties:
@@ -1690,6 +1869,18 @@ definitions:
         - wait
         example: available
         type: string
+    type: object
+  handlers.VisibilityRequest:
+    properties:
+      profile_public:
+        example: true
+        type: boolean
+    type: object
+  handlers.VisibilityResponse:
+    properties:
+      profile_public:
+        example: true
+        type: boolean
     type: object
   handlers.emptyBody:
     type: object
@@ -2396,6 +2587,38 @@ paths:
       summary: Turn the Reliable reporter alert on or off and choose its distance
       tags:
       - me
+  /me/blocked:
+    get:
+      description: |-
+        Returns the usernames of the people the signed in account blocked, newest first, at most
+        500. A person whose new username is still being checked is left out until it clears.
+        Requires a session verified by email; an unverified caller receives 401.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.BlockedPeopleResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: List the people the caller blocked
+      tags:
+      - people
   /me/consent:
     post:
       consumes:
@@ -2504,6 +2727,42 @@ paths:
       summary: Mark the first-time flow as finished
       tags:
       - me
+  /me/followers/remove-all:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Ends every follow of the signed in account at once. Send no body or an empty object. It
+        answers 204 even when nobody follows the account.
+        Requires a session verified by email; an unverified caller receives 401.
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: All followers removed
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Remove every follower
+      tags:
+      - people
   /me/logout-all:
     post:
       consumes:
@@ -2777,6 +3036,62 @@ paths:
       summary: Remove this device from phone alerts
       tags:
       - me
+  /me/visibility:
+    patch:
+      consumes:
+      - application/json
+      description: |-
+        Saves whether the signed in account has a public profile that others can follow. Turning
+        it on needs a clear username and a name that can be shown in public; a username or name
+        that is refused, or that could not be checked just now, answers 422 with the field
+        profile_public and the reason, and the switch stays off. Turning it off ends every
+        follower, and turning it on later starts with none. The answer is the saved state.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: The switch
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.VisibilityRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.VisibilityResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Turn Let others follow me on or off
+      tags:
+      - people
   /official/alerts:
     get:
       description: |-
@@ -2851,6 +3166,459 @@ paths:
       summary: GDACS hazard pins for the map
       tags:
       - official
+  /people/{username}:
+    get:
+      description: |-
+        Returns the profile header of the person with this username: name, home area, stars,
+        the reporter tag, the member since line and the two counts, every string written by the
+        server. A person who has not turned on a public profile, one whose username is still
+        being checked, one who has deleted the account and one who blocked the caller all get
+        the same 404 as a username that does not exist, so nobody can tell who opted in. A person
+        the caller blocked returns only the username with blocked_by_you true. Your own profile
+        always opens. The counts include people who are shown only as a number.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Username
+        in: path
+        name: username
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.PersonProfileResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Read a person's profile
+      tags:
+      - people
+  /people/{username}/block:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Blocks a person. Every follow between the two of you ends and neither can follow the
+        other. The blocked person gets the same 404 as an unknown username on your profile. Send
+        no body or an empty object. A person you may not see answers the same 404 as the profile.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Username
+        in: path
+        name: username
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Blocked
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Block a person
+      tags:
+      - people
+  /people/{username}/follow:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Starts following a person who turned on a public profile and holds the Reliable reporter
+        tag. Send no body or an empty object. Following someone already followed changes nothing
+        and answers 204. A person you cannot follow right now (yourself, someone you blocked, or
+        someone who is not a Reliable reporter) answers 409 with the field follow; so does the
+        limit of 200 people. A person you may not see answers the same 404 as the profile.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Username
+        in: path
+        name: username
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Following
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Follow a person
+      tags:
+      - people
+  /people/{username}/followers:
+    get:
+      description: |-
+        Returns the named people who follow this person, newest first, 50 per page. People who
+        are not named (private, pending, deleted or blocked) are counted in others_count with
+        the sentence others_text. Pass the next value as after to read the next page. The same
+        404 as the profile is returned for a person the caller may not see.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Username
+        in: path
+        name: username
+        required: true
+        type: string
+      - description: Cursor from the previous page
+        in: query
+        name: after
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.PeopleListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: List the people who follow a person
+      tags:
+      - people
+  /people/{username}/following:
+    get:
+      description: |-
+        Returns the named people this person follows, newest first, 50 per page, with the same
+        rules as the Followers list.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Username
+        in: path
+        name: username
+        required: true
+        type: string
+      - description: Cursor from the previous page
+        in: query
+        name: after
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.PeopleListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: List the people a person follows
+      tags:
+      - people
+  /people/{username}/remove-follower:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Ends the follow of the person with this username on the signed in account. Send no body
+        or an empty object. A well formed username that matches nobody answers 204 and changes
+        nothing. A malformed username answers the same 404 as the profile.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Username of the follower
+        in: path
+        name: username
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Removed
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Remove one follower
+      tags:
+      - people
+  /people/{username}/reports:
+    get:
+      description: |-
+        Returns the reports this person posted in the last 30 days, newest first, at most 100
+        (cut is true when more existed). A live report carries its id, words, description and
+        posting time. A finished report is blurred to about 5 km on the server and carries no
+        id, no description and no time, only the date it ended. No row carries a coordinate.
+        With lat and lon (both or neither) a live row also says how far away it is from that
+        point. The same 404 as the profile is returned for a person the caller may not see.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Username
+        in: path
+        name: username
+        required: true
+        type: string
+      - description: Your latitude, with lon
+        in: query
+        name: lat
+        type: number
+      - description: Your longitude, with lat
+        in: query
+        name: lon
+        type: number
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ProfileReportsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: List a person's recent reports
+      tags:
+      - people
+  /people/{username}/unblock:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Undoes a block. Send no body or an empty object. A well formed username that matches
+        nobody, or someone you did not block, answers 204 and changes nothing. A malformed
+        username answers the same 404 as the profile. Follows that ended with the block do not
+        come back.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Username
+        in: path
+        name: username
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Unblocked
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Unblock a person
+      tags:
+      - people
+  /people/{username}/unfollow:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Stops following a person. Send no body or an empty object. A well formed username that
+        matches nobody, or someone you do not follow, answers 204 and changes nothing, so this
+        route reveals nothing. A malformed username answers the same 404 as the profile.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Username
+        in: path
+        name: username
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Not following
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Stop following a person
+      tags:
+      - people
   /reports:
     get:
       description: |-
