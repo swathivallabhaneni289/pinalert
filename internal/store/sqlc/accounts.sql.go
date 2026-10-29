@@ -130,24 +130,32 @@ func (q *Queries) GetAccountByEmail(ctx context.Context, email string) (GetAccou
 }
 
 const getAccountForSignIn = `-- name: GetAccountForSignIn :one
-SELECT id, password_hash, (display_name IS NOT NULL)::bool AS has_name
+SELECT id, password_hash, (display_name IS NOT NULL)::bool AS has_name, password_epoch
 FROM accounts
 WHERE email = $1 AND deleted_at IS NULL
 `
 
 type GetAccountForSignInRow struct {
-	ID           int64
-	PasswordHash *string
-	HasName      bool
+	ID            int64
+	PasswordHash  *string
+	HasName       bool
+	PasswordEpoch int64
 }
 
 // Phase 7.1: the password sign in's one read of an account by its normalised
 // address. A deleted account yields no row (its address was scrubbed anyway).
 // password_hash is NULL for an account that has not set a password yet.
+// password_epoch (migration 00016, review CR-S02) is read before the password
+// is checked; the session bind and a rehash then hold to it.
 func (q *Queries) GetAccountForSignIn(ctx context.Context, email string) (GetAccountForSignInRow, error) {
 	row := q.db.QueryRow(ctx, getAccountForSignIn, email)
 	var i GetAccountForSignInRow
-	err := row.Scan(&i.ID, &i.PasswordHash, &i.HasName)
+	err := row.Scan(
+		&i.ID,
+		&i.PasswordHash,
+		&i.HasName,
+		&i.PasswordEpoch,
+	)
 	return i, err
 }
 
@@ -231,6 +239,29 @@ func (q *Queries) InsertAccount(ctx context.Context, email string) error {
 	return err
 }
 
+const lockAccountForPassword = `-- name: LockAccountForPassword :one
+SELECT id, password_hash, password_epoch
+FROM accounts
+WHERE email = $1 AND deleted_at IS NULL
+FOR UPDATE
+`
+
+type LockAccountForPasswordRow struct {
+	ID            int64
+	PasswordHash  *string
+	PasswordEpoch int64
+}
+
+// Inside the confirm transaction of Create account: the account of a
+// normalised address, locked FOR UPDATE, so a parallel sign in bind waits for
+// the new password and its epoch (review CR-S02). No row means no account yet.
+func (q *Queries) LockAccountForPassword(ctx context.Context, email string) (LockAccountForPasswordRow, error) {
+	row := q.db.QueryRow(ctx, lockAccountForPassword, email)
+	var i LockAccountForPasswordRow
+	err := row.Scan(&i.ID, &i.PasswordHash, &i.PasswordEpoch)
+	return i, err
+}
+
 const markFirstRunDone = `-- name: MarkFirstRunDone :exec
 UPDATE accounts
 SET first_run_done_at = COALESCE(first_run_done_at, now())
@@ -298,15 +329,66 @@ type SetAccountPasswordParams struct {
 	ID           int64
 }
 
-// Stores an argon2id PHC string, never a password: after a confirmed sign up
-// code, a confirmed reset code, and the one time fill in of an older account.
-// 0 rows means the account is deleted.
+// Stores an argon2id PHC string, never a password, without moving the password
+// epoch: the first password of a brand new account inside the Create account
+// transaction, and the store tests. 0 rows means the account is deleted.
 func (q *Queries) SetAccountPassword(ctx context.Context, arg SetAccountPasswordParams) (int64, error) {
 	result, err := q.db.Exec(ctx, setAccountPassword, arg.PasswordHash, arg.ID)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const setAccountPasswordIfEpoch = `-- name: SetAccountPasswordIfEpoch :execrows
+UPDATE accounts
+SET password_hash = $1::text
+WHERE id = $2 AND deleted_at IS NULL
+  AND password_epoch = $3::bigint
+`
+
+type SetAccountPasswordIfEpochParams struct {
+	PasswordHash  string
+	ID            int64
+	PasswordEpoch int64
+}
+
+// The best effort rehash after a cost change, during a good sign in. It never
+// moves the epoch, and it writes only while the epoch is still the one the sign
+// in read, so a rehash of the old password can never overwrite a password a
+// reset set in the meantime (review CR-S02).
+func (q *Queries) SetAccountPasswordIfEpoch(ctx context.Context, arg SetAccountPasswordIfEpochParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setAccountPasswordIfEpoch, arg.PasswordHash, arg.ID, arg.PasswordEpoch)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setAccountPasswordNewEpoch = `-- name: SetAccountPasswordNewEpoch :one
+UPDATE accounts
+SET password_hash = $1::text,
+    password_epoch = password_epoch + 1
+WHERE id = $2 AND deleted_at IS NULL
+RETURNING password_epoch
+`
+
+type SetAccountPasswordNewEpochParams struct {
+	PasswordHash string
+	ID           int64
+}
+
+// A password set by a typed code on an account that already existed: a reset,
+// and Create account on an account made with the old link or one that gained a
+// password meanwhile (review CR-S02, WR-S02). The epoch moves by one, so every
+// session bound under the old epoch stops passing the gate and a sign in that
+// read the old epoch cannot bind. The UPDATE takes the account row lock for the
+// rest of the transaction. No row means the account is deleted.
+func (q *Queries) SetAccountPasswordNewEpoch(ctx context.Context, arg SetAccountPasswordNewEpochParams) (int64, error) {
+	row := q.db.QueryRow(ctx, setAccountPasswordNewEpoch, arg.PasswordHash, arg.ID)
+	var password_epoch int64
+	err := row.Scan(&password_epoch)
+	return password_epoch, err
 }
 
 const setAccountUsername = `-- name: SetAccountUsername :execrows

@@ -132,8 +132,10 @@ type RecordAuthFailureRow struct {
 // for the 60 minute cap, never a reset to 1. Once the failures pass
 // free_failures the lock is base_lock_seconds doubled for each failure beyond
 // the first locked one, capped at max_lock_seconds: with 5 free, 300 s base and
-// 3600 s cap the waits are 5, 10, 20, 40, 60, 60 minutes. The service refuses a
-// locked attempt before this runs, so a refused attempt never extends the wait.
+// 3600 s cap the waits are 5, 10, 20, 40, 60, 60 minutes. The sign in path
+// counts its tries with ReserveSignInTry below, the same arithmetic with the
+// lock guard on it (Phase 7.1 review CR-S01); this unguarded form is kept for
+// the store tests and for seeding a throttle row.
 func (q *Queries) RecordAuthFailure(ctx context.Context, arg RecordAuthFailureParams) (RecordAuthFailureRow, error) {
 	row := q.db.QueryRow(ctx, recordAuthFailure,
 		arg.Scope,

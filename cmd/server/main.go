@@ -356,10 +356,13 @@ func main() {
 	// The code and password service. The code and throttle keys are derived from
 	// SESSION_SECRET with separate labels, so a code row and a throttle row survive
 	// a restart and neither key can stand in for the other or for the cookie
-	// signing key. The password hasher is the production default.
+	// signing key. The password hasher is the production default. The confirm
+	// steps write through one transaction on the pool (review CR-S02), so a
+	// reset sets the password, spends the code and ends every session together.
 	credentials := service.NewCredentialService(queries, mail,
 		service.WithCodeKey(auth.DeriveKey([]byte(secret), auth.CodeKeyLabel)),
 		service.WithThrottleKey(auth.DeriveKey([]byte(secret), auth.ThrottleKeyLabel)),
+		service.WithCredentialTx(service.PgxCredentialTx(pool)),
 	)
 
 	// The VAPID identity for phone notifications comes from the environment

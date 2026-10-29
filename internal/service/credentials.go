@@ -17,7 +17,7 @@ import (
 // CredentialQuerier is the subset of the sqlc-generated Queries type
 // CredentialService needs, small enough to fake without a real Postgres. It
 // embeds SessionQuerier because ConfirmReset ends every session of the account
-// through SessionService.LogOutAllDevices.
+// through SessionService.LogOutAllDevices, inside the confirm transaction.
 type CredentialQuerier interface {
 	SessionQuerier
 
@@ -42,11 +42,16 @@ type CredentialQuerier interface {
 	ClearAuthThrottle(ctx context.Context, arg sqlcgen.ClearAuthThrottleParams) error
 	PruneAuthThrottles(ctx context.Context, cutoff time.Time) (int64, error)
 
-	// Accounts and sessions.
+	// Accounts and sessions. The password epoch (review CR-S02): a password set
+	// by a typed code on an existing account moves it, the sign in bind holds
+	// to the epoch it read, and the rehash never overwrites a newer password.
 	GetAccountForSignIn(ctx context.Context, email string) (sqlcgen.GetAccountForSignInRow, error)
+	LockAccountForPassword(ctx context.Context, email string) (sqlcgen.LockAccountForPasswordRow, error)
 	InsertAccount(ctx context.Context, email string) error
 	SetAccountPassword(ctx context.Context, arg sqlcgen.SetAccountPasswordParams) (int64, error)
-	BindSessionAccount(ctx context.Context, arg sqlcgen.BindSessionAccountParams) (int64, error)
+	SetAccountPasswordNewEpoch(ctx context.Context, arg sqlcgen.SetAccountPasswordNewEpochParams) (int64, error)
+	SetAccountPasswordIfEpoch(ctx context.Context, arg sqlcgen.SetAccountPasswordIfEpochParams) (int64, error)
+	BindSessionAccountAtEpoch(ctx context.Context, arg sqlcgen.BindSessionAccountAtEpochParams) (int64, error)
 	GetSessionBinding(ctx context.Context, sessionID string) (sqlcgen.GetSessionBindingRow, error)
 	GetAccountBySessionID(ctx context.Context, sessionID string) (sqlcgen.GetAccountBySessionIDRow, error)
 	SessionEndedByPasswordSwitch(ctx context.Context, sessionID string) (bool, error)
@@ -193,6 +198,7 @@ type CredentialService struct {
 	throttleKey []byte
 	limits      CredentialLimits
 	now         func() time.Time
+	tx          CredentialTxFunc
 }
 
 // CredentialOption configures a CredentialService at construction time.
@@ -222,6 +228,26 @@ func WithThrottleKey(key []byte) CredentialOption {
 // WithCredentialLimits replaces the limits.
 func WithCredentialLimits(l CredentialLimits) CredentialOption {
 	return func(s *CredentialService) { s.limits = l }
+}
+
+// CredentialTxFunc runs fn inside one database transaction with a querier bound
+// to that transaction, commits when fn returns nil and rolls back otherwise.
+type CredentialTxFunc func(ctx context.Context, fn func(q CredentialQuerier) error) error
+
+// PgxCredentialTx builds the production CredentialTxFunc over a pool.
+func PgxCredentialTx(db TxBeginner) CredentialTxFunc {
+	return func(ctx context.Context, fn func(q CredentialQuerier) error) error {
+		return pgx.BeginFunc(ctx, db, func(tx pgx.Tx) error {
+			return fn(sqlcgen.New(tx))
+		})
+	}
+}
+
+// WithCredentialTx sets the transaction runner the confirm steps write through
+// (Phase 7.1 review CR-S02). Without it the steps run one after another on the
+// service's own querier, which only the unit test fakes rely on.
+func WithCredentialTx(tx CredentialTxFunc) CredentialOption {
+	return func(s *CredentialService) { s.tx = tx }
 }
 
 // minKeyBytes is the shortest key accepted from an option.

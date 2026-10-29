@@ -25,6 +25,29 @@ ON CONFLICT (session_id) DO UPDATE
  WHERE sessions.revoked_at IS NULL
    AND (sessions.account_id IS NULL OR sessions.account_id = EXCLUDED.account_id);
 
+-- name: BindSessionAccountAtEpoch :execrows
+-- The sign in path's bind (Phase 7.1 review CR-S02): BindSessionAccount's
+-- never-move and never-revive rules, plus the password epoch. The row is
+-- written only while the account is live and its epoch still equals the one
+-- the sign in read before it checked the password, and the session records
+-- that epoch. FOR SHARE OF a waits for a reset that holds the account row, then
+-- sees its new epoch, so a sign in with the replaced password binds nothing.
+-- Zero rows means the epoch moved, the account is gone, or the id is bound to
+-- another account or revoked. BindSessionAccount above binds at epoch 0 and is
+-- kept for the store and handler tests.
+INSERT INTO sessions (session_id, account_id, password_epoch)
+SELECT sqlc.arg(session_id)::text, a.id, a.password_epoch
+FROM accounts a
+WHERE a.id = sqlc.arg(account_id)::bigint
+  AND a.deleted_at IS NULL
+  AND a.password_epoch = sqlc.arg(password_epoch)::bigint
+FOR SHARE OF a
+ON CONFLICT (session_id) DO UPDATE
+   SET account_id = EXCLUDED.account_id,
+       password_epoch = EXCLUDED.password_epoch
+ WHERE sessions.revoked_at IS NULL
+   AND (sessions.account_id IS NULL OR sessions.account_id = EXCLUDED.account_id);
+
 -- name: GetAccountBySessionID :one
 -- A session with a NULL account_id yields no row (pgx.ErrNoRows), which
 -- callers must treat as "unverified", never as an error. A revoked session
@@ -46,7 +69,11 @@ SELECT accounts.id, accounts.email, accounts.terms_version, accounts.first_run_d
 FROM sessions
 JOIN accounts ON sessions.account_id = accounts.id
 WHERE sessions.session_id = sqlc.arg(session_id)
-  AND sessions.revoked_at IS NULL AND accounts.deleted_at IS NULL;
+  AND sessions.revoked_at IS NULL AND accounts.deleted_at IS NULL
+  -- Review fix CR-S02 (migration 00016): a session whose password epoch is not
+  -- the account's reads as unverified too, so a session opened with a password
+  -- that a reset or a later Create account replaced is never let in.
+  AND sessions.password_epoch = accounts.password_epoch;
 
 -- name: GetSessionBinding :one
 -- The sign in path's raw read of a session row. It does NOT filter on

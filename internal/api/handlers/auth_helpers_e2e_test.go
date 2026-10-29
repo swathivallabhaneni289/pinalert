@@ -26,15 +26,16 @@ const e2eTestPassword = "wide river morning 47"
 // default parameters. The keys are fixed 32 byte test values. SendCooldown is
 // one millisecond, so a sign up followed by a reset on the same address in one
 // test is not refused by the 45 second per address cooldown (plan 05 note).
-func newTestCredentials(q *sqlcgen.Queries, m *recordingMailer) *service.CredentialService {
+func newTestCredentials(q *sqlcgen.Queries, m *recordingMailer, extra ...service.CredentialOption) *service.CredentialService {
 	limits := service.DefaultCredentialLimits
 	limits.SendCooldown = time.Millisecond
-	return service.NewCredentialService(q, m,
+	opts := []service.CredentialOption{
 		service.WithHasher(auth.NewHasher(auth.TestParams())),
 		service.WithCodeKey(bytes.Repeat([]byte("c"), 32)),
 		service.WithThrottleKey(bytes.Repeat([]byte("t"), 32)),
 		service.WithCredentialLimits(limits),
-	)
+	}
+	return service.NewCredentialService(q, m, append(opts, extra...)...)
 }
 
 // postAuthJSON posts body as JSON to path on srv and returns the status, the

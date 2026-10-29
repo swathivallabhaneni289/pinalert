@@ -127,7 +127,7 @@ func newGateTestServerWith(t *testing.T, tweak func(d *Deps, q *sqlcgen.Queries)
 		// Amended 2026-10-29 by Phase 7.1 plan 08: the code and password
 		// service with the test hasher and open buckets, which
 		// gateVerifySession needs.
-		Credentials: newGateTestCredentials(queries, fm),
+		Credentials: newGateTestCredentials(queries, fm, service.WithCredentialTx(service.PgxCredentialTx(pool))),
 		AuthLimits:  gateGenerousAuthLimits,
 	}
 	if tweak != nil {
@@ -183,15 +183,16 @@ var gateGenerousAuthLimits = AuthLimits{
 // production never does. The keys are fixed 32 byte test values and
 // SendCooldown is one millisecond, so a sign up followed by a reset on the same
 // address in one test is not refused by the 45 second per address cooldown.
-func newGateTestCredentials(q *sqlcgen.Queries, m *gateFakeMailer) *service.CredentialService {
+func newGateTestCredentials(q *sqlcgen.Queries, m *gateFakeMailer, extra ...service.CredentialOption) *service.CredentialService {
 	limits := service.DefaultCredentialLimits
 	limits.SendCooldown = time.Millisecond
-	return service.NewCredentialService(q, m,
+	opts := []service.CredentialOption{
 		service.WithHasher(auth.NewHasher(auth.TestParams())),
 		service.WithCodeKey(bytes.Repeat([]byte("c"), 32)),
 		service.WithThrottleKey(bytes.Repeat([]byte("t"), 32)),
 		service.WithCredentialLimits(limits),
-	)
+	}
+	return service.NewCredentialService(q, m, append(opts, extra...)...)
 }
 
 // gatePostJSON posts body as JSON to path on srv with client and returns the

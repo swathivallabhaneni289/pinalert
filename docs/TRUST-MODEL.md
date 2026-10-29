@@ -588,7 +588,7 @@ Phase 7.1 replaced the emailed link with an email and a password. This section s
 The rules.
 
 - An account is an email and a password. The email is proved once, at sign up, by a 6 digit code typed in from the email. After that, sign in is the email and the password only. There is no emailed link anywhere.
-- A forgotten password is reset with the same kind of code. A reset ends every session of the account, on every device, and clears the wrong password lock, so the owner of an address can always get back in.
+- A forgotten password is reset with the same kind of code. A reset ends every session of the account, on every device, and clears the wrong password lock, so the owner of an address can always get back in. The new password, the spent code and the ended sessions are written in one transaction, and the account's password epoch moves with them: a session is let in only while its epoch is the account's, and a sign in that checked the old password while the reset ran binds nothing (`TestResetEndsSignInInFlight`). Create account on an account that already existed (one made with the old emailed link) ends its sessions the same way.
 - A password is stored only as an argon2id hash (19456 KiB of memory, 2 passes, 1 lane), with a random salt, and a 3 slot limit on hashes running at once. The password itself is never stored or logged. A sign in for an address with no account does the same work against a dummy hash, so time does not give the answer away.
 - A code is stored only as a keyed hash (HMAC with a key made from `SESSION_SECRET`). It lasts 10 minutes, allows 5 tries, works once, and belongs to the browser that asked for it. Each try is counted before the code is compared, so a parallel guess cannot beat the limit. Asking for a new code replaces the old one.
 - Every answer is the same whether or not an address has an account: the page, the status, the headers and the words. When an account already exists, Create account emails its owner to say so instead of sending a code. When none exists, Forgot password emails to say so. `TestEnumerationSignInIdentical` and its neighbours compare the raw bytes.
@@ -612,6 +612,8 @@ Honest limits of sign in.
 - Email alias tricks (a plus sign, dots) and disposable addresses are not blocked. See "Out of scope for this model".
 - The daily ceiling protects the Resend quota, not the inbox of a person. A hostile sender can still make an address receive up to 5 codes an hour.
 - Usernames are public. They are checked as they are typed, screened like other free text (see MODERATION.md), and a name that could not be judged is saved as pending. Phase 8 and Phase 9 show only names whose screen word is clear, and re-check pending ones first.
+
+Upgrading: an existing database needs `make migrate` once after this phase merges, for migrations 00014, 00015 and 00016 (run the migration first, then start the new server). 00016 adds the password epoch and keeps every session of an account that already has a password signed in.
 
 ## Where the roadmap words are met
 

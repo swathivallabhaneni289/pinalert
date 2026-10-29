@@ -63,11 +63,13 @@ type credAccount struct {
 	email        string
 	passwordHash *string
 	deleted      bool
+	epoch        int64
 }
 
 type credSession struct {
 	account *int64
 	revoked bool
+	epoch   int64
 }
 
 type credClaim struct {
@@ -341,7 +343,72 @@ func (f *credFakeQuerier) GetAccountForSignIn(_ context.Context, email string) (
 	if !ok || a.deleted {
 		return sqlcgen.GetAccountForSignInRow{}, pgx.ErrNoRows
 	}
-	return sqlcgen.GetAccountForSignInRow{ID: a.id, PasswordHash: a.passwordHash}, nil
+	return sqlcgen.GetAccountForSignInRow{ID: a.id, PasswordHash: a.passwordHash, PasswordEpoch: a.epoch}, nil
+}
+
+func (f *credFakeQuerier) LockAccountForPassword(_ context.Context, email string) (sqlcgen.LockAccountForPasswordRow, error) {
+	f.log("LockAccountForPassword")
+	a, ok := f.accounts[email]
+	if !ok || a.deleted {
+		return sqlcgen.LockAccountForPasswordRow{}, pgx.ErrNoRows
+	}
+	return sqlcgen.LockAccountForPasswordRow{ID: a.id, PasswordHash: a.passwordHash, PasswordEpoch: a.epoch}, nil
+}
+
+func (f *credFakeQuerier) accountByID(id int64) *credAccount {
+	for _, a := range f.accounts {
+		if a.id == id && !a.deleted {
+			return a
+		}
+	}
+	return nil
+}
+
+func (f *credFakeQuerier) SetAccountPasswordNewEpoch(_ context.Context, arg sqlcgen.SetAccountPasswordNewEpochParams) (int64, error) {
+	f.log("SetAccountPasswordNewEpoch")
+	a := f.accountByID(arg.ID)
+	if a == nil {
+		return 0, pgx.ErrNoRows
+	}
+	h := arg.PasswordHash
+	a.passwordHash = &h
+	a.epoch++
+	return a.epoch, nil
+}
+
+func (f *credFakeQuerier) SetAccountPasswordIfEpoch(_ context.Context, arg sqlcgen.SetAccountPasswordIfEpochParams) (int64, error) {
+	f.log("SetAccountPasswordIfEpoch")
+	a := f.accountByID(arg.ID)
+	if a == nil || a.epoch != arg.PasswordEpoch {
+		return 0, nil
+	}
+	h := arg.PasswordHash
+	a.passwordHash = &h
+	return 1, nil
+}
+
+// BindSessionAccountAtEpoch follows the SQL: the account must be live at the
+// given epoch, and an existing row is never moved to another account nor
+// revived. It logs as BindSessionAccount so the call order checks still read.
+func (f *credFakeQuerier) BindSessionAccountAtEpoch(_ context.Context, arg sqlcgen.BindSessionAccountAtEpochParams) (int64, error) {
+	f.log("BindSessionAccount:" + arg.SessionID)
+	a := f.accountByID(arg.AccountID)
+	if a == nil || a.epoch != arg.PasswordEpoch {
+		return 0, nil
+	}
+	s, ok := f.sessions[arg.SessionID]
+	if !ok {
+		id := arg.AccountID
+		f.sessions[arg.SessionID] = &credSession{account: &id, epoch: a.epoch}
+		return 1, nil
+	}
+	if s.revoked || (s.account != nil && *s.account != arg.AccountID) {
+		return 0, nil
+	}
+	id := arg.AccountID
+	s.account = &id
+	s.epoch = a.epoch
+	return 1, nil
 }
 
 func (f *credFakeQuerier) InsertAccount(_ context.Context, email string) error {
@@ -396,7 +463,7 @@ func (f *credFakeQuerier) GetAccountBySessionID(_ context.Context, sessionID str
 		return sqlcgen.GetAccountBySessionIDRow{}, pgx.ErrNoRows
 	}
 	for _, a := range f.accounts {
-		if a.id == *s.account && !a.deleted {
+		if a.id == *s.account && !a.deleted && a.epoch == s.epoch {
 			return sqlcgen.GetAccountBySessionIDRow{ID: a.id, Email: a.email, HasPassword: a.passwordHash != nil}, nil
 		}
 	}
@@ -1117,12 +1184,17 @@ func TestConfirmSignUpLegacyKeepsAccount(t *testing.T) {
 		if legacy.passwordHash == nil {
 			t.Error("the password was not set on the legacy account")
 		}
-		if r.q.count("RevokeAccountSessions") != 0 {
-			t.Error("no sessions are ended when there was no password to replace")
+		// Review WR-S02: a session the old binary bound from an emailed link is
+		// ended, and the password epoch moves, so it never passes the gate.
+		if r.q.count("RevokeAccountSessions") != 1 || legacy.epoch != 1 {
+			t.Errorf("legacy account: revokes %d, epoch %d; want 1 and 1", r.q.count("RevokeAccountSessions"), legacy.epoch)
+		}
+		if s := r.q.sessions[res.SessionID]; s == nil || s.epoch != legacy.epoch {
+			t.Error("the fresh session must be bound at the new epoch")
 		}
 	})
 
-	t.Run("an account that gained a password meanwhile has every session ended first", func(t *testing.T) {
+	t.Run("an account that gained a password meanwhile has every session ended", func(t *testing.T) {
 		r := newCredRig(t)
 		acct := r.q.addAccount(credEmail, nil)
 		code := r.signUpAndCode(t, "sess-a", credEmail, credPassword)
@@ -1132,9 +1204,11 @@ func TestConfirmSignUpLegacyKeepsAccount(t *testing.T) {
 		if _, err := r.svc.ConfirmSignUp(ctx, "sess-a", code, credSessionIDs("fresh")); err != nil {
 			t.Fatal(err)
 		}
-		logout, set := r.callIndex("RevokeAccountSessions"), r.callIndex("SetAccountPassword")
-		if logout < 0 || set < logout {
-			t.Errorf("LogOutAllDevices (%d) must run before the password is replaced (%d)", logout, set)
+		// Review CR-S02: inside one transaction the password and its epoch move
+		// first, under the account row lock, then every session ends.
+		set, logout := r.callIndex("SetAccountPasswordNewEpoch"), r.callIndex("RevokeAccountSessions")
+		if set < 0 || logout < set {
+			t.Errorf("the password (%d) must be set with a new epoch before the sessions end (%d)", set, logout)
 		}
 		if !r.q.sessions["other-browser"].revoked {
 			t.Error("the other browser's session must be revoked")

@@ -25,6 +25,7 @@ type Account struct {
 	Username          *string
 	UsernameScreen    *string
 	UsernameChangedAt pgtype.Timestamptz
+	PasswordEpoch     int64
 }
 
 type AccountAlertSetting struct {
@@ -255,10 +256,11 @@ type ReportMute struct {
 }
 
 type Session struct {
-	SessionID string
-	CreatedAt time.Time
-	AccountID *int64
-	RevokedAt pgtype.Timestamptz
+	SessionID     string
+	CreatedAt     time.Time
+	AccountID     *int64
+	RevokedAt     pgtype.Timestamptz
+	PasswordEpoch int64
 }
 
 type Update struct {

@@ -196,7 +196,7 @@ email and password (on the same device or a new one) restores the full report hi
 An account made before Phase 7.1 with the old emailed link has no password. Its sign in stops
 working when migration 00014 runs. The person uses **Create account** with the same email, types
 the code, chooses a password and fills in the username, name and home area once; their reports are
-still theirs. Passwords, usernames and typed codes need migrations 00014 and 00015, so run
+still theirs. Passwords, usernames and typed codes need migrations 00014, 00015 and 00016, so run
 `make migrate` once on an existing database after pulling (run the migration first, then start the
 new server).
 
