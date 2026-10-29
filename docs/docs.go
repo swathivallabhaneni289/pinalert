@@ -2721,6 +2721,11 @@ const docTemplate = `{
                 "details": {
                     "$ref": "#/definitions/handlers.OfficialDetailsResponse"
                 },
+                "ended": {
+                    "description": "Ended is true for a GDACS row whose end date has passed: it is listed but\nnot in force, and count leaves it out.",
+                    "type": "boolean",
+                    "example": false
+                },
                 "expires_at": {
                     "description": "ExpiresAt is the end time; for a grouped row, the latest end.",
                     "type": "string",

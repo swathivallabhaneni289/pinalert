@@ -898,9 +898,12 @@ func TestSwaggerOfficialAlerts(t *testing.T) {
 		[]string{"state", "age_seconds", "last_success_at", "area_known", "groups", "count", "districts_line", "banner",
 			"hazards_state", "hazards_age_seconds", "hazards_last_success_at"})
 	p14AssertPropKeys(t, props, "handlers.OfficialGroupResponse", []string{"kind", "label", "rows"})
+	// Amended 2026-10-29 by the Phase 5 review fix (follow-up): the row carries an
+	// ended flag, true for a GDACS row whose end date has passed. The fifteen keys
+	// written before are all still required.
 	p14AssertPropKeys(t, props, "handlers.OfficialRowResponse",
 		[]string{"id", "source", "level", "level_word", "badge", "demo", "headline", "original_language_only", "area_text",
-			"issuer", "issued_at", "expires_at", "expires_inferred", "grouped_count", "details"})
+			"issuer", "issued_at", "expires_at", "expires_inferred", "grouped_count", "details", "ended"})
 	p14AssertPropKeys(t, props, "handlers.OfficialDetailsResponse",
 		[]string{"description", "instruction", "original_headline", "original_description", "original_lang_label",
 			"original_lang_code", "areas", "source_line"})
