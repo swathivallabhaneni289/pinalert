@@ -393,6 +393,7 @@
 /* ---- Show more comments, and the list's own states ---- */
 
 .leaflet-container .report-page .comments .comments__more:not([hidden]),
+.leaflet-container .report-page .comments .comment-thread__more:not([hidden]),
 .leaflet-container .report-page .comments .comments__retry:not([hidden]) {
   display: inline-flex;
   align-items: center;
@@ -413,11 +414,13 @@
 }
 
 .leaflet-container .report-page .comments .comments__more:not([hidden]):hover,
+.leaflet-container .report-page .comments .comment-thread__more:not([hidden]):hover,
 .leaflet-container .report-page .comments .comments__retry:not([hidden]):hover {
   border-color: currentColor;
 }
 
 .leaflet-container .report-page .comments .comments__more-error:not([hidden]),
+.leaflet-container .report-page .comments .comment-thread__more-error:not([hidden]),
 .leaflet-container .report-page .comments .composer__error:not([hidden]) {
   display: flex;
   margin: var(--space-sm) 0 0;
