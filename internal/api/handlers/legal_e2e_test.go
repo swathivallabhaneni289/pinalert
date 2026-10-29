@@ -693,6 +693,9 @@ func TestPolicyNamesProfilesFollowingAndRatings(t *testing.T) {
 		"Blocks and mutes are private.",
 		"your follows, blocks, mutes, Notify me choices and the ratings you gave and received are removed",
 		"The ratings you give, each with the person rated, the stars and the time.",
+		// Review fix WR-T03, 2026-10-30: the Name goes to OpenAI too.
+		"When you switch on Let others follow me, and whenever you change your name while it is on, your name is checked by the same service. Only the name is sent, never your account, your sign in, your network address or your location. A name the check refuses, or cannot finish checking, is not shown.",
+		"Report, comment, username and name checks: OpenAI, as described above.",
 	} {
 		if n := strings.Count(policy, phrase); n != 1 {
 			t.Errorf("the Policy holds %q %d times, want exactly once", phrase, n)

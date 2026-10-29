@@ -350,8 +350,13 @@ func TestPolicyNamesHomeSquareScreeningAndMail(t *testing.T) {
 	if strings.Contains(others, "<li>Report and username checks: OpenAI, as described above.</li>") {
 		t.Errorf("the other services list names OpenAI for report and username checks only; comments are checked too")
 	}
+	// Amended 2026-10-30 by the Phase 9 review fix (WR-T03): the Name on a
+	// public profile goes to the same check, so the line names name checks too.
+	if strings.Contains(others, "<li>Report, comment and username checks: OpenAI, as described above.</li>") {
+		t.Errorf("the other services list names OpenAI for report, comment and username checks only; names are checked too")
+	}
 	for _, line := range []string{
-		"<li>Report, comment and username checks: OpenAI, as described above.</li>",
+		"<li>Report, comment, username and name checks: OpenAI, as described above.</li>",
 		"<li>Sign in emails: Resend sends them, so it sees your email address and the email, including any code.</li>",
 	} {
 		if !strings.Contains(others, line) {
