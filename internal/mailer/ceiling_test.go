@@ -222,6 +222,42 @@ func TestMailerCeilingSenderShare(t *testing.T) {
 	}
 }
 
+// TestMailerCeilingShareOnlyOnDayReserve is SK-06 of the Phase 7.1 review fix
+// skeptic: the sender share applies only while the day's reserve is being
+// spent, never because the 10 minute window is busy. A shared carrier address
+// (CGNAT) is one sender, so on a busy but normal day the phones behind it must
+// not be refused Forgot password after three resets. Before the fix the fourth
+// reset from that address in a busy window was refused.
+func TestMailerCeilingShareOnlyOnDayReserve(t *testing.T) {
+	clock := ceilingDay
+	next := &countingMailer{}
+	m := NewSendCeiling(next, DefaultCeilingLimits, func() time.Time { return clock })
+	carrier := WithSender(context.Background(), "net:49.36.1.1")
+	for i := 0; i < 10; i++ {
+		if err := m.SendAuthEmail(context.Background(), "a@example.com", signupMsg); err != nil {
+			t.Fatalf("sign up send %d: %v", i+1, err)
+		}
+	}
+	// The window's other class is now full; the day's reserve is untouched.
+	for i := 0; i < 5; i++ {
+		clock = clock.Add(time.Minute)
+		msg := resetMsg
+		if i%2 == 1 {
+			msg = noAcctMsg
+		}
+		if err := m.SendAuthEmail(carrier, "b@example.com", msg); err != nil {
+			t.Fatalf("reset %d from one carrier address in a busy window: %v", i+1, err)
+		}
+	}
+	// The window cap itself still holds.
+	if err := m.SendAuthEmail(carrier, "b@example.com", resetMsg); !errors.Is(err, ErrDailyCeiling) {
+		t.Fatalf("a 16th send in the window: %v, want ErrDailyCeiling", err)
+	}
+	if next.total() != 15 {
+		t.Errorf("wrapped mailer called %d times, want 15", next.total())
+	}
+}
+
 func TestMailerCeilingReservesResetSends(t *testing.T) {
 	ctx := context.Background()
 
