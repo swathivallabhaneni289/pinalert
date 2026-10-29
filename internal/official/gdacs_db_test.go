@@ -201,6 +201,44 @@ func TestGdacsRefreshStores(t *testing.T) {
 			}
 		}
 	})
+
+	// WR-S03 of the Phase 5 review: an event only request A returns (the
+	// cyclone 1001338 lies outside the South Asia box) leaves the map when A
+	// marks it not current.
+	t.Run("a request A only hazard GDACS stopped calling current leaves", func(t *testing.T) {
+		current := func() bool {
+			t.Helper()
+			rows, err := e.q.CurrentOfficialHazards(context.Background(), e.clk.now().Add(-GdacsEndedKeep))
+			if err != nil {
+				t.Fatalf("CurrentOfficialHazards: %v", err)
+			}
+			for _, r := range rows {
+				if r.EventType == "TC" && r.EventID == 1001338 {
+					return true
+				}
+			}
+			return false
+		}
+		// First it runs on, so the row is current.
+		e.srv.mu.Lock()
+		e.srv.a = bytes.Replace(e.srv.a, []byte(`"todate": "2026-10-25T18:00:00"`), []byte(`"todate": "2026-10-30T18:00:00"`), 1)
+		e.srv.mu.Unlock()
+		if _, err := e.refresh(t); err != nil {
+			t.Fatalf("refresh: %v", err)
+		}
+		if !current() {
+			t.Fatalf("TC 1001338 is not current after request A extended it; the case needs it current first")
+		}
+		e.srv.mu.Lock()
+		e.srv.a = bytes.Replace(e.srv.a, []byte(`"iscurrent": "true"`), []byte(`"iscurrent": "false"`), -1)
+		e.srv.mu.Unlock()
+		if _, err := e.refresh(t); err != nil {
+			t.Fatalf("refresh: %v", err)
+		}
+		if current() {
+			t.Errorf("TC 1001338 is still current after request A marked it not current")
+		}
+	})
 }
 
 // TestGdacsHazardWithoutEndDate: a current hazard with no end date counts as

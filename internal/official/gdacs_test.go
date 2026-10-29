@@ -494,9 +494,10 @@ func TestHazardWordsAndLevels(t *testing.T) {
 
 // fakeHazardStore records what the fetcher stores.
 type fakeHazardStore struct {
-	mu   sync.Mutex
-	rows []Hazard
-	err  error
+	mu    sync.Mutex
+	rows  []Hazard
+	ended []Hazard
+	err   error
 }
 
 func (s *fakeHazardStore) upsert(_ context.Context, h Hazard, _ time.Time) error {
@@ -507,6 +508,28 @@ func (s *fakeHazardStore) upsert(_ context.Context, h Hazard, _ time.Time) error
 	}
 	s.rows = append(s.rows, h)
 	return nil
+}
+
+// end records an event the fetcher marked not current (WR-S03).
+func (s *fakeHazardStore) end(_ context.Context, h Hazard, _ time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return s.err
+	}
+	s.ended = append(s.ended, h)
+	return nil
+}
+
+// TestGdacsEndedA pins WR-S03 of the Phase 5 review: the events request A marks
+// not current, droughts aside, are handed on to be marked not current.
+func TestGdacsEndedA(t *testing.T) {
+	a := parseGdacsFixture(t, "gdacs_search_a.json")
+	b := parseGdacsFixture(t, "gdacs_search_b.json")
+	kept := mergeHazards(filterGdacsA(a), filterGdacsB(b))
+	if got := strings.Join(hazardKeys(endedGdacsA(a, kept)), ","); got != "EQ:1573141,TC:1001335" {
+		t.Errorf("ended = %s, want the non current earthquake and cyclone of request A", got)
+	}
 }
 
 // TestGdacsFetcher: the fetcher stores the kept hazards, counts the raw

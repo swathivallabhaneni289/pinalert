@@ -94,6 +94,29 @@ func (q *Queries) DeleteOfficialAlertAreas(ctx context.Context, alertID int64) e
 	return err
 }
 
+const endOfficialHazard = `-- name: EndOfficialHazard :exec
+UPDATE official_hazards
+SET is_current = false,
+    last_seen_at = $1::timestamptz
+WHERE event_type = $2::text
+  AND event_id = $3::bigint
+  AND is_current
+`
+
+type EndOfficialHazardParams struct {
+	Now       time.Time
+	EventType string
+	EventID   int64
+}
+
+// Request A marked a stored event not current and request B did not return it:
+// the row leaves the map now (WR-S03 of the Phase 5 review). A row that is not
+// stored is not made.
+func (q *Queries) EndOfficialHazard(ctx context.Context, arg EndOfficialHazardParams) error {
+	_, err := q.db.Exec(ctx, endOfficialHazard, arg.Now, arg.EventType, arg.EventID)
+	return err
+}
+
 const getFeedStatus = `-- name: GetFeedStatus :one
 
 SELECT feed, last_attempt_at, last_success_at, last_error, consecutive_failures,

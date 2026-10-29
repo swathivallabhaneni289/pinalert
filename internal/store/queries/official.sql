@@ -222,6 +222,17 @@ SET episode_id = EXCLUDED.episode_id,
     date_modified = EXCLUDED.date_modified,
     last_seen_at = EXCLUDED.last_seen_at;
 
+-- name: EndOfficialHazard :exec
+-- Request A marked a stored event not current and request B did not return it:
+-- the row leaves the map now (WR-S03 of the Phase 5 review). A row that is not
+-- stored is not made.
+UPDATE official_hazards
+SET is_current = false,
+    last_seen_at = sqlc.arg(now)::timestamptz
+WHERE event_type = sqlc.arg(event_type)::text
+  AND event_id = sqlc.arg(event_id)::bigint
+  AND is_current;
+
 -- name: CurrentOfficialHazards :many
 -- The hazards a pin may be drawn for: marked current by GDACS and not ended
 -- before ended_after (the caller passes now minus the 48 hour keep). A hazard
