@@ -101,6 +101,15 @@
   outline: none;
 }
 
+/* The field draws the focus ring for its input, as sketch 010 does (Phase 7.1
+   review fix CR-T01, 2026-10-29). The ring is the text colour, 4.99 to 1 or more
+   on the glass card and on every solid fallback, in both themes. While Show has
+   focus the field keeps its ring around Show's own. */
+.login-field:focus-within {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
 /* ---- The Phase 7.1 card (plan 11, UI-SPEC Surfaces 1 to 5, sketch 010) ----
    Every line on the card is --color-text: muted text on this --color-surface
    box measures 4.34 to 1 and fails. */
