@@ -86,7 +86,10 @@ class FakeEl {
 // Amended 2026-10-29 by the Phase 7.1 review fix (browser), WR-B02: the document
 // keeps its listeners (visibilitychange) so a case can fire them, and cooldown
 // draws data-resend-cooldown-seconds, the full wait after a send, when given.
-function buildPage({ start = 'create', mode = 'create', secondsLeft = 0, ttl = 600, resend = 45, email = '', done = false, cooldown } = {}) {
+// Amended 2026-10-29 by the Phase 7.1 review fix round 3 (skeptic SK2-01):
+// signinStatus draws the server's line in signin-status, shown, the way the page
+// is drawn for a code this browser spent.
+function buildPage({ start = 'create', mode = 'create', secondsLeft = 0, ttl = 600, resend = 45, email = '', done = false, cooldown, signinStatus = '' } = {}) {
   const doc = {
     activeElement: null,
     selected: null,
@@ -145,7 +148,11 @@ function buildPage({ start = 'create', mode = 'create', secondsLeft = 0, ttl = 6
   make('button', 'create-submit', formCreate).textContent = 'Email me a code';
 
   const formSignin = section('signin', start === 'signin');
-  make('p', 'signin-status', formSignin, { role: 'status', hidden: '' });
+  const signinStatusLine = make('p', 'signin-status', formSignin, { role: 'status', hidden: '' });
+  if (signinStatus) {
+    signinStatusLine.hidden = false;
+    signinStatusLine.textContent = signinStatus;
+  }
   make('input', 'signin-email', formSignin).type = 'email';
   make('input', 'signin-password', formSignin).type = 'password';
   make('button', 'signin-show', formSignin, { 'data-show-for': 'signin-password', 'aria-label': 'Show password' }).textContent = 'Show';
@@ -1381,4 +1388,39 @@ test('SK-03: a code submit that never left the phone keeps the offline line and 
   await flush();
   assert.equal(text(away, 'code-error'), "You're offline. Try again when you have a signal.");
   assertClean(away);
+});
+
+// Phase 7.1 review fix round 3, skeptic SK2-01: a code submit that ran out of
+// time reloads the page (SK-03). When the server had already confirmed the code,
+// it draws Sign in with its line in signin-status and the address as the page
+// text of the code screen, never in an attribute. The script copies that text
+// into the Sign in email field and moves focus to the password, the way the card
+// looks after a reset that was answered in time. Nothing is posted, nothing
+// reloads and nothing navigates.
+test('SK2-01: the page drawn for a spent code fills the Sign in email from the page text', async () => {
+  for (const line of ['Account created. Sign in to continue.', 'Password set. Sign in to continue.']) {
+    const page = load({ start: 'signin', email: 'priya@example.com', signinStatus: line });
+    assert.deepEqual(shownPanel(page), ['signin']);
+    assert.equal(byId(page, 'signin-email').value, 'priya@example.com');
+    assert.equal(text(page, 'signin-status'), line);
+    assert.equal(byId(page, 'signin-status').hidden, false);
+    assert.ok(isFocused(page, 'signin-password'), 'the password field takes focus');
+    assert.equal(page.requests.length, 0);
+    assert.deepEqual(page.assigned, []);
+    assertClean(page);
+
+    byId(page, 'signin-password').value = 'pinalert-demo';
+    submit(page, 'signin');
+    assert.deepEqual(body(page.requests[0]), { email: 'priya@example.com', password: 'pinalert-demo' });
+    answer(page.requests[0], 200, { next: '/' });
+    await flush();
+    assert.deepEqual(page.assigned, ['/']);
+    assertClean(page);
+  }
+
+  // A plain Sign in page (a done line, no spent code) fills nothing.
+  const plain = load({ start: 'signin', done: true });
+  assert.equal(byId(plain, 'signin-email').value, '');
+  assert.equal(isFocused(plain, 'signin-password'), false);
+  assertClean(plain);
 });

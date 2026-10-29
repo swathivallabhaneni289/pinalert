@@ -43,8 +43,14 @@ RETURNING id, delivery, email, code_hash, password_hash, attempts;
 -- name: ConsumeAuthCode :execrows
 -- Spends a code exactly once (the ConsumeToken rule). 1 row means this request
 -- won; 0 means a parallel submit did, or the code expired in between.
+-- Phase 7.1 review fix round 3 (skeptic SK2-01): a spent code's life ends when
+-- it is spent, so expires_at is set to the same now() as used_at. That equal
+-- pair is written by this statement only (a retired row keeps its later expiry),
+-- and it is how the sign in page tells a browser whose confirm answer was lost
+-- that its own code was confirmed. The password hash typed at Create account has
+-- done its job and is cleared, so the kept row holds none.
 UPDATE auth_codes
-SET used_at = now()
+SET used_at = now(), expires_at = now(), password_hash = NULL
 WHERE id = sqlc.arg(id)
   AND used_at IS NULL
   AND expires_at > now();
@@ -72,6 +78,14 @@ LIMIT 1;
 -- name: DeleteAuthCodesForEmail :exec
 -- Delete my account: the code rows ever written for the real address.
 DELETE FROM auth_codes WHERE email = sqlc.arg(email);
+
+-- name: DeleteOtherAuthCodesForEmail :exec
+-- A confirm: every other code row of the address goes, so a code still pending
+-- in another browser can no longer be used (W9). The row just spent is kept,
+-- used and with no password hash, so the browser that spent it can be told so
+-- after a lost answer (Phase 7.1 review fix round 3, skeptic SK2-01). The prune
+-- removes it a day after the spend, and Delete my account removes it at once.
+DELETE FROM auth_codes WHERE email = sqlc.arg(email) AND id <> sqlc.arg(keep_id);
 
 -- name: LockCredentialAddress :exec
 -- The first statement of both confirm transactions, Create account's typed

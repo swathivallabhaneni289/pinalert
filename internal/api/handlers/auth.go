@@ -51,6 +51,10 @@ type AuthConfig struct {
 type LoginState interface {
 	SignedIn(ctx context.Context, sessionID string) (bool, error)
 	LiveCode(ctx context.Context, sessionID string) (service.LiveCode, bool, error)
+	// SpentCode reports a code this browser's own session confirmed inside the
+	// resume window, so a page reloaded after a lost confirm answer says what
+	// happened (review fix round 3, skeptic SK2-01).
+	SpentCode(ctx context.Context, sessionID string) (service.SpentCode, bool, error)
 	EndedByPasswordSwitch(ctx context.Context, sessionID string) (bool, error)
 	// CodeTTL and ResendCooldown are the numbers the service enforces, so the
 	// page counts down the same ones (review IN-S02).
@@ -74,6 +78,11 @@ type loginGateViewModel struct {
 	// (Phase 3.2, UI-SPEC E3; Phase 7.1 adds old-link and the switch notice). It
 	// is set only from closed lists and is never built from the address value.
 	DoneLine string
+	// SignInStatus is the line in the Sign in panel's own status line, set only
+	// for a code this browser spent and only from the two constants below
+	// (review fix round 3, skeptic SK2-01). The address then rides in CodeEmail,
+	// page text of the hidden code screen, which auth.js copies into the field.
+	SignInStatus string
 	// StartPanel is the panel the card opens on: "create", "signin" or "code".
 	StartPanel string
 	// CodeMode is "create" or "reset" and is read only when StartPanel is code.
@@ -126,6 +135,15 @@ const (
 	loginSwitchNoticeLine = "Pinalert now uses passwords. Choose Create account with the same email to set yours. Your reports stay with you."
 )
 
+// The Sign in panel's lines for a code this browser spent while its answer was
+// lost (review fix round 3, skeptic SK2-01). The reset line is auth.js's
+// PASSWORD_SET_MESSAGE, the one shown after a reset answered in time (UI-SPEC
+// P71-C19). They are not done words: nothing in the request picks them.
+const (
+	loginSpentCreateLine = "Account created. Sign in to continue."
+	loginSpentResetLine  = "Password set. Sign in to continue."
+)
+
 // lowDataChosen reports whether the request carries the remembered choice of
 // the Low data view: the cookie LowDataCookie with the value 1 and nothing else
 // (D-17). It reads no account data.
@@ -146,8 +164,10 @@ func lowDataChosen(r *http.Request) bool {
 // the Low data page when its cookie is on) instead of seeing the form (D-10,
 // research Pitfall 16); the targets are constants, never a request value
 // (T-07.1-23). Then the done word is compared exactly with the closed list
-// (T-07.1-20), then a live code row restores the code screen, and only when
-// neither applies a browser whose own session the switch to passwords ended
+// (T-07.1-20), then a live code row restores the code screen, then, with no
+// done word, a code this browser spent while its answer was lost opens Sign in
+// with the line of what happened (review fix round 3, SK2-01), and only when
+// none applies a browser whose own session the switch to passwords ended
 // sees the switch notice once, in the same response that replaces its cookie
 // with a fresh id (review WR-S01; a Set-Cookie after the body is silently
 // dropped, so SetCookie runs before the template; D-12, UI-SPEC Surfaces 3, 6
@@ -235,7 +255,7 @@ func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 				// or a return from the mail app never restarts the full wait.
 				vm.CodeSecondsLeft = live.SecondsLeft
 				vm.ResendSeconds = live.ResendSecondsLeft
-			} else if vm.DoneLine == "" {
+			} else if vm.DoneLine == "" && !showSpentCode(r.Context(), login, sessionID, &vm) {
 				ended, err := login.EndedByPasswordSwitch(r.Context(), sessionID)
 				if err != nil {
 					log.Printf("handlers: LoginGate: reading password switch: %v", err)
@@ -259,6 +279,34 @@ func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 		}
 	}
+}
+
+// showSpentCode is the review fix round 3 branch of LoginGate (skeptic SK2-01).
+// A code submit that ran out of time reloads the page; when the server had
+// already confirmed the code, this browser still carries the session id it sent
+// the code with, and its own newest code row says the code was spent. The card
+// then opens on Sign in with the line of what happened and the address as page
+// text of the hidden code screen, which auth.js copies into the email field. It
+// reads only this session's code row, never whether the address has an
+// account, writes no done word and redirects nowhere. LoginGate calls it only
+// when no done word applies, so a done word always wins. It reports whether it
+// set the page; a read error is logged without the address and sets nothing.
+func showSpentCode(ctx context.Context, login LoginState, sessionID string, vm *loginGateViewModel) bool {
+	spent, ok, err := login.SpentCode(ctx, sessionID)
+	if err != nil {
+		log.Printf("handlers: LoginGate: reading spent code: %v", err)
+		return false
+	}
+	if !ok {
+		return false
+	}
+	vm.StartPanel = loginStartSignIn
+	vm.SignInStatus = loginSpentCreateLine
+	if spent.Purpose == service.PurposeReset {
+		vm.SignInStatus = loginSpentResetLine
+	}
+	vm.CodeEmail = spent.Email
+	return true
 }
 
 // retiredLinkTarget is where an old emailed link lands: the sign in page with the

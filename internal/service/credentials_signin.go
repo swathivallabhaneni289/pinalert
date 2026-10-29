@@ -35,6 +35,16 @@ type LiveCode struct {
 	ResendSecondsLeft int
 }
 
+// SpentCode describes a code this browser itself confirmed inside the resume
+// window (Phase 7.1 review fix round 3, skeptic SK2-01): which kind it was and
+// the address it was sent to (page text only, never a URL, D-05). A confirm
+// whose answer was lost leaves the browser on the session id it sent the code
+// with, so the sign in page can still tell it what happened.
+type SpentCode struct {
+	Purpose string
+	Email   string
+}
+
 // ThrottleKey is the stored form of an address in the sign in throttle: an
 // HMAC under the throttle key, so the database holds no address and an unknown
 // address behaves exactly like a known one. Delete my account clears the
@@ -106,7 +116,9 @@ func (s *CredentialService) inTx(ctx context.Context, fn func(q CredentialQuerie
 // of the address, so a code still pending in another browser can no longer be
 // used (W9). 0 rows consumed means a parallel submit won. It runs inside the
 // confirm transaction, so a later failure leaves the code usable (review
-// CR-S02, IN-S07).
+// CR-S02, IN-S07). The spent row itself is kept, used and with no password
+// hash, so SpentCode can tell this browser its code was confirmed (review fix
+// round 3, skeptic SK2-01).
 func spend(ctx context.Context, q CredentialQuerier, row sqlcgen.BumpAuthCodeAttemptRow) error {
 	n, err := q.ConsumeAuthCode(ctx, row.ID)
 	if err != nil {
@@ -115,7 +127,7 @@ func spend(ctx context.Context, q CredentialQuerier, row sqlcgen.BumpAuthCodeAtt
 	if n == 0 {
 		return ErrWrongCode
 	}
-	if err := q.DeleteAuthCodesForEmail(ctx, row.Email); err != nil {
+	if err := q.DeleteOtherAuthCodesForEmail(ctx, sqlcgen.DeleteOtherAuthCodesForEmailParams{Email: row.Email, KeepID: row.ID}); err != nil {
 		return fmt.Errorf("service: deleting spent codes: %w", err)
 	}
 	return nil
@@ -521,6 +533,32 @@ func (s *CredentialService) LiveCode(ctx context.Context, sessionID string) (Liv
 		SecondsLeft:       secondsUntil(now, row.ExpiresAt),
 		ResendSecondsLeft: secondsUntil(now, sentAt.Add(s.limits.SendCooldown)),
 	}, true, nil
+}
+
+// SpentCode is the read behind the sign in page after a code submit that ran
+// out of time (review fix round 3, skeptic SK2-01). It is true only when this
+// browser's own newest code row inside the resume window was spent by a
+// confirm: a delivery of code (an account_exists or no_account row can never be
+// confirmed), counted at least once, and used at the very moment its life
+// ended, the pair ConsumeAuthCode alone writes. A live row, a row retired
+// because its email did not go out, and a row of any other browser are false.
+// It reads nothing about the address's account, so it tells this browser only
+// what its own right code already did.
+func (s *CredentialService) SpentCode(ctx context.Context, sessionID string) (SpentCode, bool, error) {
+	row, err := s.q.GetLatestAuthCode(ctx, sqlcgen.GetLatestAuthCodeParams{
+		SessionID: sessionID,
+		Since:     s.now().Add(-s.limits.ResumeWindow),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return SpentCode{}, false, nil
+		}
+		return SpentCode{}, false, fmt.Errorf("service: reading latest code: %w", err)
+	}
+	if !row.UsedAt.Valid || row.Delivery != DeliveryCode || row.Attempts < 1 || !row.UsedAt.Time.Equal(row.ExpiresAt) {
+		return SpentCode{}, false, nil
+	}
+	return SpentCode{Purpose: row.Purpose, Email: row.Email}, true, nil
 }
 
 // secondsUntil is the whole seconds from now to deadline, rounded up, and 0

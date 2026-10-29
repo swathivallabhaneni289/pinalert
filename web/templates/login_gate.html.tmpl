@@ -60,7 +60,7 @@
 
       <section id="auth-panel-signin" role="tabpanel" aria-labelledby="login-tab-signin"{{if ne .StartPanel "signin"}} hidden{{end}}>
         <form id="auth-form-signin" method="post" action="/login">
-          <p class="login-status" id="signin-status" role="status" hidden></p>
+          <p class="login-status" id="signin-status" role="status"{{if not .SignInStatus}} hidden{{end}}>{{.SignInStatus}}</p>
           <label for="signin-email">Email address</label>
           <div class="login-field">
             <span class="auth-icon auth-icon--mail" aria-hidden="true"></span>

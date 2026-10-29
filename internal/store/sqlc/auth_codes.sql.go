@@ -64,7 +64,7 @@ func (q *Queries) BumpAuthCodeAttempt(ctx context.Context, arg BumpAuthCodeAttem
 
 const consumeAuthCode = `-- name: ConsumeAuthCode :execrows
 UPDATE auth_codes
-SET used_at = now()
+SET used_at = now(), expires_at = now(), password_hash = NULL
 WHERE id = $1
   AND used_at IS NULL
   AND expires_at > now()
@@ -72,6 +72,12 @@ WHERE id = $1
 
 // Spends a code exactly once (the ConsumeToken rule). 1 row means this request
 // won; 0 means a parallel submit did, or the code expired in between.
+// Phase 7.1 review fix round 3 (skeptic SK2-01): a spent code's life ends when
+// it is spent, so expires_at is set to the same now() as used_at. That equal
+// pair is written by this statement only (a retired row keeps its later expiry),
+// and it is how the sign in page tells a browser whose confirm answer was lost
+// that its own code was confirmed. The password hash typed at Create account has
+// done its job and is cleared, so the kept row holds none.
 func (q *Queries) ConsumeAuthCode(ctx context.Context, id int64) (int64, error) {
 	result, err := q.db.Exec(ctx, consumeAuthCode, id)
 	if err != nil {
@@ -87,6 +93,25 @@ DELETE FROM auth_codes WHERE email = $1
 // Delete my account: the code rows ever written for the real address.
 func (q *Queries) DeleteAuthCodesForEmail(ctx context.Context, email string) error {
 	_, err := q.db.Exec(ctx, deleteAuthCodesForEmail, email)
+	return err
+}
+
+const deleteOtherAuthCodesForEmail = `-- name: DeleteOtherAuthCodesForEmail :exec
+DELETE FROM auth_codes WHERE email = $1 AND id <> $2
+`
+
+type DeleteOtherAuthCodesForEmailParams struct {
+	Email  string
+	KeepID int64
+}
+
+// A confirm: every other code row of the address goes, so a code still pending
+// in another browser can no longer be used (W9). The row just spent is kept,
+// used and with no password hash, so the browser that spent it can be told so
+// after a lost answer (Phase 7.1 review fix round 3, skeptic SK2-01). The prune
+// removes it a day after the spend, and Delete my account removes it at once.
+func (q *Queries) DeleteOtherAuthCodesForEmail(ctx context.Context, arg DeleteOtherAuthCodesForEmailParams) error {
+	_, err := q.db.Exec(ctx, deleteOtherAuthCodesForEmail, arg.Email, arg.KeepID)
 	return err
 }
 

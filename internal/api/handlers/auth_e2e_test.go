@@ -414,9 +414,15 @@ func TestConfirmCodeSecondUseRefused(t *testing.T) {
 	}
 	// A confirmed code is consumed and every code row of the address is deleted,
 	// so nothing is left to replay.
-	var left int
-	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM auth_codes WHERE email = $1`, email).Scan(&left); err != nil || left != 0 {
-		t.Fatalf("code rows left for %s = %d (err %v), want 0", email, left, err)
+	// Amended 2026-10-29 by the Phase 7.1 review fix round 3 (skeptic SK2-01):
+	// the spent row itself is kept, used and with no password hash, so a browser
+	// whose confirm answer was lost can be told its code was confirmed. The
+	// replay above shows it cannot be used again.
+	var left, unused, withHash int
+	if err := pool.QueryRow(context.Background(),
+		`SELECT count(*), count(*) FILTER (WHERE used_at IS NULL), count(password_hash) FROM auth_codes WHERE email = $1`,
+		email).Scan(&left, &unused, &withHash); err != nil || left != 1 || unused != 0 || withHash != 0 {
+		t.Fatalf("code rows left for %s = %d (%d unused, %d with a hash, err %v), want only the spent row", email, left, unused, withHash, err)
 	}
 }
 
