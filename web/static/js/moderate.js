@@ -109,6 +109,19 @@
   var COMMENT_DOES = 'Keep comment clears the flags. The comment stays. Remove comment hides it from everyone.';
   var COMMENT_HANDLED_MESSAGE = 'This comment was already handled. Refresh the lists.';
   var REASON_JOINER = ' · ';
+  // The Ratings section (Phase 9 plan 15, D-14, UI-SPEC P9-C30). Client copy
+  // like every other sentence here; the server's words are never shown.
+  var RATINGS_URL = '/api/moderation/people/';
+  var RATERS_URL = '/api/moderation/raters/';
+  var RATINGS_EMPTY_MESSAGE = 'No ratings for this person.';
+  var RATINGS_FAILED_MESSAGE = "Couldn't load ratings. Try again.";
+  var RATINGS_NO_PERSON_MESSAGE = 'No such person.';
+  var RATINGS_NAME_MESSAGE = "Enter the reporter's username.";
+  var RATING_REMOVED_WORD = 'Removed';
+  var RATING_CLEARED_WORD = 'Cleared by the rater';
+  var RATING_REMOVE_LABEL = 'Remove';
+  var RATING_BOX_GO_LABEL = 'Remove all';
+  var RATING_BOX_GO_BUSY = 'Removing';
 
   // The page elements this module drives. If one is missing, nothing is wired.
   var refreshBtn = document.getElementById('mod-refresh');
@@ -147,6 +160,36 @@
   var commentEntries = {};
   var commentTotal = 0;
 
+  // The Ratings section (Phase 9 plan 15) is wired only when all its parts are
+  // on the page, so a page without it is unchanged.
+  var ratingsUi = null;
+  (function () {
+    var parts = {
+      form: document.getElementById('mod-ratings-form'),
+      input: document.getElementById('mod-ratings-name'),
+      error: document.getElementById('mod-ratings-error'),
+      status: document.getElementById('mod-ratings-status'),
+      list: document.getElementById('mod-ratings-list'),
+      box: document.getElementById('mod-ratings-confirm'),
+      boxTitle: document.getElementById('mod-ratings-confirm-title'),
+      boxError: document.getElementById('mod-ratings-confirm-error'),
+      boxCancel: document.getElementById('mod-ratings-confirm-cancel'),
+      boxGo: document.getElementById('mod-ratings-confirm-go')
+    };
+    var whole = true;
+    Object.keys(parts).forEach(function (key) {
+      if (!parts[key]) {
+        whole = false;
+      }
+    });
+    if (whole) {
+      ratingsUi = parts;
+    }
+  }());
+  // reporter is the username whose ratings are on the page, raterAsked is the
+  // rater the open box is about, and busy holds off a second request.
+  var ratingsState = { reporter: '', raterAsked: '', busy: false };
+
   // The state. counts holds the server's numbers and only dropReport lowers
   // them. membership maps a report id to the list keys it was in at the last
   // load. entries maps a row key to its entry object.
@@ -163,14 +206,20 @@
   // timer raced against the request and its body read, so a read whose
   // aborted request never ends (WebKit can leave one unsettled) still fails
   // as no answer at the limit. A body that stalls lands in the body fallback,
-  // as an aborted body read did. A timeoutMs of 0 sends with no limit.
-  function apiRequest(method, path, timeoutMs) {
+  // as an aborted body read did. A timeoutMs of 0 sends with no limit. A payload
+  // (Phase 9 plan 15, the one rating removal) is sent as a JSON body; every
+  // other call leaves it out and sends none.
+  function apiRequest(method, path, timeoutMs, payload) {
     var options = {
       method: method,
       credentials: 'same-origin',
       cache: 'no-store',
       headers: { 'Accept': 'application/json' }
     };
+    if (payload !== undefined) {
+      options.headers['Content-Type'] = 'application/json';
+      options.body = JSON.stringify(payload);
+    }
     var limit = null;
     if (timeoutMs > 0) {
       limit = Pinalert.requestTimeout(timeoutMs, 'moderation');
@@ -1248,6 +1297,333 @@
     }
   }
 
+  // The Ratings section (Phase 9 plan 15, D-14). A moderator types a reporter's
+  // username and reads one row per rating: who gave how many stars, when, and
+  // whether it was removed or taken back. Remove stops one rating counting, and
+  // Remove all by a rater, after a box that asks first, stops every rating that
+  // person gave. Every name and number reaches the page through Pinalert.setText,
+  // never as markup. A rater's username is shown here and on no other screen.
+
+  function ratingStarsLine(rater, stars) {
+    return rater + ' gave ' + stars + (stars === 1 ? ' star' : ' stars');
+  }
+
+  function removedRatingsLine(n, rater) {
+    return 'Removed ' + n + (n === 1 ? ' rating' : ' ratings') + ' by ' + rater + '.';
+  }
+
+  function removedOneRatingLine(rater) {
+    return 'Removed the rating by ' + rater + '.';
+  }
+
+  // ratingsStatus puts one note in the polite region, or empties it.
+  function ratingsStatus(text) {
+    clearChildren(ratingsUi.status);
+    if (text === '') {
+      return;
+    }
+    var note = makeEl('p', 'mod-find__status');
+    Pinalert.setText(note, text);
+    ratingsUi.status.appendChild(note);
+  }
+
+  function ratingsError(text) {
+    if (text === '') {
+      ratingsUi.error.hidden = true;
+      return;
+    }
+    Pinalert.setText(ratingsUi.error, text);
+    ratingsUi.error.hidden = false;
+  }
+
+  function setButtonOff(button, off) {
+    if (off) {
+      button.setAttribute('aria-disabled', 'true');
+      button.classList.add('btn--off');
+    } else {
+      button.removeAttribute('aria-disabled');
+      button.classList.remove('btn--off');
+    }
+  }
+
+  function setRatingsBusy(busy) {
+    ratingsState.busy = busy;
+    if (busy) {
+      ratingsUi.list.setAttribute('aria-busy', 'true');
+    } else {
+      ratingsUi.list.removeAttribute('aria-busy');
+    }
+    var submit = ratingsUi.form.querySelector('button[type="submit"]');
+    var buttons = [submit];
+    Array.prototype.forEach.call(ratingsUi.list.querySelectorAll('button'), function (button) {
+      buttons.push(button);
+    });
+    buttons.forEach(function (button) {
+      if (button) {
+        setButtonOff(button, busy);
+      }
+    });
+  }
+
+  function setRatingsBoxBusy(busy) {
+    setButtonOff(ratingsUi.boxCancel, busy);
+    setButtonOff(ratingsUi.boxGo, busy);
+    Pinalert.setText(ratingsUi.boxGo, busy ? RATING_BOX_GO_BUSY : RATING_BOX_GO_LABEL);
+  }
+
+  function makeRatingButton(action, label, ariaLabel) {
+    var button = makeEl('button', 'btn');
+    button.setAttribute('type', 'button');
+    button.setAttribute('data-mod-rating-action', action);
+    button.setAttribute('aria-label', ariaLabel);
+    Pinalert.setText(button, label);
+    return button;
+  }
+
+  function buildRatingRow(rating, index) {
+    var rater = typeof rating.rater === 'string' ? rating.rater : '';
+    var stars = toCount(rating.stars);
+    var row = document.createElement('li');
+    row.className = 'mod-row';
+    row.setAttribute('data-mod-rating-rater', rater);
+    row.setAttribute('aria-labelledby', 'mod-rating-' + index + '-name');
+
+    var idLine = makeEl('p', 'mod-row__idline');
+    var name = makeEl('span', 'mod-row__id');
+    name.id = 'mod-rating-' + index + '-name';
+    Pinalert.setText(name, ratingStarsLine(rater, stars));
+    idLine.appendChild(name);
+    var removed = rating.removed === true;
+    var cleared = rating.cleared === true;
+    if (removed || cleared) {
+      var state = makeEl('span', 'mod-row__state');
+      Pinalert.setText(state, removed ? RATING_REMOVED_WORD : RATING_CLEARED_WORD);
+      idLine.appendChild(state);
+    }
+    row.appendChild(idLine);
+
+    var meta = makeEl('p', 'mod-row__meta');
+    Pinalert.setText(meta, Pinalert.relativeTime(rating.updated_at));
+    row.appendChild(meta);
+
+    if (!removed && !cleared) {
+      var actions = makeEl('div', 'mod-row__actions');
+      actions.appendChild(makeRatingButton('remove', RATING_REMOVE_LABEL, 'Remove the rating by ' + rater));
+      var allLabel = 'Remove all by ' + rater;
+      actions.appendChild(makeRatingButton('remove-all', allLabel, allLabel));
+      row.appendChild(actions);
+    }
+    return row;
+  }
+
+  // renderRatings redraws the list and answers how many rows it drew.
+  function renderRatings(ratings) {
+    clearChildren(ratingsUi.list);
+    var drawn = 0;
+    ratings.forEach(function (rating) {
+      if (!rating || typeof rating.rater !== 'string' || rating.rater === '') {
+        return;
+      }
+      ratingsUi.list.appendChild(buildRatingRow(rating, drawn));
+      drawn += 1;
+    });
+    return drawn;
+  }
+
+  // focusRatingsFrom puts focus on the first button at or after a row index,
+  // else the last one before it, else the username field.
+  function focusRatingsFrom(index) {
+    var rows = ratingsUi.list.children;
+    var target = null;
+    var i;
+    for (i = index; i < rows.length && !target; i += 1) {
+      target = rows[i].querySelector('button');
+    }
+    for (i = Math.min(index, rows.length) - 1; i >= 0 && !target; i -= 1) {
+      target = rows[i].querySelector('button');
+    }
+    (target || ratingsUi.input).focus();
+  }
+
+  // loadRatings fetches one reporter's ratings and answers true when they were
+  // shown. An unknown person is a plain note, anything else the error line.
+  function loadRatings(name) {
+    setRatingsBusy(true);
+    ratingsError('');
+    ratingsStatus('');
+    return apiRequest('GET', RATINGS_URL + encodeURIComponent(name) + '/ratings', REQUEST_TIMEOUT_MS).then(function (res) {
+      if (res.ok && res.body && Array.isArray(res.body.ratings)) {
+        ratingsState.reporter = name;
+        if (renderRatings(res.body.ratings) === 0) {
+          ratingsStatus(RATINGS_EMPTY_MESSAGE);
+        }
+        return true;
+      }
+      ratingsState.reporter = '';
+      clearChildren(ratingsUi.list);
+      if (res.status === 404) {
+        ratingsStatus(RATINGS_NO_PERSON_MESSAGE);
+      } else {
+        ratingsError(RATINGS_FAILED_MESSAGE);
+      }
+      return false;
+    }, function () {
+      ratingsState.reporter = '';
+      clearChildren(ratingsUi.list);
+      ratingsError(RATINGS_FAILED_MESSAGE);
+      return false;
+    }).then(function (shown) {
+      setRatingsBusy(false);
+      return shown;
+    });
+  }
+
+  function onRatingsSubmit(evt) {
+    evt.preventDefault();
+    if (ratingsState.busy) {
+      return;
+    }
+    var name = String(ratingsUi.input.value || '').trim();
+    if (name === '') {
+      ratingsError('');
+      ratingsStatus(RATINGS_NAME_MESSAGE);
+      return;
+    }
+    loadRatings(name);
+  }
+
+  // removeOneRating posts the one removal and redraws the list from the answer,
+  // so the row reads Removed from what is stored. It carries no client timer,
+  // like the report actions, and a repeat of a removal changes nothing.
+  function removeOneRating(rater, rowEl) {
+    if (ratingsState.busy || ratingsState.reporter === '') {
+      return;
+    }
+    var at = Array.prototype.indexOf.call(ratingsUi.list.children, rowEl);
+    setRatingsBusy(true);
+    ratingsError('');
+    var path = RATINGS_URL + encodeURIComponent(ratingsState.reporter) + '/ratings/remove';
+    apiRequest('POST', path, 0, { rater: rater }).then(function (res) {
+      if (res.ok && res.body && Array.isArray(res.body.ratings)) {
+        renderRatings(res.body.ratings);
+        ratingsStatus(removedOneRatingLine(rater));
+        focusRatingsFrom(at);
+      } else if (res.ok) {
+        ratingsError(RATINGS_FAILED_MESSAGE);
+      } else {
+        ratingsError(ACTION_FAILED_MESSAGE);
+      }
+    }, function () {
+      ratingsError(ACTION_OFFLINE_MESSAGE);
+    }).then(function () {
+      setRatingsBusy(false);
+    });
+  }
+
+  // openRatingsBox asks before Remove all by one rater. The native box opens with
+  // focus on its question, so no button looks chosen and nothing is sent until
+  // Remove all is pressed. A browser with no native box asks with confirm.
+  function openRatingsBox(rater) {
+    if (ratingsState.busy) {
+      return;
+    }
+    ratingsState.raterAsked = rater;
+    var question = 'Remove all ratings by ' + rater + '?';
+    Pinalert.setText(ratingsUi.boxTitle, question);
+    ratingsUi.boxError.hidden = true;
+    if (typeof ratingsUi.box.showModal !== 'function') {
+      if (window.confirm(question)) {
+        sendRemoveAll();
+      }
+      return;
+    }
+    ratingsUi.box.showModal();
+    ratingsUi.boxTitle.focus();
+  }
+
+  function closeRatingsBox() {
+    if (ratingsUi.box.open && typeof ratingsUi.box.close === 'function') {
+      ratingsUi.box.close();
+    }
+  }
+
+  // sendRemoveAll removes every rating the asked about rater gave, closes the
+  // box, reads the list again and says how many the server removed. A failure
+  // keeps the box open with its own line.
+  function sendRemoveAll() {
+    var rater = ratingsState.raterAsked;
+    if (ratingsState.busy || rater === '') {
+      return;
+    }
+    setRatingsBusy(true);
+    setRatingsBoxBusy(true);
+    apiRequest('POST', RATERS_URL + encodeURIComponent(rater) + '/remove-ratings', 0).then(function (res) {
+      if (res.ok && res.body && typeof res.body.removed === 'number') {
+        var removed = toCount(res.body.removed);
+        ratingsState.raterAsked = '';
+        closeRatingsBox();
+        if (ratingsState.reporter === '') {
+          ratingsStatus(removedRatingsLine(removed, rater));
+          ratingsUi.input.focus();
+          return null;
+        }
+        return loadRatings(ratingsState.reporter).then(function (shown) {
+          ratingsStatus(removedRatingsLine(removed, rater));
+          if (shown) {
+            focusRatingsFrom(0);
+          } else {
+            ratingsUi.input.focus();
+          }
+        });
+      }
+      Pinalert.setText(ratingsUi.boxError, ACTION_FAILED_MESSAGE);
+      ratingsUi.boxError.hidden = false;
+      ratingsUi.boxTitle.focus();
+      return null;
+    }, function () {
+      Pinalert.setText(ratingsUi.boxError, ACTION_OFFLINE_MESSAGE);
+      ratingsUi.boxError.hidden = false;
+      ratingsUi.boxTitle.focus();
+      return null;
+    }).then(function () {
+      setRatingsBoxBusy(false);
+      setRatingsBusy(false);
+    });
+  }
+
+  // onRatingsBoxCancel is the browser's cancel event (Escape): it is the same as
+  // Cancel, except while the removal is being sent.
+  function onRatingsBoxCancel(evt) {
+    if (ratingsState.busy) {
+      evt.preventDefault();
+    }
+  }
+
+  function onRatingButton(button) {
+    if (ratingsState.busy) {
+      return;
+    }
+    var action = button.getAttribute('data-mod-rating-action');
+    if (action === 'box-cancel') {
+      closeRatingsBox();
+      return;
+    }
+    if (action === 'box-go') {
+      sendRemoveAll();
+      return;
+    }
+    var rowEl = button.closest('[data-mod-rating-rater]');
+    if (!rowEl) {
+      return;
+    }
+    var rater = rowEl.getAttribute('data-mod-rating-rater');
+    if (action === 'remove') {
+      removeOneRating(rater, rowEl);
+    } else if (action === 'remove-all') {
+      openRatingsBox(rater);
+    }
+  }
+
   function entryOf(el) {
     var rowEl = el.closest('[data-mod-key]');
     return rowEl ? entries[rowEl.getAttribute('data-mod-key')] : null;
@@ -1265,6 +1641,11 @@
     var commentButton = target.closest('button[data-mod-comment-action]');
     if (commentButton) {
       onCommentButton(commentButton);
+      return;
+    }
+    var ratingButton = ratingsUi ? target.closest('button[data-mod-rating-action]') : null;
+    if (ratingButton) {
+      onRatingButton(ratingButton);
       return;
     }
     var button = target.closest('button[data-mod-action]');
@@ -1303,5 +1684,9 @@
   root.addEventListener('click', onRootClick);
   root.addEventListener('keydown', onRootKeydown);
   findForm.addEventListener('submit', onFindSubmit);
+  if (ratingsUi) {
+    ratingsUi.form.addEventListener('submit', onRatingsSubmit);
+    ratingsUi.box.addEventListener('cancel', onRatingsBoxCancel);
+  }
   loadLists(false);
 }());

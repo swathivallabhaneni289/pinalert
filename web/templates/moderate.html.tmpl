@@ -59,6 +59,35 @@
       <ol class="mod-list" id="mod-list-comments" role="list" aria-labelledby="mod-h-comments"></ol>
       <p class="mod-empty" id="mod-empty-comments" hidden>No comments to review.</p>
     </section>
+
+    {{/* Phase 9 plan 15 (D-14, UI-SPEC P9-C30): the tapped ratings tool. A moderator types one reporter's username, reads who gave how many stars, removes one rating or every rating one person gave. The list is filled by script with text nodes only. A rater's username appears on this screen and nowhere else. */}}
+    <section class="mod-section" aria-labelledby="mod-h-ratings">
+      <h2 id="mod-h-ratings">Ratings</h2>
+      <p class="mod-section__line">Find one reporter's tapped ratings. Removed ratings stop counting at once.</p>
+      <form class="mod-find" id="mod-ratings-form">
+        <label for="mod-ratings-name">Reporter's username</label>
+        <input id="mod-ratings-name" type="text" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <button type="submit" class="btn btn--primary">Show ratings</button>
+      </form>
+      <p class="inline-error" id="mod-ratings-error" role="alert" hidden></p>
+      <div id="mod-ratings-status" aria-live="polite"></div>
+      <ol class="mod-list" id="mod-ratings-list" role="list" aria-labelledby="mod-h-ratings"></ol>
+    </section>
+
+    {{/* The box that asks before Remove all by one rater: a native dialog built like the Delete box of Settings (#settings-delete-confirm). The title takes the first focus, no button is outlined on open, there is no close X, and only Cancel and Remove all answer it. It sits inside main so the page script reaches its buttons. */}}
+    <dialog id="mod-ratings-confirm" class="logout-confirm" aria-labelledby="mod-ratings-confirm-title" aria-describedby="mod-ratings-confirm-text">
+      <div class="logout-confirm__body">
+        <h2 class="logout-confirm__title" id="mod-ratings-confirm-title" tabindex="-1"></h2>
+        <div class="logout-confirm__text" id="mod-ratings-confirm-text">
+          <p>Their ratings stop counting for every reporter, and they cannot rate again.</p>
+        </div>
+        <p class="inline-error" id="mod-ratings-confirm-error" role="alert" hidden></p>
+        <div class="logout-confirm__actions">
+          <button type="button" class="btn" id="mod-ratings-confirm-cancel" data-mod-rating-action="box-cancel">Cancel</button>
+          <button type="button" class="btn btn--destructive" id="mod-ratings-confirm-go" data-mod-rating-action="box-go">Remove all</button>
+        </div>
+      </div>
+    </dialog>
   </main>
 
   <div id="toast" role="status" aria-live="polite" hidden></div>

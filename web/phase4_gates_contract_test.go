@@ -64,6 +64,15 @@ var p427ViewWordAllowlist = map[string][]string{
 	"templates/legal_body.html.tmpl": {"Light or Dark"},
 }
 
+// p427BareLabelAllowlist holds the only bare labels allowed, one file each.
+// Amended 2026-10-29 by Phase 9 plan 15 (UI-SPEC P9-C30): the moderator Ratings
+// box that asks before Remove all by a rater is built like the Settings Delete
+// box, with the buttons Cancel and Remove all. Its Cancel names no object because
+// the box title directly above it already names the rater and the act.
+var p427BareLabelAllowlist = map[string][]string{
+	"templates/moderate.html.tmpl": {"Cancel"},
+}
+
 // p427CSSThemeSyntax is CSS theme syntax that names the Light theme. It is
 // removed from stylesheet input before the banned word check.
 var p427CSSThemeSyntax = []string{
@@ -157,6 +166,16 @@ func p427IsBareLabel(s string) bool {
 	return false
 }
 
+// p427BareLabelAllowed is true when the file may hold this bare label.
+func p427BareLabelAllowed(path, label string) bool {
+	for _, ok := range p427BareLabelAllowlist[path] {
+		if strings.TrimSpace(label) == ok {
+			return true
+		}
+	}
+	return false
+}
+
 func TestPhase4NoBareLabels(t *testing.T) {
 	t.Run("matcher", func(t *testing.T) {
 		for _, s := range []string{"Cancel", "CANCEL", "Save", "Submit", "OK", "Ok", "Click Here", "Click here", "  Cancel  "} {
@@ -220,7 +239,7 @@ func TestPhase4NoBareLabels(t *testing.T) {
 				t.Errorf("%s: %d candidates, want at least %d (the scan would pass empty)", path, len(candidates), floor)
 			}
 			for i, c := range candidates {
-				if p427IsBareLabel(c) {
+				if p427IsBareLabel(c) && !p427BareLabelAllowed(path, c) {
 					t.Errorf("%s: candidate %d is the bare label %q", path, i+1, c)
 				}
 			}
