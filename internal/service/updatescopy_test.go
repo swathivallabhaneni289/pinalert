@@ -29,6 +29,10 @@ func TestUpdatesCopy(t *testing.T) {
 		// kinds have event lines too; every other row is unchanged.
 		{UpdateCommentOnYours, "New comment on your report"},
 		{UpdateReplyToYours, "New reply to your comment"},
+		// Amended 2026-10-29 by Phase 9 plan 21 (D-09): the follow note has no
+		// fixed event line, because its line names the person and the list
+		// builder writes it with FollowedPostedLine at read time.
+		{UpdateFollowedPosted, ""},
 		{UpdateMore, ""},
 		{"comment", ""},
 		{"", ""},
@@ -39,6 +43,9 @@ func TestUpdatesCopy(t *testing.T) {
 		}
 	}
 	for _, k := range UpdateEventKinds {
+		if k == UpdateFollowedPosted {
+			continue // amended 2026-10-29 by Phase 9 plan 21 (D-09), see above
+		}
 		if EventLine(k) == "" {
 			t.Errorf("event kind %q has no line", k)
 		}
@@ -186,6 +193,51 @@ func TestUpdateTrustLineNeverEmpty(t *testing.T) {
 	}
 	if got := UpdateTrustLine(UpdateReliableNearby, trust, view, confirmed); got != trust.ConfirmedSentence || got != "Confirmed by 2 people at different spots." {
 		t.Errorf("confirmed row reads %q, want the confirmed sentence %q", got, trust.ConfirmedSentence)
+	}
+}
+
+// TestFollowedPostedCopy covers the words of the follow note (Phase 9, D-09,
+// UI-SPEC 2a, P9-C20): "{username} posted a report.", "{Category}, {Severity}.",
+// then the trust line, which is exactly the Reliable note's for every view and
+// confirmed state. No line has a dash, a coordinate or a noise word.
+func TestFollowedPostedCopy(t *testing.T) {
+	if got := FollowedPostedLine("ravi.k"); got != "ravi.k posted a report." {
+		t.Errorf("FollowedPostedLine = %q", got)
+	}
+	if got := FollowedPostedDetail("Flood", "Medium"); got != "Flood, Medium." {
+		t.Errorf("FollowedPostedDetail = %q", got)
+	}
+	if got := EventLine(UpdateFollowedPosted); got != "" {
+		t.Errorf("EventLine(followed_posted) = %q, want empty (the list builds the line with the username)", got)
+	}
+
+	trust := Trust{LeadSentence: "LEAD", ConfirmedSentence: "CONFIRMED", DisputedSentence: "DISPUTED"}
+	noLead := Trust{ConfirmedSentence: "CONFIRMED", DisputedSentence: "DISPUTED"}
+	views := append([]FeedView{FeedViewNone}, FeedViews...)
+	for _, tr := range []Trust{trust, noLead} {
+		for _, view := range views {
+			for _, confirmed := range []bool{false, true} {
+				got := UpdateTrustLine(UpdateFollowedPosted, tr, view, confirmed)
+				want := UpdateTrustLine(UpdateReliableNearby, tr, view, confirmed)
+				if got != want || got == "" {
+					t.Errorf("view %q confirmed %v: follow note %q, Reliable note %q", view, confirmed, got, want)
+				}
+			}
+		}
+	}
+	if got := UpdateTrustLine(UpdateFollowedPosted, trust, FeedViewActive, false); got != "Not confirmed yet." {
+		t.Errorf("an unconfirmed active follow note reads %q, want Not confirmed yet.", got)
+	}
+	if got := UpdateTrustLine(UpdateFollowedPosted, trust, FeedViewActive, true); got != "CONFIRMED" {
+		t.Errorf("a confirmed active follow note reads %q, want the confirmed sentence", got)
+	}
+
+	for _, line := range []string{FollowedPostedLine("ravi.k"), FollowedPostedDetail("Flood", "Medium")} {
+		for _, r := range line {
+			if r == rune(0x2013) || r == rune(0x2014) {
+				t.Errorf("line %q holds a dash rune %U", line, r)
+			}
+		}
 	}
 }
 

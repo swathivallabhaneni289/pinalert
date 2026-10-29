@@ -7,6 +7,8 @@
 package service
 
 import (
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -19,13 +21,33 @@ func TestUpdateKindsClosed(t *testing.T) {
 	// Amended 2026-10-29 by Phase 8 plan 11 (D-16, A-P8-3): the closed lists grew
 	// by comment_on_yours and reply_to_yours, so the counts are 8 and 7; every
 	// other assertion below is unchanged.
-	if len(UpdateKinds) != 8 {
-		t.Errorf("UpdateKinds has %d entries, want 8", len(UpdateKinds))
+	//
+	// Amended 2026-10-29 by Phase 9 plan 21 (D-09): the closed lists grew again
+	// by followed_posted, so the counts are 9 and 8. UpdateFollowedPosted sits
+	// right after UpdateReplyToYours in the events and right before UpdateMore
+	// in the kinds, once in each; every other assertion is unchanged.
+	if len(UpdateKinds) != 9 {
+		t.Errorf("UpdateKinds has %d entries, want 9", len(UpdateKinds))
 	}
-	if len(UpdateEventKinds) != 7 {
-		t.Errorf("UpdateEventKinds has %d entries, want 7", len(UpdateEventKinds))
+	if len(UpdateEventKinds) != 8 {
+		t.Errorf("UpdateEventKinds has %d entries, want 8", len(UpdateEventKinds))
 	}
-	for _, k := range []UpdateKind{UpdateReachedLive, UpdateHidden, UpdateResolved, UpdateFading, UpdateReliableNearby, UpdateCommentOnYours, UpdateReplyToYours, UpdateMore} {
+	places := func(list []UpdateKind, k UpdateKind) (n, at int) {
+		for i, x := range list {
+			if x == k {
+				n++
+				at = i
+			}
+		}
+		return n, at
+	}
+	if n, at := places(UpdateEventKinds, UpdateFollowedPosted); n != 1 || at == 0 || UpdateEventKinds[at-1] != UpdateReplyToYours {
+		t.Errorf("UpdateEventKinds holds followed_posted %d times at %d, want once right after reply_to_yours", n, at)
+	}
+	if n, at := places(UpdateKinds, UpdateFollowedPosted); n != 1 || at+1 >= len(UpdateKinds) || UpdateKinds[at+1] != UpdateMore {
+		t.Errorf("UpdateKinds holds followed_posted %d times at %d, want once right before more", n, at)
+	}
+	for _, k := range []UpdateKind{UpdateReachedLive, UpdateHidden, UpdateResolved, UpdateFading, UpdateReliableNearby, UpdateCommentOnYours, UpdateReplyToYours, UpdateFollowedPosted, UpdateMore} {
 		if !k.Valid() {
 			t.Errorf("%q should be valid", k)
 		}
@@ -378,6 +400,52 @@ func TestMayNotifyAboutReport(t *testing.T) {
 	}
 }
 
+// TestMayNotifyFollowedPosted proves the follow note (Phase 9, D-09, 03.2 D-29)
+// goes through the one predicate with the Reliable reporter alert's allowance:
+// Live or Provisional before expiry is allowed; Hidden, Withheld, Retracted and
+// an expired report are not; and for every input the two kinds answer alike.
+// The last check reads the source: the allowance is one condition naming both
+// kinds, not a second copy of the rule.
+func TestMayNotifyFollowedPosted(t *testing.T) {
+	future := updatesNow.Add(time.Hour)
+	cases := []struct {
+		name    string
+		vis     Visibility
+		expires time.Time
+		want    bool
+	}{
+		{"live", VisibilityLive, future, true},
+		{"provisional", VisibilityProvisional, future, true},
+		{"hidden", VisibilityHidden, future, false},
+		{"withheld", VisibilityWithheld, future, false},
+		{"retracted", VisibilityRetracted, future, false},
+		{"live but expired at now", VisibilityLive, updatesNow, false},
+		{"provisional but expired", VisibilityProvisional, updatesNow.Add(-time.Minute), false},
+		{"unknown visibility", "mystery", future, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := MayNotifyAboutReport(UpdateFollowedPosted, c.vis, c.expires, updatesNow)
+			if got != c.want {
+				t.Errorf("MayNotifyAboutReport(followed_posted, %q) = %v, want %v", c.vis, got, c.want)
+			}
+			if same := MayNotifyAboutReport(UpdateReliableNearby, c.vis, c.expires, updatesNow); same != got {
+				t.Errorf("the follow note answers %v but the Reliable alert %v for %q", got, same, c.vis)
+			}
+		})
+	}
+	src, err := os.ReadFile("updates.go")
+	if err != nil {
+		t.Fatalf("read updates.go: %v", err)
+	}
+	if n := strings.Count(string(src), "kind == UpdateReliableNearby || kind == UpdateFollowedPosted"); n != 1 {
+		t.Errorf("updates.go holds the shared allowance %d times, want exactly 1", n)
+	}
+	if n := strings.Count(string(src), "kind == UpdateFollowedPosted"); n != 1 {
+		t.Errorf("updates.go compares the kind to UpdateFollowedPosted %d times, want 1 (no second copy of the rule)", n)
+	}
+}
+
 // TestMayNotifyMatchesResolve compares the predicate with the resolver over a
 // severity, category, moderation and tally grid, so a second copy of the
 // critical rule cannot appear (T-03.2-05).
@@ -412,8 +480,15 @@ func TestMayNotifyMatchesResolve(t *testing.T) {
 						if got := MayNotifyAboutReport(UpdateReliableNearby, vis, exp, now); got != wantAlert {
 							t.Errorf("reliable note: meta=%+v tally=%+v vis=%q exp=%v: got %v, want %v", meta, tally, vis, exp, got, wantAlert)
 						}
+						// Amended 2026-10-29 by Phase 9 plan 21 (D-09): the follow
+						// note takes the Reliable note's allowance, so it is the
+						// second kind on the alert side of this grid; every other
+						// kind is still Live only.
+						if got := MayNotifyAboutReport(UpdateFollowedPosted, vis, exp, now); got != wantAlert {
+							t.Errorf("follow note: meta=%+v tally=%+v vis=%q exp=%v: got %v, want %v", meta, tally, vis, exp, got, wantAlert)
+						}
 						for _, k := range UpdateKinds {
-							if k == UpdateReliableNearby {
+							if k == UpdateReliableNearby || k == UpdateFollowedPosted {
 								continue
 							}
 							if got := MayNotifyAboutReport(k, vis, exp, now); got != wantOther {
