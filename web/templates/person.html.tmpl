@@ -74,6 +74,8 @@
       <div id="person-actions" class="person-actions">
         <button type="button" id="person-follow" class="btn btn--primary"{{if not .Profile.CanFollow}} hidden{{end}}>Follow</button>
         <button type="button" id="person-unfollow" class="btn" aria-pressed="true"{{if not .Profile.Following}} hidden{{end}}>Following</button>
+        {{/* Plan 09-24 (D-08, UI-SPEC 1d and 1e): the Notify me bell, after Following and before More. It is drawn always on another person's page and shown only while you follow them and have not muted them; the script toggles the hidden flag from the refetched profile. aria-pressed is the server's Notify flag (off by default). The icon (bell-off or bell) follows aria-pressed in person.css. The name is visually hidden text, so the username only goes through html/template escaping. */}}
+        <button type="button" id="person-bell" class="person-bell" aria-pressed="{{if .Profile.Notify}}true{{else}}false{{end}}"{{if or (not .Profile.Following) .Profile.Muted}} hidden{{end}}><span class="person-bell__icon" aria-hidden="true"></span><span class="visually-hidden">Notify me when {{.Profile.Username}} posts</span></button>
         <button type="button" id="person-more" class="btn person-more" aria-haspopup="menu" aria-expanded="false" aria-controls="person-more-menu"><span>More</span><span class="person-more__chevron" aria-hidden="true"></span></button>
         <div id="person-more-menu" class="person-menu" role="menu" aria-label="More" hidden>
           {{/* Plan 09-20 (D-12, UI-SPEC 1e): Mute or Unmute is the first item, drawn always on another person's page. The label and data-muted are the server's Muted flag; the script flips both after a refetch of the profile. No confirmation. */}}
