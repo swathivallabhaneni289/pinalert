@@ -84,6 +84,8 @@ type SachetClient struct {
 	rssTimeout time.Duration
 	capTimeout time.Duration
 	retryDelay time.Duration
+	// fetchOne replaces fetchCAP in FetchCAPs, for tests; nil uses fetchCAP.
+	fetchOne func(ctx context.Context, it Item) CAPResult
 }
 
 // NewSachetClient returns a client for the real SACHET host.
@@ -303,7 +305,19 @@ func (c *SachetClient) FetchCAPs(ctx context.Context, items []Item) []CAPResult 
 		started++
 		go func(i int) {
 			defer func() { <-sem; done <- struct{}{} }()
-			results[i] = c.fetchCAP(ctx, items[i])
+			// A panic in one fetch (a parser bug on one hostile message) is that
+			// item's network error, never the end of the process (IN-S03 of the
+			// Phase 5 review); the recover in RefreshAll cannot reach this goroutine.
+			defer func() {
+				if recover() != nil {
+					results[i] = CAPResult{Item: items[i], Err: &fetchError{class: "network", msg: "request failed"}}
+				}
+			}()
+			fetch := c.fetchCAP
+			if c.fetchOne != nil {
+				fetch = c.fetchOne
+			}
+			results[i] = fetch(ctx, items[i])
 		}(i)
 	}
 	for ; started > 0; started-- {

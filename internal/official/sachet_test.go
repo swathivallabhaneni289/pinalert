@@ -500,3 +500,24 @@ func TestFetchCAPsStopsWhenContextEnds(t *testing.T) {
 		}
 	}
 }
+
+// TestFetchCAPsRecoversAWorkerPanic pins IN-S03 of the Phase 5 review: a panic
+// while fetching one CAP message becomes a network error for that item, the
+// others keep their results, and the process is not ended.
+func TestFetchCAPsRecoversAWorkerPanic(t *testing.T) {
+	c := testClient("http://127.0.0.1:1", ClientConfig{})
+	c.fetchOne = func(_ context.Context, it Item) CAPResult {
+		if it.GUID == "1792000000000002" {
+			panic("a parser bug on a hostile message")
+		}
+		return CAPResult{Item: it, Kept: true}
+	}
+	items := []Item{{GUID: "1792000000000001"}, {GUID: "1792000000000002"}, {GUID: "1792000000000003"}}
+	got := c.FetchCAPs(context.Background(), items)
+	if len(got) != 3 || got[0].Err != nil || got[2].Err != nil || !got[0].Kept || !got[2].Kept {
+		t.Fatalf("results = %+v, want the first and third fetched", got)
+	}
+	if got[1].Err == nil || ErrorClass(got[1].Err) != "network" || got[1].Item.GUID != "1792000000000002" {
+		t.Errorf("the panicking item gave %+v, want a network error for it", got[1])
+	}
+}
