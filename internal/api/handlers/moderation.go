@@ -282,3 +282,109 @@ func ModerationReport(svc *service.ModerationService) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, modFindJSON{Report: modRowToJSON(row), Lists: lists})
 	}
 }
+
+// --- Comments (Phase 8 plan 13, D-12, D-14). Like the report handlers above,
+// these are an internal surface behind requireModerator and carry no swag
+// directives. ---
+
+// modCommentJSON is one comment of the moderator list. It names no author,
+// flagger, email or account (T-08-65): a moderator reads the words and the
+// report they sit on.
+type modCommentJSON struct {
+	ID          int64     `json:"id"`
+	ReportID    int64     `json:"report_id"`
+	Category    string    `json:"category"`
+	Words       string    `json:"words"`
+	At          time.Time `json:"at"`
+	Reasons     []string  `json:"reasons"`
+	FlagReasons []string  `json:"flag_reasons"`
+	Held        bool      `json:"held"`
+	NeedsReview bool      `json:"needs_review"`
+	Flags       int       `json:"flags"`
+}
+
+// modCommentsJSON is the answer of GET /api/moderation/comments.
+type modCommentsJSON struct {
+	Comments []modCommentJSON `json:"comments"`
+}
+
+// modCommentActionJSON is the answer of a comment Keep or Remove.
+type modCommentActionJSON struct {
+	ID     int64  `json:"id"`
+	Action string `json:"action"`
+}
+
+// ModerationComments produces the handler of GET /api/moderation/comments: the
+// comments that people flagged, that the check called near the line, or whose
+// check did not finish, newest first.
+func ModerationComments(svc *service.CommentModerationService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := modGuard(w, r, http.MethodGet); !ok {
+			return
+		}
+		items, err := svc.Queue(r.Context())
+		if err != nil {
+			log.Printf("handlers: ModerationComments: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		out := modCommentsJSON{Comments: make([]modCommentJSON, 0, len(items))}
+		for _, it := range items {
+			out.Comments = append(out.Comments, modCommentJSON{
+				ID:          it.ID,
+				ReportID:    it.ReportID,
+				Category:    it.Category,
+				Words:       it.Words,
+				At:          it.At,
+				Reasons:     it.Reasons,
+				FlagReasons: it.FlagReasons,
+				Held:        it.Held,
+				NeedsReview: it.NeedsReview,
+				Flags:       it.Flags,
+			})
+		}
+		writeJSON(w, http.StatusOK, out)
+	}
+}
+
+// modCommentAct is the shared body of the two comment POST handlers. act is
+// svc.Keep or svc.Remove and action names the act in the answer.
+func modCommentAct(logErr func(error), action string, act func(ctx context.Context, moderatorID, commentID int64) error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		acc, ok := modGuard(w, r, http.MethodPost)
+		if !ok {
+			return
+		}
+		id, ok := parseCommentID(w, r)
+		if !ok {
+			return
+		}
+		if err := act(r.Context(), acc.ID, id); err != nil {
+			switch {
+			case errors.Is(err, service.ErrCommentGone):
+				writeFieldError(w, http.StatusNotFound, "id", service.ModCommentNotFoundMessage)
+			case errors.Is(err, service.ErrAlreadyHandled):
+				writeFieldError(w, http.StatusConflict, "id", service.ModCommentAlreadyHandledMessage)
+			default:
+				logErr(err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+			}
+			return
+		}
+		writeJSON(w, http.StatusOK, modCommentActionJSON{ID: id, Action: action})
+	}
+}
+
+// ModerationCommentKeep produces the handler of POST
+// /api/moderation/comments/{id}/keep.
+func ModerationCommentKeep(svc *service.CommentModerationService) http.HandlerFunc {
+	return modCommentAct(func(err error) { log.Printf("handlers: ModerationCommentKeep: %v", err) },
+		service.ModerationActionKeep, svc.Keep)
+}
+
+// ModerationCommentRemove produces the handler of POST
+// /api/moderation/comments/{id}/remove.
+func ModerationCommentRemove(svc *service.CommentModerationService) http.HandlerFunc {
+	return modCommentAct(func(err error) { log.Printf("handlers: ModerationCommentRemove: %v", err) },
+		service.ModerationActionRemove, svc.Remove)
+}

@@ -119,6 +119,13 @@ type Deps struct {
 	// literal that does not set it gives, runs the same writes without a
 	// transaction.
 	ModerationTx service.ModerationTxFunc
+	// CommentModerationTx runs the moderator Keep and Remove of a comment
+	// inside one transaction, so the change, the flag dismissal and the audit
+	// row commit together (Phase 8 plan 13, D-14). cmd/server/main.go sets it
+	// from the pool through service.PgxCommentModerationTx. Nil, which every
+	// Deps{} literal that does not set it gives, runs the same writes without a
+	// transaction (tests only).
+	CommentModerationTx service.CommentModerationTxFunc
 	// AccountTx runs Delete my account (POST /api/me/delete) inside one
 	// transaction, so the scrub, the deletes and the session revocation commit
 	// together or not at all. cmd/server/main.go sets it from the pool through
@@ -1076,6 +1083,9 @@ func NewRouter(deps Deps) *chi.Mux {
 	// service. With a nil deps.Sessions the gate answers 404 before any
 	// handler runs.
 	moderation := service.NewModerationService(deps.Sessions, service.WithModerationTx(deps.ModerationTx))
+	// The comment side (Phase 8 plan 13). The comment service resolved above is
+	// the notifier, so Keep of a held comment tells its recipient once.
+	commentModeration := service.NewCommentModerationService(deps.Sessions, deps.CommentModerationTx, comments)
 
 	r.Group(func(r chi.Router) {
 		r.Use(requireModerator(deps.Sessions, deps.ModeratorEmails))
@@ -1084,6 +1094,9 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.Handle("/api/moderation/reports/{id}", handlers.ModerationReport(moderation))
 		r.Handle("/api/moderation/reports/{id}/keep", handlers.ModerationKeep(moderation))
 		r.Handle("/api/moderation/reports/{id}/remove", handlers.ModerationRemove(moderation))
+		r.Handle("/api/moderation/comments", handlers.ModerationComments(commentModeration))
+		r.Handle("/api/moderation/comments/{id}/keep", handlers.ModerationCommentKeep(commentModeration))
+		r.Handle("/api/moderation/comments/{id}/remove", handlers.ModerationCommentRemove(commentModeration))
 	})
 
 	return r
