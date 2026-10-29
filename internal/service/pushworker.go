@@ -642,6 +642,13 @@ func (w *PushWorker) eventStillHolds(event UpdateKind, f pushReportFacts, now ti
 		return f.Vis == VisibilityRetracted
 	case UpdateFading:
 		return MayNotifyAboutReport(UpdateFading, f.Vis, f.ExpiresAt, now)
+	case UpdateCommentOnYours, UpdateReplyToYours:
+		// Phase 8 plan 15 (D-16, D-07, repo rule 15): a comment note reaches a
+		// lock screen only while the report is active and Live, the same rule as
+		// the fading note. A comment on a Provisional, disputed, resolved or
+		// expired report stays in the bell, so a phone never amplifies a report
+		// the feed does not list as confirmed.
+		return MayNotifyAboutReport(event, f.Vis, f.ExpiresAt, now)
 	}
 	return false
 }

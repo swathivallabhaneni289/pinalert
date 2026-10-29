@@ -279,7 +279,9 @@ func TestPushTextBudgets(t *testing.T) {
 					check(PushTextInput{Kind: PushKindCritical, Category: cat, Severity: SeverityCritical, AreaName: area, DistanceKm: pushF(km), Confirmed: conf})
 					check(PushTextInput{Kind: PushKindReliable, Category: cat, Severity: SeverityCritical, AreaName: area, DistanceKm: pushF(km), Confirmed: conf})
 					for _, sev := range Severities {
-						for _, ev := range []UpdateKind{UpdateReachedLive, UpdateHidden, UpdateResolved, UpdateFading} {
+						// Amended 2026-10-29 by Phase 8 plan 15 (D-16): the two comment
+						// events join the budget sweep. Every other assertion is unchanged.
+						for _, ev := range []UpdateKind{UpdateReachedLive, UpdateHidden, UpdateResolved, UpdateFading, UpdateCommentOnYours, UpdateReplyToYours} {
 							for _, own := range []bool{false, true} {
 								check(PushTextInput{Kind: PushKindChanged, Event: ev, OwnReport: own, Category: cat, Severity: sev, AreaName: area, DistanceKm: pushF(km)})
 							}
@@ -480,7 +482,9 @@ func allPushTexts() []string {
 		}
 	}
 	kinds := append(append([]PushKind{}, PushKinds...), ReservedPushKinds...)
-	events := []UpdateKind{"", UpdateReachedLive, UpdateHidden, UpdateResolved, UpdateFading, UpdateReliableNearby, UpdateMore, UpdateCriticalNearby}
+	// Amended 2026-10-29 by Phase 8 plan 15 (D-16): the two comment events join
+	// the noise and punctuation sweeps. Every other assertion is unchanged.
+	events := []UpdateKind{"", UpdateReachedLive, UpdateHidden, UpdateResolved, UpdateFading, UpdateReliableNearby, UpdateMore, UpdateCriticalNearby, UpdateCommentOnYours, UpdateReplyToYours}
 	picks := []*Happening{nil}
 	for _, h := range Happenings {
 		picks = append(picks, pushH(h))

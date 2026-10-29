@@ -15,6 +15,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 const (
@@ -203,8 +204,8 @@ func titleWithArea(subject, area string) string {
 
 // BuildPushText builds the title and body of one notification. ok is false for
 // an input no notification exists for: Critical or Reliable without a distance
-// (they need a home area), Changed with an event that is not one of the four
-// change events, a category or severity that has no word where one is needed,
+// (they need a home area), Changed with an event that is not one of the six
+// change events (the four 3.2 events and the two comment events), a category or severity that has no word where one is needed,
 // and the kinds confirmed_update, official, follow or an unknown one.
 func BuildPushText(in PushTextInput) (PushText, bool) {
 	area := AreaWords(in.AreaName)
@@ -257,19 +258,61 @@ func BuildPushText(in PushTextInput) (PushText, bool) {
 		if in.OwnReport {
 			whose = yourReportWords
 		}
-		body := subject + "."
-		hasDistance := distanceOK(in.DistanceKm)
-		switch {
-		case area != "" && hasDistance:
-			body += " " + area + ", " + DistanceWords(*in.DistanceKm) + " " + fromHomeAreaWords
-		case area != "":
-			body += " " + area + "."
-		case hasDistance:
-			body += " " + DistanceWords(*in.DistanceKm) + " " + fromHomeAreaWords
+		if isCommentEvent(in.Event) {
+			// Phase 8 plan 15 (D-16, UI-SPEC P8-C16): the words go after the
+			// report's category, never after "Your report", because a reply
+			// note goes to the author of a comment who may not own the report.
+			// The body is the one every Changed note has: it holds no comment
+			// words, no username and no count (03.3 D-14).
+			if category == "" {
+				return PushText{}, false
+			}
+			return PushText{
+				Title: commentTitle(category, area, in.Event),
+				Body:  changedBody(subject, area, in.DistanceKm),
+			}, true
 		}
-		return PushText{Title: whose + " " + event, Body: body}, true
+		return PushText{Title: whose + " " + event, Body: changedBody(subject, area, in.DistanceKm)}, true
 	}
 	return PushText{}, false
+}
+
+// changedBody is the body of every Changed note: the subject, then the area and
+// the distance from the home area when known.
+func changedBody(subject, area string, distanceKm *float64) string {
+	body := subject + "."
+	hasDistance := distanceOK(distanceKm)
+	switch {
+	case area != "" && hasDistance:
+		body += " " + area + ", " + DistanceWords(*distanceKm) + " " + fromHomeAreaWords
+	case area != "":
+		body += " " + area + "."
+	case hasDistance:
+		body += " " + DistanceWords(*distanceKm) + " " + fromHomeAreaWords
+	}
+	return body
+}
+
+// isCommentEvent says whether e is one of the two comment events (Phase 8).
+func isCommentEvent(e UpdateKind) bool {
+	return e == UpdateCommentOnYours || e == UpdateReplyToYours
+}
+
+// commentTitle is the title of a comment note: "{Category} report near {area}
+// has a new comment", or "{Category} report has a new comment" when the area
+// is empty or the whole line would pass PushTitleMaxRunes (the longest category
+// with the longest area does). The category is never cut, so the title keeps
+// the 64 rune cap by dropping the area instead.
+func commentTitle(category, area string, e UpdateKind) string {
+	words, _ := changeEventWords(e)
+	subject := category + " report"
+	if area != "" {
+		withArea := titleWithArea(subject, area) + " " + words
+		if utf8.RuneCountInString(withArea) <= PushTitleMaxRunes {
+			return withArea
+		}
+	}
+	return subject + " " + words
 }
 
 // homeAreaBody is the body of a Critical or Reliable notification. Once
@@ -299,6 +342,12 @@ func changeEventWords(e UpdateKind) (string, bool) {
 		return "was marked resolved", true
 	case UpdateFading:
 		return "fades in about an hour", true
+	case UpdateCommentOnYours:
+		// Phase 8 plan 15 (D-16, P8-C16). Fixed words only: no comment text, no
+		// username and no count ever reach a lock screen (03.3 D-14).
+		return "has a new comment", true
+	case UpdateReplyToYours:
+		return "has a new reply", true
 	}
 	return "", false
 }
