@@ -99,8 +99,22 @@ func reporterSignalFor(p *ReporterSignal) ReporterSignal {
 	return out
 }
 
+// SignalOption carries one input that is not in the history rows or the vote
+// rows into ReporterSignals (tapped ratings, supplied by plan 09-13 through a
+// SignalSource). The options are applied into a signalConfig before the loop,
+// so ReporterSignals stays pure: it reads nothing and holds no state.
+type SignalOption func(*signalConfig)
+
+// signalConfig is what the options fill in. It is empty until plan 09-13 adds
+// the ratings field; with nothing set ReporterSignals behaves as it always did.
+type signalConfig struct{}
+
 // ReporterSignals rates every requested account from its history rows and a
 // batch of current vote rows (D-10, D-13, D-15, D-23, R-05).
+//
+// Production code never calls it directly: every read goes through
+// reporterSignalsWith or LoadReporterSignals (reportersignals.go), so a source
+// of extra inputs reaches every surface at once.
 //
 // Every requested account gets exactly one entry, and an account that was not
 // requested gets none. The reporter of each history report is the scored
@@ -120,7 +134,15 @@ func reporterSignalFor(p *ReporterSignal) ReporterSignal {
 // vote rows rather than their product (T-03-05). The result is display only
 // (D-14). The none signal for accountless reports and for reports past the
 // account cap is not produced here: it comes from a nil TrustInput.Reporter.
-func ReporterSignals(accountIDs []int64, history []sqlcgen.ReporterHistoryReportsRow, votes []sqlcgen.CurrentVotesForReportsRow, now time.Time) map[int64]ReporterSignal {
+func ReporterSignals(accountIDs []int64, history []sqlcgen.ReporterHistoryReportsRow, votes []sqlcgen.CurrentVotesForReportsRow, now time.Time, opts ...SignalOption) map[int64]ReporterSignal {
+	var cfg signalConfig
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&cfg)
+		}
+	}
+	_ = cfg
+
 	requested := make(map[int64]struct{}, len(accountIDs))
 	for _, id := range accountIDs {
 		requested[id] = struct{}{}
