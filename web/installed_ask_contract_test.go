@@ -14,7 +14,7 @@ import (
 var (
 	i13cTitle  = regexp.MustCompile(`(?s)<h2[^>]*id="[a-z-]*ask-title"[^>]*>(.*?)</h2>`)
 	i13cLabel  = regexp.MustCompile(`(?s)<label[^>]*>\s*<input type="checkbox"[^>]*><span>(.*?)</span></label>`)
-	i13cButton = regexp.MustCompile(`(?s)<button type="button" class="([^"]*)" id="[a-z-]*ask-(later|allow)">(.*?)</button>`)
+	i13cButton = regexp.MustCompile(`(?s)<button type="button" class="([^"]*)" id="[a-z-]*-(later|allow)">(.*?)</button>`)
 )
 
 // i13cWords pulls the words of one pop-up: the title up to the home area, the

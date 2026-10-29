@@ -233,6 +233,10 @@
   {{if .ChangesAsk}}{{template "changes_ask"}}
   <script src="/static/js/changes-ask.js?v={{.AssetVersion}}" defer></script>{{end}}
 
+  {{/* Phase 7.1 plan 13c (D-17): the alerts ask inside the installed iPhone or iPad app, drawn only when the server has a push key and the account has a home area. installed-ask.js opens it once per device and account, and only there. */}}
+  {{if and .PushPublicKey .HomeAreaName}}{{template "installed_alerts_ask" .}}
+  <script src="/static/js/installed-ask.js?v={{.AssetVersion}}" defer></script>{{end}}
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
           crossorigin="anonymous"></script>

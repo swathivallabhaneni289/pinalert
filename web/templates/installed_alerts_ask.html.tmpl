@@ -1,0 +1,22 @@
+{{/*
+  installed_alerts_ask: the box that asks about alerts once inside the installed
+  iPhone or iPad app (Phase 7.1 plan 13c, D-17, D-18, UI-SPEC Surface 10). The
+  words are the words of the sign up alerts pop-up (welcome.html.tmpl,
+  #welcome-alerts-ask); TestInstalledAlertsAskMatchesSignUp keeps them equal. It
+  has the Log out box look from auth.css (.logout-confirm). index.html.tmpl
+  includes it only when the server has a push key and the account has a home
+  area; installed-ask.js opens it, and only inside the installed app. It starts
+  closed. The home area name is escaped by html/template.
+*/}}
+{{define "installed_alerts_ask"}}
+  <dialog id="installed-alerts-ask" class="logout-confirm" aria-labelledby="installed-alerts-ask-title" data-push-key="{{.PushPublicKey}}" data-account-id="{{.AccountID}}">
+    <div class="logout-confirm__body">
+      <h2 class="logout-confirm__title" id="installed-alerts-ask-title" tabindex="-1">Get alerts for critical reports near {{.HomeAreaName}}?</h2>
+      <label class="welcome-ask__check"><input type="checkbox" id="installed-alerts-ask-reliable"><span>A Reliable reporter posts near me</span></label>
+      <div class="logout-confirm__actions">
+        <button type="button" class="btn" id="installed-alerts-ask-later">Not now</button>
+        <button type="button" class="btn btn--primary" id="installed-alerts-ask-allow">Allow</button>
+      </div>
+    </div>
+  </dialog>
+{{end}}
