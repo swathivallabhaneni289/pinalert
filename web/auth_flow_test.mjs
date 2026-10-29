@@ -1263,6 +1263,24 @@ test('IN-B03: a sign in that succeeded still goes on after the choice changed', 
   assert.deepEqual(page.assigned, ['/low']);
 });
 
+// Phase 7.1 review fix round 2, skeptic SK-04: a code screen reloaded after the
+// wait ran out draws data-resend-seconds="0" and the full cooldown in
+// data-resend-cooldown-seconds; a Resend that succeeds then waits the full 45 s.
+test('SK-04: a code screen reloaded with no wait left still waits the full cooldown after a Resend', async () => {
+  const page = load({ start: 'code', email: 'priya@example.com', secondsLeft: 550, resend: 0, cooldown: 45 });
+  assert.equal(text(page, 'code-resend'), 'Resend code');
+  click(page, 'code-resend');
+  answer(page.requests[0], 200, { sent: true });
+  await flush();
+  assert.equal(text(page, 'code-resend'), 'Resend in 45s');
+  assert.equal(isOff(page, 'code-resend'), true);
+  page.advance(44000);
+  assert.equal(isOff(page, 'code-resend'), true, 'still off one second before the full wait ends');
+  page.advance(1000);
+  assert.equal(text(page, 'code-resend'), 'Resend code');
+  assertClean(page);
+});
+
 // Phase 7.1 review fix round 2, skeptic SK-03: the three calls that send an
 // email (Create account, Forgot password, Resend) wait longer than the server's
 // 75 s write window for them, so a slow mail provider is not shown as offline

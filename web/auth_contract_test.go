@@ -81,6 +81,9 @@ func TestAuthJSPanelContract(t *testing.T) {
 	for _, attr := range []string{
 		"data-start-panel", "data-code-mode", "data-code-seconds-left",
 		"data-code-ttl-seconds", "data-resend-seconds", "data-show-for",
+		// Amended 2026-10-29 by the Phase 7.1 review fix round 2 (skeptic
+		// SK-04): the full resend cooldown, drawn on every page.
+		"data-resend-cooldown-seconds",
 	} {
 		if !strings.Contains(script, "'"+attr+"'") {
 			t.Errorf("%s does not read %s", authJSPath, attr)

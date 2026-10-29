@@ -227,6 +227,30 @@ func TestLoginGateClockAttributes(t *testing.T) {
 	if got := gateAttr(t, body, "data-resend-seconds"); got != 0 {
 		t.Errorf("after the cooldown data-resend-seconds = %d, want 0", got)
 	}
+
+	// Amended 2026-10-29 by the Phase 7.1 review fix round 2 (skeptic SK-04):
+	// the card also draws the full cooldown as data-resend-cooldown-seconds,
+	// on the entry panels and on a reloaded code screen alike, so the wait
+	// after the next send is the whole wait, never the leftover of the last.
+	if got := gateAttr(t, body, "data-resend-cooldown-seconds"); got != 50 {
+		t.Errorf("a code screen after the cooldown: data-resend-cooldown-seconds = %d, want the full 50", got)
+	}
+	other := newJarClient(t)
+	_, body = loginGatePage(t, revNoFollow(other), srv, "")
+	if got := gateAttr(t, body, "data-resend-cooldown-seconds"); got != 50 {
+		t.Errorf("entry panel data-resend-cooldown-seconds = %d, want the full 50", got)
+	}
+	if status := signUpRequest(t, other, srv, "gate-clock-2@example.com", e2eTestPassword); status != http.StatusOK {
+		t.Fatalf("second sign up status = %d, want 200", status)
+	}
+	clk.Advance(30 * time.Second)
+	_, body = loginGatePage(t, revNoFollow(other), srv, "")
+	if got := gateAttr(t, body, "data-resend-seconds"); got != 20 {
+		t.Errorf("30 s after the second send data-resend-seconds = %d, want the 20 left", got)
+	}
+	if got := gateAttr(t, body, "data-resend-cooldown-seconds"); got != 50 {
+		t.Errorf("30 s after the send data-resend-cooldown-seconds = %d, want the full 50", got)
+	}
 }
 
 func TestLoginGateSwitchNoticeOnce(t *testing.T) {
