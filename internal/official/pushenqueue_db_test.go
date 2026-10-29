@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/mmcloughlin/geohash"
 
 	"pinalert/internal/areas"
 	"pinalert/internal/service"
@@ -352,5 +353,76 @@ func TestOfficialPushRecipientCap(t *testing.T) {
 	w.save(version(g, "IN-1792000000000301_1", SeveritySevere), districts(749))
 	if got := w.queued(g); !sameIDs(got, ids[0], ids[1], ids[2]) {
 		t.Errorf("with a cap of 3 the queue is %v, want the three lowest account ids %v", got, ids[:3])
+	}
+}
+
+// TestWithdrawnFirstNeverListedOrPushed pins CR-S01 of the Phase 5 review at
+// the page and the queue: a Severe or Extreme alert whose Cancel, or whose
+// Update under another guid, was stored first is not listed, not counted, does
+// not raise the banner and is not queued for a phone.
+func TestWithdrawnFirstNeverListedOrPushed(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		kind MsgType
+		sev  Severity
+	}{
+		{"cancel stored first", MsgCancel, SeveritySevere},
+		{"update stored first", MsgUpdate, SeverityExtreme},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newPushWorld(t)
+			cell := homeCell(t, w.ix, 749, false)
+			inNtr := w.person("ntr", cell)
+			lat, lon := geohash.BoundingBox(cell).Center()
+			const target, other = "1792000000000301", "1792000000000302"
+			const targetID = "IN-1792000000000301_1"
+
+			first := version(other, "IN-1792000000000302_1", SeverityModerate)
+			first.MsgType = tc.kind
+			first.References = []string{targetID}
+			first.SentAt, first.SourcePubDate = pushNow.Add(-5*time.Minute), pushNow.Add(-5*time.Minute)
+			w.save(first, districts(749))
+			w.save(version(target, targetID, tc.sev), districts(749))
+
+			if got := w.queued(target); len(got) != 0 {
+				t.Errorf("the withdrawn alert was queued for %v", got)
+			}
+			ctx := context.Background()
+			if _, err := w.q.MarkFeedAttempt(ctx, sqlcgen.MarkFeedAttemptParams{Feed: string(FeedSachet), Now: pushNow, Cutoff: pushNow}); err != nil {
+				t.Fatalf("marking the attempt: %v", err)
+			}
+			if err := w.q.MarkFeedSuccess(ctx, sqlcgen.MarkFeedSuccessParams{Feed: string(FeedSachet), Now: pushNow, ItemsSeen: 2}); err != nil {
+				t.Fatalf("marking the success: %v", err)
+			}
+			svc := newService(NewRefresher(w.pool, w.q), w.q, w.ix)
+			svc.now = func() time.Time { return pushNow }
+			v, err := svc.Alerts(ctx, inNtr, &lat, &lon)
+			if err != nil {
+				t.Fatalf("Alerts: %v", err)
+			}
+			if v.State != StateFresh {
+				t.Fatalf("view state %q, want fresh so the list is read", v.State)
+			}
+			stored, err := w.q.OfficialAlertForUpdate(ctx, target)
+			if err != nil {
+				t.Fatalf("reading the target: %v", err)
+			}
+			for _, g := range v.Groups {
+				for _, r := range g.Rows {
+					if r.ID == stored.ID {
+						t.Errorf("the withdrawn alert is listed in group %q", g.Kind)
+					}
+				}
+			}
+			if v.Banner != nil {
+				t.Errorf("banner %+v, want none: the only Severe or Extreme alert was withdrawn", *v.Banner)
+			}
+			if tc.kind == MsgCancel && v.Count != 0 {
+				t.Errorf("count %d, want 0", v.Count)
+			}
+			if tc.kind == MsgUpdate && v.Count != 1 {
+				t.Errorf("count %d, want 1: only the Moderate update", v.Count)
+			}
+		})
 	}
 }
