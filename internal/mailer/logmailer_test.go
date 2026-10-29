@@ -14,8 +14,8 @@ import (
 func TestNewLogMailerSatisfiesInterface(t *testing.T) {
 	var m mailer.Mailer = mailer.NewLogMailer()
 
-	if err := m.SendVerificationLink(context.Background(), "visitor@example.com", "https://pinalert.example/auth/verify?token=abc"); err != nil {
-		t.Fatalf("SendVerificationLink returned %v, want nil", err)
+	if err := m.SendAuthEmail(context.Background(), "visitor@example.com", mailer.AuthEmail{Kind: mailer.KindAccountExists}); err != nil {
+		t.Fatalf("SendAuthEmail returned %v, want nil", err)
 	}
 }
 

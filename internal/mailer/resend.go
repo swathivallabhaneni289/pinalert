@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"html"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -13,19 +12,6 @@ import (
 	"time"
 
 	"github.com/resend/resend-go/v3"
-)
-
-// verificationSubject and verificationBodyText hold the UI-SPEC-prescribed
-// copy for the verification email (01.1-UI-SPEC.md "Verification email").
-// Both are duplicated verbatim rather than referenced from elsewhere so the
-// acceptance-criteria greps in 01.1-03-PLAN.md have a single, stable source
-// to match against.
-const (
-	verificationSubject  = "Verify your email for Pinalert"
-	verificationBodyText = "Click the link below to verify your email and start using Pinalert. " +
-		"This link expires in 5 minutes and can only be used once."
-	verificationButtonLabel = "Verify email"
-	verificationDisclaimer  = "Didn't request this? You can safely ignore this email. No account will be created."
 )
 
 // resendMailer implements Mailer by sending through Resend's official Go
@@ -96,27 +82,6 @@ var (
 	errResendRefused = errors.New("resend refused the request")
 )
 
-// SendVerificationLink sends the verification email through Resend. The
-// returned error names the operation and the kind of failure only, never the
-// API key, the raw response body or the SDK's own error text: Resend's error
-// message can repeat the recipient address, and this error reaches the server
-// log. The visitor still sees only the generic 500 established in 01.1-01
-// (mailer.go doc comment, threat T-01-55). A refusal names the HTTP status
-// Resend answered with, a number and nothing from the answer's body.
-func (m *resendMailer) SendVerificationLink(ctx context.Context, email, link string) error {
-	rec := &statusRecorder{}
-	_, err := m.client.Emails.SendWithContext(context.WithValue(ctx, statusKey{}, rec), &resend.SendEmailRequest{
-		From:    m.from,
-		To:      []string{email},
-		Subject: verificationSubject,
-		Html:    verificationEmailHTML(link),
-	})
-	if err != nil {
-		return fmt.Errorf("mailer: sending verification email via resend: %w", resendFailureKind(err, int(rec.code.Load())))
-	}
-	return nil
-}
-
 // resendFailureKind maps an SDK error to an error that keeps its kind and
 // drops its text. A rate limit keeps the Retry-After header value, a number
 // Resend sets. A cancelled or timed out context is returned as the context's
@@ -144,19 +109,6 @@ func resendFailureKind(err error, status int) error {
 		return fmt.Errorf("%w (status %d)", errResendRefused, status)
 	}
 	return errResendRefused
-}
-
-// verificationEmailHTML builds the verification email's HTML body. It is a
-// pure function — no client, no network — specifically so its copy is
-// testable in resend_test.go without touching Resend at all. link is
-// HTML-escaped before being embedded, both as the anchor href and as the
-// visible fallback text, since it is attacker-influenced input (an email
-// address chosen by whoever requested the link) flowing into markup.
-func verificationEmailHTML(link string) string {
-	escaped := html.EscapeString(link)
-	return "<p>" + verificationBodyText + "</p>" +
-		"<p><a href=\"" + escaped + "\">" + verificationButtonLabel + "</a></p>" +
-		"<p>" + verificationDisclaimer + "</p>"
 }
 
 // SendAuthEmail sends one auth email through Resend with both a plain text

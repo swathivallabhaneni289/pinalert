@@ -30,15 +30,14 @@ import (
 	"pinalert/internal/testutil"
 )
 
-// gateFakeMailer captures the most recently mailed verification link so
-// gate tests can extract the token and drive a real verify without a real
-// mail provider — the same recording-mailer shape
-// internal/api/handlers/auth_e2e_test.go already established for the
-// handlers_test package; kept local here since internal/api cannot import
-// that external test package.
+// gateFakeMailer captures the auth emails by address so gate tests can read
+// the code and drive a real sign in without a real mail provider; the same
+// recording-mailer shape internal/api/handlers/auth_e2e_test.go established
+// for the handlers_test package, kept local here since internal/api cannot
+// import that external test package. Amended 2026-10-29 by Phase 7.1 plan
+// 14b: the link field and methods are gone with the link email.
 type gateFakeMailer struct {
-	mu   sync.Mutex
-	link string
+	mu sync.Mutex
 	// auth holds every auth email by address, oldest first (plan 07.1-03).
 	auth map[string][]mailer.AuthEmail
 }
@@ -70,19 +69,6 @@ func (m *gateFakeMailer) codeFor(t *testing.T, email string) string {
 		t.Fatalf("the newest auth email to %q is %q and has no code", email, last.Kind)
 	}
 	return last.Code
-}
-
-func (m *gateFakeMailer) SendVerificationLink(_ context.Context, _, link string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.link = link
-	return nil
-}
-
-func (m *gateFakeMailer) lastLink() string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.link
 }
 
 // newGateTestServer builds a real NewRouter router against a real,

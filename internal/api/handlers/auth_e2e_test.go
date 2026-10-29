@@ -35,16 +35,12 @@ import (
 )
 
 // recordingMailer captures the auth emails by address (codeFor, authSendCount).
-// Its SendVerificationLink members are unused since Phase 7.1 plan 14 and are
-// removed by plan 14b with the method on the mailer seam.
+// Amended 2026-10-29 by Phase 7.1 plan 14b: the link members are gone with the
+// link method on the mailer seam.
 type recordingMailer struct {
-	mu    sync.Mutex
-	email string
-	link  string
-	sends int
+	mu sync.Mutex
 	// auth holds every auth email by address, oldest first, and authSends
-	// counts them (plan 07.1-03). sends and sendCount above count link sends
-	// only.
+	// counts them (plan 07.1-03).
 	auth      map[string][]mailer.AuthEmail
 	authSends int
 }
@@ -92,30 +88,6 @@ func (m *recordingMailer) authSendCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.authSends
-}
-
-func (m *recordingMailer) SendVerificationLink(ctx context.Context, email, link string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.email = email
-	m.link = link
-	m.sends++
-	return nil
-}
-
-func (m *recordingMailer) last() (email, link string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.email, m.link
-}
-
-// sendCount reports how many times SendVerificationLink has been called,
-// read under the same mutex last() uses. Unused since Phase 7.1 plan 14; the
-// code tests count with authSendCount.
-func (m *recordingMailer) sendCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.sends
 }
 
 // newJarClient returns an *http.Client backed by a fresh in-memory cookie

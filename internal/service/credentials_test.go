@@ -460,10 +460,6 @@ type credSent struct {
 	msg mailer.AuthEmail
 }
 
-func (m *credMailer) SendVerificationLink(context.Context, string, string) error {
-	return errors.New("credMailer: the link flow is not used")
-}
-
 func (m *credMailer) SendAuthEmail(_ context.Context, to string, msg mailer.AuthEmail) error {
 	m.sent = append(m.sent, credSent{to: to, msg: msg})
 	return m.err

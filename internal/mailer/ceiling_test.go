@@ -9,16 +9,11 @@ import (
 	"time"
 )
 
-// countingMailer counts the calls that reach it.
+// countingMailer counts the calls that reach it. Amended 2026-10-29 by Phase
+// 7.1 plan 14b: the link email is gone, so auths is the only count.
 type countingMailer struct {
-	links atomic.Int64
 	auths atomic.Int64
 	err   error
-}
-
-func (c *countingMailer) SendVerificationLink(ctx context.Context, email, link string) error {
-	c.links.Add(1)
-	return c.err
 }
 
 func (c *countingMailer) SendAuthEmail(ctx context.Context, to string, msg AuthEmail) error {
@@ -26,7 +21,7 @@ func (c *countingMailer) SendAuthEmail(ctx context.Context, to string, msg AuthE
 	return c.err
 }
 
-func (c *countingMailer) total() int { return int(c.links.Load() + c.auths.Load()) }
+func (c *countingMailer) total() int { return int(c.auths.Load()) }
 
 var (
 	signupMsg  = AuthEmail{Kind: KindCodeSignup, Code: "482913", MinutesValid: 10}
@@ -47,9 +42,6 @@ func TestMailerCeilingRefusesPastLimit(t *testing.T) {
 	}
 	if err := m.SendAuthEmail(ctx, "a@example.com", signupMsg); !errors.Is(err, ErrDailyCeiling) {
 		t.Fatalf("fourth send error = %v, want ErrDailyCeiling", err)
-	}
-	if err := m.SendVerificationLink(ctx, "a@example.com", "x"); !errors.Is(err, ErrDailyCeiling) {
-		t.Fatalf("link send past the limit error = %v, want ErrDailyCeiling", err)
 	}
 	if next.total() != 3 {
 		t.Errorf("wrapped mailer called %d times, want 3", next.total())
@@ -91,7 +83,7 @@ func TestMailerCeilingCountsEveryKind(t *testing.T) {
 		func() error { return m.SendAuthEmail(ctx, "a@example.com", resetMsg) },
 		func() error { return m.SendAuthEmail(ctx, "a@example.com", existsMsg) },
 		func() error { return m.SendAuthEmail(ctx, "a@example.com", noAcctMsg) },
-		func() error { return m.SendVerificationLink(ctx, "a@example.com", "x") },
+		func() error { return m.SendAuthEmail(ctx, "a@example.com", signupMsg) },
 	}
 	for i, send := range sends {
 		if err := send(); err != nil {
@@ -101,8 +93,8 @@ func TestMailerCeilingCountsEveryKind(t *testing.T) {
 	if err := m.SendAuthEmail(ctx, "a@example.com", resetMsg); !errors.Is(err, ErrDailyCeiling) {
 		t.Fatalf("sixth send error = %v, want ErrDailyCeiling", err)
 	}
-	if next.links.Load() != 1 || next.auths.Load() != 4 {
-		t.Errorf("wrapped mailer saw %d links and %d auth emails, want 1 and 4", next.links.Load(), next.auths.Load())
+	if next.auths.Load() != 5 {
+		t.Errorf("wrapped mailer saw %d auth emails, want 5", next.auths.Load())
 	}
 }
 
@@ -160,9 +152,6 @@ func TestMailerCeilingReservesResetSends(t *testing.T) {
 		}
 		if err := m.SendAuthEmail(ctx, "a@example.com", signupMsg); !errors.Is(err, ErrDailyCeiling) {
 			t.Fatalf("eighth sign up send error = %v, want ErrDailyCeiling", err)
-		}
-		if err := m.SendVerificationLink(ctx, "a@example.com", "x"); !errors.Is(err, ErrDailyCeiling) {
-			t.Fatalf("link send in the reserve error = %v, want ErrDailyCeiling", err)
 		}
 		// The reserve is still there for both reset kinds, then the day ends at 10.
 		for i, msg := range []AuthEmail{resetMsg, noAcctMsg, resetMsg} {

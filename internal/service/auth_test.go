@@ -182,11 +182,6 @@ type fakeMailer struct {
 	err   error
 }
 
-func (f *fakeMailer) SendVerificationLink(ctx context.Context, email, link string) error {
-	*f.calls = append(*f.calls, "send:"+email)
-	return f.err
-}
-
 func (f *fakeMailer) SendAuthEmail(ctx context.Context, to string, msg mailer.AuthEmail) error {
 	*f.calls = append(*f.calls, "auth:"+string(msg.Kind))
 	return f.err
