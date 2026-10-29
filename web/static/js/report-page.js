@@ -6,7 +6,8 @@
 // D-18, UI-SPEC Surface 1). It holds no trust rule and no threshold either: the
 // trust block above it is trust.js's own, drawn by the card, and this file only
 // reads the numbers the feed sends to notice that the history is out of date
-// (A-P8-7). Comments mount into report-page__comments in later plans.
+// (A-P8-7). Comments mount into report-page__comments (comments.js, plan
+// 08-16), which opens and closes with the page and polls on its own timer.
 //
 // The history comes from GET /api/reports/{id}/timeline. The server writes
 // every sentence, so each one is shown as text, never as markup. The page
@@ -142,6 +143,13 @@ window.PinalertReportPage = (function () {
 
     var comments = element('div', 'report-page__comments');
     comments.setAttribute('data-report-id', reportId);
+    // The comments section is comments.js's own (plan 08-16). It is built once
+    // into the mount point, and a failed comments.js load leaves the page
+    // without comments, the same guard the Share button has.
+    var commentsView = null;
+    if (window.PinalertComments && typeof window.PinalertComments.create === 'function') {
+      commentsView = window.PinalertComments.create(report, comments);
+    }
 
     el.appendChild(section);
     el.appendChild(comments);
@@ -413,6 +421,9 @@ window.PinalertReportPage = (function () {
     function update(next) {
       current = next;
       syncShare();
+      if (commentsView) {
+        commentsView.update(next);
+      }
       var sig = signatureOf(next);
       if (sig === lastSig) {
         return;
@@ -439,9 +450,15 @@ window.PinalertReportPage = (function () {
         gone = false;
         startPolling();
         load();
+        if (commentsView) {
+          commentsView.open();
+        }
       } else if (!hosted) {
         stopPolling();
         stopRequest();
+        if (commentsView) {
+          commentsView.close();
+        }
       }
     }
 
@@ -455,12 +472,18 @@ window.PinalertReportPage = (function () {
       gone = false;
       startPolling();
       load();
+      if (commentsView) {
+        commentsView.open();
+      }
     }
 
     function close() {
       opened = false;
       stopPolling();
       stopRequest();
+      if (commentsView) {
+        commentsView.close();
+      }
     }
 
     // refresh asks for the history again now, if the page is showing.

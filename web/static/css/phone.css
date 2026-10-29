@@ -1378,6 +1378,58 @@
     padding: var(--space-md);
     padding-bottom: calc(var(--space-md) + env(safe-area-inset-bottom, 0px));
   }
+
+  /* ---- Comments on the phone (Phase 8 plan 16, UI-SPEC 7a and 7c) ----
+     The shared looks are comments.css, which draws the laptop arrangement.
+     Here the line order changes only: the username, the Reporter tag and the
+     time on the top line, the words under them in Body 16, then Reply. The
+     sheet is severity tinted, so the small text takes --color-text, never the
+     muted token (UI-SPEC P8-R8: muted text sits only on the page colour). The
+     box sits in the flow after the last comment, 16px below it, so the soft
+     keyboard never has a pinned bar to cover. */
+  .leaflet-container .report-page .comments .comment__head:not([hidden]) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 var(--space-xs);
+  }
+
+  .leaflet-container .report-page .comments .comment__author,
+  .leaflet-container .report-page .comments .comment__tag:not([hidden]) {
+    margin-right: 0;
+  }
+
+  .leaflet-container .report-page .comments .comment__time--head:not([hidden]) {
+    display: inline;
+    font-weight: var(--font-weight-regular);
+    color: var(--color-text);
+  }
+
+  .leaflet-container .report-page .comments .comment__time--meta:not([hidden]) {
+    display: none;
+  }
+
+  .leaflet-container .report-page .comments .comment__words:not([hidden]) {
+    display: block;
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
+  }
+
+  .leaflet-container .report-page .comments .comment__reply:not([hidden]),
+  .leaflet-container .report-page .comments .comment-thread__toggle:not([hidden]),
+  .leaflet-container .report-page .comments .composer__cancel:not([hidden]),
+  .leaflet-container .report-page .comments .comments__count,
+  .leaflet-container .report-page .comments .comment__gone:not([hidden]),
+  .leaflet-container .report-page .comments .comments__empty:not([hidden]),
+  .leaflet-container .report-page .comments .comments__closed:not([hidden]),
+  .leaflet-container .report-page .comments .composer__replying-text,
+  .leaflet-container .report-page .comments .composer__counter:not([hidden]) {
+    color: var(--color-text);
+  }
+
+  .leaflet-container .report-page .comments .comment-thread__toggle::before {
+    background-color: var(--color-text);
+  }
 }
 
 /* A landscape phone has little height, so the strip goes and the report

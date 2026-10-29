@@ -352,6 +352,11 @@ var touchControls = []string{
 	// report row of the laptop bubble, 44px through --touch-target-min in trust.css.
 	// No other entry changed.
 	".popup-card__open-report",
+	// Amended 2026-10-29 by Phase 8 plan 16 (D-02, UI-SPEC Surface 7 and the
+	// 44px list of Interaction and Accessibility): Reply, View N replies, Show
+	// more comments, Post, Cancel reply and the comments Try again button, each
+	// 44px through --touch-target-min in comments.css. No other entry changed.
+	".comment__reply", ".comment-thread__toggle", ".comments__more", ".composer__post", ".composer__cancel", ".comments__retry",
 }
 
 // touchValue reads a height or min-height value as pixels: a px length, a
@@ -491,6 +496,9 @@ var phaseScripts = []string{
 	// Amended 2026-10-29 by Phase 8 plan 06: the Share window script joins the
 	// scripts held to the plain punctuation rule. No other entry changed.
 	"share.js",
+	// Amended 2026-10-29 by Phase 8 plan 16: the comments script joins the
+	// scripts held to the plain punctuation rule. No other entry changed.
+	"comments.js",
 }
 
 // TestNewScriptsUsePlainPunctuation holds the phase's new scripts to the house
@@ -561,7 +569,15 @@ var sizeOnlyNamed = map[string]string{
 	// true: the laptop bubble is kept as built, and the panel opens only from its
 	// Open report row (a Nearby row tap keeps the bubble, review W10). No other
 	// entry changed.
-	".popup-card__open-report":                         "laptop popup only: the Open report row of the bubble (UI-SPEC Size specific elements, D-18); on the phone the card is already the page, and the count shows in the Comments heading on both sizes.",
+	".popup-card__open-report": "laptop popup only: the Open report row of the bubble (UI-SPEC Size specific elements, D-18); on the phone the card is already the page, and the count shows in the Comments heading on both sizes.",
+	// Amended 2026-10-29 by Phase 8 plan 16 (D-02, UI-SPEC 7a): a comment draws
+	// its time once. The laptop arrangement puts the time at the start of the
+	// meta line and the phone arrangement puts it on the top line beside the
+	// username; each size hides the other copy (display none, so a reader never
+	// hears it twice). The comment, its words and its controls are the same on
+	// both sizes (R1). No other entry changed.
+	".comment__time--head":                             "laptop arrangement of a comment: the time is in the meta line after the words (UI-SPEC 7a, laptop layout); the phone shows it on the top line (the phone entry below).",
+	".comment__time--meta":                             "phone arrangement of a comment: the time is on the top line beside the username (UI-SPEC 7a, phone layout); the laptop shows it in the meta line (the laptop entry above).",
 	"html[data-report-panel] .app-shell > .pane--list": "laptop panel: the Nearby list gives its column to the report panel while a report is open (UI-SPEC Surface 2a item 2); the phone does the same with html[data-popup-open] and its sheet, so the list is a state of the screen, not a feature one size lacks.",
 	"html[data-report-panel] .leaflet-container .leaflet-detail-pane .leaflet-popup-tip-container": "laptop panel: a panel has no pointer tip, the same as the phone detail sheet above (UI-SPEC Surface 2b).",
 

@@ -424,6 +424,15 @@ func TestReadOnlyLabelsRoundedControlsNot(t *testing.T) {
 		if r.File == "static/css/public.css" && r.Head == ".public-dot:not([hidden])" {
 			continue
 		}
+		// Amended 2026-10-29 by Phase 8 plan 16 (UI-SPEC Surface 7a, Radii: 50
+		// percent is for discs): the 32px and 24px letter disc of a comment, and
+		// the same disc in the box, is a drawing, not a control. It is
+		// aria-hidden and cannot be pressed, and the username beside it names
+		// the comment. comments.css is exempted for exactly this head and
+		// nothing else.
+		if r.File == "static/css/comments.css" && r.Head == ".leaflet-container .report-page .comments .comment__disc:not([hidden])" {
+			continue
+		}
 		exempt := false
 		for _, name := range exemptControls {
 			if strings.Contains(r.Head, name) {
