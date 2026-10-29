@@ -1431,9 +1431,13 @@ func TestConfirmSignUpCleansReplacedSessionPush(t *testing.T) {
 		if !r.q.sessions["sess-a"].revoked {
 			t.Error("the replaced session must be revoked so its cookie stops working")
 		}
+		// Amended 2026-10-29 by the Phase 7.1 review fix round 2 (skeptic
+		// SK-07): the fresh id is bound first and the replaced session is
+		// cleaned after it, push subscriptions before the revoke, so a refused
+		// bind leaves the previous account's session and alerts alone.
 		push, revoke, bind := r.callIndex("DeletePushSubscriptionsForSession"), r.callIndex("RevokeSession"), r.callIndex("BindSessionAccount")
-		if !(push >= 0 && revoke > push && bind > revoke) {
-			t.Errorf("order: push %d, revoke %d, bind %d", push, revoke, bind)
+		if !(bind >= 0 && push > bind && revoke > push) {
+			t.Errorf("order: bind %d, push %d, revoke %d; want bind, then push, then revoke", bind, push, revoke)
 		}
 		if res.SessionID != "fresh-1" {
 			t.Errorf("session = %q", res.SessionID)

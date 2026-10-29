@@ -487,6 +487,56 @@ func TestSignUpBusyRefundsClaimOnDatabase(t *testing.T) {
 	}
 }
 
+// TestRefusedBindKeepsOtherAccountSession is SK-07 of the Phase 7.1 review fix
+// skeptic: a sign in on a browser signed in to another account revokes that
+// other session only after the new session is bound. When the bind is refused
+// (a reset moved the password epoch while the password was being checked), the
+// browser stays signed in to its previous account and keeps its phone alert
+// subscription. Before the fix the old session was revoked and its
+// subscriptions deleted first, and the answer was still wrong credentials.
+func TestRefusedBindKeepsOtherAccountSession(t *testing.T) {
+	h := &gateHasher{inner: auth.NewHasher(auth.TestParams()), release: make(chan struct{})}
+	r := newCredDBRig(t, h)
+	ctx := context.Background()
+	const other = "other-account@example.com"
+	prev := r.createAccount(t, other, credPassword)
+	r.createAccount(t, credEmail, credPassword)
+	testutil.MustExec(t, r.pool,
+		`INSERT INTO push_subscriptions (account_id, session_id, endpoint, endpoint_host, p256dh, auth)
+		 VALUES ($1, $2, 'https://push.example.com/sub/sk07', 'push.example.com', 'key', 'auth')`,
+		prev.AccountID, prev.SessionID)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := r.svc.SignIn(ctx, prev.SessionID, credEmail, credPassword, credSessionIDs("switch"))
+		done <- err
+	}()
+	deadline := time.Now().Add(10 * time.Second)
+	for h.inFlight.Load() < 1 && time.Now().Before(deadline) {
+		time.Sleep(2 * time.Millisecond)
+	}
+	if h.inFlight.Load() < 1 {
+		t.Fatal("the sign in never reached the password check")
+	}
+	if err := r.svc.RequestReset(ctx, "sess-reset", credEmail); err != nil {
+		t.Fatalf("RequestReset: %v", err)
+	}
+	if err := r.svc.ConfirmReset(ctx, "sess-reset", r.mail.last(t).msg.Code, "a brand new password 55"); err != nil {
+		t.Fatalf("ConfirmReset: %v", err)
+	}
+	close(h.release)
+	if err := <-done; !errors.Is(err, service.ErrWrongCredentials) {
+		t.Fatalf("the sign in whose bind was refused: %v, want ErrWrongCredentials", err)
+	}
+	if live, err := r.svc.SignedIn(ctx, prev.SessionID); err != nil || !live {
+		t.Errorf("the browser's previous account session after a refused bind: live=%v err=%v, want still signed in", live, err)
+	}
+	var subs int
+	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM push_subscriptions WHERE session_id = $1`, prev.SessionID).Scan(&subs); err != nil || subs != 1 {
+		t.Errorf("push subscriptions of the previous session = %d err=%v, want 1", subs, err)
+	}
+}
+
 // switchBusyHasher answers ErrHasherBusy to every Verify while busy is set,
 // and checks for real otherwise.
 type switchBusyHasher struct {

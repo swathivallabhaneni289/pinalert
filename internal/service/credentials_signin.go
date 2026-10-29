@@ -447,23 +447,23 @@ var errBindRefused = errors.New("service: binding a fresh session was refused")
 // 3). The request's own id is never bound, so a cookie planted before the sign
 // in gains nothing. When the request's session was bound to a different
 // account, its phone alert subscriptions are deleted and the session is
-// revoked first, so the next person on a shared phone never gets the previous
+// revoked, so the next person on a shared phone never gets the previous
 // person's alerts and the old cookie stops working (Pitfall 10, W8). A session
 // that is unbound, unstored or bound to the same account is left alone. The
 // fresh id is bound at the password epoch the caller read (review CR-S02); a
 // refused bind is errBindRefused. The handler sets the cookie.
+//
+// The bind comes first and the revoke after it (review fix skeptic SK-07), so a
+// refused bind leaves the browser signed in to its previous account with its
+// alerts. Outside a transaction (SignIn), a revoke that fails after a good bind
+// returns the error and leaves a bound id no cookie ever carries, which nobody
+// can use.
 func (s *CredentialService) rotate(ctx context.Context, q CredentialQuerier, oldID string, accountID, epoch int64, newID func() string) (SignInResult, error) {
+	replaced := false
 	binding, err := q.GetSessionBinding(ctx, oldID)
 	switch {
 	case err == nil:
-		if binding.AccountID != nil && *binding.AccountID != accountID {
-			if _, err := q.DeletePushSubscriptionsForSession(ctx, oldID); err != nil {
-				return SignInResult{}, fmt.Errorf("service: deleting push subscriptions of the replaced session: %w", err)
-			}
-			if _, err := q.RevokeSession(ctx, sqlcgen.RevokeSessionParams{Now: s.now(), SessionID: oldID}); err != nil {
-				return SignInResult{}, fmt.Errorf("service: revoking the replaced session: %w", err)
-			}
-		}
+		replaced = binding.AccountID != nil && *binding.AccountID != accountID
 	case errors.Is(err, pgx.ErrNoRows):
 		// The session row was never stored: unbound.
 	default:
@@ -479,6 +479,15 @@ func (s *CredentialService) rotate(ctx context.Context, q CredentialQuerier, old
 	}
 	if n == 0 {
 		return SignInResult{}, errBindRefused
+	}
+
+	if replaced {
+		if _, err := q.DeletePushSubscriptionsForSession(ctx, oldID); err != nil {
+			return SignInResult{}, fmt.Errorf("service: deleting push subscriptions of the replaced session: %w", err)
+		}
+		if _, err := q.RevokeSession(ctx, sqlcgen.RevokeSessionParams{Now: s.now(), SessionID: oldID}); err != nil {
+			return SignInResult{}, fmt.Errorf("service: revoking the replaced session: %w", err)
+		}
 	}
 	return SignInResult{AccountID: accountID, SessionID: id}, nil
 }
