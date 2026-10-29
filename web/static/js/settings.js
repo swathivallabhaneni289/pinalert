@@ -439,6 +439,10 @@
       cancelSearch();
       resetTyping();
     }
+    // A username check still due when the window shuts is not sent (IN-B05).
+    if (current === 'username' && usernameCheck !== null && typeof usernameCheck.cancel === 'function') {
+      usernameCheck.cancel();
+    }
     target.win.hidden = true;
     unlockPage();
     current = null;

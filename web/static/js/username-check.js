@@ -21,6 +21,8 @@
 //   refresh()             judges the value now in the input, for a value set by
 //                         the page and not by typing (Settings opens its window
 //                         with the stored name; step 4 is drawn with one).
+//   cancel()              stops a check that is due and drops one still out
+//                         (Settings calls it when its window shuts).
 //
 // options: {mode: 'signup' | 'settings' (default 'signup'), debounceMs (300),
 // onChange(state, controller), setTimer, clearTimer, fetchFn}. The timers and the
@@ -367,7 +369,14 @@
         cancelPending();
         show('refused', String(message === null || message === undefined ? '' : message));
       },
-      refresh: judge
+      refresh: judge,
+      // cancel stops a check that is due and drops the answer of one still out,
+      // so a shut window spends none of the account's allowance (review fix
+      // IN-B05). The line keeps what it shows; the next refresh judges again.
+      cancel: function () {
+        seq += 1;
+        cancelPending();
+      }
     };
 
     input.addEventListener('input', judge);
