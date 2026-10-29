@@ -15,6 +15,10 @@
 // signed up on the test copy: the base data is left as it is and only the
 // viewer's part is added.
 //
+// The live reports end 3 to 5 hours after the seed runs, so run it just before
+// the viewing. For a later viewing, drop the scratch database, make it again,
+// migrate and seed again; a second run never makes new live reports.
+//
 // Everyone it makes is made up. Every seeded account has the address
 // <username>@example.com (for example ravi.k@example.com) and one shared
 // password, printed at the end, so the owner can sign in as the reporter and
@@ -686,5 +690,6 @@ func verify(ctx context.Context, people *service.PeopleService, ids map[string]i
 	fmt.Fprintf(out, "/u/%s  %s, no stars\n", newReporter.username, fresh.TagWord)
 	fmt.Fprintf(out, "/u/%s  profile off (others get Profile not found)\n", privateOne.username)
 	fmt.Fprintf(out, "Every seeded person signs in with the shared password %q (the address pattern is in -h).\n", seedPassword)
+	fmt.Fprintln(out, "The live reports end 3 to 5 hours after the first seed run; for a later viewing, seed a fresh database.")
 	return nil
 }
