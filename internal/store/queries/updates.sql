@@ -9,7 +9,15 @@
 -- The followed set (D-09, D-10), derived and never stored: unexpired reports the
 -- account posted through any of its sessions (revoked sessions included, so
 -- authorship never moves) plus unexpired reports it has any vote row on, of any
--- kind including unresolve. Bounded by report lifetime and by row_cap; a heavy
+-- kind including unresolve, plus (Phase 8 plan 11, PAGE-02) unexpired reports
+-- it has a comment on, so commenting makes the account follow the report like a
+-- vote does. Only a clear, undeleted comment counts: a refused, removed, deleted
+-- or still held comment does not make its author follow (review W8). This is
+-- the same filter as viewer_commented behind the feed's ViewerFollows (plans
+-- 08-08 and 08-10) and the push arm (plan 08-15); keep the three in step.
+-- Comment update rows are not counted by the hourly ceiling reads below: the
+-- kinds comment_on_yours and reply_to_yours never roll up into "more" and the
+-- unread unique index is their cap. Bounded by report lifetime and by row_cap; a heavy
 -- account loses the oldest. muted comes from the account's own mute row, which
 -- the primary key on report_mutes allows at most once, so no report repeats.
 WITH followed AS (
@@ -22,6 +30,12 @@ WITH followed AS (
     SELECT v.report_id
     FROM votes v
     WHERE v.account_id = sqlc.arg(account_id)::bigint
+    UNION
+    SELECT c.report_id
+    FROM comments c
+    WHERE c.account_id = sqlc.arg(account_id)::bigint
+      AND c.deleted_at IS NULL
+      AND c.moderation_state = 'clear'
 )
 SELECT r.id, r.severity, r.category, r.created_at, r.expires_at, r.moderation_state,
        (m.account_id IS NOT NULL)::bool AS muted
@@ -87,7 +101,7 @@ WITH moved AS (
     SELECT COUNT(*)::bigint AS n
     FROM updates
     WHERE account_id = sqlc.arg(account_id)::bigint
-      AND kind <> 'more'
+      AND kind NOT IN ('more', 'comment_on_yours', 'reply_to_yours')
       AND created_at > sqlc.arg(hour_edge)::timestamptz
 ), ins AS (
     INSERT INTO updates (account_id, report_id, kind, created_at)
@@ -128,7 +142,7 @@ WITH moved AS (
     SELECT COUNT(*)::bigint AS n
     FROM updates
     WHERE account_id = sqlc.arg(account_id)::bigint
-      AND kind <> 'more'
+      AND kind NOT IN ('more', 'comment_on_yours', 'reply_to_yours')
       AND created_at > sqlc.arg(hour_edge)::timestamptz
 ), ins AS (
     INSERT INTO updates (account_id, report_id, kind, created_at)
@@ -174,7 +188,7 @@ WITH ins AS (
         SELECT COUNT(*)
         FROM updates u
         WHERE u.account_id = sqlc.arg(account_id)::bigint
-          AND u.kind <> 'more'
+          AND u.kind NOT IN ('more', 'comment_on_yours', 'reply_to_yours')
           AND u.created_at > sqlc.arg(hour_edge)::timestamptz
     ) < sqlc.arg(ceiling)::bigint
     ON CONFLICT (account_id, report_id) WHERE kind = 'reliable_nearby' DO NOTHING

@@ -237,3 +237,59 @@ DELETE FROM comment_likes WHERE account_id = sqlc.arg(account_id);
 -- name: DeleteAccountCommentFlags :exec
 -- Delete my account: the flags the account sent on comments are personal rows.
 DELETE FROM comment_flags WHERE account_id = sqlc.arg(account_id);
+
+-- name: CommentForNotify :one
+-- Phase 8 plan 11 (D-16): what the notification step needs to know about one
+-- comment, in one read: the comment's own report, author, thread position,
+-- state and deleted flag, the author of the comment it answered (NULL for a top
+-- level comment) and the report's reporter account (NULL when the report was
+-- filed from a session with no account). The reporter is found the way
+-- ReportVoteContext finds it: reports.session_id joins sessions.session_id.
+-- These ids stay inside the service; none of them reaches a response or a log.
+-- No row means no such comment.
+SELECT c.id, c.report_id, c.account_id, c.parent_id, c.reply_to_id,
+       c.moderation_state,
+       (c.deleted_at IS NOT NULL)::bool AS deleted,
+       rc.account_id AS reply_to_author_id,
+       rs.account_id AS reporter_account_id
+FROM comments c
+JOIN reports r ON r.id = c.report_id
+LEFT JOIN comments rc ON rc.id = c.reply_to_id
+LEFT JOIN sessions rs ON rs.session_id = r.session_id
+WHERE c.id = sqlc.arg(comment_id);
+
+-- name: InsertCommentUpdate :execrows
+-- The one place a comment notification is written (Phase 8 plan 11, D-16,
+-- PAGE-02). It adds one update of kind comment_on_yours or reply_to_yours for
+-- the recipient and returns how many rows it wrote (0 or 1). The row holds the
+-- kind and the report id only: no comment words and no username are stored, the
+-- sentence is written at read time (T-08-49).
+--
+-- It writes nothing when the recipient is the commenter (nobody is told about
+-- their own comment), when the recipient muted the report (D-11), or when the
+-- recipient's account is deleted. A recipient that does not exist writes
+-- nothing either, because the rows come from accounts. One unread row per
+-- account, report and kind: a second comment while the first is still unread
+-- conflicts on uq_updates_comment_unread and does nothing, so thirty comments
+-- are one row; once the person has read it, the next comment writes a new row.
+-- The conflict predicate repeats the index predicate exactly, which is what
+-- lets Postgres pick the partial index.
+--
+-- Comment rows never roll up into the "more" row and do not count toward the
+-- hourly ceiling (the ceiling reads skip these kinds); the unread index is
+-- their cap. Phase 9 plan 09-10 adds its block skip here.
+INSERT INTO updates (account_id, report_id, kind)
+SELECT a.id, sqlc.arg(report_id)::bigint, sqlc.arg(kind)::text
+FROM accounts a
+WHERE a.id = sqlc.arg(recipient_account_id)::bigint
+  AND a.id <> sqlc.arg(commenter_account_id)::bigint
+  AND a.deleted_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1
+      FROM report_mutes m
+      WHERE m.account_id = a.id
+        AND m.report_id = sqlc.arg(report_id)::bigint
+  )
+ON CONFLICT (account_id, report_id, kind)
+    WHERE read_at IS NULL AND kind IN ('comment_on_yours', 'reply_to_yours')
+    DO NOTHING;

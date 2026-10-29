@@ -2,9 +2,11 @@ package service
 
 // comments.go is the rule of a comment on a report page (Phase 8 plan 09,
 // PAGE-02, D-02, D-12 to D-16). CommentService posts, lists, deletes, likes and
-// flags comments. It has no route (plan 08-12), sends no notification (plan
-// 08-11 uses the notifier stored here) and runs no background check (plan
-// 08-14 settles the held comments).
+// flags comments. It has no route (plan 08-12) and runs no background check
+// (plan 08-14 settles the held comments). Plan 08-11 added NotifyCommentVisible
+// (the bell rows of D-16): Post calls it once for a comment that is stored
+// clear, and the worker of plan 08-14 calls it when a held comment becomes
+// visible. Like, Unlike and Flag never notify anyone.
 //
 // Who may comment: any signed in account that has a username, from anywhere.
 // There is deliberately no distance check, unlike a vote. A remote person can
@@ -42,6 +44,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -105,7 +108,19 @@ type CommentQuerier interface {
 	UnlikeComment(ctx context.Context, arg sqlcgen.UnlikeCommentParams) (int64, error)
 	CommentLikeState(ctx context.Context, arg sqlcgen.CommentLikeStateParams) (sqlcgen.CommentLikeStateRow, error)
 	InsertCommentFlag(ctx context.Context, arg sqlcgen.InsertCommentFlagParams) (int64, error)
+	CommentForNotify(ctx context.Context, commentID int64) (sqlcgen.CommentForNotifyRow, error)
+	InsertCommentUpdate(ctx context.Context, arg sqlcgen.InsertCommentUpdateParams) (int64, error)
 }
+
+// CommentVisibleNotifier is what the callers that make a comment visible use
+// to tell the right bell about it: Post for a comment stored clear, and the
+// worker that settles held comments (plans 08-13 and 08-14) when one becomes
+// visible.
+type CommentVisibleNotifier interface {
+	NotifyCommentVisible(ctx context.Context, commentID int64) error
+}
+
+var _ CommentVisibleNotifier = (*CommentService)(nil)
 
 var _ CommentQuerier = (*sqlcgen.Queries)(nil)
 
@@ -136,8 +151,9 @@ func WithCommentClock(fn func() time.Time) CommentOption {
 	}
 }
 
-// WithCommentChangeNotifier stores the notifier plan 08-11 calls after a
-// comment is posted. Like, Unlike and Flag never call it (D-16).
+// WithCommentChangeNotifier stores the notifier NotifyCommentVisible pokes with
+// ReportChanged(reportID, commenterAccountID) when it wrote a bell row. Like,
+// Unlike and Flag never reach it (D-16).
 func WithCommentChangeNotifier(n ReportChangeNotifier) CommentOption {
 	return func(cs *CommentService) { cs.notifier = n }
 }
@@ -372,6 +388,16 @@ func (s *CommentService) Post(ctx context.Context, in CommentInput) (CommentView
 		author = *own.AuthorUsername
 	}
 
+	// A comment stored clear is visible now, so the right bell hears about it
+	// (D-16). A held comment waits: whoever settles it calls
+	// NotifyCommentVisible when it becomes visible. A failure here is logged
+	// with the comment id only and never fails the post.
+	if check.Outcome != TextUnfinished {
+		if err := s.NotifyCommentVisible(ctx, row.ID); err != nil {
+			log.Printf("comment %d: telling the bell failed: %v", row.ID, err)
+		}
+	}
+
 	return CommentView{
 		ID:            row.ID,
 		Author:        author,
@@ -383,6 +409,59 @@ func (s *CommentService) Post(ctx context.Context, in CommentInput) (CommentView
 		At:            row.CreatedAt,
 		Words:         body,
 	}, nil
+}
+
+// NotifyCommentVisible puts the bell row of D-16 for one comment that is now
+// visible: "New reply to your comment" for the author of the comment it
+// answered when it is a reply, "New comment on your report" for the report's
+// reporter when it is a top level comment. It returns nil and writes nothing
+// for an unknown comment, one that is deleted, removed or still held, a
+// recipient who is unknown, the commenter themself, someone who muted the
+// report and a deleted account (the last three are skipped in
+// InsertCommentUpdate). The row carries a kind and a report id only.
+//
+// Comment rows never roll up into the "more" row and do not count toward the
+// hourly ceiling: the unread unique index of migration 00019 is their cap, so
+// thirty comments are one unread row. When a row was written the stored
+// ReportChangeNotifier is poked once with the report and the commenter, so the
+// phone channel (plan 08-15) can follow. It is never called for a like.
+func (s *CommentService) NotifyCommentVisible(ctx context.Context, commentID int64) error {
+	c, err := s.q.CommentForNotify(ctx, commentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return fmt.Errorf("service: NotifyCommentVisible: reading comment %d: %w", commentID, err)
+	}
+	if c.Deleted || c.ModerationState != "clear" {
+		return nil
+	}
+
+	var recipient *int64
+	kind := UpdateCommentOnYours
+	if c.ReplyToID != nil {
+		recipient = c.ReplyToAuthorID
+		kind = UpdateReplyToYours
+	} else {
+		recipient = c.ReporterAccountID
+	}
+	if recipient == nil {
+		return nil
+	}
+
+	n, err := s.q.InsertCommentUpdate(ctx, sqlcgen.InsertCommentUpdateParams{
+		ReportID:           c.ReportID,
+		Kind:               string(kind),
+		RecipientAccountID: *recipient,
+		CommenterAccountID: c.AccountID,
+	})
+	if err != nil {
+		return fmt.Errorf("service: NotifyCommentVisible: writing the update for comment %d: %w", commentID, err)
+	}
+	if n > 0 && s.notifier != nil {
+		s.notifier.ReportChanged(c.ReportID, c.AccountID)
+	}
+	return nil
 }
 
 // commentTargetGone reports whether a comment cannot be answered, liked or
