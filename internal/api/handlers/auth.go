@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"html/template"
 	"log"
@@ -16,10 +15,6 @@ import (
 	"pinalert/internal/service"
 	"pinalert/internal/session"
 )
-
-// maxAuthBodyBytes caps the request-link POST body, matching
-// maxSubmitBodyBytes's DoS-conscious cap on POST /api/reports (threat T-01-53).
-const maxAuthBodyBytes = 64 * 1024
 
 // loginGateTemplateName is the file executed by LoginGate's ExecuteTemplate
 // call.
@@ -237,90 +232,14 @@ func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 	}
 }
 
-// RequestLinkRequest is the raw JSON shape POST /api/auth/request-link
-// accepts. Decoded with DisallowUnknownFields so an unexpected field is a
-// loud 400, matching SubmitReportRequest's convention.
-type RequestLinkRequest struct {
-	// Email is the address to verify. Server-side validation (RFC 5322
-	// address parsing, no display-name form) happens in
-	// service.AuthService.RequestLink — never trust client-side validation.
-	Email string `json:"email" example:"visitor@example.com"`
-}
-
-// RequestLinkResponse confirms the normalized address a verification link
-// was requested for. It never names a session identifier (T-01-02's
-// published-schema counterpart, enforced by
-// handlers_test.TestSwaggerSpecCoversRoutes).
-type RequestLinkResponse struct {
-	Email string `json:"email" example:"visitor@example.com"`
-}
-
-// RequestLink handles POST /api/auth/request-link: decode, validate and
-// mint a token (via svc), and hand it to the configured Mailer. A
-// service.ErrRateLimited (D-03/D-04's per-address resend cooldown) maps to
-// 429 with the same generic message and field name the per-IP limiter's own
-// refusal uses (internal/ratelimit), so a caller cannot tell which limiter
-// tripped or whether the address has an account. A service.ValidationError
-// maps to 400 naming the offending field; any other error maps to a generic
-// 500 with the detail logged server-side only, so a mailer/database failure
-// never reaches a client (threat T-01-55).
-//
-// @Summary      Request a magic-link verification email
-// @Description  Validates the given email address, mints a single-use 5-minute magic-link
-// @Description  token, persists its hash, and hands the raw link to the configured mailer.
-// @Description  The response never carries a session identifier.
-// @Tags         auth
-// @Accept       json
-// @Produce      json
-// @Param        body  body      RequestLinkRequest  true  "Email to verify"
-// @Success      200   {object}  RequestLinkResponse
-// @Failure      400   {object}  ErrorResponse
-// @Failure      429   {object}  ErrorResponse
-// @Failure      500   {object}  ErrorResponse
-// @Router       /auth/request-link [post]
-func RequestLink(svc *service.AuthService) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
-		dec := json.NewDecoder(r.Body)
-		dec.DisallowUnknownFields()
-
-		var req RequestLinkRequest
-		if err := dec.Decode(&req); err != nil {
-			writeFieldError(w, http.StatusBadRequest, "body", "Request body is missing or malformed.")
-			return
-		}
-
-		normalizedEmail, err := svc.RequestLink(r.Context(), req.Email)
-		if err != nil {
-			if errors.Is(err, service.ErrRateLimited) {
-				// This sentence is duplicated in internal/ratelimit's
-				// tooManyRequestsMessage and in the client-side auth.js
-				// script; all three copies must move together (02-14).
-				writeFieldError(w, http.StatusTooManyRequests, "email", "Too many requests. Try again in a minute.")
-				return
-			}
-			var ve service.ValidationError
-			if errors.As(err, &ve) {
-				writeFieldError(w, http.StatusBadRequest, ve.Field, ve.Message)
-				return
-			}
-			log.Printf("handlers: RequestLink: %v", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-
-		writeJSON(w, http.StatusOK, RequestLinkResponse{Email: normalizedEmail})
-	}
-}
-
-// verifyOutcomeTemplateName is the file executed by Verify's
-// ExecuteTemplate call.
+// verifyOutcomeTemplateName and verifyOutcomeViewModel belonged to the handler
+// that opened an emailed link. Amended 2026-10-29 by Phase 7.1 plan 14: no
+// handler executes the template any more, but the type and the name stay,
+// unused by production code, because chrome_render_test.go (not a file of plan
+// 14) still renders the page in its "verify" subtest. Plan 16 deletes the
+// template, this name and this type together with that subtest.
 const verifyOutcomeTemplateName = "verify_outcome.html.tmpl"
 
-// verifyOutcomeViewModel is exactly what verify_outcome.html.tmpl reads and
-// nothing more. Email is the newly-verified address (OutcomeVerified);
-// CurrentEmail is the session's existing verified address, shown only on
-// the OutcomeConflict screen ("You're signed in as {{.CurrentEmail}}").
 type verifyOutcomeViewModel struct {
 	AssetVersion string
 	Outcome      string
@@ -329,69 +248,26 @@ type verifyOutcomeViewModel struct {
 	Chrome       Chrome
 }
 
-// Verify handles GET /auth/verify: reads the current session id from
-// context (never from a query parameter — the token names the account, the
-// signed cookie names the browser being bound), delegates the whole
-// decision to svc.VerifyTokenAndBind (setting a rotated session cookie when
-// sign in drew a fresh id), and renders the one shared outcome template.
-// Only GET is ever registered for this route (see router.go) — chi does
-// not auto-map HEAD onto a GET-only handler the way net/http.ServeMux
-// does, which cheaply sidesteps one class of mail-security-scanner
-// prefetch (threat T-01-62).
+// retiredLinkTarget is where an old emailed link lands: the sign in page with the
+// old-link done word, a constant with no address and no token in it (Phase 7.1
+// plan 14, D-12, UI-SPEC Surface 9).
+const retiredLinkTarget = "/login?done=" + loginDoneOldLink
+
+// RetiredLink handles GET /auth/verify, the path of the emailed sign in link
+// Pinalert used before passwords (Phase 7.1 plan 14, D-12). A link already sitting
+// in somebody's inbox still reaches this path, so the path stays public and answers
+// 303 to the constant retiredLinkTarget, where the sign in page shows the plain
+// old-link line. It reads no query value, checks no token, binds no session and
+// signs nobody in (T-07.1-31), and the Location holds no address (T-07.1-08).
+// no-store keeps the redirect out of shared caches and the back-forward cache.
+// Only GET is registered; chi does not map HEAD onto it.
 //
-// Deliberately carries no swag annotation and so has no entry in
-// docs/swagger.json: @BasePath is /api (see router.go's package-level swag
-// block) and this route lives outside that base path — it's an HTML
-// landing page a mail client's browser navigates to, not a JSON API
-// operation a client is meant to call programmatically. Do not "fix" this
-// by adding an annotation; TestSwaggerSpecCoversRoutes does not assert its
-// presence, and doing so would misrepresent the operation's shape (it
-// returns text/html, not any of this package's JSON response types).
-func Verify(svc *service.AuthService, mgr *session.Manager, tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
+// Deliberately carries no swag annotation: the route sits outside the /api base
+// path and is an HTML redirect, not a JSON operation.
+func RetiredLink() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		sessionID, ok := session.FromContext(r.Context())
-		if !ok {
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-
-		token := r.URL.Query().Get("token")
-		outcome, email, boundID, err := svc.VerifyTokenAndBind(r.Context(), sessionID, token, mgr.NewID)
-		if err != nil {
-			log.Printf("handlers: Verify: %v", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-		// A revoked or deleted session is never rebound to another account
-		// (Phase 3.2): sign in drew a fresh id, so this browser must carry it.
-		// The cookie is the one Middleware writes, set before any body write.
-		if outcome == service.OutcomeVerified && boundID != sessionID {
-			mgr.SetCookie(w, boundID)
-		}
-
-		vm := verifyOutcomeViewModel{
-			AssetVersion: cfg.AssetVersion,
-			Outcome:      string(outcome),
-			Chrome:       cfg.Chrome.withDefaults(),
-		}
-		if outcome == service.OutcomeVerified {
-			vm.Email = email
-		}
-		if outcome == service.OutcomeConflict {
-			vm.CurrentEmail = email
-		}
-
-		// This response reflects an authentication state change (a session
-		// either just became verified, or the request revealed which
-		// account the browser is currently signed in as) — it must never
-		// be served from a shared cache or restored from the
-		// back-forward cache (threat T-01-64).
 		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err := tmpl.ExecuteTemplate(w, verifyOutcomeTemplateName, vm); err != nil {
-			log.Printf("handlers: Verify: %v", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-		}
+		http.Redirect(w, r, retiredLinkTarget, http.StatusSeeOther)
 	}
 }
 

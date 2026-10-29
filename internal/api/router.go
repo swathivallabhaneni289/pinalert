@@ -83,13 +83,11 @@ type Deps struct {
 	// reference via `mask-image: url(...)` are never templated and so were
 	// never covered by that fix — this field is the other half of it).
 	Dev bool
-	// RequestLinkRateLimit configures the per-IP token-bucket limiter plan
-	// 01.1-05 wraps around POST /api/auth/request-link only. Left at its
-	// zero value, RequestLinkRateLimitDefault below is used — every
-	// existing Deps{} literal that predates this field keeps working
-	// unchanged, and cmd/server/main.go is the one place the DEC-I numbers
-	// (burst 5, one token per 60s) are visible rather than buried as
-	// literals in this router.
+	// RequestLinkRateLimit configured the per-IP token-bucket limiter plan
+	// 01.1-05 wrapped around the emailed link request route.
+	// Amended 2026-10-29 by Phase 7.1 plan 14: that route and its limiter
+	// instance are gone, so this field is unused. It stays until plan 14c
+	// removes it with its type, its default and the main.go settings.
 	RequestLinkRateLimit RequestLinkRateLimit
 	// Chrome is the shared data for the unofficial bar (D-21, D-22, D-24),
 	// built once by cmd/server/main.go from the environment. Additive, as the
@@ -235,8 +233,9 @@ func (e *pathOnlyLogEntry) Panic(v interface{}, _ []byte) {
 	e.logger.Printf("[%s] %s %s panic: %v", e.reqID, e.method, e.path, v)
 }
 
-// RequestLinkRateLimit is the burst/refill configuration for the per-IP
-// limiter wrapping POST /api/auth/request-link (DEC-I).
+// RequestLinkRateLimit was the burst/refill configuration for the per-IP
+// limiter wrapping the emailed link request route (DEC-I).
+// Amended 2026-10-29 by Phase 7.1 plan 14: unused now, removed by plan 14c.
 type RequestLinkRateLimit struct {
 	Burst int
 	Every time.Duration
@@ -440,13 +439,20 @@ var compressibleContentTypes = []string{"text/html", "text/css", "text/javascrip
 // to the group is protected by construction; a route added outside it is
 // visibly, by construction, unprotected (threat T-01-70).
 //
-// The exempt set is exactly: /static/*, /swagger/*, GET /login, POST
-// /api/auth/request-link, GET /auth/verify, GET /disclaimer and GET /policy:
-// the login surface itself,
-// the two request/verify steps that make a session verified in the first
-// place, static assets the login page needs to render, and the published
-// API reference (DEC-G, 01.1-04-PLAN.md; the /swagger/* exemption's tension
-// with D-05 is recorded there as accepted risk AR-32).
+// The exempt set is exactly: /static/*, /swagger/*, GET /login, the six POST
+// /api/auth routes (sign-up, sign-up/code, code/resend, sign-in, reset and
+// reset/code), GET /auth/verify (the retired emailed link redirect), GET
+// /disclaimer and GET /policy, the ten app asset paths, and Phase 5's entries
+// (the Demo prefix, the refresh route and the globe tiles): the login surface
+// itself, the code and password steps that give a person an account and a
+// session in the first place, static assets the login page needs to render, and
+// the published API reference (DEC-G, 01.1-04-PLAN.md; the /swagger/*
+// exemption's tension with D-05 is recorded there as accepted risk AR-32).
+//
+// Amended 2026-10-29 by Phase 7.1 plan 14 (D-12): this is the final list of the
+// phase. The emailed link request route is removed, and GET /auth/verify stays
+// only as a redirect (303 to /login?done=old-link) for links already sent. Phase
+// 8 adds its shared report status page to it.
 // The last two are the public Disclaimer and Policy pages (Phase 4 D-23,
 // P4-A18), readable without logging in like the API reference above; they
 // render no account data (R-07) and are cacheable only in the browser.
@@ -523,9 +529,9 @@ func NewRouter(deps Deps) *chi.Mux {
 	r.Use(middleware.RequestID)
 	// The client IP is the TCP peer address (DEC-U) unless Deps.ClientIPHeader
 	// names a header the host overwrites. When it does, that header becomes the
-	// client IP for every per IP limiter, so the request link limiter (the two
-	// searches key on the account since quick 261016-sne) also keys on it
-	// whenever it is present and parses, and falls back
+	// client IP for every per IP limiter, so those limiters (the two
+	// searches key on the account since quick 261016-sne) also key on it
+	// whenever it is present and parses, and fall back
 	// to the peer address only when it is missing or unparseable. On a host
 	// that does not overwrite that header, a caller could rotate it to dodge
 	// those limiters (the T-01-92 property), so the setting is only for a host
@@ -630,13 +636,13 @@ func NewRouter(deps Deps) *chi.Mux {
 	// --- Exempt: reachable without a verified account. ---
 
 	r.Get("/login", handlers.LoginGate(deps.Template, auth))
-	// GET only, deliberately: chi does not auto-map HEAD onto a GET-only
-	// handler the way net/http.ServeMux does, and registering only GET here
-	// cheaply sidesteps one class of mail-security-scanner prefetch
-	// consuming a visitor's single-use link before they click it
-	// (threat T-01-62). Left outside the gate — it is how a session becomes
-	// verified in the first place.
-	r.Get("/auth/verify", handlers.Verify(deps.AuthService, deps.Session, deps.Template, auth))
+	// The retired emailed link (Phase 7.1 plan 14, D-12): an old link already in
+	// somebody's inbox still reaches this path, so it stays public and GET only,
+	// and answers a 303 to /login?done=old-link, where the sign in page shows the
+	// plain old-link line. It checks no token and signs nobody in (T-07.1-31).
+	// Kept outside the gate for the same reason /login is: the person has no
+	// account session yet.
+	r.Get("/auth/verify", handlers.RetiredLink())
 	// The public legal pages (D-23, P4-A18): no account data (R-07), cacheable only in the browser.
 	r.Get("/disclaimer", handlers.Legal(deps.Template, auth, handlers.LegalDisclaimerPage))
 	r.Get("/policy", handlers.Legal(deps.Template, auth, handlers.LegalPolicyPage))
@@ -687,31 +693,20 @@ func NewRouter(deps Deps) *chi.Mux {
 	// serves its UI assets from the binary — no third-party CDN request at
 	// view time.
 	r.Get("/swagger/*", httpSwagger.Handler(httpSwagger.URL("/swagger/doc.json")))
-	// Registered as a literal path (not nested under an r.Route("/api", ...)
-	// mount) so it can stay outside the gated group below while /api/reports
-	// stays inside it — chi does not allow a literal sibling path alongside
-	// a wildcard r.Route mount at the same prefix, so /api is never mounted
-	// as its own subrouter in this router; every /api/* path is registered
-	// flat, gated or not, exactly as this one is. Deliberately reachable
-	// without verification — this is how a visitor becomes verified.
+	// Amended 2026-10-29 by Phase 7.1 plan 14: the emailed link request route and
+	// the per IP limiter instance built for it are gone. The settings type
+	// RequestLinkRateLimit, its default and the Deps field stay, unused, until
+	// plan 14c removes them.
 	//
-	// The per-IP limiter (DEC-I: burst 5, one token per 60s) is scoped with
-	// r.With(...) to this single route only — never applied via a top-level
-	// r.Use — so it throttles POST /api/auth/request-link exclusively.
-	// Gating the whole router would throttle static assets and the login
-	// page itself during exactly the burst a real emergency produces
-	// (T-01-79's CGNAT concern compounds this: a shared carrier IP hitting
-	// a router-wide limit would lock out every other route too).
-	requestLinkLimit := deps.RequestLinkRateLimit
-	if requestLinkLimit == (RequestLinkRateLimit{}) {
-		requestLinkLimit = RequestLinkRateLimitDefault
-	}
-	requestLinkLimiter := ratelimit.NewPerIP(requestLinkLimit.Every, requestLinkLimit.Burst)
-	r.With(requestLinkLimiter.Middleware()).Post("/api/auth/request-link", handlers.RequestLink(deps.AuthService))
-
+	// Every /api/* path is registered as a flat literal path (not nested under an
+	// r.Route("/api", ...) mount) so the exempt ones can stay outside the gated
+	// group below while /api/reports stays inside it: chi does not allow a
+	// literal sibling path alongside a wildcard r.Route mount at the same prefix,
+	// so /api is never mounted as its own subrouter in this router.
+	//
 	// The six code and password routes (Phase 7.1, plan 07, D-03). Flat literal
-	// paths next to the link route, outside the gate: they are how a person gets
-	// an account and a session in the first place. They are always registered, so
+	// paths outside the gate: they are how a person gets an account and a session
+	// in the first place. They are always registered, so
 	// the exempt list is constant; a router built without Deps.Credentials answers
 	// each with a 503. cop rejects a cross site browser POST (login CSRF, research
 	// Pattern 4) and lets a request without Origin and Sec-Fetch-Site through,
@@ -776,8 +771,8 @@ func NewRouter(deps Deps) *chi.Mux {
 		// sketches, because this router already has a literal /api/reports leaf that
 		// a wildcard subrouter mounted at an overlapping prefix would sit
 		// awkwardly beside; every /api/* path in this router is registered
-		// flat, gated or not (see the /api/auth/request-link comment
-		// above). Flat registration also keeps these five routes in the
+		// flat, gated or not (see the comment above the six code and
+		// password routes). Flat registration also keeps these five routes in the
 		// same visual list as every other route in the group, which is
 		// exactly the property this function's own doc comment relies on
 		// for T-01-70: you can see at a glance that they are inside the
