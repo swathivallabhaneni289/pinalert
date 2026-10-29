@@ -195,7 +195,9 @@ func updateRowLabel(item service.UpdateItem, now time.Time) string {
 	if s := sentence(item.ReportLine); s != "" {
 		parts = append(parts, s)
 	}
-	if item.Category != "" {
+	// A follow row's report line already is "{Category}, {Severity}." (UI-SPEC
+	// 2a), so its label does not say it a second time (review K5, 2026-10-30).
+	if item.Category != "" && item.Kind != service.UpdateFollowedPosted {
 		parts = append(parts, updateCategoryWord(item.Category)+", "+updateSeverityWord(item.Severity)+".")
 	}
 	if s := sentence(item.Trust); s != "" {

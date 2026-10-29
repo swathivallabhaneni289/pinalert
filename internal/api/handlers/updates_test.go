@@ -47,6 +47,19 @@ func TestUpdateRowLabel(t *testing.T) {
 			want: "New. Now confirmed. Water over the bridge. Flood, Critical. Confirmed by 3 people at different spots. 12 minutes ago",
 		},
 		{
+			// Added 2026-10-30 (review K5): the report line of a follow row is
+			// already "Flood, Critical.", so the label must not say it twice.
+			name: "a follow row names the category once",
+			item: service.UpdateItem{
+				Kind: service.UpdateFollowedPosted, ReportID: &id, Available: true, Unread: true,
+				CreatedAt: ago(12 * time.Minute), Event: "ravi.k posted a report",
+				ReportLine: "Flood, Critical.",
+				Category:   service.CategoryFlood, Severity: service.SeverityCritical,
+				Trust: "Not confirmed yet.",
+			},
+			want: "New. ravi.k posted a report. Flood, Critical. Not confirmed yet. 12 minutes ago",
+		},
+		{
 			name: "a read item has no New prefix",
 			item: service.UpdateItem{
 				Kind: service.UpdateHidden, ReportID: &id, Available: true, Unread: false,
