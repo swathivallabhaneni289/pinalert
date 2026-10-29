@@ -168,6 +168,70 @@ func TestShareButtonsSideBySideAt320(t *testing.T) {
 	}
 }
 
+// r08tMutedOnField names the muted lines that sit on the composer field's own
+// --color-bg, not on the tinted phone sheet, so they need no phone override.
+var r08tMutedOnField = map[string]string{
+	".composer__input::placeholder":         "the placeholder is inside the field, on its --color-bg",
+	`.composer__post[aria-disabled="true"]`: "the off Post is inside the field, on its --color-bg",
+}
+
+// r08tLastCompound returns the last compound selector of a head part, with
+// :not([hidden]) dropped so a phone head and a base head compare equal.
+func r08tLastCompound(part string) string {
+	fields := strings.Fields(part)
+	if len(fields) == 0 {
+		return ""
+	}
+	return strings.TrimSuffix(fields[len(fields)-1], ":not([hidden])")
+}
+
+// TestPhoneSheetHasNoMutedText (WR-T07, P8-R8): the phone report sheet is
+// severity tinted, and muted text sits only on --color-bg. Every comments.css
+// and report-page.css line drawn in --color-text-muted therefore has a rule in
+// phone.css's narrow block that switches the same element to --color-text (or
+// does not draw it), unless it sits on the field's own --color-bg (r08tMutedOnField). A new muted
+// line with no phone override fails here.
+func TestPhoneSheetHasNoMutedText(t *testing.T) {
+	overridden := map[string]bool{}
+	for _, r := range commentRules(t, "static/css/phone.css") {
+		// A line the phone does not draw at all (display none) needs no colour.
+		if r.Media != "@media (max-width: 899.98px)" || (r.Decls["color"] != "var(--color-text)" && r.Decls["display"] != "none") {
+			continue
+		}
+		for _, part := range p16HeadParts(r.Head) {
+			if strings.Contains(part, ".report-page") {
+				overridden[r08tLastCompound(part)] = true
+			}
+		}
+	}
+	checked := 0
+	for _, file := range []string{"static/css/comments.css", "static/css/report-page.css"} {
+		for _, r := range commentRules(t, file) {
+			if r.Media != "" || r.Decls["color"] != "var(--color-text-muted)" {
+				continue
+			}
+			for _, part := range p16HeadParts(r.Head) {
+				key := r08tLastCompound(part)
+				checked++
+				if _, ok := r08tMutedOnField[key]; ok {
+					continue
+				}
+				if !overridden[key] {
+					t.Errorf("%s: %q is muted text with no --color-text override in phone.css's narrow block, so it renders muted on the tinted sheet", file, part)
+				}
+			}
+		}
+	}
+	if checked < 10 {
+		t.Errorf("only %d muted heads were checked; the walk may have stopped matching", checked)
+	}
+	for key := range r08tMutedOnField {
+		if overridden[key] {
+			t.Errorf("%s is allow listed as on the field but phone.css overrides it; drop the entry", key)
+		}
+	}
+}
+
 // r08tReadRepo reads a file of the repository, relative to web/.
 func r08tReadRepo(t *testing.T, path string) string {
 	t.Helper()
