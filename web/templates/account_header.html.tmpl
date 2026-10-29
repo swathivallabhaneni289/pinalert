@@ -6,6 +6,11 @@
   </button>
 
   <div id="account-menu" role="menu" hidden>
+    {{/* Phase 9 plan 12 (D-04, UI-SPEC 7c): My profile is the first item, above Settings and Log out (03.4: "My profile (first item) is added by Phase 9"). /me goes on to the person's own profile page, or to Settings when no username is saved yet. */}}
+    <a role="menuitem" class="account-menu__item" href="/me">
+      <span class="auth-icon auth-icon--user" aria-hidden="true"></span>
+      My profile
+    </a>
     <a role="menuitem" class="account-menu__item" href="/settings">
       <span class="auth-icon auth-icon--settings" aria-hidden="true"></span>
       Settings
