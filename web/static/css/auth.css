@@ -88,6 +88,7 @@
 
 .login-field input {
   flex: 1;
+  min-width: 0;
   min-height: var(--touch-target-min);
   border: none;
   background: transparent;
@@ -98,6 +99,172 @@
 
 .login-field input:focus {
   outline: none;
+}
+
+/* ---- The Phase 7.1 card (plan 11, UI-SPEC Surfaces 1 to 5, sketch 010) ----
+   Every line on the card is --color-text: muted text on this --color-surface
+   box measures 4.34 to 1 and fails. */
+
+/* A field that is followed by its rule line closes up to it. */
+.login-field--rule {
+  margin-bottom: 0;
+}
+
+/* The code field: Display size digits in one real input. 0.25em is the one
+   named letter spacing literal of this phase (digits read as separate cells;
+   web/css_contract_test.go allows it by name). */
+.login-field--code input {
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.25em;
+}
+
+/* Show and Hide: a text button at the right end of the password field, 44px
+   high, no border of its own. */
+.login-show {
+  flex-shrink: 0;
+  min-height: var(--touch-target-min);
+  margin: 0;
+  padding: 0 var(--space-sm);
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.login-show:hover {
+  background: var(--color-border);
+}
+
+/* The rule line under a new password, and the status line (a wait, a reset
+   done). The extra .login-card keeps them above the .login-card p rule. */
+.login-card .login-rule {
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  margin: var(--space-xs) 0 var(--space-md);
+}
+
+.login-card .login-status {
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  margin: 0 0 var(--space-md);
+}
+
+/* Error and status lines on the card are Label 14px, as the approved UI-SPEC
+   Typography row and the sketch 010 mockup draw them (sketch 010 finding 2,
+   decided in plan 11). This rule has to beat ".login-card p" (the old line was
+   drawn grey and 16px through it, sketch 009). The shared .inline-error in
+   chrome.css stays 16px for step 4 and the windows. */
+.login-card .inline-error:not([hidden]) {
+  margin: 0 0 var(--space-md);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+.login-card .inline-error::before {
+  margin-top: 2px;
+}
+
+/* A two line error (the wrong sign in line and the old account line under it). */
+.login-card .inline-error__text > span:not([hidden]) {
+  display: block;
+}
+
+.login-card .inline-error__text > span + span {
+  margin-top: var(--space-xs);
+}
+
+/* The address in the code lead is plain text; a long one wraps. */
+.login-email {
+  overflow-wrap: anywhere;
+}
+
+/* The buttons of a panel: full width, 8px apart. */
+.login-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.login-actions .btn {
+  width: 100%;
+}
+
+/* A 20px arrow at the left of Change email and Back to sign in. */
+.login-card .btn .auth-icon {
+  width: 20px;
+  height: 20px;
+  margin-right: var(--space-sm);
+  color: var(--color-text);
+}
+
+/* The two choices: a track on the card surface, the chosen segment filled with
+   the page colour and set in semibold, so state is fill and weight, never a
+   black outline. */
+.login-choice:not([hidden]) {
+  display: flex;
+  gap: 0;
+  padding: var(--space-xs);
+  margin: 0 0 var(--space-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.login-choice__tab {
+  flex: 1 1 0;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-xs);
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.login-choice__tab[aria-selected="true"] {
+  background: var(--color-bg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.login-choice__tab[aria-selected="false"]:hover {
+  background: var(--color-border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-choice__tab {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .login-choice__tab[aria-selected="true"] {
+    border: 1px solid Highlight;
+  }
+}
+
+/* On a 320 to 359px phone the gate and the card give up 8px each side, so the
+   two choice labels fit on one line (UI-SPEC: inner card width 256px). */
+@media (max-width: 359.98px) {
+  .login-gate {
+    padding: var(--space-md);
+  }
+
+  .login-card {
+    padding: var(--space-md);
+  }
 }
 
 /* Auth-surface icon glyphs (mail, circle-alert) — same mask mechanism as
@@ -122,6 +289,16 @@
 .auth-icon--mail {
   -webkit-mask-image: url("/static/icons/mail.svg");
   mask-image: url("/static/icons/mail.svg");
+}
+
+.auth-icon--lock {
+  -webkit-mask-image: url("/static/icons/lock.svg");
+  mask-image: url("/static/icons/lock.svg");
+}
+
+.auth-icon--shield-check {
+  -webkit-mask-image: url("/static/icons/shield-check.svg");
+  mask-image: url("/static/icons/shield-check.svg");
 }
 
 .auth-icon--circle-alert {
@@ -188,11 +365,10 @@
   margin-top: var(--space-sm);
 }
 
-/* The login panel of P4-A18 and D-17. One column holds the login card (or the
-   Check your inbox card) and the panel under it, so the gate still centres the
-   pair as one item. The panel is never hidden, so it needs no hidden guard,
-   and every line of it is plain text colour: muted text on this surface falls
-   under 4.5:1 in one of the two themes. */
+/* One column holds the sign in card and the row of buttons under it, so the
+   gate still centres the pair as one item. Every line of both is plain text
+   colour: muted text on the card surface falls under 4.5:1 in one of the two
+   themes. */
 .login-column {
   position: relative;
   z-index: 1;
@@ -207,43 +383,21 @@
   border-radius: 8px;
 }
 
+/* Under the card: ONE row of four outlined buttons (Phase 7.1 plan 11, UI-SPEC
+   1e, departure D11, owner 2026-10-27). It replaces Phase 5's separate Low data
+   panel and its links row. .login-ways is only the wrapper now: no background,
+   border or padding of its own, 16px under the card by the column gap, and every
+   line of it plain text colour. Phone: a two by two grid as wide as the card.
+   Laptop: one centred row that may be wider than the card. */
 .login-ways {
   display: flex;
   flex-direction: column;
-  gap: var(--space-xs);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: var(--space-md);
+  gap: var(--space-sm);
   color: var(--color-text);
 }
 
-.login-ways__low,
-.login-ways__off {
-  display: inline-flex;
-  align-items: center;
-  align-self: flex-start;
-  min-height: var(--touch-target-min);
-  /* Plan 42 (owner, 2026-10-21: no underlined text): the outlined secondary
-     button, page colour, hairline, 8px corners. */
-  padding: 0 var(--space-md);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-bg);
-  font-size: var(--font-size-body);
-  line-height: var(--line-height-body);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text);
-  text-decoration: none;
-}
-
-.login-ways__low:hover,
-.login-ways__off:hover,
-.login-ways__links a:hover {
-  background: var(--color-border);
-}
-
-.login-ways__line {
+/* The one status line shown when the Low data view is already on. */
+.login-ways__status {
   margin: 0;
   font-size: var(--font-size-label);
   line-height: var(--line-height-label);
@@ -251,47 +405,47 @@
   color: var(--color-text);
 }
 
-.login-ways__note {
-  margin: 0;
-  font-size: var(--font-size-body);
-  line-height: var(--line-height-body);
-  font-weight: var(--font-weight-regular);
-  color: var(--color-text);
+.login-ways__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-sm);
 }
 
-.login-ways__links {
-  margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  /* Three links now (Try the demo, Disclaimer, Policy): 8px between them in
-     both directions, so a wrapped second line sits as close as the first
-     (plan 05-07, UI-SPEC 4e). */
-  column-gap: var(--space-sm);
-  row-gap: var(--space-sm);
-}
-
-/* Plan 42: Disclaimer and Policy are outlined buttons too, never underlined. */
-.login-ways__links a {
-  display: inline-flex;
-  align-items: center;
+/* The built outlined button look, set to the row's size: 44px high, 8px corner,
+   hairline border, page colour fill, Label 14px regular, no underline. The
+   hover and press looks come from chrome.css (.btn:not(.btn--primary)...). */
+.login-ways__row .btn {
+  min-width: 0;
   min-height: var(--touch-target-min);
-  padding: 0 var(--space-md);
+  padding: 0 var(--space-12);
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-bg);
-  font-size: var(--font-size-body);
-  line-height: var(--line-height-body);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
   font-weight: var(--font-weight-regular);
   color: var(--color-text);
+  text-align: center;
   text-decoration: none;
 }
 
-/* At 320px the panel is about 240px wide and holds both short links on one
-   line, so wrapping alone never stacks them: below 360px the row is a column. */
-@media (max-width: 359.98px) {
-  .login-ways__links {
-    flex-direction: column;
-    align-items: flex-start;
+@media (min-width: 900px) {
+  .login-ways {
+    align-self: center;
+    width: max-content;
+    max-width: calc(100vw - 2 * var(--space-lg));
+  }
+
+  .login-ways__row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    column-gap: var(--space-sm);
+    row-gap: var(--space-sm);
+  }
+
+  .login-ways__status {
+    text-align: center;
   }
 }
 

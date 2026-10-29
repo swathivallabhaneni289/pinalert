@@ -775,6 +775,13 @@ var nonCategoryIcons = map[string]bool{
 	// TestPhase5IconsRegisteredAndUsed proves the files and the rules line up.
 	"static/icons/octagon-alert.svg":  true,
 	"static/icons/triangle-alert.svg": true,
+	// Phase 7.1 plan 11 (UI-SPEC Design System, the one new icon file): lock,
+	// the glyph at the left of every password field of the sign in card, drawn
+	// by the .auth-icon--lock mask rule in auth.css through a literal
+	// url("/static/icons/lock.svg"), same exemption reasoning as search.svg.
+	// TestLoginCardLockIcon proves the file and the rule line up, so the
+	// exemption cannot hide an orphan. Amended 2026-10-29 by Phase 7.1 plan 11.
+	"static/icons/lock.svg": true,
 }
 
 // laterIcons lists the glyphs added after Phase 3.4 (plan 04-30: bell-off).

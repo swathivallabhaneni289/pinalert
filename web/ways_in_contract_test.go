@@ -75,6 +75,15 @@ func p421WantDecls(t *testing.T, rules []cssRule, selector string, want map[stri
 	}
 }
 
+// Amended 2026-10-29 by Phase 7.1 plan 11 (UI-SPEC 1e, departure D11, owner
+// 2026-10-27, round 2 item 3 c): the separate Low data panel and its hint line
+// are gone. .login-ways is the wrapper of ONE row of four outlined buttons (Try
+// the demo, Low data view, Disclaimer, Policy) with no box behind it, so the
+// style assertions that read the panel's background, border and padding and the
+// .login-ways__low, __off, __line, __note and __links rules now read the row:
+// the wrapper holds no box, the four buttons share one outlined look, and the
+// phone gets a two by two grid. The login column assertions and the muted colour
+// check are kept.
 func TestLoginLowDataPanelStyles(t *testing.T) {
 	login := p421ReadTemplate(t, "login_gate.html.tmpl")
 
@@ -82,48 +91,48 @@ func TestLoginLowDataPanelStyles(t *testing.T) {
 		t.Fatalf(`class="login-column" appears %d times, want 1`, n)
 	}
 	p421InOrder(t, "login column order", login,
-		`class="login-column"`, `id="login-form-panel"`, `{{template "check_inbox.html.tmpl" .}}`, `<div class="login-ways">`)
-	for _, id := range []string{`id="login-gate"`, `id="login-form-panel"`, `id="login-email"`, `id="request-link"`, `id="auth-error"`} {
+		`class="login-column"`, `id="login-form-panel"`, `class="login-ways"`)
+	for _, id := range []string{`id="login-gate"`, `id="login-form-panel"`, `id="login-title"`, `id="login-choice"`, `id="create-email"`} {
 		if n := strings.Count(login, id); n != 1 {
 			t.Errorf("%s appears %d times in login_gate.html.tmpl, want 1", id, n)
 		}
 	}
 
-	start := strings.Index(login, `<div class="login-ways">`)
+	start := strings.Index(login, `<div class="login-ways"`)
 	if start == -1 {
-		t.Fatalf("login_gate.html.tmpl has no login-ways panel")
+		t.Fatalf("login_gate.html.tmpl has no login-ways wrapper")
 	}
 	end := strings.Index(login[start:], "</div>")
 	if end == -1 {
-		t.Fatalf("login-ways panel is not closed")
+		t.Fatalf("login-ways wrapper is not closed")
 	}
 	panel := login[start : start+end]
-	// Amended 2026-10-29 by plan 05-07 (D-03, UI-SPEC 4e): the row of links is
-	// the login_ways_links partial now (Try the demo, Disclaimer, Policy), so the
-	// panel holds its include and the links are read from the partial's text. The
-	// partial is added to the panel text; every word asserted below is kept.
+	// The row of buttons is the login_ways_links partial (plan 05-07, D-03); its
+	// text is added to the wrapper's so the words are read from both.
 	if !strings.Contains(panel, `{{template "login_ways_links" .}}`) {
-		t.Errorf("login-ways panel does not include the login_ways_links partial")
+		t.Errorf("login-ways wrapper does not include the login_ways_links partial")
 	}
 	panel += p421ReadTemplate(t, "login_ways_links.html.tmpl")
 	for _, want := range []string{
 		"{{if .LowDataDefault}}", "{{else}}", "{{end}}",
 		`href="/login?low=0"`, `href="/login?low=1"`, `href="/disclaimer"`, `href="/policy"`,
-		"Low data view is on for this device. It opens after you sign in.",
-		"Text only, no map",
+		"Low data view is on. It opens after you sign in.", "Turn off low data view",
 	} {
 		if !strings.Contains(panel, want) {
-			t.Errorf("login-ways panel lacks %q", want)
+			t.Errorf("login-ways wrapper lacks %q", want)
 		}
 	}
+	if strings.Contains(panel, "Text only, no map") {
+		t.Errorf("login-ways wrapper still holds the hint line under Low data view")
+	}
 	if strings.Contains(panel, "{{.Email}}") {
-		t.Errorf("login-ways panel renders the email")
+		t.Errorf("login-ways wrapper renders the email")
 	}
 	if strings.Contains(panel, " hidden") {
-		t.Errorf("login-ways panel carries a hidden attribute")
+		t.Errorf("login-ways wrapper carries a hidden attribute")
 	}
 	if strings.Contains(p421ReadTemplate(t, "verify_outcome.html.tmpl"), "login-ways") {
-		t.Errorf("verify_outcome.html.tmpl carries the login panel")
+		t.Errorf("verify_outcome.html.tmpl carries the login row")
 	}
 
 	rules := parseCSSRules(p421ReadStatic(t, "css/auth.css"))
@@ -131,53 +140,53 @@ func TestLoginLowDataPanelStyles(t *testing.T) {
 		"position": "relative", "z-index": "1", "display": "flex", "flex-direction": "column",
 		"gap": "var(--space-md)", "width": "100%", "max-width": "420px", // plan 29 finding 15: 16px between the cards
 	})
+	// The wrapper has no box of its own any more.
 	p421WantDecls(t, rules, ".login-ways", map[string]string{
-		"background": "var(--color-surface)", "border": "1px solid var(--color-border)",
-		"border-radius": "8px", "padding": "var(--space-md)", "color": "var(--color-text)",
+		"display": "flex", "flex-direction": "column", "color": "var(--color-text)",
 	})
-	// Amended 2026-10-21 by plan 42 (owner: no underlined text): Low data view,
-	// Turn off, Disclaimer and Policy were underlined links; they are now the
-	// outlined secondary button (page colour, hairline, 8px corners), with no
-	// underline.
-	for _, sel := range []string{".login-ways__low", ".login-ways__off"} {
-		p421WantDecls(t, rules, sel, map[string]string{
-			"min-height": "var(--touch-target-min)", "font-size": "var(--font-size-body)",
-			"font-weight": "var(--font-weight-semibold)", "color": "var(--color-text)",
-			"text-decoration": "none", "padding": "0 var(--space-md)",
-			"border": "1px solid var(--color-border)", "border-radius": "8px", "background": "var(--color-bg)",
-		})
+	if wrapper, ok := p421RuleFor(rules, ".login-ways"); ok {
+		got := declsOf(wrapper.declBody)
+		for _, boxProp := range []string{"background", "border", "padding", "border-radius"} {
+			if v, has := got[boxProp]; has {
+				t.Errorf(".login-ways sets %s %q; the row has no box behind it (UI-SPEC 1e)", boxProp, v)
+			}
+		}
 	}
-	p421WantDecls(t, rules, ".login-ways__links a", map[string]string{
-		"min-height": "var(--touch-target-min)", "color": "var(--color-text)", "text-decoration": "none",
-		"padding": "0 var(--space-md)", "border": "1px solid var(--color-border)",
-		"border-radius": "8px", "background": "var(--color-bg)",
+	// The one outlined button look of the four (was plan 42's, per class).
+	p421WantDecls(t, rules, ".login-ways__row .btn", map[string]string{
+		"min-height": "var(--touch-target-min)", "font-size": "var(--font-size-label)",
+		"font-weight": "var(--font-weight-regular)", "color": "var(--color-text)",
+		"text-decoration": "none", "padding": "0 var(--space-12)",
+		"border": "1px solid var(--color-border)", "border-radius": "8px", "background": "var(--color-bg)",
 	})
-	p421WantDecls(t, rules, ".login-ways__line", map[string]string{
+	p421WantDecls(t, rules, ".login-ways__status", map[string]string{
 		"margin": "0", "font-size": "var(--font-size-label)",
 		"line-height": "var(--line-height-label)", "color": "var(--color-text)",
 	})
-	p421WantDecls(t, rules, ".login-ways__note", map[string]string{
-		"margin": "0", "color": "var(--color-text)",
+	// The phone: a two by two grid, 8px gaps. The laptop: one flex row.
+	p421WantDecls(t, rules, ".login-ways__row", map[string]string{
+		"display": "grid", "grid-template-columns": "1fr 1fr", "gap": "var(--space-sm)",
 	})
-	p421WantDecls(t, rules, ".login-ways__links", map[string]string{
-		"margin": "0", "display": "flex", "flex-wrap": "wrap",
-	})
-
-	foundMedia := false
 	for _, r := range rules {
-		if strings.HasPrefix(r.selectorHead, "@media (max-width: 359.98px)") && strings.HasSuffix(r.selectorHead, ".login-ways__links") {
-			foundMedia = true
-			if declsOf(r.declBody)["flex-direction"] != "column" {
-				t.Errorf("the 359.98px rule does not stack the links: %q", r.declBody)
-			}
-		}
 		if (strings.Contains(r.selectorHead, ".login-ways") || strings.Contains(r.selectorHead, ".login-column")) &&
 			strings.Contains(r.declBody, "--color-text-muted") {
 			t.Errorf("rule %q uses the muted colour", r.selectorHead)
 		}
 	}
-	if !foundMedia {
-		t.Errorf("auth.css has no @media (max-width: 359.98px) rule for .login-ways__links")
+	// The laptop: one wrapping flex row. (parseCSSRules keeps the media prelude
+	// only on the first rule of a block, so the block is read whole here.)
+	laptop, ok := p47jFindBlock(stripCSSComments(p421ReadStatic(t, "css/auth.css")), "@media (min-width: 900px)")
+	if !ok {
+		t.Errorf("auth.css has no @media (min-width: 900px) block for the row")
+	} else if row := p47jRuleRaw(t, "laptop block", laptop.Body, ".login-ways__row"); !strings.Contains(row, "display: flex;") || !strings.Contains(row, "flex-wrap: wrap;") {
+		t.Errorf("the laptop row is not a wrapping flex row: %q", row)
+	}
+	// The classes of the separate panel and Phase 5's stacking rule are gone.
+	authText := p421ReadStatic(t, "css/auth.css")
+	for _, gone := range []string{".login-ways__low", ".login-ways__off", ".login-ways__line", ".login-ways__note", ".login-ways__links"} {
+		if strings.Contains(authText, gone) {
+			t.Errorf("auth.css still holds %s, a rule of the removed Low data panel", gone)
+		}
 	}
 }
 

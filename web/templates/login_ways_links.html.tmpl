@@ -1,13 +1,18 @@
 {{/*
-  The quiet row of the sign in screen (Phase 5 plan 07, D-03, UI-SPEC 4e):
-  Try the demo, Disclaimer, Policy, in that order, three 44px outlined links with
-  no underline at rest (the plan 42 look, styled by .login-ways__links in
-  auth.css). No middle dot is drawn between bordered buttons. A partial so the
-  next sign in card (Phase 8) keeps the row.
+  The one row under the sign in card (Phase 7.1 plan 11, UI-SPEC 1e, departure
+  D11; owner 2026-10-27: "should be designed more neatly"): Try the demo, Low
+  data view, Disclaimer, Policy, in that order, four 44px outlined buttons with
+  no box behind them and no underline at rest. Phase 5's row (Try the demo,
+  Disclaimer, Policy; plan 05-07, D-03) gained the Low data view button here,
+  and the separate Low data panel and its hint line are gone. The partial is
+  called with the page's view model, so it reads LowDataDefault: when the Low
+  data view is on, the second button turns it off. A partial so the next sign
+  in card (Phase 8) keeps the row.
 */}}
-{{define "login_ways_links"}}<p class="login-ways__links">
+{{define "login_ways_links"}}<div class="login-ways__row">
+        <a class="btn" id="login-try-demo" href="/demo">Try the demo</a>
+        {{if .LowDataDefault}}<a class="btn" id="login-low" href="/login?low=0">Turn off low data view</a>{{else}}<a class="btn" id="login-low" href="/login?low=1">Low data view</a>{{end}}
+        <a class="btn" href="/disclaimer">Disclaimer</a>
+        <a class="btn" href="/policy">Policy</a>
         {{/* Reserved: the explainer video link goes beside Try the demo. Not drawn yet. */}}
-        <a id="login-try-demo" href="/demo">Try the demo</a>
-        <a href="/disclaimer">Disclaimer</a>
-        <a href="/policy">Policy</a>
-      </p>{{end}}
+      </div>{{end}}

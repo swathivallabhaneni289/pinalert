@@ -24,15 +24,11 @@ func p507Render(t *testing.T, lowData bool) string {
 	if err != nil {
 		t.Fatalf("parsing the templates: %v", err)
 	}
-	vm := map[string]any{
-		"AssetVersion":          "test",
-		"Email":                 "",
-		"Sent":                  false,
-		"ResendCooldownSeconds": 45,
-		"LinkTTLSeconds":        300,
-		"LowDataDefault":        lowData,
-		"DoneLine":              "",
-	}
+	// Amended 2026-10-29 by Phase 7.1 plan 11: the view model of the new card
+	// (loginGateViewModel) replaces Email, Sent, ResendCooldownSeconds and
+	// LinkTTLSeconds. p711Vm holds the defaults of a fresh browser.
+	vm := p711Vm()
+	vm["LowDataDefault"] = lowData
 	var out bytes.Buffer
 	if err := tmpl.ExecuteTemplate(&out, "login_gate.html.tmpl", vm); err != nil {
 		t.Fatalf("rendering login_gate.html.tmpl (lowData=%v): %v", lowData, err)
@@ -118,16 +114,23 @@ func TestLoginGlobeNotWhenLowData(t *testing.T) {
 			t.Errorf("the Low data sign in page holds %q", banned)
 		}
 	}
-	for _, want := range []string{"low data view is on for this device. it opens after you sign in.", "turn off"} {
+	// Amended 2026-10-29 by Phase 7.1 plan 11 (UI-SPEC 1e, round 2 item 3 a): the
+	// panel words are now the one status line above the row and the Turn off low
+	// data view button; "Text only, no map" is gone from the normal page. The
+	// no globe, no unpkg and no preconnect assertions above are unchanged.
+	for _, want := range []string{"low data view is on. it opens after you sign in.", "turn off low data view"} {
 		if !strings.Contains(low, want) {
 			t.Errorf("the Low data sign in page lacks %q", want)
 		}
 	}
 	normal := p507Render(t, false)
-	for _, want := range []string{"Low data view", "Text only, no map", "login-globe.css", "login-globe.js"} {
+	for _, want := range []string{"Low data view", "login-globe.css", "login-globe.js"} {
 		if !strings.Contains(normal, want) {
 			t.Errorf("the normal sign in page lacks %q", want)
 		}
+	}
+	if strings.Contains(normal, "Text only, no map") {
+		t.Errorf("the normal sign in page still holds the hint line under Low data view")
 	}
 }
 
@@ -136,9 +139,15 @@ func TestLoginGlobeNotWhenLowData(t *testing.T) {
 // button, Low data panel, row of links is kept.
 func TestLoginGlobePartialOrder(t *testing.T) {
 	src := p421ReadTemplate(t, "login_gate.html.tmpl")
+	// Amended 2026-10-29 by Phase 7.1 plan 11 (round 2 item 3 b): the old email
+	// field, button and error ids became login-title, login-choice and
+	// create-email, and the Low data link left for the row in the partial. The
+	// order is now the heading, the choices, the fields, then the one row inside
+	// .login-ways, with the globe include still after .login-column. Every globe
+	// assertion below is kept.
 	p421InOrder(t, "login_gate.html.tmpl order", src,
-		`id="login-gate"`, `class="login-column"`, `id="login-form-panel"`, `id="login-email"`, `id="request-link"`,
-		`href="/login?low=1"`, `{{template "login_ways_links" .}}`, `{{template "login_globe" .}}`,
+		`id="login-gate"`, `class="login-column"`, `id="login-form-panel"`, `id="login-title"`, `id="login-choice"`,
+		`id="create-email"`, `class="login-ways"`, `{{template "login_ways_links" .}}`, `{{template "login_globe" .}}`,
 		`/static/js/auth.js`, `{{template "login_globe_script" .}}`)
 	for _, include := range []string{`{{template "login_globe" .}}`, `{{template "login_globe_script" .}}`, `{{template "login_globe_css" .}}`} {
 		at := strings.Index(src, include)
@@ -150,7 +159,7 @@ func TestLoginGlobePartialOrder(t *testing.T) {
 			t.Errorf("%s is not written under {{if not .LowDataDefault}}", include)
 		}
 	}
-	for _, id := range []string{`id="login-gate"`, `id="login-form-panel"`, `id="login-email"`, `id="request-link"`, `id="auth-error"`} {
+	for _, id := range []string{`id="login-gate"`, `id="login-form-panel"`, `id="login-title"`, `id="login-choice"`, `id="create-email"`} {
 		if n := strings.Count(src, id); n != 1 {
 			t.Errorf("%s appears %d times in login_gate.html.tmpl, want 1", id, n)
 		}
@@ -171,7 +180,18 @@ func TestLoginGlobePartialOrder(t *testing.T) {
 	waysAt := strings.Index(page, `class="login-ways"`)
 	globeAt := strings.Index(page, `id="login-globe"`)
 	if columnAt == -1 || waysAt == -1 || globeAt == -1 || !(columnAt < waysAt && waysAt < globeAt) {
-		t.Errorf("rendered order is column %d, Low data panel %d, globe %d; the globe must come last in #login-gate", columnAt, waysAt, globeAt)
+		t.Errorf("rendered order is column %d, row wrapper %d, globe %d; the globe must come last in #login-gate", columnAt, waysAt, globeAt)
+	}
+	// Added 2026-10-29 by Phase 7.1 plan 11: the card closes before the wrapper of
+	// the one row, the row sits inside the wrapper, and the globe is never inside
+	// the card.
+	cardAt := strings.Index(page, `id="login-form-panel"`)
+	rowAt := strings.Index(page, `class="login-ways__row"`)
+	if cardAt == -1 || rowAt == -1 || !(cardAt < waysAt && waysAt < rowAt && rowAt < globeAt) {
+		t.Errorf("rendered order is card %d, wrapper %d, row %d, globe %d; want card, wrapper, row, globe", cardAt, waysAt, rowAt, globeAt)
+	}
+	if cardAt != -1 && waysAt > cardAt && strings.Contains(page[cardAt:waysAt], "login-globe") {
+		t.Errorf("the globe markup sits inside the sign in card")
 	}
 	for _, want := range []string{`id="login-globe-map"`, `id="globe-credit"`, `aria-hidden="true"`, "NASA Blue Marble", "NASA GIBS", "Earth pictures:"} {
 		if !strings.Contains(page, want) {
@@ -270,10 +290,15 @@ func TestLoginGlobeNotInAuthCSSOrThemeJS(t *testing.T) {
 // demo, Disclaimer, Policy, in its own partial, with the reserved video slot.
 func TestLoginRowTryTheDemo(t *testing.T) {
 	partial := p421ReadTemplate(t, "login_ways_links.html.tmpl")
+	// Amended 2026-10-29 by Phase 7.1 plan 11 (UI-SPEC 1e): the row is now the one
+	// row of four a.btn links (Low data view joins it as the second), so the
+	// wrapper class is login-ways__row and each link carries class="btn". Try the
+	// demo stays first, then Low data view, Disclaimer and Policy; the dot free
+	// check and the reserved video slot below are unchanged.
 	p421InOrder(t, "login_ways_links.html.tmpl", partial,
-		`{{define "login_ways_links"}}`, `class="login-ways__links"`,
+		`{{define "login_ways_links"}}`, `class="login-ways__row"`,
 		`id="login-try-demo" href="/demo">Try the demo</a>`,
-		`<a href="/disclaimer">Disclaimer</a>`, `<a href="/policy">Policy</a>`)
+		`id="login-low"`, `href="/disclaimer">Disclaimer</a>`, `href="/policy">Policy</a>`)
 	for _, banned := range []string{"·", "&middot;", "&#183;", "&bull;", "•"} {
 		if strings.Contains(partial, banned) {
 			t.Errorf("the row draws the separator %q between bordered buttons", banned)
@@ -287,7 +312,7 @@ func TestLoginRowTryTheDemo(t *testing.T) {
 		if n := strings.Count(page, "Try the demo"); n != 1 {
 			t.Errorf("lowData=%v: the sign in page holds Try the demo %d times, want 1", low, n)
 		}
-		p421InOrder(t, "rendered row", page, `Try the demo</a>`, `Disclaimer</a>`, `Policy</a>`)
+		p421InOrder(t, "rendered row", page, `Try the demo</a>`, `ow data view</a>`, `Disclaimer</a>`, `Policy</a>`)
 	}
 	if n := strings.Count(p421ReadTemplate(t, "login_gate.html.tmpl"), `{{template "login_ways_links" .}}`); n != 1 {
 		t.Errorf("login_gate.html.tmpl includes the row %d times, want 1", n)
@@ -412,21 +437,25 @@ const (
 	p47jClampVH      = "clamp(140px, min(100vw - 48px, (100vh - 404px) * 1.28), 300px)"
 	p47jClampSVH     = "clamp(140px, min(100vw - 48px, (100svh - 404px) * 1.28), 300px)"
 	p47jColumnHead   = ".login-gate.has-globe .login-column"
-	p47jErrorHead    = ".login-gate.has-globe .auth-error:not(:empty)"
+	// Amended 2026-10-29 by Phase 7.1 plan 11: the solid error backing moved from
+	// the old .auth-error line to the shown .inline-error lines of the new card.
+	p47jErrorHead = ".login-gate.has-globe .login-card .inline-error:not([hidden])"
 )
 
-// p47jBoxHeads are the three glass boxes; p47jButtonHeads are the buttons in
-// the Low data panel. Each is its own head, never a comma group.
+// p47jBoxHeads is the one glass box; p47jButtonHeads are the four buttons of the
+// row. Each is its own head, never a comma group.
+//
+// Amended 2026-10-29 by Phase 7.1 plan 11 (UI-SPEC 1e, rule 11): the row has no
+// box, so the glass boxes are the card alone (#check-inbox is gone with the
+// inbox partial, and .login-ways has no background), and the four buttons are
+// one head, .login-ways__row .btn, replacing .login-ways__low, __off and
+// __links a. Each button now carries its own blur.
 var p47jBoxHeads = []string{
 	".login-gate.has-globe .login-card",
-	".login-gate.has-globe #check-inbox",
-	".login-gate.has-globe .login-ways",
 }
 
 var p47jButtonHeads = []string{
-	".login-gate.has-globe .login-ways__low:not(:hover)",
-	".login-gate.has-globe .login-ways__off:not(:hover)",
-	".login-gate.has-globe .login-ways__links a:not(:hover)",
+	".login-gate.has-globe .login-ways__row .btn:not(:hover)",
 }
 
 // TestLoginGlobePhoneBoxReserved pins the phone geometry: the whole Earth in a
@@ -547,12 +576,14 @@ func TestLoginGlassFallbacks(t *testing.T) {
 		if it.Start > glassStart {
 			glassStart = it.Start
 		}
+		// Amended 2026-10-29 by Phase 7.1 plan 11: the buttons no longer sit inside
+		// a blurred panel, so each carries its own blur of 4px (this used to assert
+		// that they had none).
 		p421InOrder(t, head, collapse(it.Body),
 			"background: var(--color-bg);",
-			"background: color-mix(in srgb, var(--color-bg) 65%, transparent);")
-		if strings.Contains(it.Body, "backdrop-filter") {
-			t.Errorf("%s carries a blur of its own; the buttons sit inside the blurred panel", head)
-		}
+			"background: color-mix(in srgb, var(--color-bg) 65%, transparent);",
+			"-webkit-backdrop-filter: blur(4px);",
+			"backdrop-filter: blur(4px);")
 	}
 	if it, ok := topRule(p47jColumnHead); !ok {
 		t.Errorf("login-globe.css has no top level rule %s", p47jColumnHead)
@@ -605,6 +636,15 @@ func TestLoginGlassFallbacks(t *testing.T) {
 			raw := p47jRuleRaw(t, fb.prelude, block.Body, head)
 			if !strings.Contains(raw, "background: var(--color-bg);") {
 				t.Errorf("%q: %s does not restore the solid page colour", fb.prelude, head)
+			}
+			// Added 2026-10-29 by Phase 7.1 plan 11: a button with a blur of its own
+			// drops the blur where the glass is switched off.
+			if fb.noBlur && head != p47jColumnHead {
+				for _, want := range []string{"-webkit-backdrop-filter: none;", "backdrop-filter: none;"} {
+					if !strings.Contains(raw, want) {
+						t.Errorf("%q: %s lacks %q", fb.prelude, head, want)
+					}
+				}
 			}
 		}
 	}
@@ -735,28 +775,37 @@ func TestLoginGlassTextContrast(t *testing.T) {
 	// (0,1,0) and draws the line in the normal text colour, at 16px; colour is
 	// reserved for severity, so that stays. This pins the winning rule and the
 	// painted pair, and that the losing rule no longer claims a colour or size.
+	//
+	// Amended 2026-10-29 by Phase 7.1 plan 11: the old #auth-error and
+	// #link-expiry-notice lines are gone from the page (the inbox partial is not
+	// included any more). The error lines are p.inline-error elements inside the
+	// card now. They are painted in --color-text through the shared .inline-error
+	// rule of chrome.css, and the card scoped rule in auth.css wins over
+	// ".login-card p" for size (Label 14px) and sets no colour of its own, so the
+	// painted pair is the same 15.20 and 16.15 to 1 pinned below.
 	gate := p421ReadTemplate(t, "login_gate.html.tmpl")
-	card := strings.Index(gate, `<div class="login-card" id="login-form-panel"`)
-	errAt := strings.Index(gate, `<p id="auth-error" class="auth-error"`)
-	if card == -1 || errAt == -1 || errAt < card || strings.Contains(gate[card:errAt], "</div>\n    </div>") {
-		t.Errorf("#auth-error is no longer a p inside .login-card; the painted colour pinned here would change")
-	}
-	inbox := p421ReadTemplate(t, "check_inbox.html.tmpl")
-	if !strings.HasPrefix(inbox, `<div id="check-inbox"`) || !strings.Contains(inbox, `<p id="link-expiry-notice" class="auth-error"`) {
-		t.Errorf("#link-expiry-notice is no longer a p inside #check-inbox")
+	card := strings.Index(gate, `id="login-form-panel"`)
+	ways := strings.Index(gate, `class="login-ways"`)
+	errAt := strings.Index(gate, `<p class="inline-error" id="create-error"`)
+	if card == -1 || ways == -1 || errAt == -1 || errAt < card || errAt > ways {
+		t.Errorf("create-error is no longer a p.inline-error inside .login-card; the painted colour pinned here would change")
 	}
 	authCSS := "static/css/auth.css"
 	winner := p31mRule(t, authCSS, "", ".login-card p")
 	if winner.Decls["color"] != "var(--color-text)" {
-		t.Errorf(".login-card p colour = %q, want var(--color-text), the colour the error line is painted in", winner.Decls["color"])
+		t.Errorf(".login-card p colour = %q, want var(--color-text), the colour the error line falls back to", winner.Decls["color"])
 	}
-	if p31mRule(t, authCSS, "", "#check-inbox p").Decls["color"] != "var(--color-text)" {
-		t.Errorf("#check-inbox p no longer paints the normal text colour")
+	cardError := p31mRule(t, authCSS, "", ".login-card .inline-error:not([hidden])")
+	if v, ok := cardError.Decls["color"]; ok && v != "var(--color-text)" {
+		t.Errorf("the card scoped error rule sets color %q; it must paint --color-text or set none", v)
+	}
+	if p31mRule(t, "static/css/chrome.css", "", ".inline-error:not([hidden])").Decls["color"] != "var(--color-text)" {
+		t.Errorf("the shared .inline-error rule no longer paints the normal text colour")
 	}
 	loser := p31mRule(t, authCSS, "", ".auth-error")
 	for _, prop := range []string{"color", "font-size", "line-height"} {
 		if v, ok := loser.Decls[prop]; ok {
-			t.Errorf(".auth-error sets %s %q, which .login-card p and #check-inbox p always override; drop the dead declaration", prop, v)
+			t.Errorf(".auth-error sets %s %q, which .login-card p always overrides; drop the dead declaration", prop, v)
 		}
 	}
 	for name, tok := range themes {

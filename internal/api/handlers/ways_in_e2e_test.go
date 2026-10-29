@@ -148,9 +148,18 @@ func p421AssertInOrder(t *testing.T, label, body string, parts ...string) {
 // Try the demo, Disclaimer, Policy, so the panel text and the panel links gain
 // Try the demo and /demo ahead of the two legal pages. Every earlier word and
 // link is kept, in the same order.
+//
+// Amended 2026-10-29 by Phase 7.1 plan 11 (UI-SPEC 1e, departure D11, owner
+// 2026-10-27): the separate Low data panel and its hint line are gone. Under the
+// card there is one row of four buttons, Try the demo, Low data view, Disclaimer,
+// Policy, and with the Low data view on, one status line above the row and the
+// second button reads Turn off low data view. The words and links are kept; only
+// their order and the removed hint line changed.
 const (
-	p421OffText = "Low data view Text only, no map Try the demo Disclaimer Policy"
-	p421OnText  = "Low data view is on for this device. It opens after you sign in. Turn off Try the demo Disclaimer Policy"
+	p421OffText = "Try the demo Low data view Disclaimer Policy"
+	p421OnText  = "Low data view is on. It opens after you sign in. Try the demo Turn off low data view Disclaimer Policy"
+	// p421WaysOpen opens the wrapper of the row (the wrapper carries an id now).
+	p421WaysOpen = `<div class="login-ways" id="login-ways">`
 )
 
 func TestLoginLowDataPanel(t *testing.T) {
@@ -162,8 +171,8 @@ func TestLoginLowDataPanel(t *testing.T) {
 		t.Fatalf("parsing page template: %v", err)
 	}
 
-	offLinks := []string{"/login?low=1", "/demo", "/disclaimer", "/policy"}
-	onLinks := []string{"/login?low=0", "/demo", "/disclaimer", "/policy"}
+	offLinks := []string{"/demo", "/login?low=1", "/disclaimer", "/policy"}
+	onLinks := []string{"/demo", "/login?low=0", "/disclaimer", "/policy"}
 
 	cases := []struct {
 		name       string
@@ -213,7 +222,7 @@ func TestLoginLowDataPanel(t *testing.T) {
 			if n := strings.Count(body, `class="login-ways"`); n != 1 {
 				t.Fatalf(`class="login-ways" appears %d times, want 1`, n)
 			}
-			panel := p421Region(t, body, `<div class="login-ways">`)
+			panel := p421Region(t, body, p421WaysOpen)
 			if got := p421Text(panel); got != tc.wantText {
 				t.Errorf("panel text = %q, want %q", got, tc.wantText)
 			}
@@ -235,22 +244,31 @@ func TestLoginLowDataPanel(t *testing.T) {
 			// Phase 4 hands-on tests are walked on this layout after Phase 3.4 is built.
 			// The login screen has no bar link first; it keeps its own Disclaimer and
 			// Policy links in the panel.
+			//
+			// Amended 2026-10-29 by Phase 7.1 plan 11 (UI-SPEC departure D10): the focus
+			// order is the choice control, then the email field, then the card's button,
+			// then the four buttons of the row in order and last the globe credit (when
+			// the globe is on). Phase 5's 05-UI-SPEC 5c "email field first" is amended:
+			// the two choices come before the field.
 			p421AssertInOrder(t, "focus order", body,
-				`id="login-email"`, `id="request-link"`, `class="login-ways"`)
-			// Column order inside the wrapper.
+				`id="login-tab-create"`, `id="login-tab-signin"`, `id="create-email"`, `id="create-submit"`,
+				`id="login-try-demo"`, `id="login-low"`, `href="/disclaimer"`, `href="/policy"`)
+			if tc.wantText == p421OffText {
+				p421AssertInOrder(t, "credit last", body, `href="/policy"`, `id="globe-credit"`)
+			}
+			// Column order inside the wrapper (the inbox card is gone with the link).
 			p421AssertInOrder(t, "column order", body,
-				`class="login-column"`, `id="login-form-panel"`, `id="check-inbox"`, `class="login-ways"`)
+				`class="login-column"`, `id="login-form-panel"`, `class="login-ways"`)
 
+			// The sent query is ignored now: no address is ever read from the URL, so
+			// the card is the same entry card (D-05).
 			if tc.sent {
-				open := p421Region(t, body, `<div id="check-inbox"`)
-				tag := open[:strings.Index(open, ">")]
-				if strings.Contains(tag, " hidden") {
-					t.Errorf("check inbox card is hidden in the sent state: %s", tag)
+				if strings.Contains(body, "reader@example.com") || strings.Contains(body, `id="check-inbox"`) {
+					t.Errorf("the sent query was read into the page")
 				}
 				form := body[strings.Index(body, `id="login-form-panel"`):]
-				formTag := form[:strings.Index(form, ">")]
-				if !strings.Contains(formTag, " hidden") {
-					t.Errorf("login form is not hidden in the sent state: %s", formTag)
+				if formTag := form[:strings.Index(form, ">")]; strings.Contains(formTag, " hidden") {
+					t.Errorf("the card is hidden: %s", formTag)
 				}
 			}
 			if tc.name == "low_invalid" && strings.Contains(body, "low=yes") {
@@ -281,7 +299,7 @@ func TestLoginLowParamSetsCookie(t *testing.T) {
 		t.Fatalf("GET /login?low=1 set no %s cookie", handlers.LowDataCookie)
 	}
 	p421CheckSet(t, c)
-	if got := p421Text(p421Region(t, body, `<div class="login-ways">`)); got != p421OnText {
+	if got := p421Text(p421Region(t, body, p421WaysOpen)); got != p421OnText {
 		t.Errorf("panel text = %q, want %q", got, p421OnText)
 	}
 
@@ -301,9 +319,13 @@ func TestLoginLowParamSetsCookie(t *testing.T) {
 		t.Fatalf("GET /low = %d, want 200", resp.StatusCode)
 	}
 
+	// Amended 2026-10-29 by Phase 7.1 plan 11 (D-10, research Pitfall 16): the
+	// reader is signed in here, so /login answers 303 to / instead of drawing the
+	// form, after the ?low=0 choice was saved (the deleting cookie below). It used
+	// to answer 200 with the form.
 	resp, _ = p421Get(t, client, srv.URL+"/login?low=0")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET /login?low=0 = %d, want 200", resp.StatusCode)
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/" {
+		t.Fatalf("signed in GET /login?low=0 = %d to %q, want 303 to /", resp.StatusCode, resp.Header.Get("Location"))
 	}
 	c, ok = p421LowCookie(resp.Cookies())
 	if !ok {

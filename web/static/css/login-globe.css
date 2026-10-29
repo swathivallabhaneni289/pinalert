@@ -141,8 +141,10 @@
   background: transparent;
 }
 
-/* Glass so the boxes never hide the Earth. #check-inbox shares the card rule in
-   auth.css by id, so it needs its own, or the card would turn solid after Send. */
+/* Glass so the boxes never hide the Earth. The card is the only box now: the row
+   under it has no box (plan 11, UI-SPEC 1e), so its four buttons take the glass
+   themselves, each with its own blur. Hover keeps the solid built look from
+   chrome.css. */
 .login-gate.has-globe .login-card {
   background: var(--color-surface);
   background: color-mix(in srgb, var(--color-surface) 65%, transparent);
@@ -150,53 +152,29 @@
   backdrop-filter: blur(4px);
 }
 
-.login-gate.has-globe #check-inbox {
-  background: var(--color-surface);
-  background: color-mix(in srgb, var(--color-surface) 65%, transparent);
+.login-gate.has-globe .login-ways__row .btn:not(:hover) {
+  background: var(--color-bg);
+  background: color-mix(in srgb, var(--color-bg) 65%, transparent);
   -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
-}
-
-.login-gate.has-globe .login-ways {
-  background: var(--color-surface);
-  background: color-mix(in srgb, var(--color-surface) 65%, transparent);
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
-}
-
-/* The buttons sit inside the blurred panel, so they take 65 percent of the page
-   colour with no blur of their own (a nested blur would only see the panel and
-   cost a second pass). Hover keeps the solid built look from auth.css. */
-.login-gate.has-globe .login-ways__low:not(:hover) {
-  background: var(--color-bg);
-  background: color-mix(in srgb, var(--color-bg) 65%, transparent);
-}
-
-.login-gate.has-globe .login-ways__off:not(:hover) {
-  background: var(--color-bg);
-  background: color-mix(in srgb, var(--color-bg) 65%, transparent);
-}
-
-.login-gate.has-globe .login-ways__links a:not(:hover) {
-  background: var(--color-bg);
-  background: color-mix(in srgb, var(--color-bg) 65%, transparent);
 }
 
 /* The error line keeps a solid surface backing, so a message never sits on the
-   moving Earth. It is painted in --color-text (".login-card p" in auth.css wins
-   over ".auth-error"), which on the solid surface is 15.20 to 1 light and 16.15
-   dark. Corrected 2026-10-29 by the Phase 5 review fix (WR-T04): this said the
-   line was red at 4.87 and 5.46, a pair the cascade never paints. An empty
-   line takes no room and gets no backing. */
-.login-gate.has-globe .auth-error:not(:empty) {
+   moving Earth, and its red bar and icon never fall to 2 to 1 on light glass.
+   The line is painted in --color-text (the card scoped .inline-error rule in
+   auth.css sets Label 14px and wins over ".login-card p"), which on the solid
+   surface is 15.20 to 1 light and 16.15 dark. Moved 2026-10-29 by Phase 7.1
+   plan 11 from the old error line to the shown .inline-error lines of
+   the new card. A hidden line takes no room and gets no backing. */
+.login-gate.has-globe .login-card .inline-error:not([hidden]) {
   background: var(--color-surface);
   padding: var(--space-xs) var(--space-sm);
-  border-radius: 4px;
+  border-radius: 0 6px 6px 0;
 }
 
 /* A phone, or a laptop window under 1200px wide and under 800px tall: the
-   corner would sit under the Low data panel, so the credit goes in the page
-   flow under the panel. The globe stays absolute against .login-gate and still
+   corner would sit under the row of buttons, so the credit goes in the page
+   flow under the row. The globe stays absolute against .login-gate and still
    fills it. */
 @media (max-width: 899.98px), (max-width: 1199.98px) and (max-height: 799.98px) {
   .login-gate.has-globe {
@@ -283,23 +261,7 @@
     background: var(--color-surface);
   }
 
-  .login-gate.has-globe #check-inbox {
-    background: var(--color-surface);
-  }
-
-  .login-gate.has-globe .login-ways {
-    background: var(--color-surface);
-  }
-
-  .login-gate.has-globe .login-ways__low:not(:hover) {
-    background: var(--color-bg);
-  }
-
-  .login-gate.has-globe .login-ways__off:not(:hover) {
-    background: var(--color-bg);
-  }
-
-  .login-gate.has-globe .login-ways__links a:not(:hover) {
+  .login-gate.has-globe .login-ways__row .btn:not(:hover) {
     background: var(--color-bg);
   }
 }
@@ -319,28 +281,10 @@
     backdrop-filter: none;
   }
 
-  .login-gate.has-globe #check-inbox {
-    background: var(--color-surface);
+  .login-gate.has-globe .login-ways__row .btn:not(:hover) {
+    background: var(--color-bg);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
-  }
-
-  .login-gate.has-globe .login-ways {
-    background: var(--color-surface);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-
-  .login-gate.has-globe .login-ways__low:not(:hover) {
-    background: var(--color-bg);
-  }
-
-  .login-gate.has-globe .login-ways__off:not(:hover) {
-    background: var(--color-bg);
-  }
-
-  .login-gate.has-globe .login-ways__links a:not(:hover) {
-    background: var(--color-bg);
   }
 }
 
@@ -356,28 +300,10 @@
     backdrop-filter: none;
   }
 
-  .login-gate.has-globe #check-inbox {
-    background: var(--color-surface);
+  .login-gate.has-globe .login-ways__row .btn:not(:hover) {
+    background: var(--color-bg);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
-  }
-
-  .login-gate.has-globe .login-ways {
-    background: var(--color-surface);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-
-  .login-gate.has-globe .login-ways__low:not(:hover) {
-    background: var(--color-bg);
-  }
-
-  .login-gate.has-globe .login-ways__off:not(:hover) {
-    background: var(--color-bg);
-  }
-
-  .login-gate.has-globe .login-ways__links a:not(:hover) {
-    background: var(--color-bg);
   }
 }
 
