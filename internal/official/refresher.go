@@ -93,6 +93,12 @@ type Result struct {
 	ETag         string
 	LastModified string
 	NotModified  bool
+
+	// Partial is a run that left new items for the next run (more than CAPPerRun
+	// were new). What it fetched is stored, but last_success_at does not move:
+	// an unseen item may be in force, so the list must not read as fresh
+	// (WR-S01 of the Phase 5 review).
+	Partial bool
 }
 
 // Fetcher reads one feed. It is handed the stored status for its validators and
@@ -310,6 +316,11 @@ func (r *Refresher) run(ctx context.Context, feed Feed, reg registration) (Resul
 		log.Printf("official: feed=%s refresh failed class=%s", feed, class)
 		return res, ferr
 	}
+	if res.Partial {
+		log.Printf("official: feed=%s partial run items=%d fetched=%d stored=%d cancelled=%d",
+			feed, res.ItemsSeen, res.Fetched, res.Stored, res.Cancelled)
+		return res, nil
+	}
 	if err := r.feeds.success(ctx, feed, now, res); err != nil {
 		res.ErrorClass = "network"
 		return res, fmt.Errorf("official: recording the success: %w", err)
@@ -357,7 +368,8 @@ func newSachetFetcher(api sachetAPI, ix *areas.Index, store func() alertStore, n
 //
 // The validators are handed back only when the run finished its work. If some
 // items were left over or failed, the old validators are kept, so the next
-// request cannot be answered 304 and the rest is fetched.
+// request cannot be answered 304 and the rest is fetched. A run with items
+// left over is Partial: the refresher then leaves last_success_at alone.
 func (f *sachetFetcher) Fetch(ctx context.Context, st FeedStatus) (Result, error) {
 	list, err := f.api.FetchList(ctx, st.ETag, st.LastModified)
 	if err != nil {
@@ -424,6 +436,7 @@ func (f *sachetFetcher) Fetch(ctx context.Context, st FeedStatus) (Result, error
 	if leftover || failed > 0 {
 		res.ETag, res.LastModified = st.ETag, st.LastModified
 	}
+	res.Partial = leftover
 	return res, nil
 }
 

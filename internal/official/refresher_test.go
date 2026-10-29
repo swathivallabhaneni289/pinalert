@@ -447,6 +447,40 @@ func TestRefreshCapsCAPPerRun(t *testing.T) {
 	}
 }
 
+// TestRefreshPartialRunKeepsLastSuccess pins WR-S01 of the Phase 5 review: a
+// run that leaves new items for the next run stores what it fetched but does not
+// move last_success_at, so the page never calls the list fresh while an unseen
+// item may still be in force. The run that finishes the work moves it.
+func TestRefreshPartialRunKeepsLastSuccess(t *testing.T) {
+	api := &fakeSachet{list: ListResult{Items: manyItems(CAPPerRun + 10), ETag: `W/"new"`}}
+	r, feeds, alerts, c := newSachetRefresher(t, api)
+	old := refreshT0.Add(-time.Hour)
+	feeds.rows[FeedSachet].LastSuccessAt = &old
+
+	res, err := r.RefreshIfDue(context.Background(), FeedSachet)
+	if err != nil || !res.Partial || res.Stored != CAPPerRun {
+		t.Fatalf("first run = %+v, %v; want a partial run that stored %d", res, err, CAPPerRun)
+	}
+	if got := feeds.rows[FeedSachet].LastSuccessAt; got == nil || !got.Equal(old) {
+		t.Errorf("a partial run moved last_success_at to %v, want %v", got, old)
+	}
+	if feeds.rows[FeedSachet].ConsecutiveFailures != 0 || feeds.rows[FeedSachet].LastError != "" {
+		t.Errorf("a partial run was recorded as a failure: %+v", feeds.rows[FeedSachet])
+	}
+
+	c.set(c.now().Add(MinRefreshGap))
+	res, err = r.RefreshIfDue(context.Background(), FeedSachet)
+	if err != nil || res.Partial || res.Fetched != 10 {
+		t.Fatalf("second run = %+v, %v; want the last 10 fetched and the run complete", res, err)
+	}
+	if got := feeds.rows[FeedSachet].LastSuccessAt; got == nil || !got.Equal(c.now()) {
+		t.Errorf("the completing run left last_success_at at %v, want %v", got, c.now())
+	}
+	if len(alerts.saved) != CAPPerRun+10 {
+		t.Errorf("%d saved, want %d", len(alerts.saved), CAPPerRun+10)
+	}
+}
+
 func TestRefreshRetriesWhatFailed(t *testing.T) {
 	items := manyItems(3)
 	failing := items[1].GUID

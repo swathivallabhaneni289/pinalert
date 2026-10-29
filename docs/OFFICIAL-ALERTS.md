@@ -24,7 +24,7 @@ Two steps, always. The RSS list is a pointer only: each item gives a guid, a tit
 Bounds on what the server asks and accepts:
 
 - The CAP address is built from the guid only after it matches 10 to 20 digits, on one fixed https host. The link in the feed is never followed. Redirects are refused.
-- The RSS body is limited to 1 MB and a CAP body to 256 KB. Timeouts are 15 and 8 seconds, with one retry. At most 3 CAP requests run at once, and at most 40 per run, newest first. A cold start with 100 unseen items takes three runs and loses nothing, because the window is a day.
+- The RSS body is limited to 1 MB and a CAP body to 256 KB. Timeouts are 15 and 8 seconds, with one retry. At most 3 CAP requests run at once, and at most 40 per run, newest first. A cold start with 100 unseen items takes three runs and loses nothing, because the window is a day. A run that leaves items for the next one does not move "Last checked", so the list never reads as fresh while an unseen item may still be in force.
 - A feed is asked at most once every 4 minutes whoever calls (`MinRefreshGap`), one call at a time, with conditional requests (ETag and Last-Modified). The stored validators move only after a run that handled every item it needed, so a 304 can never hide an unfetched item.
 - Only a message that is `Actual`, `Public` and an Alert, Update or Cancel is kept. Exercise, Test, System, Draft and Private messages are dropped and remembered in memory so they are not fetched again every run.
 - The request names Pinalert, the deployment's `BASE_URL` and `CONTACT_EMAIL`, so NDMA can reach someone.
