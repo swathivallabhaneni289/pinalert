@@ -35,6 +35,13 @@ type AccountDeleteQuerier interface {
 	// its sign in throttle row go with the other personal rows.
 	DeleteAuthCodesForEmail(ctx context.Context, email string) error
 	ClearAuthThrottle(ctx context.Context, arg sqlcgen.ClearAuthThrottleParams) error
+	// Phase 8 plan 08 (A-P8-6): a deleted account's words go (its comments are
+	// blanked and marked deleted, and stay as placeholders where others
+	// replied, so threads still read); the likes and comment flags it gave are
+	// personal rows and are removed.
+	BlankAccountComments(ctx context.Context, arg sqlcgen.BlankAccountCommentsParams) (int64, error)
+	DeleteAccountCommentLikes(ctx context.Context, accountID int64) error
+	DeleteAccountCommentFlags(ctx context.Context, accountID int64) error
 	DeleteAccountUpdates(ctx context.Context, accountID int64) error
 	DeleteAccountCursors(ctx context.Context, accountID int64) error
 	DeleteAccountMutes(ctx context.Context, accountID int64) error
@@ -134,6 +141,11 @@ func DeletedEmailFor(accountID int64) string {
 // Amended 2026-10-29 by Phase 7.1 plan 16: the sign in link tokens step is
 // gone, because the link token table was dropped (migration 00015).
 //
+// Amended 2026-10-29 by Phase 8 plan 08 (A-P8-6): right after the Phase 7.1
+// steps the account's comments lose their words and get deleted_at, and the
+// likes and comment flags it gave are deleted. A comment others replied to
+// reads as a placeholder with no name afterwards.
+//
 // Its effect on other people: none. Reports and votes are not touched, so they
 // stay attributed to a row nobody can identify. Every confirmed count, every
 // Resolve answer, every ClassifyOutcome result and every reporter rating that
@@ -173,6 +185,20 @@ func (s *AccountDeletionService) DeleteAccount(ctx context.Context, accountID in
 			if err != nil {
 				return fmt.Errorf("service: DeleteAccount: account %d: clearing the sign in throttle: %w", accountID, err)
 			}
+		}
+		// Phase 8 plan 08 (A-P8-6, T-08-36): the account's words are blanked and
+		// the likes and comment flags it gave are removed, in the same
+		// transaction and before the scrub. The comment rows stay, so replies,
+		// other people's likes and the audit trail keep their place.
+		commentsNow := pgtype.Timestamptz{Time: s.now(), Valid: true}
+		if _, err := q.BlankAccountComments(ctx, sqlcgen.BlankAccountCommentsParams{Now: commentsNow, AccountID: accountID}); err != nil {
+			return fmt.Errorf("service: DeleteAccount: account %d: blanking comments: %w", accountID, err)
+		}
+		if err := q.DeleteAccountCommentLikes(ctx, accountID); err != nil {
+			return fmt.Errorf("service: DeleteAccount: account %d: deleting comment likes: %w", accountID, err)
+		}
+		if err := q.DeleteAccountCommentFlags(ctx, accountID); err != nil {
+			return fmt.Errorf("service: DeleteAccount: account %d: deleting comment flags: %w", accountID, err)
 		}
 		if err := q.DeleteAccountUpdates(ctx, accountID); err != nil {
 			return fmt.Errorf("service: DeleteAccount: account %d: deleting updates: %w", accountID, err)
