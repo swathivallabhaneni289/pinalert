@@ -272,6 +272,26 @@ test('the unavailable 409 shows its server sentence', async () => {
   assert.equal(m.els['person-action-error'].textContent, line);
 });
 
+// 2026-10-30 (09-REVIEW WR-B03): a 409 draws the profile again, so a bell for a
+// follow that has ended is taken away and focus goes to More.
+test('a 409 on a follow that has ended takes the bell away', async () => {
+  const line = 'Couldn\'t change this. Try again.';
+  const m = load({
+    following: true,
+    route: statefulRoute({
+      following: false,
+      notifyAnswer: () => ({ status: 409, body: { error: { field: 'notify', message: line } } })
+    })
+  });
+  m.click('person-bell');
+  await flush();
+  assert.deepEqual(m.calls.map((c) => c.method), ['POST', 'GET']);
+  assert.equal(m.bell.hidden, true, 'the bell is gone');
+  assert.equal(m.els['person-follow'].hidden, false);
+  assert.equal(m.els['person-action-error'].textContent, line);
+  assert.equal(m.els['person-more'].focused, 1, 'focus is not left on a hidden bell');
+});
+
 test('another failure, a network failure and offline show the exact lines', async () => {
   const a = load({
     following: true,
