@@ -340,6 +340,14 @@
     if (!(sizeGlobe().diameter > 0)) {
       return;
     }
+    // The size guard does not see a missing stylesheet: with no rules the box is
+    // as wide as the credit's text. login-globe.css keeps the box visibility
+    // hidden until it is ready, so a box that is not hidden means the stylesheet
+    // did not apply, and nothing is downloaded (Phase 5 review fix IN-B05).
+    if (typeof window.getComputedStyle === 'function' && wrapper &&
+        window.getComputedStyle(wrapper).visibility !== 'hidden') {
+      return;
+    }
     armGiveUp();
     if (typeof window.matchMedia === 'function') {
       reduceQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
