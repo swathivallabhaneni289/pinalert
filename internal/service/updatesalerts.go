@@ -36,7 +36,9 @@ import (
 //     it is Live or Provisional, never Hidden, Withheld, Retracted or expired,
 //     critical or not, owner amendment 2026-10-18), its reporter's tag is
 //     Reliable (the same tag the Show menu tick reads), it is not the reader's
-//     own, not one the reader follows or muted, and it was posted after the
+//     own, not one the reader follows or muted, not one by a person the reader
+//     muted (person_mutes, read once per refresh through MutedPeopleIDs, plan
+//     09-18, D-12), and it was posted after the
 //     switch went on.
 //  4. Read the reporter accounts of the survivors once. For each, oldest report
 //     first: skip it when this reader already got ReliableAlertsPerReporterPerHour
@@ -106,6 +108,23 @@ func (s *UpdatesService) refreshReliableAlerts(ctx context.Context, accountID in
 		return fmt.Errorf("reading nearby reports: %w", err)
 	}
 
+	// Person mute (plan 09-18, D-12): the people the reader muted, read once per
+	// refresh and only when there is a report to judge. A mute stops this person
+	// level note and nothing else. It does not touch the Critical phone path, the
+	// changes rows for reports the reader posted or voted on, or any feed, map or
+	// list, because those are about the place and the reader's own reports.
+	var mutedPeople map[int64]bool
+	if len(views) > 0 {
+		mutedIDs, err := s.q.MutedPeopleIDs(ctx, accountID)
+		if err != nil {
+			return fmt.Errorf("reading muted people: %w", err)
+		}
+		mutedPeople = make(map[int64]bool, len(mutedIDs))
+		for _, id := range mutedIDs {
+			mutedPeople[id] = true
+		}
+	}
+
 	var candidates []ReportView
 	for _, v := range views {
 		if !MayNotifyAboutReport(UpdateReliableNearby, v.Visibility, v.ExpiresAt, now) {
@@ -115,6 +134,11 @@ func (s *UpdatesService) refreshReliableAlerts(ctx context.Context, accountID in
 			continue
 		}
 		if v.IsOwnReport || v.ViewerFollows || v.ViewerMuted {
+			continue
+		}
+		// ReporterAccount is 0 for a report with no reporter account, which is
+		// never in the muted set.
+		if mutedPeople[v.ReporterAccount()] {
 			continue
 		}
 		if v.CreatedAt.Before(enabledAt) {

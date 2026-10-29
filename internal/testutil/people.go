@@ -79,6 +79,19 @@ func SeedBlock(t *testing.T, pool *pgxpool.Pool, blockerID, blockedID int64) {
 	}
 }
 
+// SeedMute inserts a person mute of mutedID by muterID (Phase 9 plan 18, D-12).
+// It writes the row with plain SQL, not through the mute service.
+func SeedMute(t *testing.T, pool *pgxpool.Pool, muterID, mutedID int64) {
+	t.Helper()
+
+	if _, err := pool.Exec(context.Background(),
+		"INSERT INTO person_mutes (muter_id, muted_id) VALUES ($1, $2)",
+		muterID, mutedID,
+	); err != nil {
+		t.Fatalf("seeding mute %d -> %d: %v", muterID, mutedID, err)
+	}
+}
+
 // raterSeq makes the e-mail of every seeded rater unique across calls, so a test
 // can call SeedRaters more than once for the same reporter and report.
 var raterSeq atomic.Int64

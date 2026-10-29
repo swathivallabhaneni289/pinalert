@@ -61,6 +61,9 @@ type AccountDeleteQuerier interface {
 	// Phase 9 plan 13 (research G6, Pitfall 11): the ratings the account gave and
 	// the ratings it received are hard deleted.
 	DeleteAccountRatings(ctx context.Context, accountID int64) (int64, error)
+	// Phase 9 plan 18 (D-12, research G6): the mutes the account made and the
+	// mutes of it are hard deleted.
+	DeleteAccountPersonMutes(ctx context.Context, accountID int64) (int64, error)
 	RevokeAccountSessions(ctx context.Context, arg sqlcgen.RevokeAccountSessionsParams) (int64, error)
 	ScrubDeletedAccount(ctx context.Context, arg sqlcgen.ScrubDeletedAccountParams) (int64, error)
 }
@@ -266,6 +269,12 @@ func (s *AccountDeletionService) DeleteAccount(ctx context.Context, accountID in
 		// their profile. Same transaction, before the scrub.
 		if _, err := q.DeleteAccountRatings(ctx, accountID); err != nil {
 			return fmt.Errorf("service: DeleteAccount: account %d: deleting ratings: %w", accountID, err)
+		}
+		// Phase 9 plan 18 (D-12, research G6): the mutes the person made and the
+		// mutes of them. Same transaction, before the scrub, so no mute row
+		// outlives the account it names.
+		if _, err := q.DeleteAccountPersonMutes(ctx, accountID); err != nil {
+			return fmt.Errorf("service: DeleteAccount: account %d: deleting person mutes: %w", accountID, err)
 		}
 		now := pgtype.Timestamptz{Time: s.now(), Valid: true}
 		if _, err := q.RevokeAccountSessions(ctx, sqlcgen.RevokeAccountSessionsParams{Now: now, AccountID: &accountID}); err != nil {

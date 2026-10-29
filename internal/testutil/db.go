@@ -81,13 +81,14 @@ func NewTestDB(t *testing.T) *pgxpool.Pool {
 // Amended 2026-10-29 by Phase 9 plan 02: account_follows and person_blocks are
 // appended after them.
 // Amended 2026-10-29 by Phase 9 plan 13: profile_ratings is appended last.
+// Amended 2026-10-29 by Phase 9 plan 18: person_mutes is appended last.
 func Truncate(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	// votes and the Phase 3.2 and 3.3 tables are named explicitly for clarity, not
 	// correctness: CASCADE already reaches them today through their foreign
 	// keys on reports and accounts. Naming them keeps this list an honest
 	// inventory of what it clears.
-	MustExec(t, pool, "TRUNCATE accounts, email_cooldowns, reports, sessions, votes, moderation_checks, report_flags, moderation_actions, updates, update_cursors, report_mutes, account_alert_settings, push_subscriptions, push_outbox, push_report_progress, official_alerts, official_alert_areas, official_feed_status, official_hazards, official_push_outbox, auth_codes, auth_throttles, comments, comment_likes, comment_flags, comment_moderation_actions, account_follows, person_blocks, profile_ratings RESTART IDENTITY CASCADE")
+	MustExec(t, pool, "TRUNCATE accounts, email_cooldowns, reports, sessions, votes, moderation_checks, report_flags, moderation_actions, updates, update_cursors, report_mutes, account_alert_settings, push_subscriptions, push_outbox, push_report_progress, official_alerts, official_alert_areas, official_feed_status, official_hazards, official_push_outbox, auth_codes, auth_throttles, comments, comment_likes, comment_flags, comment_moderation_actions, account_follows, person_blocks, profile_ratings, person_mutes RESTART IDENTITY CASCADE")
 	MustExec(t, pool, "INSERT INTO official_feed_status (feed) VALUES ('sachet'), ('gdacs')")
 }
 

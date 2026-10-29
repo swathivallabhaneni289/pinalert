@@ -156,6 +156,13 @@ func (f *fakeDeleteQuerier) DeleteAccountRatings(ctx context.Context, accountID 
 	return 0, f.step("DeleteAccountRatings")
 }
 
+// Amended 2026-10-29 by Phase 9 plan 18 (D-12, G6): the fake gained the person
+// mutes delete.
+func (f *fakeDeleteQuerier) DeleteAccountPersonMutes(ctx context.Context, accountID int64) (int64, error) {
+	f.accountIDs["DeleteAccountPersonMutes"] = accountID
+	return 0, f.step("DeleteAccountPersonMutes")
+}
+
 func (f *fakeDeleteQuerier) RevokeAccountSessions(ctx context.Context, arg sqlcgen.RevokeAccountSessionsParams) (int64, error) {
 	f.revokeArg = arg
 	return 2, f.step("RevokeAccountSessions")
@@ -211,6 +218,13 @@ func (f *fakeDeleteQuerier) ScrubDeletedAccount(ctx context.Context, arg sqlcgen
 // kept. For the same reason as plan 09-02 the list does not end with
 // DeleteAccountCommentFlags: it ends with the Phase 9 steps Follows, Blocks,
 // Ratings, then RevokeAccountSessions and ScrubDeletedAccount.
+//
+// Amended 2026-10-29 by Phase 9 plan 18 (D-12, G6, review M5):
+// DeleteAccountPersonMutes now runs right after DeleteAccountRatings and just
+// before RevokeAccountSessions, so the eighteen steps became nineteen (and
+// nineteen became twenty in wantDeleteOrderKeyed). Every old step and its order
+// is kept. The list now ends with the Phase 9 steps Follows, Blocks, Ratings,
+// PersonMutes, then RevokeAccountSessions and ScrubDeletedAccount.
 var wantDeleteOrder = []string{
 	"AccountEmailForDelete",
 	"DeleteEmailCooldownForEmail",
@@ -228,6 +242,7 @@ var wantDeleteOrder = []string{
 	"DeleteAccountFollows",
 	"DeleteAccountBlocks",
 	"DeleteAccountRatings",
+	"DeleteAccountPersonMutes",
 	"RevokeAccountSessions",
 	"ScrubDeletedAccount",
 }
@@ -251,6 +266,7 @@ var wantDeleteOrderKeyed = []string{
 	"DeleteAccountFollows",
 	"DeleteAccountBlocks",
 	"DeleteAccountRatings",
+	"DeleteAccountPersonMutes",
 	"RevokeAccountSessions",
 	"ScrubDeletedAccount",
 }
@@ -424,6 +440,11 @@ func TestDeleteAccountRunsInOneTx(t *testing.T) {
 // Amended 2026-10-29 by Phase 9 plan 13 (D-02, G6): DeleteAccountRatings is a
 // second named exception of the same kind: it deletes the rating rows that name
 // the person as rater or reporter. It touches no vote, report, flag or
+// moderation action.
+//
+// Amended 2026-10-29 by Phase 9 plan 18 (D-12, G6): DeleteAccountPersonMutes is
+// a third named exception of the same kind: it deletes the person_mutes rows
+// that name the person as muter or muted. It touches no vote, report, flag or
 // moderation action.
 func TestDeleteAccountTouchesNoOtherPersonsData(t *testing.T) {
 	typ := reflect.TypeOf((*service.AccountDeleteQuerier)(nil)).Elem()
