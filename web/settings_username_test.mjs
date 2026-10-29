@@ -469,6 +469,31 @@ test('server sentences and the stored name reach the page as text only', async (
   assert.equal(page.saves().length, 0);
 });
 
+// Phase 7.1 review fix (browser), WR-B03: a check that failed leaves Save username
+// off, and a press on it then asks again instead of doing nothing.
+test('WR-B03: a press on Save username after a failed check asks again and saves nothing', async () => {
+  const page = loadSettings({ username: 'ravi.k' });
+  open(page);
+  page.advance(300);
+  answer(page.checks()[0], 200, { state: 'yours', message: 'This is your username now.' });
+  await flush();
+  input(page).value = 'ravi.kumar';
+  fire(input(page), 'input');
+  page.advance(300);
+  page.checks()[1].reject(new TypeError('Failed to fetch'));
+  await flush();
+  assert.equal(isOff(page), true);
+  fire(byId(page, 'settings-username-form'), 'submit');
+  await flush();
+  page.advance(300);
+  assert.equal(page.checks().length, 3, 'a new check is sent');
+  assert.ok(page.checks()[2].url.endsWith('ravi.kumar'));
+  assert.equal(page.saves().length, 0);
+  answer(page.checks()[2], 200, { state: 'available', message: 'ravi.kumar is available.' });
+  await flush();
+  assert.equal(isOn(page), true);
+});
+
 test('the Username window is not a login field: no autocomplete value, no password manager hook', () => {
   const settings = settingsSource;
   assert.equal(/autocomplete/i.test(settings), false);

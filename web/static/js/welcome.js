@@ -1621,6 +1621,21 @@
       return Promise.resolve();
     }
     if (!allGood()) {
+      // Review fix WR-B03: when the name and home area are good and the username
+      // is only waiting for its check, or its check failed, nothing is missing:
+      // a failed check is asked again, one still out is left to answer, and the
+      // line does not tell the person to add a username they have typed.
+      var checkState = usernameCheck !== null ? usernameCheck.state() : '';
+      if (nameGood() && homeGood() && (checkState === 'failed' || checkState === 'checking')) {
+        if (!profileError.hidden && profileError.textContent === MESSAGE_ADD_ALL) {
+          hideLine(profileError);
+        }
+        usernameInput.focus();
+        if (checkState === 'failed') {
+          usernameCheck.refresh();
+        }
+        return Promise.resolve();
+      }
       focusFirstMissing();
       showLine(profileError, MESSAGE_ADD_ALL);
       return Promise.resolve();

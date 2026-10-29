@@ -964,6 +964,11 @@
     usernameForm.addEventListener('submit', function (e) {
       e.preventDefault();
       if (usernameSave.getAttribute('aria-disabled') === 'true') {
+        // Review fix WR-B03: a check that failed is asked again by the press,
+        // so the person is never left with nothing to press. Nothing is saved.
+        if (usernameCheck !== null && !savingUsername && usernameCheck.state() === 'failed') {
+          usernameCheck.refresh();
+        }
         return;
       }
       saveUsername();

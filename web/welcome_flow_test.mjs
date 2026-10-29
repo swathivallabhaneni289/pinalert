@@ -2044,3 +2044,47 @@ test('the Username box is wired to the shared check and Continue keeps its place
   }
   assert.ok(stops.includes('welcome-continue-4'), 'an aria-disabled Continue is still a Tab stop');
 });
+
+// Phase 7.1 review fix (browser), WR-B03: when the username is typed and only its
+// check failed, Continue asks again instead of telling the person to add a username
+// they have already typed; while a check is still out it only puts focus there.
+test('WR-B03: Continue after a failed check asks again and does not say "Add your username"', async () => {
+  const page = load({ start: 4, name: 'Ravi', home: 'Whitefield' });
+  const user = byId(page, 'welcome-username-input');
+  user.value = 'ravi.k';
+  fire(user, 'input');
+  page.advance(300);
+  page.checks[0].reject(new TypeError('Failed to fetch'));
+  await flush();
+  assert.equal(continueOff(page), true);
+
+  click(page, 'welcome-continue-4');
+  assert.notEqual(byId(page, 'welcome-error-4').textContent, 'Add your username, name and home area.');
+  assert.equal(byId(page, 'welcome-error-4').hidden, true);
+  assert.ok(page.doc.activeElement === user, 'focus goes to the username');
+  page.advance(300);
+  assert.equal(page.checks.length, 2, 'a new check is sent');
+  assert.equal(page.checks[1].url, '/api/username/check?u=ravi.k');
+
+  // While that check is out, a second press sends nothing more.
+  click(page, 'welcome-continue-4');
+  page.advance(300);
+  assert.equal(page.checks.length, 2);
+  assert.equal(byId(page, 'welcome-error-4').hidden, true);
+
+  answer(page.checks[1], 200, { state: 'available', message: 'ravi.k is available.' });
+  await flush();
+  assert.equal(continueOff(page), false);
+  assert.equal(page.requests.length, 0);
+
+  // With the name missing as well, the line still says what to add.
+  const both = load({ start: 4, home: 'Whitefield' });
+  const user2 = byId(both, 'welcome-username-input');
+  user2.value = 'ravi.k';
+  fire(user2, 'input');
+  both.advance(300);
+  both.checks[0].reject(new TypeError('Failed to fetch'));
+  await flush();
+  click(both, 'welcome-continue-4');
+  assert.equal(byId(both, 'welcome-error-4').textContent, 'Add your username, name and home area.');
+});

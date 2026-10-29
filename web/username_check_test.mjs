@@ -249,14 +249,25 @@ test('a failed request or an answer that is not 200 says so and is never good', 
   assert.equal(offline.line.textContent, FAILED);
   assert.equal(offline.control.isGood(), false);
 
+  // Amended 2026-10-29 by the Phase 7.1 review fix (browser), WR-B03: a 429 is no
+  // longer a failed check at once; it keeps Checking and is asked again (see the
+  // WR-B03 cases). It is still never good. A 500 stands in for "not 200" here.
   const limited = setup();
   limited.input.type('ravi.k');
   limited.advance(300);
   reply(limited.requests[0], 429, { error: { field: 'username', message: 'Too many tries.' } });
   await flush();
-  assert.equal(limited.control.state(), 'failed');
-  assert.equal(limited.line.textContent, FAILED);
+  assert.equal(limited.control.state(), 'checking');
   assert.equal(limited.control.isGood(), false);
+
+  const broken = setup();
+  broken.input.type('ravi.k');
+  broken.advance(300);
+  reply(broken.requests[0], 500, { error: { field: 'username', message: 'Couldn\'t check that username. Try again.' } });
+  await flush();
+  assert.equal(broken.control.state(), 'failed');
+  assert.equal(broken.line.textContent, FAILED);
+  assert.equal(broken.control.isGood(), false);
 
   const odd = setup();
   odd.input.type('ravi.k');
@@ -359,4 +370,94 @@ test('a value already in the field when the script attaches is checked without a
   assert.equal(control.state(), 'checking');
   assert.equal(timers.length, 1);
   assert.equal(timers[0].ms, 300);
+});
+
+// Phase 7.1 review fix (browser), WR-B03: a check refused by the per account
+// allowance (429) is asked again by itself after the wait the server names, and
+// a check WebKit leaves unsettled ends as failed after 10 s, so neither leaves
+// Continue or Save off with nothing to press.
+const limited = (req, retryAfter, body) => req.resolve({
+  ok: false,
+  status: 429,
+  headers: { get(name) { return name.toLowerCase() === 'retry-after' && retryAfter !== null ? String(retryAfter) : null; } },
+  json: () => Promise.resolve(body || { error: { field: 'username', message: 'Too many requests. Try again in a minute.' }, retry_after_seconds: 1 })
+});
+
+test('WR-B03: a 429 keeps Checking and asks again for the same value after Retry-After', async () => {
+  const page = setup();
+  page.input.type('ravi.k');
+  page.advance(300);
+  assert.equal(page.requests.length, 1);
+  limited(page.requests[0], 1);
+  await flush();
+  assert.equal(page.control.state(), 'checking');
+  assert.equal(page.line.textContent, CHECKING);
+  assert.equal(page.control.isGood(), false);
+  page.advance(999);
+  assert.equal(page.requests.length, 1);
+  page.advance(1);
+  assert.equal(page.requests.length, 2, 'asked again by itself');
+  assert.equal(page.requests[1].url, page.requests[0].url);
+  reply(page.requests[1], 200, { state: 'available', message: 'ravi.k is available.' });
+  await flush();
+  assert.equal(page.control.state(), 'available');
+  assert.equal(page.control.isGood(), true);
+});
+
+test('WR-B03: with no Retry-After the body wait is used, and a keystroke cancels the second ask', async () => {
+  const page = setup();
+  page.input.type('ravi.k');
+  page.advance(300);
+  limited(page.requests[0], null, { error: { message: 'Too many requests. Try again in a minute.' }, retry_after_seconds: 2 });
+  await flush();
+  page.advance(1999);
+  assert.equal(page.requests.length, 1);
+  page.input.type('ravi.kumar');
+  page.advance(300);
+  assert.equal(page.requests.length, 2);
+  assert.ok(page.requests[1].url.endsWith('ravi.kumar'));
+  page.advance(5000);
+  assert.equal(page.requests.length, 2, 'the retry of the older value was cancelled');
+});
+
+test('WR-B03: refused again and again, the check gives up as failed with the server sentence', async () => {
+  const page = setup();
+  page.input.type('ravi.k');
+  page.advance(300);
+  for (let i = 0; i < 4; i++) {
+    limited(page.requests[i], 1);
+    await flush();
+    page.advance(1000);
+  }
+  assert.equal(page.requests.length, 4, 'three asks again, no more');
+  assert.equal(page.control.state(), 'failed');
+  assert.equal(page.line.textContent, 'Too many requests. Try again in a minute.');
+  assert.equal(page.control.isGood(), false);
+});
+
+test('WR-B03: a check that never settles ends as failed after 10 s; one answered in time stays', async () => {
+  const page = setup();
+  page.input.type('ravi.k');
+  page.advance(300);
+  page.advance(9999);
+  await flush();
+  assert.equal(page.control.state(), 'checking');
+  page.advance(1);
+  await flush();
+  assert.equal(page.control.state(), 'failed');
+  assert.equal(page.line.textContent, FAILED);
+  // The answer that comes after the limit changes nothing.
+  reply(page.requests[0], 200, { state: 'available', message: 'ravi.k is available.' });
+  await flush();
+  assert.equal(page.control.state(), 'failed');
+
+  const quick = setup();
+  quick.input.type('ravi.k');
+  quick.advance(300);
+  reply(quick.requests[0], 200, { state: 'available', message: 'ravi.k is available.' });
+  await flush();
+  quick.advance(20000);
+  await flush();
+  assert.equal(quick.control.state(), 'available', 'no leftover limit marks a good answer failed');
+  assert.equal(quick.timers.size, 0);
 });
