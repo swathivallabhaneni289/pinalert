@@ -442,6 +442,27 @@ test('placeholders and names', async () => {
   assert.ok(find(items[3], 'comment__disc--glyph'));
 });
 
+// Added 2026-10-29 by Phase 9 plan 10 (D-12, UI-SPEC P9-C31): the placeholder of
+// a comment written by someone the viewer blocked and that others answered.
+test('hidden placeholder', async () => {
+  const env = load();
+  const page = await start(env, [
+    cm(1, {
+      hidden: true, author: '', author_kind: '', words: '', likes: 0,
+      replies: [cm(5, { words: 'still here' })]
+    })
+  ]);
+  const item = page.items()[0];
+  const gone = find(item, 'comment__gone');
+  assert.equal(gone.hidden, false);
+  assert.equal(gone.textContent, 'Comment hidden');
+  assert.equal(find(item, 'comment__head').hidden, true, 'no author name or Reporter tag');
+  assert.equal(find(item, 'comment__words').hidden, true, 'no words');
+  assert.equal(find(item, 'comment__meta').hidden, true, 'no Reply, Like or Flag on a hidden placeholder');
+  assert.ok(find(item, 'comment__disc--empty'), 'the empty neutral disc, like Comment deleted');
+  assert.equal(find(item, 'comment-thread__toggle').textContent, 'View 1 reply', 'its replies stay');
+});
+
 test('folded replies', async () => {
   const env = load();
   const page = await start(env, [

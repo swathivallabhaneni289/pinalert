@@ -70,6 +70,8 @@ window.PinalertComments = (function () {
   var POST_ERROR = "Couldn't post your comment. Try again.";
   var DELETED_LINE = 'Comment deleted';
   var REMOVED_LINE = 'Comment removed';
+  // P9-C31: a comment of someone you blocked that others answered (D-12).
+  var HIDDEN_LINE = 'Comment hidden';
   var KIND_USER = 'user';
   var LIKE_LABEL = 'Like';
   var DELETE_LABEL = 'Delete';
@@ -336,11 +338,11 @@ window.PinalertComments = (function () {
     // ---- one comment ----
 
     function isUser(data) {
-      return data.author_kind === KIND_USER && !data.deleted && !data.removed;
+      return data.author_kind === KIND_USER && !data.deleted && !data.removed && !data.hidden;
     }
 
     function discKey(data) {
-      if (data.deleted || data.removed) {
+      if (data.deleted || data.removed || data.hidden) {
         return 'empty';
       }
       if (data.author_kind !== KIND_USER) {
@@ -560,7 +562,7 @@ window.PinalertComments = (function () {
 
     function writeComment(rec, data) {
       rec.data = data;
-      var placeholder = data.deleted === true || data.removed === true;
+      var placeholder = data.deleted === true || data.removed === true || data.hidden === true;
       if (data.is_own === true && data.author) {
         ownName = String(data.author);
       }
@@ -570,7 +572,8 @@ window.PinalertComments = (function () {
       rec.meta.hidden = placeholder;
       rec.gone.hidden = !placeholder;
       if (placeholder) {
-        writeText(rec.gone, data.removed === true ? REMOVED_LINE : DELETED_LINE);
+        writeText(rec.gone, data.removed === true ? REMOVED_LINE
+          : data.hidden === true ? HIDDEN_LINE : DELETED_LINE);
         // A placeholder carries no Like, no count, no Delete and no Flag, and
         // a poll never adds them back (review W4).
         rec.error.hidden = true;
@@ -672,7 +675,7 @@ window.PinalertComments = (function () {
     }
 
     function onLike(rec) {
-      if (rec.likeBusy || rec.data.deleted || rec.data.removed) {
+      if (rec.likeBusy || rec.data.deleted || rec.data.removed || rec.data.hidden) {
         return;
       }
       clearActionError(rec);
@@ -705,7 +708,7 @@ window.PinalertComments = (function () {
     // onDelete asks first, in the app's confirm box; only its Delete button
     // sends anything.
     function onDelete(rec) {
-      if (rec.deleteBusy || rec.data.deleted || rec.data.removed) {
+      if (rec.deleteBusy || rec.data.deleted || rec.data.removed || rec.data.hidden) {
         return;
       }
       clearActionError(rec);
@@ -1488,7 +1491,7 @@ window.PinalertComments = (function () {
     // comment, New member or Deleted account (review W3).
     function startReply(rec) {
       var data = rec.data;
-      if (!commentsOpen || data.deleted || data.removed || data.held) {
+      if (!commentsOpen || data.deleted || data.removed || data.hidden || data.held) {
         return;
       }
       var mention = isUser(data) && data.is_own !== true ? '@' + data.author + ' ' : '';

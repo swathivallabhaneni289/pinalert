@@ -196,12 +196,14 @@ type CommentInput struct {
 // email, session or cell: the author is a username, New member or Deleted
 // account (A-P8-10). A deleted or removed comment that still holds visible
 // replies is a placeholder: Deleted or Removed is set and Words, Author, likes
-// and the viewer flags are empty (D-14, review W4).
+// and the viewer flags are empty (D-14, review W4). A comment of someone the
+// viewer blocked that others answered is the same placeholder with Hidden set
+// (Phase 9 plan 09-10, D-12).
 type CommentView struct {
 	ID                                                       int64
 	Author, AuthorKind, ReplyToAuthor                        string
 	IsOwn, IsReporter, CanDelete, ViewerLiked, ViewerFlagged bool
-	Deleted, Removed, Held                                   bool
+	Deleted, Removed, Hidden, Held                           bool
 	Likes, ReplyCount                                        int
 	At                                                       time.Time
 	Words                                                    string
@@ -624,6 +626,9 @@ func commentViewFromRow(row sqlcgen.CommentsForReportRow, viewerAccountID int64)
 		return v
 	case "removed":
 		v.Removed = true
+		return v
+	case "hidden":
+		v.Hidden = true
 		return v
 	}
 

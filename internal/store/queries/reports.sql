@@ -162,12 +162,17 @@ WHERE request_account_id = sqlc.arg(account_id)::bigint
 -- for viewer 0 (TestCommentCountMatchesList). viewer_commented is true when the
 -- viewer has such a comment on the report, the same clear and not deleted
 -- filter. Comments never feed a trust number (D-02): nothing here changes any
--- other column. Phase 9 plan 09-10 adds its block filter to comment_count.
+-- other column. Amended by Phase 9 plan 09-10 (D-12): comment_count leaves out
+-- comments whose author the viewer blocked (viewer 0 blocks nobody, so it
+-- counts as before); viewer_commented is the viewer's own and is unchanged.
 SELECT r.id AS report_id, r.moderation_state, r.client_written_at,
        (f.id IS NOT NULL)::bool AS viewer_flagged,
        (m.account_id IS NOT NULL)::bool AS viewer_muted,
        (SELECT count(*) FROM comments c
-         WHERE c.report_id = r.id AND c.deleted_at IS NULL AND c.moderation_state = 'clear')::int AS comment_count,
+         WHERE c.report_id = r.id AND c.deleted_at IS NULL AND c.moderation_state = 'clear'
+           AND NOT EXISTS (SELECT 1 FROM person_blocks pb
+                            WHERE pb.blocker_id = sqlc.arg(viewer_account_id)::bigint
+                              AND pb.blocked_id = c.account_id))::int AS comment_count,
        EXISTS (SELECT 1 FROM comments c
                 WHERE c.report_id = r.id AND c.account_id = sqlc.arg(viewer_account_id)::bigint
                   AND c.deleted_at IS NULL AND c.moderation_state = 'clear')::bool AS viewer_commented
