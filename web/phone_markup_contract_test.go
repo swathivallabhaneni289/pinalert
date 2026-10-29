@@ -90,6 +90,17 @@ func phoneExpandTemplate(t *testing.T, name string) string {
 				}
 				body, _, _ := strings.Cut(rest, "{{end}}")
 				return body
+			// Amended 2026-10-29 by Phase 7.1 plan 13c: installed_alerts_ask is a
+			// defined block inside installed_alerts_ask.html.tmpl, so a call
+			// expands to that block, as changes_ask does.
+			case "installed_alerts_ask":
+				whole := p13ReadTemplate(t, "installed_alerts_ask.html.tmpl")
+				_, rest, ok := strings.Cut(whole, `{{define "installed_alerts_ask"}}`)
+				if !ok {
+					t.Fatalf("installed_alerts_ask.html.tmpl defines no installed_alerts_ask")
+				}
+				body, _, _ := strings.Cut(rest, "{{end}}")
+				return body
 			case "account_header.html.tmpl":
 				whole := p13ReadTemplate(t, "account_header.html.tmpl")
 				_, root, ok := strings.Cut(whole, "{{end}}")

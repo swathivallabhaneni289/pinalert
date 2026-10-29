@@ -59,6 +59,16 @@ type PageConfig struct {
 	// value is safe and means no pop-up, so a router built without it still
 	// serves both pages as before.
 	AlertSettings AlertSettingsLookup
+	// Profiles is filled by api.NewRouter with the account service (Phase 7.1
+	// plan 13c). Nearby reads the home area name from it per request for the
+	// installed app alerts ask. A nil value is safe and means no ask.
+	Profiles ProfileReader
+}
+
+// ProfileReader answers one account's profile (service.AccountService.Profile).
+// Nearby uses only the home area name from it.
+type ProfileReader interface {
+	Profile(ctx context.Context, accountID int64) (service.AccountProfile, error)
 }
 
 // AlertSettingsLookup answers one account's alert settings
@@ -122,6 +132,26 @@ func changesAskFor(ctx context.Context, cfg PageConfig, accountID int64) bool {
 	return !s.ChangesPushOn
 }
 
+// homeAreaNameFor answers the stored home area name of an account for the
+// installed app alerts ask (Phase 7.1 plan 13c, D-17), or "" when the server has
+// no push key, the reader is not wired, the account has no home area, or the
+// read failed. It never fails the page: on an error it logs one line with the
+// numeric account id and the error, never the name, and answers "".
+func homeAreaNameFor(ctx context.Context, cfg PageConfig, accountID int64) string {
+	if cfg.PushPublicKey == "" || cfg.Profiles == nil {
+		return ""
+	}
+	p, err := cfg.Profiles.Profile(ctx, accountID)
+	if err != nil {
+		log.Printf("handlers: installed alerts ask: reading the profile of account %d failed, leaving the ask out: %v", accountID, err)
+		return ""
+	}
+	if p.HomeAreaName == nil {
+		return ""
+	}
+	return *p.HomeAreaName
+}
+
 // pageViewModel is exactly what index.html.tmpl reads and nothing more.
 type pageViewModel struct {
 	FallbackLat float64
@@ -163,6 +193,11 @@ type pageViewModel struct {
 	// partial). It is false when the Changes switch is already on, when push is
 	// off, or when the settings read failed.
 	ChangesAsk bool
+	// HomeAreaName is the account's stored home area name, read per request, only
+	// for the title of the installed app alerts ask (Phase 7.1 plan 13c). It is ""
+	// when there is none, push is off or the read failed, and then the ask is not
+	// drawn. html/template escapes it.
+	HomeAreaName string
 	// Demo is read by the shared report form (report_form.html.tmpl): when true
 	// the form leaves out the Call 112 box and the What is happening picks. It
 	// is always false on the real page; only the Demo page sets it (plan 05-17,
@@ -290,6 +325,7 @@ func Page(tmpl *template.Template, cfg PageConfig) http.HandlerFunc {
 			Nav:             navFor(NavNearby),
 			Legal:           legalTextFor(chrome),
 			ChangesAsk:      changesAskFor(r.Context(), cfg, acc.ID),
+			HomeAreaName:    homeAreaNameFor(r.Context(), cfg, acc.ID),
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		// DEC-Q: the shell now renders a person's email address into every

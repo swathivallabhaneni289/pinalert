@@ -112,6 +112,9 @@
   // because it asks nothing; TestWelcomeInstallAsk pins them equal to the
   // template. The browser key below holds the account ids shown the box.
   var INSTALL_ASKED_KEY = 'pinalert.installAsked';
+  // The alerts pop-up (and installed-ask.js on Nearby) keep the same kind of list
+  // under this key (Phase 7.1 plan 13c, D-18), written when the pop-up opens.
+  var ALERTS_ASKED_KEY = 'pinalert.alertsAsked';
   // How many account ids the list keeps on one browser, and the shape of an id
   // (the one notify.js and changes-ask.js use).
   var INSTALL_ASKED_KEEP = 8;
@@ -1274,6 +1277,7 @@
   // sends the flow on without asking.
   function openAsk() {
     refreshAsk();
+    rememberAlertsAsk();
     try {
       askDialog.showModal();
     } catch (err) {
@@ -1305,10 +1309,35 @@
   // browser, as text. Nothing stored is an empty list, one plain id is a list of
   // one (the older format of changes-ask.js), a JSON list keeps only its id
   // strings, and a value that is neither is an empty list too (not shown). The
-  // caller holds the try: a storage that cannot be read throws. Phase 7.1 plan 13c
-  // reuses this reader for its own key.
+  // caller holds the try: a storage that cannot be read throws.
   function installAskedList() {
     var raw = window.localStorage.getItem(INSTALL_ASKED_KEY);
+    if (raw === null || raw === undefined) {
+      return [];
+    }
+    if (ACCOUNT_ID_PATTERN.test(raw)) {
+      return [raw];
+    }
+    var list = null;
+    try {
+      list = JSON.parse(raw);
+    } catch (err) {
+      return [];
+    }
+    if (!Array.isArray(list)) {
+      return [];
+    }
+    return list.filter(function (id) {
+      return typeof id === 'string' && ACCOUNT_ID_PATTERN.test(id);
+    });
+  }
+
+  // alertsAskedList reads the list of pinalert.alertsAsked with the same rules as
+  // installAskedList (Phase 7.1 plan 13c). It is a copy rather than a shared
+  // reader, because TestWelcomeInstallAsk pins the body of installAskedList.
+  // installed-ask.js on Nearby reads the same key. The caller holds the try.
+  function alertsAskedList() {
+    var raw = window.localStorage.getItem(ALERTS_ASKED_KEY);
     if (raw === null || raw === undefined) {
       return [];
     }
@@ -1379,6 +1408,25 @@
       window.localStorage.setItem(INSTALL_ASKED_KEY, JSON.stringify(list.slice(-INSTALL_ASKED_KEEP)));
     } catch (err) {
       // The box still opens.
+    }
+  }
+
+  // rememberAlertsAsk adds this account to the list in pinalert.alertsAsked,
+  // keeping the last 8, just before the alerts pop-up opens (Phase 7.1 plan 13c,
+  // D-18). installed-ask.js reads the same key on Nearby inside the installed app,
+  // so a person who signed up there is not asked a second time. A storage that
+  // cannot be read or written changes nothing else: the pop-up still opens.
+  function rememberAlertsAsk() {
+    var account = accountId();
+    if (account === '') {
+      return;
+    }
+    try {
+      var list = alertsAskedList().filter(function (id) { return id !== account; });
+      list.push(account);
+      window.localStorage.setItem(ALERTS_ASKED_KEY, JSON.stringify(list.slice(-INSTALL_ASKED_KEEP)));
+    } catch (err) {
+      // The pop-up still opens.
     }
   }
 

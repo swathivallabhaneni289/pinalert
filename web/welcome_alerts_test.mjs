@@ -1307,7 +1307,10 @@ test('install pop-up: it opens only for needs-install, so it never opens beside 
     click(page, 'welcome-continue-4');
     assert.equal(installOf(page).showCalls, 0, base);
     assert.equal(page.dialog.showCalls, 1, base + ': the alerts pop-up behaves as before');
-    assert.equal(page.storageWrites.length, 0, base);
+    // Amended 2026-10-29 by Phase 7.1 plan 13c: the alerts pop-up now writes the
+    // account id to pinalert.alertsAsked when it opens, so this line looks at the
+    // install key only. The install key is still never written here.
+    assert.equal(page.storageWrites.filter(([k]) => k === INSTALL_KEY).length, 0, base);
   }
   for (const base of ['blocked', 'unsupported', 'surprise']) {
     const page = installPage({ notify: makeNotify({ base }) });
@@ -1386,4 +1389,88 @@ test('install pop-up: the script keeps it away from the browser prompt and from 
   for (const name of ['canInstallAsk', 'openInstallAsk', 'onInstallLater', 'onInstallCancel', 'rememberInstallAsk', 'installAskedList']) {
     assert.doesNotMatch(body(name), /enable|requestPermission|Notification|innerHTML|insertAdjacentHTML/, name);
   }
+});
+
+// ---------------------------------------------------------------------------
+// The asked key shared with the installed app (Phase 7.1 plan 13c, D-17, D-18),
+// added 2026-10-29. When the alerts pop-up opens, welcome.js adds the account id
+// to the list in pinalert.alertsAsked, the key installed-ask.js reads on Nearby,
+// so a person who signed up inside the installed app is not asked a second time.
+// The cases start with "asked key: ".
+// ---------------------------------------------------------------------------
+
+const ALERTS_KEY = 'pinalert.alertsAsked';
+const alertsPage = (options = {}) => atStep4({ accountId: '42', storage: {}, notify: makeNotify({ base: 'maybe' }), ...options });
+
+test('asked key: opening the alerts pop-up adds the account id to the list, just before showModal', () => {
+  const page = alertsPage();
+  click(page, 'welcome-continue-4');
+  assertAskOpen(page);
+  assert.deepEqual(JSON.parse(page.stored[ALERTS_KEY]), ['42']);
+  assert.equal(page.storageWrites.filter(([k]) => k === INSTALL_KEY).length, 0, 'the install key is not touched');
+});
+
+test('asked key: other accounts stay in the list, an older single id is a list of one, a ninth drops the oldest', () => {
+  const list = alertsPage({ storage: { [ALERTS_KEY]: JSON.stringify(['7', '9']) } });
+  click(list, 'welcome-continue-4');
+  assert.deepEqual(JSON.parse(list.stored[ALERTS_KEY]), ['7', '9', '42']);
+
+  const single = alertsPage({ storage: { [ALERTS_KEY]: '7' } });
+  click(single, 'welcome-continue-4');
+  assert.deepEqual(JSON.parse(single.stored[ALERTS_KEY]), ['7', '42']);
+
+  const eight = ['1', '2', '3', '4', '5', '6', '7', '8'];
+  const full = alertsPage({ storage: { [ALERTS_KEY]: JSON.stringify(eight) } });
+  click(full, 'welcome-continue-4');
+  assert.deepEqual(JSON.parse(full.stored[ALERTS_KEY]), ['2', '3', '4', '5', '6', '7', '8', '42']);
+
+  const twice = alertsPage({ storage: { [ALERTS_KEY]: JSON.stringify(['42', '7']) } });
+  click(twice, 'welcome-continue-4');
+  assert.deepEqual(JSON.parse(twice.stored[ALERTS_KEY]), ['7', '42'], 'this account is listed once, as the newest');
+});
+
+test('asked key: a value that is not an id or a list is replaced, and the pop-up still opens', () => {
+  for (const junk of ['not json', '{"a":1}', '[', '42x']) {
+    const page = alertsPage({ storage: { [ALERTS_KEY]: junk } });
+    click(page, 'welcome-continue-4');
+    assertAskOpen(page);
+    assert.deepEqual(JSON.parse(page.stored[ALERTS_KEY]), ['42'], junk);
+  }
+});
+
+test('asked key: a storage that cannot be read or written, or none at all, does not stop the pop-up or the flow', async () => {
+  for (const storage of ['throw-get', 'throw-set', undefined]) {
+    const page = alertsPage({ storage });
+    click(page, 'welcome-continue-4');
+    assertAskOpen(page);
+    click(page, 'welcome-alerts-later');
+    await flush();
+    assert.equal(doneRequests(page).length, 1, String(storage) + ': the flow still finishes');
+  }
+});
+
+test('asked key: no account id on the flow root means nothing is written, and the pop-up opens', () => {
+  const page = alertsPage({ accountId: '' });
+  click(page, 'welcome-continue-4');
+  assertAskOpen(page);
+  assert.equal(page.storageWrites.length, 0);
+});
+
+test('asked key: nothing is written when the pop-up does not open (no showModal, a blocked or unsupported device)', () => {
+  const noModal = alertsPage({ dialogSupport: false });
+  click(noModal, 'welcome-continue-4');
+  assert.equal(noModal.storageWrites.length, 0);
+
+  for (const base of ['blocked', 'unsupported']) {
+    const page = alertsPage({ notify: makeNotify({ base }) });
+    click(page, 'welcome-continue-4');
+    assert.equal(page.storageWrites.length, 0, base);
+  }
+});
+
+test('asked key: a showModal that throws does not stop first-run-done', () => {
+  const page = alertsPage();
+  page.dialog.throwOnShow = true;
+  click(page, 'welcome-continue-4');
+  assert.equal(doneRequests(page).length, 1);
 });

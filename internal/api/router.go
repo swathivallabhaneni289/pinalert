@@ -612,6 +612,9 @@ func NewRouter(deps Deps) *chi.Mux {
 	// Nearby and the Low data view read the Changes switch to decide whether to
 	// render the first post or vote pop-up (plan 03.3-21).
 	page.AlertSettings = accounts
+	// Nearby reads the home area name for the installed app alerts ask
+	// (plan 07.1-13c).
+	page.Profiles = accounts
 
 	// --- Exempt: reachable without a verified account. ---
 

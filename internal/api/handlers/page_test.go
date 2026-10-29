@@ -643,3 +643,122 @@ func TestLowDataRendersChangesAsk(t *testing.T) {
 		return rec.Code, rec.Body.String()
 	})
 }
+
+// stubProfiles answers Profile from fixed values and remembers which accounts it
+// was asked about (Phase 7.1 plan 13c).
+type stubProfiles struct {
+	profile service.AccountProfile
+	err     error
+	asked   []int64
+}
+
+func (s *stubProfiles) Profile(_ context.Context, accountID int64) (service.AccountProfile, error) {
+	s.asked = append(s.asked, accountID)
+	return s.profile, s.err
+}
+
+// TestPageShellInstalledAlertsAsk pins Phase 7.1 plan 13c (D-17): Nearby renders
+// the installed app alerts dialog, closed, only when the server has a push key and
+// the account has a home area. It names the home area (escaped), carries the push
+// key and the account id, and never fails the page: no home area, no key, no
+// reader and a read error each give a 200 with no dialog, and an error is logged
+// without the name. No database is needed.
+func TestPageShellInstalledAlertsAsk(t *testing.T) {
+	tmpl, err := ParsePageTemplate()
+	if err != nil {
+		t.Fatalf("ParsePageTemplate: %v", err)
+	}
+	const key = "BPk1-test_key"
+	const version = "v13ctest"
+	area := func(s string) *string { return &s }
+	acc := account.Account{ID: 4243, Email: "installed-ask-reader@example.com"}
+
+	cases := []struct {
+		name      string
+		key       string
+		reader    *stubProfiles
+		nilReader bool
+		wantTitle string
+		wantLog   bool
+	}{
+		{name: "a home area and a key render the dialog", key: key,
+			reader:    &stubProfiles{profile: service.AccountProfile{HomeAreaName: area("Benz Circle, Vijayawada")}},
+			wantTitle: "Get alerts for critical reports near Benz Circle, Vijayawada?"},
+		{name: "markup in the home area name is escaped", key: key,
+			reader:    &stubProfiles{profile: service.AccountProfile{HomeAreaName: area("<b>x</b>")}},
+			wantTitle: "Get alerts for critical reports near &lt;b&gt;x&lt;/b&gt;?"},
+		{name: "no home area renders none", key: key, reader: &stubProfiles{}},
+		{name: "an empty home area name renders none", key: key,
+			reader: &stubProfiles{profile: service.AccountProfile{HomeAreaName: area("")}}},
+		{name: "no push key renders none", key: "",
+			reader: &stubProfiles{profile: service.AccountProfile{HomeAreaName: area("Benz Circle")}}},
+		{name: "no reader renders none", key: key, nilReader: true},
+		{name: "a failed read renders none and logs without the name", key: key,
+			reader:  &stubProfiles{profile: service.AccountProfile{HomeAreaName: area("Secret Place")}, err: errors.New("stub read failed")},
+			wantLog: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var logged bytes.Buffer
+			log.SetOutput(&logged)
+			t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+			cfg := PageConfig{FallbackLat: 12.9716, FallbackLon: 77.5946, DefaultRadiusKm: 10, PushPublicKey: tc.key, AssetVersion: version}
+			if !tc.nilReader {
+				cfg.Profiles = tc.reader
+			}
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req = req.WithContext(account.WithAccount(req.Context(), acc))
+			rec := httptest.NewRecorder()
+			Page(tmpl, cfg)(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200", rec.Code)
+			}
+			body := rec.Body.String()
+
+			want := 0
+			if tc.wantTitle != "" {
+				want = 1
+			}
+			if n := strings.Count(body, `id="installed-alerts-ask"`); n != want {
+				t.Errorf(`id="installed-alerts-ask" appears %d times, want %d`, n, want)
+			}
+			script := `<script src="/static/js/installed-ask.js?v=` + version + `" defer></script>`
+			if n := strings.Count(body, script); n != want {
+				t.Errorf("installed-ask.js tag appears %d times, want %d", n, want)
+			}
+			if tc.wantTitle != "" {
+				at := strings.Index(body, `<dialog id="installed-alerts-ask"`)
+				if at == -1 {
+					t.Fatalf("no installed-alerts-ask dialog tag in the page")
+				}
+				tag := body[at : at+strings.Index(body[at:], ">")]
+				if regexp.MustCompile(`\sopen\b`).MatchString(tag) {
+					t.Errorf("the dialog must start closed, got %q", tag)
+				}
+				if !strings.Contains(tag, `data-push-key="`+key+`"`) {
+					t.Errorf("the dialog tag lacks data-push-key: %q", tag)
+				}
+				if !strings.Contains(tag, `data-account-id="4243"`) {
+					t.Errorf("the dialog tag lacks data-account-id=4243: %q", tag)
+				}
+				if !strings.Contains(body, `id="installed-alerts-ask-title" tabindex="-1">`+tc.wantTitle+`</h2>`) {
+					t.Errorf("the title is not %q", tc.wantTitle)
+				}
+				if strings.Contains(body, "<b>x</b>") {
+					t.Errorf("the home area name was not escaped")
+				}
+				if len(tc.reader.asked) != 1 || tc.reader.asked[0] != acc.ID {
+					t.Errorf("the reader was asked about %v, want only [%d]", tc.reader.asked, acc.ID)
+				}
+			}
+			out := logged.String()
+			if tc.wantLog && !strings.Contains(out, "4243") {
+				t.Errorf("the failed read was not logged with the account id: %q", out)
+			}
+			if strings.Contains(out, "Secret Place") || strings.Contains(out, acc.Email) {
+				t.Errorf("the log holds the home area name or the address: %q", out)
+			}
+		})
+	}
+}
