@@ -271,6 +271,36 @@ func TestPolicyNamesAskedLists(t *testing.T) {
 	}
 }
 
+// TestPolicyNamesHomeSquareScreeningAndMail (IN-T02): the Policy says what is
+// kept and who sees it, in plain words. Pinalert keeps a 5 character geohash of
+// the home area (about 5 km wide, migration 00008, HomeAreaCellPrecision 5)
+// beside its name, new usernames go to OpenAI's moderation service as the
+// report text does, and every sign in email goes out through Resend, which sees
+// the address and the email, codes included.
+func TestPolicyNamesHomeSquareScreeningAndMail(t *testing.T) {
+	keeps := r71tPolicySection(t, "What Pinalert keeps")
+	const home = "<li>The name of your home area, a town or area and never a street, and a rough square about 5 km wide around it, used for alerts.</li>"
+	if !strings.Contains(keeps, home) {
+		t.Errorf("the Policy's keeps list does not name the home area square:\n%s", home)
+	}
+	others := r71tPolicySection(t, "Other services Pinalert uses")
+	for _, line := range []string{
+		"<li>Report and username checks: OpenAI, as described above.</li>",
+		"<li>Sign in emails: Resend sends them, so it sees your email address and the email, including any code.</li>",
+	} {
+		if !strings.Contains(others, line) {
+			t.Errorf("the Policy's other services list lacks:\n%s", line)
+		}
+	}
+	if strings.Contains(others, "<li>Report checks: OpenAI, as described above.</li>") {
+		t.Errorf("the other services list still names OpenAI for report checks only")
+	}
+	// The username screening paragraph the services line points back to stays.
+	if !strings.Contains(r71tPolicySection(t, "How reports are checked"), "Usernames are checked by the same service when you choose or change one.") {
+		t.Errorf("the Policy lost the username screening paragraph")
+	}
+}
+
 // TestLoginGlobeBoxFrom360 (IN-T01): from 360px wide the gate and the card pad
 // 24px instead of 16px, so the card sits 16px lower and the 404px term of --g,
 // set for 320, left Email me a code 5 or 6px under the first screen at 360x640,
