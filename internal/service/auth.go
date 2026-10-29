@@ -2,67 +2,29 @@ package service
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/mail"
-	"net/url"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
-	"pinalert/internal/auth"
 	"pinalert/internal/mailer"
 	sqlcgen "pinalert/internal/store/sqlc"
 )
 
-// VerifyOutcome discriminates the five ways GET /auth/verify (plan 01.1-02)
-// can land. The handler passes the value straight into the outcome
-// template's discriminator, so these are kept lowercase and stable — never
-// renamed once shipped, since a template branch and this constant must stay
-// in lockstep.
-type VerifyOutcome string
-
-const (
-	OutcomeVerified  VerifyOutcome = "verified"
-	OutcomeExpired   VerifyOutcome = "expired"
-	OutcomeUsed      VerifyOutcome = "used"
-	OutcomeMalformed VerifyOutcome = "malformed"
-	OutcomeConflict  VerifyOutcome = "conflict"
-)
-
-// rawTokenBytes is the decoded length internal/auth.GenerateToken produces
-// (tokenBytes there) — a token that doesn't decode to exactly this many
-// bytes is malformed by construction, never a database lookup away from
-// being valid.
-const rawTokenBytes = 32
-
 // ResendCooldown is the minimum time a caller must wait between successive
-// verification-email requests for the same address (D-03: the midpoint of
-// the 30-60 second range CONTEXT.md leaves to Claude's discretion).
-// Exported so handlers and templates share one source of truth rather than
-// each hard-coding the number separately.
+// emails to the same address (D-03: the midpoint of the 30-60 second range
+// CONTEXT.md leaves to Claude's discretion). Exported so handlers and
+// templates share one source of truth rather than each hard-coding the
+// number separately. CredentialService reads it as its default send cooldown.
 const ResendCooldown = 45 * time.Second
 
 // AuthQuerier is the subset of the sqlc-generated Queries type AuthService
-// needs — small enough to fake in a test without a real Postgres. Later
-// plans widen this interface as more of the verification flow lands.
+// needs (the Activity page reads), small enough to fake in a test without a
+// real Postgres. Amended 2026-10-29 by Phase 7.1 plan 14b: the emailed link
+// methods are gone with the link.
 type AuthQuerier interface {
-	InsertMagicLinkToken(ctx context.Context, arg sqlcgen.InsertMagicLinkTokenParams) (sqlcgen.InsertMagicLinkTokenRow, error)
-	GetMagicLinkTokenByHash(ctx context.Context, tokenHash string) (sqlcgen.GetMagicLinkTokenByHashRow, error)
-	ConsumeToken(ctx context.Context, tokenHash string) (string, error)
-	InsertAccount(ctx context.Context, email string) error
-	GetAccountByEmail(ctx context.Context, email string) (sqlcgen.GetAccountByEmailRow, error)
-	GetAccountBySessionID(ctx context.Context, sessionID string) (sqlcgen.GetAccountBySessionIDRow, error)
-	// BindSessionAccount reports how many rows it wrote: zero means the row is
-	// bound to a different account and the caller must use a fresh session id.
-	BindSessionAccount(ctx context.Context, arg sqlcgen.BindSessionAccountParams) (int64, error)
-	// GetSessionBinding is the sign in path's raw read of a session row (it does
-	// not filter on revoked or deleted), read before the link is consumed.
-	GetSessionBinding(ctx context.Context, sessionID string) (sqlcgen.GetSessionBindingRow, error)
-	ClaimEmailCooldown(ctx context.Context, arg sqlcgen.ClaimEmailCooldownParams) (time.Time, error)
 	ReportsByAccount(ctx context.Context, accountID *int64) ([]sqlcgen.ReportsByAccountRow, error)
 	// CurrentVotesForReports backs ActivityForAccount (02-07). Signature
 	// copied verbatim from trust.go's VotingQuerier — the same generated
@@ -93,23 +55,19 @@ type AuthQuerier interface {
 	ReportExtrasForReports(ctx context.Context, arg sqlcgen.ReportExtrasForReportsParams) ([]sqlcgen.ReportExtrasForReportsRow, error)
 }
 
-// ErrRateLimited is returned by RequestLink when a second verification-
-// email request for the same normalised address arrives inside
-// ResendCooldown of the last one (D-03/D-04, IDENT-04). It is a distinct
-// sentinel — never a ValidationError — so the handler maps it to 429
-// (errors.Is), not 400. Declared via errors.New rather than as a typed
-// error since no additional data ever needs to travel with it.
+// ErrRateLimited is returned by CredentialService when a second email request
+// for the same normalised address arrives inside the send cooldown, or the
+// hourly count is spent (D-03/D-04, IDENT-04). It is a distinct sentinel,
+// never a ValidationError, so the handler maps it to 429 (errors.Is), not
+// 400. Declared via errors.New rather than as a typed error since no
+// additional data ever needs to travel with it.
 var ErrRateLimited = errors.New("service: rate limited")
 
-// ErrSessionNeedsFreshID is returned by VerifyTokenAndBind when signing in
-// needs a fresh session id (the session is revoked or belongs to a deleted
-// account and the link is for another account, or the guarded bind refused)
-// and the caller supplied no way to draw one. When it is returned before the
-// token is consumed the link is still good.
-var ErrSessionNeedsFreshID = errors.New("service: session needs a fresh id")
-
-// AuthService validates a requested email address, mints a magic-link
-// token, persists it, and hands the emailed link to a Mailer.
+// AuthService serves the Activity page reads (the account's own posts and the
+// reports it votes on). Amended 2026-10-29 by Phase 7.1 plan 14b: it no
+// longer mints, stores or mails a sign in link; sign in is CredentialService.
+// The mailer and baseURL fields are kept only so NewAuthService's signature
+// and its call sites stay unchanged, and nothing reads them.
 type AuthService struct {
 	q       AuthQuerier
 	mailer  mailer.Mailer
@@ -133,280 +91,15 @@ func WithClock(fn func() time.Time) AuthOption {
 	}
 }
 
-// NewAuthService constructs an AuthService backed by q and m, minting
-// absolute verification links rooted at baseURL. The clock defaults to
-// time.Now() unless overridden via WithClock.
+// NewAuthService constructs an AuthService backed by q. The m and baseURL
+// arguments are kept for call site stability and are no longer used. The
+// clock defaults to time.Now() unless overridden via WithClock.
 func NewAuthService(q AuthQuerier, m mailer.Mailer, baseURL string, opts ...AuthOption) *AuthService {
 	s := &AuthService{q: q, mailer: m, baseURL: baseURL, now: time.Now}
 	for _, opt := range opts {
 		opt(s)
 	}
 	return s
-}
-
-// RequestLink validates rawEmail, claims D-03/D-04's per-address resend
-// cooldown, mints a single-use magic-link token, persists its hash before
-// attempting delivery, and hands the raw link — never a code to type back
-// in; D-01 chose a link over a passcode, so no passcode field exists
-// anywhere in this flow — to the configured Mailer. It returns the
-// normalized address (trimmed, lowercased, no display-name form) that was
-// actually mailed, so a caller such as the HTTP handler can echo it back
-// without duplicating the normalization rule.
-//
-// The cooldown is claimed in a single atomic statement (ClaimEmailCooldown)
-// between email normalisation and token generation — before anything else
-// is persisted or sent. A refused claim writes nothing at all, so it can
-// never extend or reset the window that refused it (DEC-J, DEC-X, T-01-93,
-// T-01-94). Because the claim is made with the normalised lowercase
-// address, case variants of one address ("A@Example.com" vs
-// "a@example.com") share one cooldown.
-//
-// A granted claim commits before token generation, the insert, and the
-// send, so a failed or quota-exhausted send — or even a failed token
-// insert — still consumes the cooldown (RESEARCH.md Pitfall 3, DEC-J,
-// DEC-X): that is what stops a failing provider being hammered in a retry
-// loop. A mailer failure is wrapped so the caller can log detail
-// server-side while returning a generic error to the visitor.
-func (s *AuthService) RequestLink(ctx context.Context, rawEmail string) (string, error) {
-	email, err := normalizeEmail(rawEmail)
-	if err != nil {
-		return "", err
-	}
-
-	now := s.now()
-	if _, err := s.q.ClaimEmailCooldown(ctx, sqlcgen.ClaimEmailCooldownParams{
-		Email:          email,
-		RequestedAt:    now,
-		CooldownCutoff: now.Add(-ResendCooldown),
-	}); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			// The claim was refused: a cooldown claim for this address
-			// already exists and is still within the window.
-			return "", ErrRateLimited
-		}
-		// No address in the message: the handler logs this error, and no
-		// email may reach the server log (WR-S03).
-		return "", fmt.Errorf("service: claiming email cooldown: %w", err)
-	}
-
-	raw, hash, err := auth.GenerateToken()
-	if err != nil {
-		return "", fmt.Errorf("service: generating magic-link token: %w", err)
-	}
-
-	if _, err := s.q.InsertMagicLinkToken(ctx, sqlcgen.InsertMagicLinkTokenParams{
-		TokenHash: hash,
-		Email:     email,
-		ExpiresAt: now.Add(auth.TokenTTL),
-	}); err != nil {
-		return "", fmt.Errorf("service: persisting magic-link token: %w", err)
-	}
-
-	link := s.baseURL + "/auth/verify?token=" + url.QueryEscape(raw)
-	if err := s.mailer.SendVerificationLink(ctx, email, link); err != nil {
-		return "", fmt.Errorf("service: sending verification link: %w", err)
-	}
-
-	return email, nil
-}
-
-// VerifyToken decides the outcome of a clicked magic link for the given
-// sessionID. It is VerifyTokenAndBind without a fresh id generator, for
-// callers that never rotate: when a rotation would be needed it fails with
-// ErrSessionNeedsFreshID before the token is consumed. It returns the
-// outcome, an email address (populated only for OutcomeVerified and
-// OutcomeConflict, empty for every other outcome) and a transport error.
-func (s *AuthService) VerifyToken(ctx context.Context, sessionID, rawToken string) (VerifyOutcome, string, error) {
-	outcome, email, _, err := s.VerifyTokenAndBind(ctx, sessionID, rawToken, nil)
-	return outcome, email, err
-}
-
-// VerifyTokenAndBind decides the outcome of a clicked magic link for the given
-// sessionID and binds the proven account to a session. It returns the
-// outcome, an email address (populated only for OutcomeVerified and
-// OutcomeConflict, empty for every other outcome), the session id the account
-// was bound to, and a transport error for anything that isn't a clean outcome
-// decision. A database error other than pgx.ErrNoRows is always returned as
-// an error, never mapped to a fabricated outcome, so the handler can log it
-// and render a generic 500. For OutcomeVerified the email is the
-// newly-verified address; for OutcomeConflict it is the session's EXISTING
-// verified account (what the visitor is currently signed in as), since the
-// token's own target address was never proven in this browser.
-//
-// The returned session id equals sessionID except when the session had to be
-// rotated (newID is then called once and its result is returned, and the
-// caller must set the browser's cookie to it). The id is empty for every
-// outcome other than OutcomeVerified.
-//
-// A revoked session (Log out of all devices) or a session of a deleted
-// account keeps its sessions.account_id on purpose: that binding is how
-// reports reach their author. Sign in must therefore never rebind such a
-// session to a different account, or it would move the first account's
-// history to the second. It also never revives such a row for the same
-// account (W1, 2026-10-19): a revived id would bring back every copy of the
-// old cookie, which is exactly what Log out of all devices exists to end. So
-// it always rotates to a fresh id instead (Phase 3.2, Pattern 10). The fresh
-// id bound to the same account carries the same votes, reports and settings,
-// since all of them are keyed by account.
-//
-// Sequence, in this exact order (DEC-D, DEC-E, RESEARCH.md Pattern 1 and
-// Pitfall 2):
-//  1. Reject an empty or malformed-shape token as OutcomeMalformed without
-//     touching the database, a cheap shape check that keeps garbage out.
-//  2. Hash the raw token and look up the row; pgx.ErrNoRows maps to
-//     OutcomeMalformed (unknown token).
-//  3. If the row is already used or expired, return that outcome. These
-//     reads exist only to pick the right copy for the visitor, never to
-//     authorise.
-//  4. If the current session is already verified as a different account,
-//     return OutcomeConflict WITHOUT consuming the token, so the rightful
-//     owner's single-use link survives being opened in the wrong browser.
-//     4b. Read the session's raw binding (GetSessionBinding, which does not
-//     filter on revoked or deleted) and decide whether to rotate: the
-//     session is bound and is revoked or belongs to a deleted account, for
-//     any account the link is for, the same one included. If a
-//     rotation is needed and newID is nil, return ErrSessionNeedsFreshID
-//     now, with the token still unconsumed. This read must come before the
-//     token is consumed in step 5.
-//  5. Consume the token atomically. This is the branch that actually
-//     decides the request.
-//  6. Lazily resolve (create-if-absent) the account for the token's email,
-//     only now that ownership of the address is proven.
-//  7. Bind the account: to a fresh id when rotating, else to sessionID, and
-//     if the guarded bind refuses (zero rows) fall back to a fresh id.
-//  8. Return OutcomeVerified.
-func (s *AuthService) VerifyTokenAndBind(ctx context.Context, sessionID, rawToken string, newID func() string) (VerifyOutcome, string, string, error) {
-	if !isWellFormedToken(rawToken) {
-		return OutcomeMalformed, "", "", nil
-	}
-
-	hash := auth.HashToken(rawToken)
-	row, err := s.q.GetMagicLinkTokenByHash(ctx, hash)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return OutcomeMalformed, "", "", nil
-		}
-		return "", "", "", fmt.Errorf("service: reading magic-link token: %w", err)
-	}
-
-	if row.UsedAt.Valid {
-		return OutcomeUsed, "", "", nil
-	}
-	if !row.ExpiresAt.After(s.now()) {
-		return OutcomeExpired, "", "", nil
-	}
-
-	existing, err := s.q.GetAccountBySessionID(ctx, sessionID)
-	switch {
-	case err == nil:
-		if existing.Email != row.Email {
-			// DEC-D/DEC-E: refuse to re-bind, and never consume the token:
-			// the rightful owner's single-use link must survive being
-			// opened in the wrong (already-verified) browser. The returned
-			// email is the session's EXISTING verified account (what the
-			// visitor is currently signed in as), not the token's target
-			// address, which was never proven in this browser. That is the
-			// entire reason this is a conflict.
-			return OutcomeConflict, existing.Email, "", nil
-		}
-	case errors.Is(err, pgx.ErrNoRows):
-		// Unverified session opening a link it may not have requested
-		// itself (D-07: cross-device verification is the supported happy
-		// path, not an anomaly). A revoked session or a deleted account
-		// also lands here, and the binding read below tells them apart.
-	default:
-		return "", "", "", fmt.Errorf("service: reading current session's account: %w", err)
-	}
-
-	rotate := false
-	binding, err := s.q.GetSessionBinding(ctx, sessionID)
-	switch {
-	case err == nil:
-		bound := binding.AccountID != nil
-		gone := binding.Revoked || binding.AccountDeleted
-		// Rotate whenever the bound row is revoked or its account is
-		// deleted, whichever account the link is for. Reusing the id for
-		// the same account would clear the revocation and bring back every
-		// copy of the old cookie (W1).
-		rotate = bound && gone
-	case errors.Is(err, pgx.ErrNoRows):
-		// The session row is not stored yet: unbound.
-	default:
-		return "", "", "", fmt.Errorf("service: reading session binding: %w", err)
-	}
-	if rotate && newID == nil {
-		return "", "", "", ErrSessionNeedsFreshID
-	}
-
-	email, err := s.q.ConsumeToken(ctx, hash)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			if row.UsedAt.Valid {
-				return OutcomeUsed, "", "", nil
-			}
-			return OutcomeExpired, "", "", nil
-		}
-		return "", "", "", fmt.Errorf("service: consuming magic-link token: %w", err)
-	}
-
-	// Neither message names the address: the handler logs these errors, and
-	// no email may reach the server log (WR-S03).
-	if err := s.q.InsertAccount(ctx, email); err != nil {
-		return "", "", "", fmt.Errorf("service: resolving account: %w", err)
-	}
-	account, err := s.q.GetAccountByEmail(ctx, email)
-	if err != nil {
-		return "", "", "", fmt.Errorf("service: reading resolved account: %w", err)
-	}
-
-	boundID := sessionID
-	if rotate {
-		boundID = newID()
-	}
-	n, err := s.q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{
-		SessionID: boundID,
-		AccountID: &account.ID,
-	})
-	if err != nil {
-		return "", "", "", fmt.Errorf("service: binding session to account: %w", err)
-	}
-	if n == 0 {
-		// The guarded upsert found the row bound to a different account or
-		// revoked, which the read above did not predict. Never move or
-		// revive that row: use a fresh id. The link is already consumed, so
-		// there is no way back.
-		if rotate || newID == nil {
-			return "", "", "", ErrSessionNeedsFreshID
-		}
-		boundID = newID()
-		n, err = s.q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{
-			SessionID: boundID,
-			AccountID: &account.ID,
-		})
-		if err != nil {
-			return "", "", "", fmt.Errorf("service: binding session to account: %w", err)
-		}
-		if n == 0 {
-			return "", "", "", ErrSessionNeedsFreshID
-		}
-	}
-
-	return OutcomeVerified, email, boundID, nil
-}
-
-// isWellFormedToken reports whether raw could plausibly be a value
-// GenerateToken produced: non-empty, valid base64url (RawURLEncoding, no
-// padding — matching GenerateToken's own encoding), and decoding to exactly
-// rawTokenBytes bytes.
-func isWellFormedToken(raw string) bool {
-	if raw == "" {
-		return false
-	}
-	decoded, err := base64.RawURLEncoding.DecodeString(raw)
-	if err != nil {
-		return false
-	}
-	return len(decoded) == rawTokenBytes
 }
 
 // ReportsForAccount returns every report filed by any session ever bound to

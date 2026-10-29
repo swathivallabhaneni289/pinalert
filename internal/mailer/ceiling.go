@@ -24,7 +24,7 @@ type dailyCeiling struct {
 }
 
 // NewDailyCeiling wraps next so that at most perDay sends go out per UTC date,
-// every kind counted together (the link email and all four auth emails). Of
+// every kind counted together (all four auth emails). Of
 // those, reservedForReset are kept for the two Forgot password emails
 // (KindCodeReset and KindNoAccount together, so a refusal never depends on
 // whether the address has an account): every other kind stops at perDay minus
@@ -61,13 +61,6 @@ func (c *dailyCeiling) admit(reset bool) error {
 	}
 	c.count++
 	return nil
-}
-
-func (c *dailyCeiling) SendVerificationLink(ctx context.Context, email, link string) error {
-	if err := c.admit(false); err != nil {
-		return err
-	}
-	return c.next.SendVerificationLink(ctx, email, link)
 }
 
 func (c *dailyCeiling) SendAuthEmail(ctx context.Context, to string, msg AuthEmail) error {

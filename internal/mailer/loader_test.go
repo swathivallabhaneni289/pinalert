@@ -9,7 +9,7 @@ import (
 // LoadMailer's doc comment describes. t.Setenv is used for both variables
 // so no test leaks environment state to another — and, critically, so this
 // suite never touches the network: the RESEND_API_KEY-set case constructs a
-// resendMailer but never calls SendVerificationLink on it.
+// resendMailer but never calls SendAuthEmail on it.
 func TestLoadMailer(t *testing.T) {
 	t.Run("key set, env production returns resend mailer", func(t *testing.T) {
 		t.Setenv("RESEND_API_KEY", "test-key")
