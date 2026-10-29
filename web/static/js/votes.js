@@ -2017,15 +2017,23 @@
   // moves on, so a box that was waiting for the first pop-up can tell that its
   // resolve was taken back meanwhile (skeptic SK-I04, 2026-10-30).
   var rateGeneration = {};
+  // report id -> what stops the timers of that box when it leaves.
+  var rateCleanups = {};
 
   // removeRateBox takes the box of one report out of the page, if there is one.
   function removeRateBox(reportId) {
     var key = String(reportId);
     var box = rateBoxes[key];
     delete rateBoxes[key];
+    var cleanup = rateCleanups[key];
+    delete rateCleanups[key];
+    if (typeof cleanup === 'function') {
+      cleanup();
+    }
     if (box && box.parentNode && typeof box.parentNode.removeChild === 'function') {
       box.parentNode.removeChild(box);
     }
+    stopWindowWatchIfIdle();
   }
 
   // takeRateBoxBack is the Undo of a resolve: the box goes, and an offer still
@@ -2034,6 +2042,75 @@
     var key = String(reportId);
     rateGeneration[key] = (rateGeneration[key] || 0) + 1;
     removeRateBox(key);
+  }
+
+  // dismissHostedRateBoxes takes away every box that sits in the page host. The
+  // report card calls it through map.js whenever a report opens, so the host box
+  // of an earlier report never stays over the next one (skeptic SK-W01).
+  function dismissHostedRateBoxes() {
+    var host = rateHostElement();
+    if (host === null) {
+      return;
+    }
+    Object.keys(rateBoxes).forEach(function (key) {
+      var box = rateBoxes[key];
+      if (box && box.parentNode === host) {
+        removeRateBox(key);
+      }
+    });
+  }
+
+  // While a box sits in the page host, a watch on the hidden and open attributes
+  // sees a window or a dialog open and drops the box, so it never stays beside
+  // a sheet. The watch exists only while a hosted box does. A browser without
+  // MutationObserver relies on the stacking alone, which keeps the host under
+  // every window (stars.css).
+  var windowWatch = null;
+
+  function openedWindowIn(records) {
+    for (var i = 0; i < records.length; i++) {
+      var record = records[i];
+      var node = record && record.target;
+      if (!node) {
+        continue;
+      }
+      var isWindow = (node.classList && typeof node.classList.contains === 'function' && node.classList.contains('app-window')) ||
+        String(node.tagName || '').toLowerCase() === 'dialog';
+      if (!isWindow) {
+        continue;
+      }
+      var opened = record.attributeName === 'open' ? node.open === true : node.hidden === false;
+      if (opened) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function startWindowWatch() {
+    if (windowWatch !== null || typeof MutationObserver !== 'function' || !document.body) {
+      return;
+    }
+    windowWatch = new MutationObserver(function (records) {
+      if (openedWindowIn(records)) {
+        dismissHostedRateBoxes();
+      }
+    });
+    windowWatch.observe(document.body, { attributes: true, attributeFilter: ['hidden', 'open'], subtree: true });
+  }
+
+  function stopWindowWatchIfIdle() {
+    if (windowWatch === null) {
+      return;
+    }
+    var host = rateHostElement();
+    var anyHosted = host !== null && Object.keys(rateBoxes).some(function (key) {
+      return rateBoxes[key] && rateBoxes[key].parentNode === host;
+    });
+    if (!anyHosted) {
+      windowWatch.disconnect();
+      windowWatch = null;
+    }
   }
 
   // rateHostIsLive says the vote controls are still on the page and, in a map
@@ -2055,6 +2132,10 @@
   var RATE_HOST_ID = 'rate-host';
   // In the page host a rated box shows its one line for this long, then leaves.
   var RATE_HOST_LINE_MS = 6000;
+  // A box in the page host also has an end of its own (skeptic SK-W01): the card
+  // it belonged to is gone, so it does not wait for ever. A reader who has focus
+  // in it is given the time again once, so a tap in progress is not cut off.
+  var RATE_HOST_MAX_MS = 30000;
 
   function rateHostElement() {
     var host = document.getElementById(RATE_HOST_ID);
@@ -2085,6 +2166,7 @@
     status.setAttribute('role', 'status');
     status.setAttribute('tabindex', '-1');
     var leaveTimer = null;
+    var endTimer = null;
 
     var errorLine = document.createElement('p');
     errorLine.className = 'inline-error';
@@ -2121,7 +2203,12 @@
         }
         if (inHost) {
           // The page host holds no box for good: the one line is read, then the
-          // box leaves (the report view it belonged to is already closed).
+          // box leaves (the report view it belonged to is already closed). The
+          // line has its own time, so the end timer of the box is done.
+          if (endTimer !== null) {
+            clearTimeout(endTimer);
+            endTimer = null;
+          }
           leaveTimer = setTimeout(function () {
             leaveTimer = null;
             dismiss();
@@ -2142,10 +2229,7 @@
     // the Undo of the resolve if it can take focus.
     function dismiss() {
       var hadFocus = box.contains(document.activeElement);
-      if (leaveTimer !== null) {
-        clearTimeout(leaveTimer);
-        leaveTimer = null;
-      }
+      stopTimers();
       removeRateBox(reportId);
       if (hadFocus) {
         var undo = block.takeBack && block.takeBack.undoBtn;
@@ -2156,6 +2240,37 @@
         }
       }
     }
+
+    // stopTimers ends the line timer and the end timer of this box. It is also
+    // what removeRateBox calls when the box leaves by any other road.
+    function stopTimers() {
+      if (leaveTimer !== null) {
+        clearTimeout(leaveTimer);
+        leaveTimer = null;
+      }
+      if (endTimer !== null) {
+        clearTimeout(endTimer);
+        endTimer = null;
+      }
+    }
+
+    // armEnd gives a hosted box its end (skeptic SK-W01). A reader whose focus is
+    // inside the box is given the time again, so a tap in progress is not cut
+    // off; otherwise the box leaves.
+    function armEnd() {
+      endTimer = setTimeout(function () {
+        endTimer = null;
+        if (box.contains(document.activeElement)) {
+          armEnd();
+          return;
+        }
+        dismiss();
+      }, RATE_HOST_MAX_MS);
+    }
+    if (inHost) {
+      armEnd();
+    }
+    rateCleanups[String(reportId)] = stopTimers;
 
     skip.addEventListener('click', function () {
       rateSkipped[String(reportId)] = true;
@@ -2181,14 +2296,21 @@
     if (existing && existing.isConnected === true) {
       return;
     }
+    if (existing) {
+      // A box that is no longer on the page: its timers go with it, so they can
+      // never remove the box built next.
+      removeRateBox(key);
+    }
     if (!live) {
       // The card is gone (the resolve closed the report): the box goes in the
       // page's own host beside the message, with no live region of its own and
-      // no move of focus on mount (09-REVIEW K2).
+      // no move of focus on mount (09-REVIEW K2). It leaves when another report
+      // or a window opens and after a time of its own (skeptic SK-W01).
       var pageHost = rateHostElement();
       var hosted = buildRateBox(block, reportId, prompt.username, true);
       pageHost.appendChild(hosted);
       rateBoxes[key] = hosted;
+      startWindowWatch();
       return;
     }
     // The vote block is the controls, the too far slot and the error line, in
@@ -2260,6 +2382,7 @@
     updateVoteBlock: updateVoteBlock,
     farFromCachedFix: farFromCachedFix,
     setBlockBusy: setBlockBusy,
+    dismissHostedRateBoxes: dismissHostedRateBoxes,
     showVoteError: showVoteError,
     resolutionOutcomeMessage: resolutionOutcomeMessage,
     GPS_DENIED_MESSAGE: GPS_DENIED_MESSAGE,

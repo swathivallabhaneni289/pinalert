@@ -166,9 +166,12 @@ function fire(el, type = 'click') {
 // load evaluates stars.js (unless withStars is false) and votes.js on a small
 // page. answers maps a request tail to { status, body }; a resolve answers with
 // the prompt it is given.
-function load({ prompt, withStars = true, changesAsk = null, onRefetch = null, resolveBody = null, withHost = false } = {}) {
+function load({ prompt, withStars = true, changesAsk = null, onRefetch = null, resolveBody = null, withHost = false, withObserver = false } = {}) {
   const doc = new FakeDoc();
   const calls = [];
+  // 2026-10-30 (skeptic SK-W01): a fake MutationObserver that records what it
+  // watches, so a test can say "a window opened" by calling its callback.
+  const observers = [];
   const toasts = [];
   const timers = [];
   doc.ids = {};
@@ -239,11 +242,18 @@ function load({ prompt, withStars = true, changesAsk = null, onRefetch = null, r
     Promise, Date, Math, JSON, Array, Object, String, Number, isFinite, isNaN, parseFloat, parseInt, encodeURIComponent
   };
   sandbox.window = sandbox;
+  if (withObserver) {
+    sandbox.MutationObserver = class MutationObserver {
+      constructor(callback) { this.callback = callback; this.target = null; this.options = null; this.live = false; observers.push(this); }
+      observe(target, options) { this.target = target; this.options = options; this.live = true; }
+      disconnect() { this.live = false; }
+    };
+  }
   if (changesAsk) { sandbox.PinalertChangesAsk = changesAsk; }
   vm.createContext(sandbox);
   if (withStars) { vm.runInContext(starsSource, sandbox); }
   vm.runInContext(votesSource, sandbox);
-  return { votes: sandbox.PinalertVotes, doc, calls, toasts, answers, sandbox, timers, host, toastEl };
+  return { votes: sandbox.PinalertVotes, doc, calls, toasts, answers, sandbox, timers, host, toastEl, observers };
 }
 
 // buildCard mirrors the order map.js buildPopupCard gives the card: a popup
@@ -702,6 +712,115 @@ test(NAME + 'K2: with the first post or vote pop-up on the page the host box wai
   release();
   await settle();
   assert.equal(boxesIn(m.host).length, 1);
+});
+
+// 2026-10-30 (skeptic SK-W01): the box in the page host must never cover a
+// control. It leaves when another report opens (map.js calls
+// dismissHostedRateBoxes on every popup open), when any window opens (a watch
+// on the hidden and open attributes that runs only while a hosted box exists),
+// and after a fixed time of its own, unless focus is inside it.
+async function hostedBox(extra = {}) {
+  const holder = { card: null };
+  const m = load(Object.assign({ prompt: PROMPT, withHost: true, resolveBody: CLOSED, onRefetch: closeOnRefetch(holder) }, extra));
+  holder.card = buildCard(m);
+  await resolve(holder.card);
+  assert.equal(boxesIn(m.host).length, 1, 'the hosted box is there');
+  return m;
+}
+
+test(NAME + 'SK-W01: opening another report drops the hosted box', async () => {
+  const m = await hostedBox();
+  assert.equal(typeof m.votes.dismissHostedRateBoxes, 'function');
+  m.votes.dismissHostedRateBoxes();
+  assert.equal(boxesIn(m.doc.body).length, 0);
+  assert.equal(m.host.children.length, 0);
+});
+
+test(NAME + 'SK-W01: dropping hosted boxes leaves the box inside an open card alone', async () => {
+  const m = load({ prompt: PROMPT, withHost: true });
+  const card = buildCard(m);
+  await resolve(card);
+  assert.equal(boxesIn(card.actions).length, 1);
+  assert.equal(typeof m.votes.dismissHostedRateBoxes, 'function');
+  m.votes.dismissHostedRateBoxes();
+  assert.equal(boxesIn(card.actions).length, 1, 'the card keeps its own box');
+});
+
+test(NAME + 'SK-W01: map.js tells votes.js on every popup open', () => {
+  const at = mapSource.indexOf('function onPopupOpen(evt) {');
+  assert.ok(at > -1, 'map.js lacks onPopupOpen');
+  const head = mapSource.slice(at, at + 1400);
+  assert.ok(head.includes('PinalertVotes.dismissHostedRateBoxes()'), 'onPopupOpen does not drop the hosted box');
+  assert.ok(head.indexOf('dismissHostedRateBoxes') < head.indexOf('isOfficialPopup'), 'the official card path drops it too');
+});
+
+test(NAME + 'SK-W01: a window opening drops the hosted box, a window closing does not', async () => {
+  const m = await hostedBox({ withObserver: true });
+  assert.equal(m.observers.length, 1, 'one watch started with the hosted box');
+  const watch = m.observers[0];
+  assert.equal(watch.live, true);
+  assert.deepEqual(Array.from(watch.options.attributeFilter).sort(), ['hidden', 'open']);
+  assert.equal(watch.options.subtree, true);
+  const win = m.doc.createElement('div');
+  win.className = 'app-window people-list-window';
+  win.hidden = true;
+  watch.callback([{ target: win, attributeName: 'hidden' }]);
+  assert.equal(boxesIn(m.host).length, 1, 'a window that is still hidden changes nothing');
+  const other = m.doc.createElement('div');
+  other.className = 'something-else';
+  other.hidden = false;
+  watch.callback([{ target: other, attributeName: 'hidden' }]);
+  assert.equal(boxesIn(m.host).length, 1, 'a node that is not a window changes nothing');
+  win.hidden = false;
+  watch.callback([{ target: win, attributeName: 'hidden' }]);
+  assert.equal(boxesIn(m.doc.body).length, 0, 'the open window took the box away');
+  assert.equal(watch.live, false, 'the watch ends with the last hosted box');
+});
+
+test(NAME + 'SK-W01: a dialog element that opens drops the hosted box too', async () => {
+  const m = await hostedBox({ withObserver: true });
+  const dlg = m.doc.createElement('dialog');
+  dlg.open = true;
+  m.observers[0].callback([{ target: dlg, attributeName: 'open' }]);
+  assert.equal(boxesIn(m.doc.body).length, 0);
+});
+
+test(NAME + 'SK-W01: a box inside an open card starts no watch', async () => {
+  const m = load({ prompt: PROMPT, withHost: true, withObserver: true });
+  const card = buildCard(m);
+  await resolve(card);
+  assert.equal(m.observers.length, 0);
+});
+
+test(NAME + 'SK-W01: the hosted box has a fixed end of its own, and focus inside it holds it once', async () => {
+  const m = await hostedBox();
+  const caps = m.timers.filter((t) => t.live && t.ms === 30000);
+  assert.equal(caps.length, 1, 'one end timer of 30 seconds');
+  const star = boxesIn(m.host)[0].querySelectorAll('.stars-control__star')[1];
+  star.focus();
+  caps[0].live = false; // a timer that fired is spent
+  caps[0].fn();
+  assert.equal(boxesIn(m.host).length, 1, 'a reader with focus in the box is not cut off');
+  const again = m.timers.filter((t) => t.live && t.ms === 30000);
+  assert.equal(again.length, 1, 'the end timer is set again');
+  m.doc.activeElement = m.doc.body;
+  again[0].live = false;
+  again[0].fn();
+  assert.equal(boxesIn(m.doc.body).length, 0, 'the box ended');
+  assert.equal(m.timers.filter((t) => t.live && (t.ms === 30000 || t.ms === 6000)).length, 0, 'no timer is left running');
+});
+
+test(NAME + 'SK-W01: a box inside an open card has no end timer', async () => {
+  const m = load({ prompt: PROMPT, withHost: true });
+  const card = buildCard(m);
+  await resolve(card);
+  assert.equal(m.timers.filter((t) => t.live && t.ms === 30000).length, 0);
+});
+
+test(NAME + 'SK-W01: Skip stops the end timer', async () => {
+  const m = await hostedBox();
+  fire(boxesIn(m.host)[0].querySelector('.rate-box__skip'));
+  assert.equal(m.timers.filter((t) => t.live && t.ms === 30000).length, 0);
 });
 
 // 2026-10-30 (skeptic SK-I04): an Undo that lands while the first pop-up is
