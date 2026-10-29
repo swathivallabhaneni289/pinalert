@@ -8,7 +8,7 @@ iteration: 1
 findings_in_scope: 12
 fixed: 8
 recorded: 4
-skipped: 0
+skipped: 4
 status: partial
 ---
 
@@ -20,7 +20,7 @@ status: partial
 **Summary:**
 - Findings in scope: 12 (5 warnings, 7 info).
 - Fixed: 8 (all 5 warnings; IN-B02, IN-B06, IN-B07 in its first point).
-- Recorded with a reason: 4 (IN-B01 as built; IN-B03, IN-B04, IN-B05 deferred).
+- Skipped and recorded with a reason: 4 (IN-B01 as built; IN-B03, IN-B04, IN-B05 deferred).
 - Every fix was test first: a new node test failed on the old code and passes after the fix.
 
 Files changed:
@@ -30,7 +30,7 @@ Files changed:
 
 No CSS change was needed, and no web/*_test.go was amended. The Go contract pins still hold: `COMMENTS_TIMEOUT_MS = 10000` and `applyPopupPlacement(popup, card)` are kept.
 
-## Fixed
+## Fixed Issues
 
 ### WR-B01: comment requests have no real time limit
 
@@ -172,7 +172,7 @@ The other two IN-B07 points are left as they are:
 - Escape in the composer is what UI-SPEC line 572 asks for.
 - The one wasted request per Open report in `enterPanel` costs a request, not correctness.
 
-## Recorded, not changed
+## Skipped Issues
 
 ### IN-B01: a 409 "comments closed" clears the typed words
 
