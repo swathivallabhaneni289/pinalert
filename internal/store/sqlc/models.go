@@ -237,6 +237,7 @@ type Report struct {
 	ClientWrittenAt       pgtype.Timestamptz
 	Happening             *string
 	AreaName              *string
+	ShareToken            *string
 }
 
 type ReportFlag struct {
