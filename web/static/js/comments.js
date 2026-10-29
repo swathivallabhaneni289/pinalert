@@ -1436,7 +1436,10 @@ window.PinalertComments = (function () {
     });
     input.addEventListener('keydown', function (evt) {
       evt.stopPropagation();
-      if (evt.key === 'Enter' && evt.shiftKey !== true && evt.isComposing !== true) {
+      // Safari sends the Enter that ends a composition with isComposing false
+      // and keyCode 229 for some input methods; that Enter never posts (review
+      // fix IN-B07).
+      if (evt.key === 'Enter' && evt.shiftKey !== true && evt.isComposing !== true && evt.keyCode !== 229) {
         evt.preventDefault();
         submit();
         return;

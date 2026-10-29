@@ -1339,3 +1339,17 @@ test('WR-B05: a poll sent after the like answered is written as it comes', async
   assert.equal(likeButton(li).getAttribute('aria-pressed'), 'false', 'a newer answer wins');
   assert.equal(find(li, 'comment__like-count').textContent, '2');
 });
+
+// ---- review fix IN-B07 (2026-10-29): the Enter that ends a composition in
+// Safari (keyCode 229, isComposing false) never posts. ----
+
+test('IN-B07: an Enter with keyCode 229 ends the composition and does not post', async () => {
+  const env = load();
+  const page = await start(env, [cm(1)]);
+  type(page, 'నీరు');
+  const before = posts(env).length;
+  page.input.fire('keydown', { key: 'Enter', keyCode: 229, isComposing: false });
+  assert.equal(posts(env).length, before, 'nothing is posted');
+  page.input.fire('keydown', { key: 'Enter', keyCode: 13 });
+  assert.equal(posts(env).length, before + 1, 'a plain Enter posts');
+});
