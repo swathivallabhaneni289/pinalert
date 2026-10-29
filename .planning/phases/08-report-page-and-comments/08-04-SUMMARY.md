@@ -56,6 +56,7 @@ A forwarded link /r/{token} opens a small server rendered page with no account, 
 
 - 589d0d76 feat(08-04): add the public status page handler, template and styles
 - 50868560 feat(08-04): serve GET /r/{token} outside the gate with a per IP limit and no session
+- 015c41ef fix(08-04): no hairline above the first detail row, tighten the encoded path test
 
 ## What was built
 
@@ -78,6 +79,8 @@ All run on the scratch database p8_04_a (dropped at the end).
 - `DATABASE_URL= go test ./... -short -count=1`: exit 0. `go build ./...` and `go vet ./...` clean.
 - Each named test seen with `--- PASS`: TestSharePageShowsOnlyAllowedFields, TestSharePageStates (12 subtests), TestShareOpenGraph, TestSharePageRateLimited, TestSharePageNoLimitWithoutClientIPHeader, TestSharePageSetsNoCookie (3 agents), TestSharePageNearMisses, TestAccessGateExemptRoutes (new row and eight near misses), TestPWASkipSetMatchesRoutes, TestSkipSessionFor, TestPWAAssetsSetNoCookie, TestPublicPageHasNoScript, TestPublicPageControlsMeetTouchTarget, TestPublicEndedSentenceMatchesTimeline.
 - Mutation check: removing "/r" from the prefixes made TestSharePageSetsNoCookie fail with a Set-Cookie and a new sessions row for all three agents; restored.
+- After the fix commit the api set (TestAccessGateExemptRoutes, TestSharePageSetsNoCookie, TestSharePageNearMisses, TestPWASkipSetMatchesRoutes, TestSkipSessionFor, TestPWAAssetsSetNoCookie) and `./web/ -short` passed again on a recreated p8_04_a (dropped afterwards); the encoded spelling `/%72/<token>` answers exactly 404.
+- The "a comment if the table exists" seed of TestSharePageShowsOnlyAllowedFields was skipped: no comments table exists yet (the next migration is 00018). 08-07 or the comments plan should add a comment marker to that test once the table lands.
 - HEAD /r/{token} as observed (T-08-85, accepted): 405, one Set-Cookie, one new sessions row. The test fails only if a HEAD returns the page body.
 
 ## Deviations from Plan
