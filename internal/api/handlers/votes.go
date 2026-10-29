@@ -67,6 +67,21 @@ type CastVoteResponse struct {
 	// budget. The browser decides the short Undo after Yes, mark resolved from
 	// this number before the list refetch lands.
 	UndosLeft *int `json:"undos_left,omitempty" example:"2"`
+	// RatePrompt is present only after Yes, mark resolved, when you may rate this
+	// reporter and have not yet. It names a reporter whose profile you may open
+	// and nothing else; the browser shows the skippable star box from it and
+	// decides nothing about who may rate.
+	RatePrompt *RatePromptResponse `json:"rate_prompt,omitempty"`
+}
+
+// RatePromptResponse names the reporter for the skippable star box that follows
+// Yes, mark resolved (plan 09-17, D-02). It carries a username that is already
+// public, never an account id.
+type RatePromptResponse struct {
+	// Username is the reporter's public username, the one the box shows as Rate {username}.
+	Username string `json:"username" example:"asha_k"`
+	// ProfilePath is the reporter's profile page, /u/ plus the username.
+	ProfilePath string `json:"profile_path" example:"/u/asha_k"`
 }
 
 // parseReportID reads the {id} path parameter, parses it, and on an empty,
@@ -109,6 +124,8 @@ func parseReportID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 // @Description The response also carries the same trust object GET /reports returns for this report.
 // @Description Resolve, reopen and unresolve responses also carry undos_left, the number of take
 // @Description backs the caller has left on this report; confirm and dispute responses do not.
+// @Description A resolve response also carries rate_prompt when the caller may rate the reporter and has
+// @Description not yet, and the reporter's profile is one the caller may open; it is absent otherwise.
 // @Description A location is required on every vote except the reporter's own resolve and reopen
 // @Description and the take back.
 // @Description A body with no latitude and no longitude is 400 with error field latitude, and a body
@@ -262,10 +279,14 @@ func writeCastVoteError(w http.ResponseWriter, err error) {
 // castVoteResponse maps the service's answer to a vote onto the wire shape
 // shared by the five vote routes, real and Demo.
 func castVoteResponse(res service.CastVoteResult) CastVoteResponse {
-	return CastVoteResponse{
+	out := CastVoteResponse{
 		Visibility: string(res.Visibility),
 		Reason:     string(res.Reason),
 		Trust:      trustToResponse(res.Trust),
 		UndosLeft:  res.UndosLeft,
 	}
+	if res.RatePrompt != nil {
+		out.RatePrompt = &RatePromptResponse{Username: res.RatePrompt.Username, ProfilePath: res.RatePrompt.ProfilePath}
+	}
+	return out
 }

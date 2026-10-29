@@ -61,6 +61,14 @@ definitions:
     type: object
   handlers.CastVoteResponse:
     properties:
+      rate_prompt:
+        allOf:
+        - $ref: '#/definitions/handlers.RatePromptResponse'
+        description: |-
+          RatePrompt is present only after Yes, mark resolved, when you may rate this
+          reporter and have not yet. It names a reporter whose profile you may open
+          and nothing else; the browser shows the skippable star box from it and
+          decides nothing about who may rate.
       reason:
         enum:
         - resolved
@@ -1356,6 +1364,18 @@ definitions:
       serious:
         example: true
         type: boolean
+    type: object
+  handlers.RatePromptResponse:
+    properties:
+      profile_path:
+        description: ProfilePath is the reporter's profile page, /u/ plus the username.
+        example: /u/asha_k
+        type: string
+      username:
+        description: Username is the reporter's public username, the one the box shows
+          as Rate {username}.
+        example: asha_k
+        type: string
     type: object
   handlers.RateRequest:
     properties:
@@ -4107,6 +4127,8 @@ paths:
         The response also carries the same trust object GET /reports returns for this report.
         Resolve, reopen and unresolve responses also carry undos_left, the number of take
         backs the caller has left on this report; confirm and dispute responses do not.
+        A resolve response also carries rate_prompt when the caller may rate the reporter and has
+        not yet, and the reporter's profile is one the caller may open; it is absent otherwise.
         A location is required on every vote except the reporter's own resolve and reopen
         and the take back.
         A body with no latitude and no longitude is 400 with error field latitude, and a body
@@ -4189,6 +4211,8 @@ paths:
         The response also carries the same trust object GET /reports returns for this report.
         Resolve, reopen and unresolve responses also carry undos_left, the number of take
         backs the caller has left on this report; confirm and dispute responses do not.
+        A resolve response also carries rate_prompt when the caller may rate the reporter and has
+        not yet, and the reporter's profile is one the caller may open; it is absent otherwise.
         A location is required on every vote except the reporter's own resolve and reopen
         and the take back.
         A body with no latitude and no longitude is 400 with error field latitude, and a body
@@ -4383,6 +4407,8 @@ paths:
         The response also carries the same trust object GET /reports returns for this report.
         Resolve, reopen and unresolve responses also carry undos_left, the number of take
         backs the caller has left on this report; confirm and dispute responses do not.
+        A resolve response also carries rate_prompt when the caller may rate the reporter and has
+        not yet, and the reporter's profile is one the caller may open; it is absent otherwise.
         A location is required on every vote except the reporter's own resolve and reopen
         and the take back.
         A body with no latitude and no longitude is 400 with error field latitude, and a body
@@ -4465,6 +4491,8 @@ paths:
         The response also carries the same trust object GET /reports returns for this report.
         Resolve, reopen and unresolve responses also carry undos_left, the number of take
         backs the caller has left on this report; confirm and dispute responses do not.
+        A resolve response also carries rate_prompt when the caller may rate the reporter and has
+        not yet, and the reporter's profile is one the caller may open; it is absent otherwise.
         A location is required on every vote except the reporter's own resolve and reopen
         and the take back.
         A body with no latitude and no longitude is 400 with error field latitude, and a body
@@ -4678,6 +4706,8 @@ paths:
         The response also carries the same trust object GET /reports returns for this report.
         Resolve, reopen and unresolve responses also carry undos_left, the number of take
         backs the caller has left on this report; confirm and dispute responses do not.
+        A resolve response also carries rate_prompt when the caller may rate the reporter and has
+        not yet, and the reporter's profile is one the caller may open; it is absent otherwise.
         A location is required on every vote except the reporter's own resolve and reopen
         and the take back.
         A body with no latitude and no longitude is 400 with error field latitude, and a body

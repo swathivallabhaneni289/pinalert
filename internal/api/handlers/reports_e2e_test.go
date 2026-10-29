@@ -101,7 +101,7 @@ func newE2EServerWith(t *testing.T, tweak func(d *api.Deps, q *sqlcgen.Queries))
 		Session:     mgr,
 		Sessions:    queries,
 		Reports:     service.NewReportService(queries, service.WithReportSignals(ratings)),
-		Votes:       service.NewVotingService(queries, service.WithVotingSignals(ratings)),
+		Votes:       service.NewVotingService(queries, service.WithVotingSignals(ratings), service.WithVotingRatePrompts(ratings)),
 		AuthService: service.NewAuthService(queries, fm, "https://pinalert.example", service.WithAuthSignals(ratings)),
 		Ratings:     ratings,
 		Auth:        handlers.AuthConfig{AssetVersion: "test"},

@@ -478,7 +478,7 @@ func main() {
 	// fails if one of them is left without it.
 	ratingService := service.NewRatingService(queries)
 	reportOpts := []service.ReportOption{service.WithScreener(screener), service.WithReportSignals(ratingService)}
-	voteOpts := []service.VotingOption{service.WithVotingSignals(ratingService)}
+	voteOpts := []service.VotingOption{service.WithVotingSignals(ratingService), service.WithVotingRatePrompts(ratingService)}
 	commentOpts := []service.CommentOption{service.WithCommentScreener(screener)}
 	// Posting and voting poke the dispatcher only when push is on. A nil
 	// *PushDispatcher stored in the notifier interface would not be a nil
