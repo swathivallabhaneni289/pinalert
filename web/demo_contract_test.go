@@ -351,7 +351,9 @@ const dm17Sentence = "Practice report posted. Pretend neighbours will confirm it
 // rule that the page never types a trust sentence of the server's (T-05-92).
 func TestDemoPracticeFlowSource(t *testing.T) {
 	demo := p13ReadStatic(t, "static/js/demo.js")
-	p13MustContain(t, "demo.js", demo, "PRACTICE_POLL_MS = 3000", dm17Sentence, "'Practice report confirmed. '",
+	// Amended 2026-10-29 by the Phase 5 review fix (IN-B02): the practice poll is
+	// 2000 ms (it was 3000), at most half the neighbours' 4 second gap.
+	p13MustContain(t, "demo.js", demo, "PRACTICE_POLL_MS = 2000", dm17Sentence, "'Practice report confirmed. '",
 		"pinalert:report-posted", "Pinalert.subscribe(", "openReport(", "function onPosted(", "function watchPractice(",
 		"function stopWatching(", "function announceConfirmed(", "function onEndedVisit(", "confirmed_by_people")
 	// The page reads the sentences from the server's trust object and types none.

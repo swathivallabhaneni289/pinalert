@@ -73,11 +73,13 @@
   // adds the practice prefix to the server's confirmed sentence (TRUST-02,
   // T-05-92). Everything it writes is text content (T-05-93). Only the Demo page
   // takes part: on any other page the post event is ignored.
-  var PRACTICE_POLL_MS = 3000;
-  // The poll gives up after this many ticks (about two minutes): the neighbours
+  // Two seconds, at most half the pretend neighbours' gap (NeighbourInterval,
+  // 4 s), so the climb shows near 4 s and 8 s (Phase 5 review fix IN-B02).
+  var PRACTICE_POLL_MS = 2000;
+  // The poll gives up after this many ticks (two minutes): the neighbours
   // finish within seconds, so a report that never shows up is a dropped visit or
   // a filtered list and polling forever would only be noise (T-05-94).
-  var PRACTICE_POLL_LIMIT = 40;
+  var PRACTICE_POLL_LIMIT = 60;
   var POSTED_TOAST = 'Practice report posted. Pretend neighbours will confirm it in a few seconds.';
   var CONFIRMED_PREFIX = 'Practice report confirmed. ';
   var REPORT_POSTED_EVENT = 'pinalert:report-posted';

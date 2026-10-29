@@ -109,7 +109,7 @@ function load({ demoPage = true, search = '', hash = '', withHistory = false, vi
   };
 }
 
-test('demo.js: a practice post shows the toast, opens the report and polls every 3 seconds', () => {
+test('demo.js: a practice post shows the toast, opens the report and polls every 2 seconds', () => {
   const m = load();
   m.post(report(41));
   // The toast and the open wait one tick, so the post window has closed by then.
@@ -119,7 +119,9 @@ test('demo.js: a practice post shows the toast, opens the report and polls every
   assert.deepEqual(m.calls.toast, ['Practice report posted. Pretend neighbours will confirm it in a few seconds.']);
   assert.deepEqual(m.calls.open, [['PinalertMap', 41]]);
   assert.equal(m.calls.intervals.length, 1);
-  assert.equal(m.calls.intervals[0].ms, 3000);
+  // Amended 2026-10-29 by the Phase 5 review fix (IN-B02): the practice poll is
+  // 2000 ms (it was 3000), so the climb shows near 4 s and 8 s.
+  assert.equal(m.calls.intervals[0].ms, 2000);
   assert.equal(m.subscribers.length, 1, 'it follows the feed state');
 });
 
@@ -379,4 +381,19 @@ test('app.js: on the real page a 404 never calls PinalertDemoEnded', async () =>
   m.answer(m.fetches[0], { error: { field: 'visit', message: 'x' } }, 404);
   await done;
   assert.equal(m.ended.length, 0);
+});
+
+// ---- The climb shows close to its due times (Phase 5 review fix IN-B02) ----
+// Added 2026-10-29. The pretend neighbours vote NeighbourInterval apart
+// (internal/demo/neighbours.go), so the practice poll runs at most half that
+// gap: each read lands soon after a vote falls due, near 4 s and 8 s.
+
+test('IN-B02: the practice poll is 2000 ms, at most half the neighbour gap of the server', () => {
+  const source = fs.readFileSync(path.join(here, '..', 'internal', 'demo', 'neighbours.go'), 'utf8');
+  const gap = /const NeighbourInterval = (\d+) \* time\.Second/.exec(source);
+  assert.ok(gap, 'NeighbourInterval is still a whole number of seconds');
+  const poll = /var PRACTICE_POLL_MS = (\d+);/.exec(read('demo.js'));
+  assert.ok(poll);
+  assert.equal(Number(poll[1]), 2000);
+  assert.ok(Number(poll[1]) <= Number(gap[1]) * 1000 / 2, 'the poll is at most half the neighbour gap');
 });
