@@ -14,7 +14,7 @@ status: all_fixed
 
 # Phase 5 code review fix report: server part
 
-Every finding of 05-REVIEW-server.md was handled under the triage in 05-REVIEW.md. Each fix began with a failing test, and each was committed on its own, limited to its paths. All of it ran against the disposable database p5_fix_s, which is dropped at the end.
+Every finding of 05-REVIEW-server.md was handled under the triage in 05-REVIEW.md. Every fix began with a failing test except two. IN-S02 is a comment only. For WR-S07 the table went in before its tests, which were then shown to fail with the table switched off (TestDisplayNamesApply named every district of the table, and TestDemoAreaShownAsNTR saw "Ntr"). Each fix was committed on its own, limited to its paths. All of it ran against the disposable database p5_fix_s, which is dropped at the end.
 
 | Finding | Outcome | Commit | Test that proves it |
 |---------|---------|--------|---------------------|
@@ -34,7 +34,7 @@ Every finding of 05-REVIEW-server.md was handled under the triage in 05-REVIEW.m
 | IN-S05 | fixed (server side) | caf7361d | `TestBuildViewHazardsByTheirOwnFreshness` |
 | IN-S06 | recorded, not changed | none | none (triage: record only) |
 | IN-S07 | fixed | 300b96fd | `TestTitleName` (amended, dated) |
-| IN-S08 | fixed (made up issuer names) | 7df6b214 | `TestDemoRowsNameNoRealIssuer` |
+| IN-S08 | fixed (made up issuer names; triage condition not met, see notes) | 7df6b214 | `TestDemoRowsNameNoRealIssuer` |
 | IN-S09 | recorded, not changed | none | none (triage: record only; needs a captured live empty GDACS answer) |
 | IN-S10 | recorded, not changed | none | none (triage: record only; retention and a cap_identifier index come later) |
 | IN-S11 | fixed | 7c729cdc | `TestNewServiceNoPushHookWhenPushIsOff` |
@@ -51,7 +51,7 @@ Every finding of 05-REVIEW-server.md was handled under the triage in 05-REVIEW.m
 - **WR-S07.** The table is in `internal/areas/names.go`. Each entry is keyed by LGD code and names the raw name it replaces: 749 NTR, 515 Sri Potti Sriramulu Nellore, 504 YSR Kadapa, 520 Visakhapatnam, 608 SAS Nagar, 303 and 304 North and South 24 Parganas, and the Delhi districts 77, 78, 80 to 85 and 670 with "Delhi" added. Code 79 is already "New Delhi" and has no entry. `Load` applies the table. No district name index exists; the only name index is the states'. The view tests that pass "Ntr" as a synthetic `Area` name do not read the boundary file, so they stay as they are.
 - **IN-S05.** The server now lists fresh GDACS rows while SACHET is unavailable, and lists no SACHET alert then. The alerts page script still stops at its unavailable block, so the rows do not show yet (see the cross part items).
 - **IN-S07.** The view's `titleName` now returns `service.OfficialStateWords`. In the amended `TestTitleName` the case "JAMMU & KASHMIR" is kept, and its words become "Jammu and Kashmir". The boundary name of state code 38 is added as a case.
-- **IN-S08.** No test and no UI-SPEC line asked for a made up line on every row. UI-SPEC says "a pretend alert must not look official". So the issuer text changed instead: Sample river office, Sample weather office, Sample state authority.
+- **IN-S08.** The triage allows a made up issuer name only when a test or the UI-SPEC already asks for one. Neither does: the UI-SPEC line "a pretend alert must not look official" is about the authority badge. That condition was not met, so taking this option was my call. The triage default, a made up line on every Demo row and card, is browser or templates work. The issuer text now reads Sample river office, Sample weather office and Sample state authority. The change stays inside this part and is strictly safer. The orchestrator decides whether to keep or revert 7df6b214 (see the cross part items).
 - **IN-S11.** `official.Config.PushOff` leaves out the enqueue hook, and `cmd/server` sets it to `!pushOn`. docs/PUSH.md gets one sentence about it.
 
 ## Cross part items for the orchestrator (not edited, outside this part)
@@ -62,6 +62,7 @@ Every finding of 05-REVIEW-server.md was handled under the triage in 05-REVIEW.m
 4. `docs/TRUST-MODEL.md` (WR-S07) still gives the example "Cyclone warning for Ntr district". It should read NTR. The file is outside this part's docs.
 5. `web/report_form_contract_test.go:175` (IN-S01) has a history comment that names `{{if not .Chrome.DemoPage}}`. The field is now gone. The templates part owns this.
 
+6. IN-S08: this part took the made up issuer option (7df6b214). The triage default is the made up line on every Demo row and card, which is browser or templates work. The orchestrator decides whether to keep or revert 7df6b214.
 ## Verification
 
 - Full Go suite on p5_fix_s (`go test ./... -p 1 -count=1 -v`): 0 `--- FAIL`, 0 `^FAIL`, 5289 `--- PASS`. The only skips are the allowed TestGeocodeLive, TestOfficialLive and TestScreeningFixture. No known flake fired.
