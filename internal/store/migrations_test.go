@@ -2360,3 +2360,175 @@ func TestMigration00019(t *testing.T) {
 		t.Errorf("after Up again a comment kind must insert: %v", err)
 	}
 }
+
+// TestMigration00020 covers the Phase 9 migration (plan 09-02): the file carries
+// both goose markers and builds nothing concurrently; on a database it adds the
+// profile flag, the soft ending follows table and the blocks table, the named
+// CHECK constraints and the primary keys refuse what they must, Down removes
+// everything and Up applies again (D-01, D-12, D-21).
+func TestMigration00020(t *testing.T) {
+	const file = "migrations/00020_add_people_profiles.sql"
+	contents, err := MigrationsFS.ReadFile(file)
+	if err != nil {
+		t.Fatalf("reading embedded %s: %v", file, err)
+	}
+	text := string(contents)
+	up := strings.Index(text, "+goose Up")
+	down := strings.Index(text, "+goose Down")
+	if up < 0 || down < 0 || down < up {
+		t.Fatalf("%s must carry +goose Up then +goose Down", file)
+	}
+	var code []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		code = append(code, line)
+	}
+	if strings.Contains(strings.ToUpper(strings.Join(code, "\n")), "CONCURRENTLY") {
+		t.Error("migration 00020 must not use CONCURRENTLY: goose runs it inside a transaction")
+	}
+	for _, name := range []string{
+		"accounts_profile_public_at_set", "account_follows_not_self", "account_follows_end_shape",
+		"account_follows_end_reason_valid", "person_blocks_not_self",
+		"idx_account_follows_followee", "idx_account_follows_follower", "idx_account_follows_tag_lost",
+		"idx_person_blocks_blocked",
+	} {
+		if !strings.Contains(text[:down], name) {
+			t.Errorf("migration 00020 Up must add %s", name)
+		}
+	}
+	for _, want := range []string{"DROP TABLE person_blocks;", "DROP TABLE account_follows;",
+		"DROP CONSTRAINT accounts_profile_public_at_set", "DROP COLUMN profile_public_at", "DROP COLUMN profile_public"} {
+		if !strings.Contains(text[down:], want) {
+			t.Errorf("migration 00020 Down must contain %q", want)
+		}
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping the database part of the 00020 migration test")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("opening database: %v", err)
+	}
+	defer db.Close()
+
+	goose.SetBaseFS(MigrationsFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up: %v", err)
+	}
+
+	var a, b int64
+	t.Cleanup(func() {
+		_ = goose.Up(db, "migrations")
+		for _, id := range []int64{a, b} {
+			if id != 0 {
+				_, _ = db.Exec("DELETE FROM account_follows WHERE follower_id = $1 OR followee_id = $1", id)
+				_, _ = db.Exec("DELETE FROM person_blocks WHERE blocker_id = $1 OR blocked_id = $1", id)
+				_, _ = db.Exec("DELETE FROM accounts WHERE id = $1", id)
+			}
+		}
+	})
+
+	present := func() (tables, columns, indexes int) {
+		t.Helper()
+		if err := db.QueryRow(`SELECT count(*) FROM information_schema.tables
+			WHERE table_schema = 'public' AND table_name IN ('account_follows', 'person_blocks')`).Scan(&tables); err != nil {
+			t.Fatalf("counting tables: %v", err)
+		}
+		if err := db.QueryRow(`SELECT count(*) FROM information_schema.columns
+			WHERE table_schema = 'public' AND table_name = 'accounts'
+			  AND column_name IN ('profile_public', 'profile_public_at')`).Scan(&columns); err != nil {
+			t.Fatalf("counting columns: %v", err)
+		}
+		if err := db.QueryRow(`SELECT count(*) FROM pg_indexes WHERE indexname IN (
+			'idx_account_follows_followee', 'idx_account_follows_follower',
+			'idx_account_follows_tag_lost', 'idx_person_blocks_blocked')`).Scan(&indexes); err != nil {
+			t.Fatalf("counting indexes: %v", err)
+		}
+		return
+	}
+	if tb, c, i := present(); tb != 2 || c != 2 || i != 4 {
+		t.Errorf("after Up: %d of 2 tables, %d of 2 columns, %d of 4 indexes", tb, c, i)
+	}
+	for _, name := range []string{"accounts_profile_public_at_set", "account_follows_not_self", "account_follows_end_shape",
+		"account_follows_end_reason_valid", "person_blocks_not_self"} {
+		var n int
+		if err := db.QueryRow(`SELECT count(*) FROM pg_constraint WHERE conname = $1`, name).Scan(&n); err != nil || n != 1 {
+			t.Errorf("after Up: constraint %s count %d (%v), want 1", name, n, err)
+		}
+	}
+
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00020-a@example.com') RETURNING id`).Scan(&a); err != nil {
+		t.Fatalf("inserting account: %v", err)
+	}
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00020-b@example.com') RETURNING id`).Scan(&b); err != nil {
+		t.Fatalf("inserting second account: %v", err)
+	}
+	var public bool
+	var publicAt sql.NullTime
+	if err := db.QueryRow(`SELECT profile_public, profile_public_at FROM accounts WHERE id = $1`, a).Scan(&public, &publicAt); err != nil {
+		t.Fatalf("reading profile flag: %v", err)
+	}
+	if public || publicAt.Valid {
+		t.Errorf("defaults = profile_public %v profile_public_at %v, want false and NULL", public, publicAt.Valid)
+	}
+
+	wantCode := func(label, code, query string, args ...any) {
+		t.Helper()
+		_, err := db.Exec(query, args...)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != code {
+			t.Errorf("%s: want SQLSTATE %s, got %v", label, code, err)
+		}
+	}
+	wantCode("a public profile with no time", "23514",
+		`UPDATE accounts SET profile_public = true WHERE id = $1`, a)
+	wantCode("a self follow", "23514",
+		`INSERT INTO account_follows (follower_id, followee_id) VALUES ($1, $1)`, a)
+	wantCode("ended_at without end_reason", "23514",
+		`INSERT INTO account_follows (follower_id, followee_id, ended_at) VALUES ($1, $2, now())`, a, b)
+	wantCode("end_reason without ended_at", "23514",
+		`INSERT INTO account_follows (follower_id, followee_id, end_reason) VALUES ($1, $2, 'unfollowed')`, a, b)
+	wantCode("an unknown end_reason", "23514",
+		`INSERT INTO account_follows (follower_id, followee_id, ended_at, end_reason) VALUES ($1, $2, now(), 'because')`, a, b)
+	wantCode("a self block", "23514",
+		`INSERT INTO person_blocks (blocker_id, blocked_id) VALUES ($1, $1)`, a)
+
+	if _, err := db.Exec(`INSERT INTO account_follows (follower_id, followee_id) VALUES ($1, $2)`, a, b); err != nil {
+		t.Fatalf("inserting a follow: %v", err)
+	}
+	wantCode("the same follow twice", "23505",
+		`INSERT INTO account_follows (follower_id, followee_id) VALUES ($1, $2)`, a, b)
+	if _, err := db.Exec(`INSERT INTO account_follows (follower_id, followee_id, ended_at, end_reason) VALUES ($1, $2, now(), 'tag_lost')`, b, a); err != nil {
+		t.Errorf("an ended follow with a valid reason must insert: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO person_blocks (blocker_id, blocked_id) VALUES ($1, $2)`, a, b); err != nil {
+		t.Fatalf("inserting a block: %v", err)
+	}
+	wantCode("the same block twice", "23505",
+		`INSERT INTO person_blocks (blocker_id, blocked_id) VALUES ($1, $2)`, a, b)
+
+	version, err := goose.NumericComponent("00020_add_people_profiles.sql")
+	if err != nil {
+		t.Fatalf("parsing version: %v", err)
+	}
+	// Down drops both tables whole, so their rows need no clean up first.
+	if err := goose.DownTo(db, "migrations", version-1); err != nil {
+		t.Fatalf("goose down to %d: %v", version-1, err)
+	}
+	if tb, c, i := present(); tb != 0 || c != 0 || i != 0 {
+		t.Errorf("after Down: %d tables, %d columns, %d indexes still present", tb, c, i)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up again: %v", err)
+	}
+	if tb, c, i := present(); tb != 2 || c != 2 || i != 4 {
+		t.Errorf("after Up again: %d of 2 tables, %d of 2 columns, %d of 4 indexes", tb, c, i)
+	}
+}
