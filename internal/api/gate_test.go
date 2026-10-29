@@ -446,7 +446,16 @@ func TestAccessGateAllowsVerified(t *testing.T) {
 // were added for the POST routes of the password sign in (sign up, sign up code,
 // code resend, sign in, reset, reset code). Each is reached with no session and
 // must answer neither a redirect nor a 401; the counts in the paragraph above
-// predate them. The rows for the old link routes stay until the cleanup plan.
+// predate them.
+//
+// Amended 2026-10-29 by Phase 7.1 plan 14 (D-12): the rows "request link" and
+// "verify landing" are deleted, because that POST route no longer exists and GET
+// /auth/verify now answers a 303 by design, which this test's no redirect rule
+// refuses. The retired link redirect is exempt from the gate all the same, and
+// TestRetiredLinkRedirects proves it on its own. The table now has 23 rows: the
+// login page, the static files, the API reference, the two legal pages, the globe
+// tile, the Demo feed, the six password routes and the ten app assets; the count
+// "seventeen" in the paragraph above predates all of these amendments.
 //
 // Amended 2026-10-29 by plan 05-12 (D-15): the external cron's door joins the
 // exempt list. With a token configured and a fake refresher, POST
@@ -494,8 +503,6 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 		body   string
 	}{
 		{"login gate", http.MethodGet, "/login", ""},
-		{"request link", http.MethodPost, "/api/auth/request-link", `{"email":"exempt-route@example.com"}`},
-		{"verify landing", http.MethodGet, "/auth/verify", ""},
 		{"static asset", http.MethodGet, "/static/css/main.css", ""},
 		{"swagger ui", http.MethodGet, "/swagger/index.html", ""},
 		{"disclaimer page", http.MethodGet, "/disclaimer", ""},
@@ -553,7 +560,7 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 			}
 			// Amended 2026-10-29 by Phase 7.1 plan 09: the password routes answer from
 			// their own handlers, so the answer is a 200 or a 400, not a 403, 404 or 5xx.
-			if tc.method == http.MethodPost && strings.HasPrefix(tc.path, "/api/auth/") && tc.path != "/api/auth/request-link" &&
+			if tc.method == http.MethodPost && strings.HasPrefix(tc.path, "/api/auth/") &&
 				resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusBadRequest {
 				t.Fatalf("%s %s returned %d, want the route's own 200 or 400", tc.method, tc.path, resp.StatusCode)
 			}
@@ -660,6 +667,74 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 			t.Fatalf("POST with no token configured = %d, want 404", resp.StatusCode)
 		}
 	})
+}
+
+// TestRetiredLinkRedirects pins the retired emailed link (Phase 7.1 plan 14, D-12,
+// UI-SPEC Surface 9, T-07.1-31 and T-07.1-08). GET /auth/verify stays public so a
+// link already sitting in an inbox does not meet the gate's own redirect, and it
+// answers 303 to exactly /login?done=old-link, whatever the query holds, with no
+// address in the Location and no-store. Following it renders the sign in page with
+// the old-link line, and it signs nobody in: the same browser is still refused the
+// app afterwards. Not a row of TestAccessGateExemptRoutes, which refuses any 3xx.
+func TestRetiredLinkRedirects(t *testing.T) {
+	srv, _, _ := newGateTestServer(t)
+
+	const want = "/login?done=old-link"
+	queries := []string{
+		"",
+		"?token=abc123",
+		"?token=" + strings.Repeat("A", 43) + "&email=person@example.com",
+	}
+	for _, q := range queries {
+		t.Run("query "+q, func(t *testing.T) {
+			client := newGateJarClient(t)
+			resp, err := client.Get(srv.URL + "/auth/verify" + q)
+			if err != nil {
+				t.Fatalf("GET /auth/verify%s: %v", q, err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusSeeOther {
+				t.Fatalf("GET /auth/verify%s = %d, want 303", q, resp.StatusCode)
+			}
+			loc := resp.Header.Get("Location")
+			if loc != want {
+				t.Fatalf("Location = %q, want exactly %q", loc, want)
+			}
+			if strings.Contains(loc, "@") {
+				t.Fatalf("Location %q holds an address", loc)
+			}
+			if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+				t.Fatalf("Cache-Control = %q, want no-store", got)
+			}
+
+			// Following the redirect lands on the sign in page with the plain line.
+			page, err := client.Get(srv.URL + loc)
+			if err != nil {
+				t.Fatalf("GET %s: %v", loc, err)
+			}
+			defer page.Body.Close()
+			body, err := io.ReadAll(page.Body)
+			if err != nil {
+				t.Fatalf("reading the sign in page: %v", err)
+			}
+			if page.StatusCode != http.StatusOK {
+				t.Fatalf("GET %s = %d, want 200: %s", loc, page.StatusCode, body)
+			}
+			if !strings.Contains(string(body), "That sign in link no longer works.") {
+				t.Fatalf("the sign in page does not show the old-link line: %s", body)
+			}
+
+			// The old link signed nobody in: the app still refuses this browser.
+			home, err := client.Get(srv.URL + "/")
+			if err != nil {
+				t.Fatalf("GET /: %v", err)
+			}
+			defer home.Body.Close()
+			if home.StatusCode != http.StatusFound || !strings.HasPrefix(home.Header.Get("Location"), "/login") {
+				t.Fatalf("GET / after an old link = %d to %q, want 302 to /login", home.StatusCode, home.Header.Get("Location"))
+			}
+		})
+	}
 }
 
 // TestAccessGateBlocksUnverifiedGeocode is this plan's V4 Access Control
