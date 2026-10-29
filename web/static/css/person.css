@@ -516,6 +516,12 @@ a.person-report__body:hover {
   overflow-wrap: anywhere;
 }
 
+/* Review fix WR-T02: the hovered row is filled with --color-surface, and muted
+   text only sits on --color-bg, so the line takes the full text colour then. */
+a.person-report__body:hover .person-report__label {
+  color: var(--color-text);
+}
+
 .person-report__disputed {
   color: var(--color-severity-critical);
   font-size: var(--font-size-label);
@@ -768,7 +774,7 @@ a.person-report__body:hover {
     padding: var(--space-sm) var(--space-lg);
     border-bottom: 1px solid var(--color-border);
     background: var(--color-surface);
-    color: var(--color-text-muted);
+    color: var(--color-text);
     font-size: var(--font-size-label);
     line-height: var(--line-height-label);
     font-weight: var(--font-weight-semibold);

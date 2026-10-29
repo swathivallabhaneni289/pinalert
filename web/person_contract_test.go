@@ -582,3 +582,44 @@ func TestPersonBellMarkup(t *testing.T) {
 		}
 	}
 }
+
+// TestPersonColumnHeadsAndHoverKeepContrast pins review fix WR-T02 (2026-10-30).
+// The laptop Recent reports column heads and a hovered row's line sit on
+// --color-surface, where the muted grey reads 4.34 to 1 in the light theme.
+// Muted text stays on --color-bg only; on the surface the text takes
+// --color-text, which clears 4.5 to 1 in both themes.
+func TestPersonColumnHeadsAndHoverKeepContrast(t *testing.T) {
+	rules := p26Rules(t, "person.css")
+	heads := p26Find(rules, "", ".person-report-cols")
+	if len(heads) == 0 {
+		heads = p26Find(rules, "min-width", ".person-report-cols")
+	}
+	if len(heads) == 0 {
+		t.Fatalf("person.css: no .person-report-cols rule")
+	}
+	for _, r := range heads {
+		if c := r.Decls["color"]; c != "" && c != "var(--color-text)" {
+			t.Errorf(".person-report-cols color is %q, want var(--color-text): muted text sits only on --color-bg (WR-T02)", c)
+		}
+		if r.Decls["background"] == "var(--color-surface)" && r.Decls["color"] != "var(--color-text)" {
+			t.Errorf(".person-report-cols is on the surface colour and must take var(--color-text) (WR-T02)")
+		}
+	}
+	hover := p26Find(rules, "", "a.person-report__body:hover .person-report__label")
+	if len(hover) == 0 {
+		t.Errorf("person.css: a hovered row's line must switch to var(--color-text) while the row is on the surface colour (WR-T02)")
+	}
+	for _, r := range hover {
+		if r.Decls["color"] != "var(--color-text)" {
+			t.Errorf("hovered row line color is %q, want var(--color-text) (WR-T02)", r.Decls["color"])
+		}
+	}
+	main := p16ParseCSS("static/css/main.css", p16ReadStatic(t, "static/css/main.css"))
+	for name, head := range map[string]string{"light": ":root", "dark": ":root[data-theme=\"dark\"]"} {
+		d := p16Rule(t, main, "", head).Decls
+		got := wcagContrastRatio(t, d["--color-text"], d["--color-surface"], "text on surface, "+name)
+		if got < 4.5 {
+			t.Errorf("%s theme: --color-text on --color-surface is %.2f to 1, want at least 4.5 (WR-T02)", name, got)
+		}
+	}
+}
