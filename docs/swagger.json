@@ -1,7 +1,7 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "Crowd-reported local emergency feed for floods, cyclones, and other disasters.\nReports are posted by nearby people and confirmed or disputed by other nearby\npeople; this API is the read/write surface for that data. Reading and writing\nreports both require a signed in session, an account signed in with an email\nand a password, and a session that is not signed in is refused with 401. Pinalert is an unofficial,\nunaffiliated project and is not a substitute for contacting emergency services.\nThis document is Swagger 2.0 — swag (the generator behind this spec) does not\nemit OpenAPI 3.x, so tooling that expects OpenAPI 3.x specifically should account\nfor that; OPS-01's \"OpenAPI/Swagger spec\" requirement is satisfied by either\nformat.",
+        "description": "Crowd-reported local emergency feed for floods, cyclones, and other disasters.\nReports are posted by nearby people and confirmed or disputed by other nearby\npeople; this API is the read/write surface for that data. Reading and writing\nreports both require a signed in session, an account signed in with an email\nand a password, and a session that is not signed in is refused with 401. Pinalert is an unofficial,\nunaffiliated project and is not a substitute for contacting emergency services.\nThis document is Swagger 2.0: swag (the generator behind this spec) does not\nemit OpenAPI 3.x, so tooling that expects OpenAPI 3.x specifically should account\nfor that; OPS-01's \"OpenAPI/Swagger spec\" requirement is satisfied by either\nformat.",
         "title": "Pinalert API",
         "contact": {
             "name": "Pinalert project",
@@ -4396,7 +4396,7 @@
                     "example": 42
                 },
                 "is_own_report": {
-                    "description": "IsOwnReport is true when the calling account submitted this report.\n02-05 omits the confirm/dispute controls when true (D-03) rather than\nrendering a button that will 403 — a convenience for the client,\nnever the control: service.VotingService.CastVote refuses the\nself-vote server-side and 02-03b returns 403 for it regardless of\nwhat the client renders. Derived from a reporter account id the\nserver looks up and never serialises: this response carries a\nboolean, never an account id or an email (T-01-02).",
+                    "description": "IsOwnReport is true when the calling account submitted this report.\n02-05 omits the confirm/dispute controls when true (D-03) rather than\nrendering a button that will 403. That is a convenience for the client,\nnever the control: service.VotingService.CastVote refuses the\nself-vote server-side and 02-03b returns 403 for it regardless of\nwhat the client renders. Derived from a reporter account id the\nserver looks up and never serialises: this response carries a\nboolean, never an account id or an email (T-01-02).",
                     "type": "boolean",
                     "example": false
                 },
@@ -4523,7 +4523,7 @@
                     "example": "resolve"
                 },
                 "your_vote": {
-                    "description": "YourVote is the calling account's own current content vote on this\nreport — confirm, dispute, or null. Deliberately without omitempty,\nso the key is always present and explicitly null when the caller has\nno standing content vote. It is viewer-specific, which makes this\nresponse uncacheable across callers.",
+                    "description": "YourVote is the calling account's own current content vote on this\nreport: confirm, dispute, or null. Deliberately without omitempty,\nso the key is always present and explicitly null when the caller has\nno standing content vote. It is viewer-specific, which makes this\nresponse uncacheable across callers.",
                     "type": "string",
                     "enum": [
                         "confirm",

@@ -2,6 +2,7 @@ package web
 
 import (
 	"io/fs"
+	"os"
 	"strings"
 	"testing"
 )
@@ -89,6 +90,40 @@ func TestUserVisibleCopyUsesPlainPunctuation(t *testing.T) {
 			if strings.Contains(line, emDash) || strings.Contains(line, enDash) {
 				t.Errorf("%s:%d: found a long dash character in user-visible copy, line: %q",
 					path, i+1, strings.TrimSpace(line))
+			}
+		}
+	}
+}
+
+// TestGeneratedAPIReferenceUsesPlainPunctuation extends design rule 1 to the
+// generated API reference. The /swagger page is public, and swag copies the
+// doc comments on the router and the handlers into the descriptions it
+// serves, so docs/docs.go, docs/swagger.json and docs/swagger.yaml are copy a
+// reader can see. Scanning whole files is correct here because these files
+// are generated and carry no hand written comments. If this fails, fix the Go
+// doc comment named by the matching line and run make swag; never edit the
+// generated files by hand. This closes backlog 999.8.
+func TestGeneratedAPIReferenceUsesPlainPunctuation(t *testing.T) {
+	needles := []string{string(rune(0x2014)), string(rune(0x2013))}
+	paths := []string{"../docs/docs.go", "../docs/swagger.json", "../docs/swagger.yaml"}
+
+	for _, path := range paths {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("failed to read generated API reference %s: %v", path, err)
+		}
+		content := string(raw)
+		if !strings.Contains(content, "Pinalert API") {
+			t.Fatalf("%s does not contain the title %q; the file is empty or not the generated "+
+				"API reference, so a clean scan would prove nothing", path, "Pinalert API")
+		}
+		for i, line := range strings.Split(content, "\n") {
+			for _, needle := range needles {
+				if strings.Contains(line, needle) {
+					t.Errorf("%s:%d: found a long dash character in the generated API reference, line: %q",
+						path, i+1, strings.TrimSpace(line))
+					break
+				}
 			}
 		}
 	}

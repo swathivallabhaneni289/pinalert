@@ -142,14 +142,14 @@ type FeedReportResponse struct {
 	// regardless of which endpoint delivered it.
 	VisibilityReason string `json:"visibility_reason" enums:"resolved,critical_bypasses_gates,disputed,awaiting_second_independent_confirmation,confirmed" example:"confirmed"`
 	// YourVote is the calling account's own current content vote on this
-	// report — confirm, dispute, or null. Deliberately without omitempty,
+	// report: confirm, dispute, or null. Deliberately without omitempty,
 	// so the key is always present and explicitly null when the caller has
 	// no standing content vote. It is viewer-specific, which makes this
 	// response uncacheable across callers.
 	YourVote *string `json:"your_vote" enums:"confirm,dispute" example:"confirm"`
 	// IsOwnReport is true when the calling account submitted this report.
 	// 02-05 omits the confirm/dispute controls when true (D-03) rather than
-	// rendering a button that will 403 — a convenience for the client,
+	// rendering a button that will 403. That is a convenience for the client,
 	// never the control: service.VotingService.CastVote refuses the
 	// self-vote server-side and 02-03b returns 403 for it regardless of
 	// what the client renders. Derived from a reporter account id the

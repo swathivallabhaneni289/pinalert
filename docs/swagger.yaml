@@ -407,7 +407,7 @@ definitions:
         description: |-
           IsOwnReport is true when the calling account submitted this report.
           02-05 omits the confirm/dispute controls when true (D-03) rather than
-          rendering a button that will 403 — a convenience for the client,
+          rendering a button that will 403. That is a convenience for the client,
           never the control: service.VotingService.CastVote refuses the
           self-vote server-side and 02-03b returns 403 for it regardless of
           what the client renders. Derived from a reporter account id the
@@ -561,7 +561,7 @@ definitions:
       your_vote:
         description: |-
           YourVote is the calling account's own current content vote on this
-          report — confirm, dispute, or null. Deliberately without omitempty,
+          report: confirm, dispute, or null. Deliberately without omitempty,
           so the key is always present and explicitly null when the caller has
           no standing content vote. It is viewer-specific, which makes this
           response uncacheable across callers.
@@ -1984,7 +1984,7 @@ info:
     reports both require a signed in session, an account signed in with an email
     and a password, and a session that is not signed in is refused with 401. Pinalert is an unofficial,
     unaffiliated project and is not a substitute for contacting emergency services.
-    This document is Swagger 2.0 — swag (the generator behind this spec) does not
+    This document is Swagger 2.0: swag (the generator behind this spec) does not
     emit OpenAPI 3.x, so tooling that expects OpenAPI 3.x specifically should account
     for that; OPS-01's "OpenAPI/Swagger spec" requirement is satisfied by either
     format.
