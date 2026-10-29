@@ -354,6 +354,46 @@ func TestCommentReplyJoinsThread(t *testing.T) {
 	})
 }
 
+// TestCommentReplyCapPerThread proves review WR-S02 (2026-10-29): the reply cap
+// is per thread, so one busy thread never hides a later thread's replies, and
+// ReplyCount is the real number of replies the viewer may see in that thread,
+// not the number returned. Thread A holds one reply more than the cap; thread B,
+// posted after all of them, holds one.
+func TestCommentReplyCapPerThread(t *testing.T) {
+	r := newCmsRig(t)
+	rep := r.open(t)
+
+	a := r.mustPost(t, rep, r.alice, "is the road open", nil)
+	testutil.MustExec(t, r.pool,
+		`INSERT INTO comments (report_id, account_id, parent_id, reply_to_id, body, created_at)
+		 SELECT $1, $2, $3, $3, 'still closed ' || g, $4
+		 FROM generate_series(1, $5::int) AS g`,
+		rep, r.carol, a.ID, r.now, service.CommentReplyCap+1)
+	b := r.mustPost(t, rep, r.carol, "shelter at the school is full", nil)
+	bReply := r.mustPost(t, rep, r.alice, "the hall next door has room", &b.ID)
+
+	l := r.list(t, rep, 0)
+	if len(l.Comments) != 2 || l.Comments[0].ID != a.ID || l.Comments[1].ID != b.ID {
+		t.Fatalf("list = %d threads, want threads A and B", len(l.Comments))
+	}
+	ta, tb := l.Comments[0], l.Comments[1]
+	if len(ta.Replies) != service.CommentReplyCap {
+		t.Errorf("thread A lists %d replies, want the cap %d", len(ta.Replies), service.CommentReplyCap)
+	}
+	if ta.ReplyCount != service.CommentReplyCap+1 {
+		t.Errorf("thread A ReplyCount = %d, want the real count %d", ta.ReplyCount, service.CommentReplyCap+1)
+	}
+	if len(tb.Replies) != 1 || tb.Replies[0].ID != bReply.ID {
+		t.Errorf("thread B lists %d replies, want its one reply", len(tb.Replies))
+	}
+	if tb.ReplyCount != 1 {
+		t.Errorf("thread B ReplyCount = %d, want 1", tb.ReplyCount)
+	}
+	if want := service.CommentReplyCap + 4; l.Count != want {
+		t.Errorf("Count = %d, want %d", l.Count, want)
+	}
+}
+
 func TestCommentReplyTargetMustBeVisible(t *testing.T) {
 	r := newCmsRig(t)
 	rep := r.open(t)
