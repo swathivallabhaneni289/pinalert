@@ -205,7 +205,13 @@ func demoSubmit(store *demo.Store) http.HandlerFunc {
 			return
 		}
 
-		res, err := world.PostPractice(r.Context(), submitInputFrom(req))
+		in, err := submitInputFrom(req)
+		if err != nil {
+			writeSubmitError(w, err)
+			return
+		}
+
+		res, err := world.PostPractice(r.Context(), in)
 		if err != nil {
 			if errors.Is(err, demo.ErrWorldFull) {
 				writeFieldError(w, http.StatusTooManyRequests, "report", demoFullMessage)

@@ -2772,7 +2772,7 @@
                 }
             },
             "post": {
-                "description": "Creates a location-tagged report under the caller's session. Requires a signed in\nsession (an account signed in with an email and a password); a session that is not\nsigned in is refused with 401. id, geohash, created_at\nand expires_at are computed server-side and can never be set by the client.\nThe description is checked before anything is stored. Text that looks hateful, like harassment, sexual, or like random characters is refused with 422 naming the problem, and nothing is stored.\nWhen the check cannot finish in time, a critical report is published at once and checked again in the background; any other report is stored but held off every feed until a background check finishes, and held is true.\nPosting is limited per verified account, with separate allowances for serious reports (critical) and for every other report.\nA blocked post gets 429 with a Retry-After header and stores nothing, and a rejected or failed post does not use the allowance.\nAn optional request_id makes a retry safe: a repeated key answers 200 with the stored report and is checked before any limit or text check.\nAn optional written_at is display only and never changes created_at or expires_at.\nAn optional expected_account_id, sent by the device queue with a saved report, names the account the report was saved under. When it is not the signed in account the post gets 409 on the field expected_account_id before any other check, stores nothing and uses no allowance; the answer names neither account. A post without it is not checked.\nThe category rescue_needed is no longer accepted for a new report and is refused with 400 on the field category. Reports already stored with it keep their rules and still appear in GET /api/reports.",
+                "description": "Creates a location-tagged report under the caller's session. Requires a signed in\nsession (an account signed in with an email and a password); a session that is not\nsigned in is refused with 401. id, geohash, created_at\nand expires_at are computed server-side and can never be set by the client.\nlatitude and longitude are both required. A post that leaves either out or sends null for it is refused with 400 on that field, and nothing is stored.\nThe description is checked before anything is stored. Text that looks hateful, like harassment, sexual, or like random characters is refused with 422 naming the problem, and nothing is stored.\nWhen the check cannot finish in time, a critical report is published at once and checked again in the background; any other report is stored but held off every feed until a background check finishes, and held is true.\nPosting is limited per verified account, with separate allowances for serious reports (critical) and for every other report.\nA blocked post gets 429 with a Retry-After header and stores nothing, and a rejected or failed post does not use the allowance.\nAn optional request_id makes a retry safe: a repeated key answers 200 with the stored report and is checked before any limit or text check.\nAn optional written_at is display only and never changes created_at or expires_at.\nAn optional expected_account_id, sent by the device queue with a saved report, names the account the report was saved under. When it is not the signed in account the post gets 409 on the field expected_account_id before any other check, stores nothing and uses no allowance; the answer names neither account. A post without it is not checked.\nThe category rescue_needed is no longer accepted for a new report and is refused with 400 on the field category. Reports already stored with it keep their rules and still appear in GET /api/reports.",
                 "consumes": [
                     "application/json"
                 ],
@@ -5890,12 +5890,12 @@
                     "example": "people_trapped"
                 },
                 "latitude": {
-                    "description": "Latitude must be between -90 and 90.",
+                    "description": "Latitude must be between -90 and 90. Required: a post that leaves it out or sends null is refused with 400 on the field latitude.",
                     "type": "number",
                     "example": 13.0827
                 },
                 "longitude": {
-                    "description": "Longitude must be between -180 and 180.",
+                    "description": "Longitude must be between -180 and 180. Required: a post that leaves it out or sends null is refused with 400 on the field longitude.",
                     "type": "number",
                     "example": 80.2707
                 },

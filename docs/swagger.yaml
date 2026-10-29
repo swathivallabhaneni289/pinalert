@@ -1672,11 +1672,13 @@ definitions:
         example: people_trapped
         type: string
       latitude:
-        description: Latitude must be between -90 and 90.
+        description: 'Latitude must be between -90 and 90. Required: a post that leaves
+          it out or sends null is refused with 400 on the field latitude.'
         example: 13.0827
         type: number
       longitude:
-        description: Longitude must be between -180 and 180.
+        description: 'Longitude must be between -180 and 180. Required: a post that
+          leaves it out or sends null is refused with 400 on the field longitude.'
         example: 80.2707
         type: number
       request_id:
@@ -4151,6 +4153,7 @@ paths:
         session (an account signed in with an email and a password); a session that is not
         signed in is refused with 401. id, geohash, created_at
         and expires_at are computed server-side and can never be set by the client.
+        latitude and longitude are both required. A post that leaves either out or sends null for it is refused with 400 on that field, and nothing is stored.
         The description is checked before anything is stored. Text that looks hateful, like harassment, sexual, or like random characters is refused with 422 naming the problem, and nothing is stored.
         When the check cannot finish in time, a critical report is published at once and checked again in the background; any other report is stored but held off every feed until a background check finishes, and held is true.
         Posting is limited per verified account, with separate allowances for serious reports (critical) and for every other report.

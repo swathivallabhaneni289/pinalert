@@ -41,7 +41,9 @@ const (
 // DisallowUnknownFields so an attempt to set one of them is a loud 400, not
 // a silently dropped field. Exported and hand-declared field by field (never
 // aliasing a store row) so swag can document it by name and so a column
-// added to the store later cannot silently change this contract.
+// added to the store later cannot silently change this contract. Both
+// coordinates are pointers so an absent key or a JSON null can be told apart
+// from a real 0, the same as CastVoteRequest.
 type SubmitReportRequest struct {
 	// Category is one of the nine categories a new report can use (internal/service.PostableCategories). rescue_needed was retired on 2026-10-16 and is refused with 400 on the field category.
 	Category string `json:"category" enums:"flood,earthquake,fire,storm_cyclone,road_blocked,power_outage,shelter_open,traffic,other" example:"flood"`
@@ -49,10 +51,10 @@ type SubmitReportRequest struct {
 	Severity string `json:"severity" enums:"low,medium,critical" example:"medium"`
 	// Description is a free text account of the report, 10 to 1000 characters after trimming, counted as characters rather than bytes.
 	Description string `json:"description" example:"Water rising fast near the market bridge."`
-	// Latitude must be between -90 and 90.
-	Latitude float64 `json:"latitude" example:"13.0827"`
-	// Longitude must be between -180 and 180.
-	Longitude float64 `json:"longitude" example:"80.2707"`
+	// Latitude must be between -90 and 90. Required: a post that leaves it out or sends null is refused with 400 on the field latitude.
+	Latitude *float64 `json:"latitude" example:"13.0827"`
+	// Longitude must be between -180 and 180. Required: a post that leaves it out or sends null is refused with 400 on the field longitude.
+	Longitude *float64 `json:"longitude" example:"80.2707"`
 	// ShelterCapacityStatus is required when category is shelter_open and forbidden for every other category (internal/service.CapacityStatuses).
 	ShelterCapacityStatus *string `json:"shelter_capacity_status,omitempty" enums:"available,limited,full,closed" example:"available"`
 	// ShelterHeadcount is optional and only valid alongside category shelter_open.
@@ -449,7 +451,10 @@ type ErrorResponse struct {
 // (01.1-04) refuses a caller who is not signed in with 401 before this function ever runs. The
 // order is the specification: an optional expected_account_id that is not the
 // signed in account is refused with 409 straight after decoding, before
-// anything else (WR-W09), then validation (a 400 costs nothing), then the
+// anything else (WR-W09). A body without a latitude or a longitude, or with
+// null for either, is refused with 400 naming the missing field right after
+// that account check, so it stores nothing and uses no allowance. Then
+// validation (a 400 costs nothing), then the
 // IP backstop, the submit attempt bucket and the serious or other allowance (a
 // 429 stores nothing), then the text check and insert, giving the allowance
 // back on every outcome except a stored report. A ValidationError maps to
@@ -469,6 +474,7 @@ type ErrorResponse struct {
 // @Description session (an account signed in with an email and a password); a session that is not
 // @Description signed in is refused with 401. id, geohash, created_at
 // @Description and expires_at are computed server-side and can never be set by the client.
+// @Description latitude and longitude are both required. A post that leaves either out or sends null for it is refused with 400 on that field, and nothing is stored.
 // @Description The description is checked before anything is stored. Text that looks hateful, like harassment, sexual, or like random characters is refused with 422 naming the problem, and nothing is stored.
 // @Description When the check cannot finish in time, a critical report is published at once and checked again in the background; any other report is stored but held off every feed until a background check finishes, and held is true.
 // @Description Posting is limited per verified account, with separate allowances for serious reports (critical) and for every other report.
@@ -531,7 +537,11 @@ func SubmitReport(svc *service.ReportService, gate *RateGate) http.HandlerFunc {
 			return
 		}
 
-		in := submitInputFrom(req)
+		in, err := submitInputFrom(req)
+		if err != nil {
+			writeSubmitError(w, err)
+			return
+		}
 
 		if err := service.ValidateSubmitInput(in); err != nil {
 			writeSubmitError(w, err)
@@ -590,10 +600,18 @@ func SubmitReport(svc *service.ReportService, gate *RateGate) http.HandlerFunc {
 }
 
 // submitInputFrom converts the decoded body of a report post into the service's
-// input. It reads nothing from the request and decides nothing: validation is
-// service.ValidateSubmitInput's. SubmitReport and the Demo's post route (demo.go)
-// share it, so a body means the same thing on both (plan 05-10).
-func submitInputFrom(req SubmitReportRequest) service.SubmitInput {
+// input. It reads nothing from the request. It refuses only a missing or null
+// coordinate, because SubmitInput has no way to hold an absent one; every other
+// check is still service.ValidateSubmitInput's. SubmitReport and the Demo's post
+// route (demo.go) share it, so a body means the same thing on both (plan 05-10)
+// and both refuse with one status, field and sentence.
+func submitInputFrom(req SubmitReportRequest) (service.SubmitInput, error) {
+	if req.Latitude == nil {
+		return service.SubmitInput{}, service.ValidationError{Field: "latitude", Message: "latitude is required."}
+	}
+	if req.Longitude == nil {
+		return service.SubmitInput{}, service.ValidationError{Field: "longitude", Message: "longitude is required."}
+	}
 	var capacityStatus *service.CapacityStatus
 	if req.ShelterCapacityStatus != nil {
 		cs := service.CapacityStatus(*req.ShelterCapacityStatus)
@@ -604,8 +622,8 @@ func submitInputFrom(req SubmitReportRequest) service.SubmitInput {
 		Category:              service.Category(req.Category),
 		Severity:              service.Severity(req.Severity),
 		Description:           req.Description,
-		Latitude:              req.Latitude,
-		Longitude:             req.Longitude,
+		Latitude:              *req.Latitude,
+		Longitude:             *req.Longitude,
 		ShelterCapacityStatus: capacityStatus,
 		ShelterHeadcount:      req.ShelterHeadcount,
 		WrittenAt:             service.ClampWrittenAt(parseWrittenAt(req.WrittenAt), time.Now().UTC()),
@@ -617,7 +635,7 @@ func submitInputFrom(req SubmitReportRequest) service.SubmitInput {
 		h := service.Happening(*req.Happening)
 		in.Happening = &h
 	}
-	return in
+	return in, nil
 }
 
 // writeSubmitError maps a refusal of the validation or of SubmitChecked onto the
