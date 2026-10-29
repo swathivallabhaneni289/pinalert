@@ -17,7 +17,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 	"unicode/utf8"
 
 	"pinalert/internal/api"
@@ -74,7 +73,6 @@ func p431WantField(t *testing.T, label string, status int, raw []byte, wantStatu
 func TestFlagReasonsAndNoteEndToEnd(t *testing.T) {
 	srv, mailer, pool := newE2EServerWith(t, func(d *api.Deps, q *sqlcgen.Queries) {
 		d.ModeratorEmails = modAllowList(t, "mod@example.com")
-		d.RequestLinkRateLimit = api.RequestLinkRateLimit{Burst: 100, Every: time.Millisecond}
 		d.Reports = service.NewReportService(q, service.WithScreener(p431Screener{}))
 	})
 	author := newVerifiedClient(t, srv, mailer, "author@example.com")

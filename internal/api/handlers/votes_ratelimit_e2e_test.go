@@ -66,7 +66,6 @@ func (c *p09Clock) Advance(d time.Duration) {
 func p09Tweak(clk *p09Clock, mutate func(d *api.Deps)) func(d *api.Deps, q *sqlcgen.Queries) {
 	return func(d *api.Deps, _ *sqlcgen.Queries) {
 		d.LimiterClock = clk.Now
-		d.RequestLinkRateLimit = api.RequestLinkRateLimit{Burst: 100, Every: time.Millisecond}
 		if mutate != nil {
 			mutate(d)
 		}

@@ -88,7 +88,6 @@ func TestIPBackstop(t *testing.T) {
 			d.Votes = service.NewVotingService(q)
 			d.ClientIPHeader = header
 			d.RateLimits.IPBackstopVote = BucketLimit{Every: time.Hour, Burst: 2}
-			d.RequestLinkRateLimit = RequestLinkRateLimit{Burst: 100, Every: time.Millisecond}
 		}
 	}
 

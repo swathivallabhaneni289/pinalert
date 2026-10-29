@@ -14,7 +14,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -36,7 +35,6 @@ func newSignoutServer(t *testing.T) (*httptest.Server, *recordingMailer, *pgxpoo
 	var poolRef *pgxpool.Pool
 	srv, mailer, pool := newE2EServerWith(t, func(d *api.Deps, _ *sqlcgen.Queries) {
 		d.Page.PushPublicKey = pushTestKey
-		d.RequestLinkRateLimit = api.RequestLinkRateLimit{Burst: 1000, Every: time.Millisecond}
 		d.AccountTx = func(ctx context.Context, fn func(q service.AccountDeleteQuerier) error) error {
 			return service.PgxAccountTx(poolRef)(ctx, fn)
 		}

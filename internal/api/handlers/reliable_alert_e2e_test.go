@@ -95,7 +95,6 @@ func p17raSetup(t *testing.T, prefix string) *p17raWorld {
 	srv, mailer, pool := newE2EServerWith(t, func(d *api.Deps, q *sqlcgen.Queries) {
 		d.Reports = service.NewReportService(q, service.WithReportClock(clock.Now))
 		d.Votes = service.NewVotingService(q, service.WithVotingClock(clock.Now))
-		d.RequestLinkRateLimit = api.RequestLinkRateLimit{Burst: 100, Every: time.Millisecond}
 	})
 	w := &p17raWorld{
 		srv: srv, pool: pool, clock: clock, mailer: mailer,

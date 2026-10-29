@@ -154,18 +154,9 @@ func submitReport(t *testing.T, client *http.Client, srv *httptest.Server, categ
 	}
 }
 
-// newAuthE2EServer delegates to newAuthE2EServerWithRateLimit using the zero
-// value, so RequestLinkRateLimitDefault is still what every existing call
-// site gets — no existing test's signature or behavior changes.
+// newAuthE2EServer builds the real router over a fresh test database with the
+// code and password service, the test hasher and open auth buckets.
 func newAuthE2EServer(t *testing.T) (*httptest.Server, *pgxpool.Pool, *recordingMailer) {
-	t.Helper()
-	return newAuthE2EServerWithRateLimit(t, api.RequestLinkRateLimit{})
-}
-
-// newAuthE2EServerWithRateLimit is newAuthE2EServer's full implementation,
-// taking an explicit link limit. Since Phase 7.1 plan 14 no route reads that
-// limit, so the parameter does nothing; plan 14c removes it.
-func newAuthE2EServerWithRateLimit(t *testing.T, limit api.RequestLinkRateLimit) (*httptest.Server, *pgxpool.Pool, *recordingMailer) {
 	t.Helper()
 	pool := testutil.NewTestDB(t)
 
@@ -181,13 +172,12 @@ func newAuthE2EServerWithRateLimit(t *testing.T, limit api.RequestLinkRateLimit)
 	queries := sqlcgen.New(pool)
 	fm := &recordingMailer{}
 	deps := api.Deps{
-		Session:              mgr,
-		Sessions:             queries,
-		Reports:              service.NewReportService(queries),
-		AuthService:          service.NewAuthService(queries, fm, "https://pinalert.example"),
-		Auth:                 handlers.AuthConfig{AssetVersion: "test"},
-		Template:             tmpl,
-		RequestLinkRateLimit: limit,
+		Session:     mgr,
+		Sessions:    queries,
+		Reports:     service.NewReportService(queries),
+		AuthService: service.NewAuthService(queries, fm, "https://pinalert.example"),
+		Auth:        handlers.AuthConfig{AssetVersion: "test"},
+		Template:    tmpl,
 		// Amended 2026-10-29 by Phase 7.1 plan 08: the code and password
 		// service with the test hasher and open buckets, so a test that signs
 		// in through verifySession never meets a 503 or a bucket.

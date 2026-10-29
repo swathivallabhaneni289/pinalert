@@ -17,7 +17,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -37,7 +36,6 @@ func newRevServer(t *testing.T) (*httptest.Server, *recordingMailer, *pgxpool.Po
 	t.Helper()
 	return newE2EServerWith(t, func(d *api.Deps, _ *sqlcgen.Queries) {
 		d.ModeratorEmails = modAllowList(t, "mod@example.com")
-		d.RequestLinkRateLimit = api.RequestLinkRateLimit{Burst: 1000, Every: time.Millisecond}
 	})
 }
 

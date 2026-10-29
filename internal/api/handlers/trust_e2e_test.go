@@ -44,12 +44,8 @@ const p07ReportLat, p07ReportLon = 12.9716, 77.5946
 // service through service.WithReportClock and to the voting service through
 // service.WithVotingClock, so the time dependent trust fields agree between
 // the feed and the vote response; when clock is nil no option is passed at
-// all. Second, the request-link limiter is opened to
-// api.RequestLinkRateLimit{Burst: 100, Every: time.Millisecond}, the
-// precedent newAuthE2EServerWithRateLimit sets: the default limiter allows 5
-// request-link calls a minute from 127.0.0.1, and these tests verify up to 25
-// accounts. The AuthService keeps the wall clock because magic link expiry
-// and the resend cooldown read it. Every test in this file uses this helper.
+// all. Second, the AuthService keeps the wall clock because code expiry and
+// the resend cooldown read it. Every test in this file uses this helper.
 func newTrustE2EServer(t *testing.T, clock func() time.Time) (*httptest.Server, *recordingMailer, *pgxpool.Pool) {
 	t.Helper()
 	pool := testutil.NewTestDB(t)
@@ -72,14 +68,13 @@ func newTrustE2EServer(t *testing.T, clock func() time.Time) (*httptest.Server, 
 		votingOpts = append(votingOpts, service.WithVotingClock(clock))
 	}
 	deps := api.Deps{
-		Session:              mgr,
-		Sessions:             queries,
-		Reports:              service.NewReportService(queries, reportOpts...),
-		Votes:                service.NewVotingService(queries, votingOpts...),
-		AuthService:          service.NewAuthService(queries, fm, "https://pinalert.example"),
-		Auth:                 handlers.AuthConfig{AssetVersion: "test"},
-		Template:             tmpl,
-		RequestLinkRateLimit: api.RequestLinkRateLimit{Burst: 100, Every: time.Millisecond},
+		Session:     mgr,
+		Sessions:    queries,
+		Reports:     service.NewReportService(queries, reportOpts...),
+		Votes:       service.NewVotingService(queries, votingOpts...),
+		AuthService: service.NewAuthService(queries, fm, "https://pinalert.example"),
+		Auth:        handlers.AuthConfig{AssetVersion: "test"},
+		Template:    tmpl,
 		// 04-09 opened every bucket because this suite tests trust semantics,
 		// not limits: one account taps Confirm twice and then Dispute on one
 		// report, which the 30 second vote cooldown would refuse.

@@ -72,22 +72,10 @@ const (
 	defaultRadiusKm = 10.0
 )
 
-// requestLinkRateLimitBurst/Every are DEC-I's per-IP budget for POST
-// /api/auth/request-link (01.1-05-PLAN.md): a burst of 5 immediately, one
-// token refilled every 60 seconds thereafter. Deliberately the looser,
-// secondary control — PROJECT.md flags CGNAT (many legitimate Indian mobile
-// users sharing one carrier IP) as a real collateral-damage risk, so the
-// per-address cooldown in internal/service.AuthService.RequestLink carries
-// the primary load.
-const (
-	requestLinkRateLimitBurst = 5
-	requestLinkRateLimitEvery = 60 * time.Second
-)
-
 // geocodeRateLimitBurst/Every are the per account budget of GET /api/geocode,
 // the report form's search: 8 searches at once, then one a second (quick
 // 261016-sne; it was per IP, 3 then one every 2 seconds). Deliberately shaped
-// differently from the request-link budget above: typing into a search box is
+// differently from the other budgets: typing into a search box is
 // bursty within one report submission and rare across a session. Sized for
 // one person typing one address with a 300 ms pause between searches; see
 // api.GeocodeRateLimitDefault for the reasoning. The real D-02 policy ceiling
@@ -478,13 +466,6 @@ func main() {
 			PushPublicKey: pushCfg.PublicKey,
 		},
 		Dev: env == "development",
-		// DEC-I: burst 5, one token refilled per 60 seconds, applied only to
-		// POST /api/auth/request-link (see api.NewRouter). Named here, in
-		// one place, rather than left as literals inside the router.
-		RequestLinkRateLimit: api.RequestLinkRateLimit{
-			Burst: requestLinkRateLimitBurst,
-			Every: requestLinkRateLimitEvery,
-		},
 		// The one geocode client built above serves both lanes: the
 		// report form's address search and the reader's place search.
 		// Sharing the single value is what keeps the limiter inside
