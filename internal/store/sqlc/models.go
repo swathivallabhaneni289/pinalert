@@ -241,6 +241,12 @@ type PersonBlock struct {
 	CreatedAt time.Time
 }
 
+type PersonMute struct {
+	MuterID   int64
+	MutedID   int64
+	CreatedAt time.Time
+}
+
 type ProfileRating struct {
 	RaterID    int64
 	ReporterID int64

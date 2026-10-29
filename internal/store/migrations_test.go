@@ -2695,3 +2695,136 @@ func TestMigration00021(t *testing.T) {
 		t.Errorf("after Up again: %d of 1 tables, %d of 2 columns, %d of 2 indexes", tb, c, i)
 	}
 }
+
+// TestMigration00022 covers the Phase 9 person mute migration (plan 09-18): the
+// file carries both goose markers and builds nothing concurrently; on a database
+// it adds the person_mutes table and its index, the named CHECK constraint
+// refuses a mute of yourself (SQLSTATE 23514), a second row for the same pair is
+// refused (23505), Down removes everything and Up applies again (D-12, G4). The
+// table is separate from report_mutes, which it must not touch.
+func TestMigration00022(t *testing.T) {
+	const file = "migrations/00022_add_person_mutes.sql"
+	contents, err := MigrationsFS.ReadFile(file)
+	if err != nil {
+		t.Fatalf("reading embedded %s: %v", file, err)
+	}
+	text := string(contents)
+	up := strings.Index(text, "+goose Up")
+	down := strings.Index(text, "+goose Down")
+	if up < 0 || down < 0 || down < up {
+		t.Fatalf("%s must carry +goose Up then +goose Down", file)
+	}
+	var code []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		code = append(code, line)
+	}
+	if strings.Contains(strings.ToUpper(strings.Join(code, "\n")), "CONCURRENTLY") {
+		t.Error("migration 00022 must not use CONCURRENTLY: goose runs it inside a transaction")
+	}
+	if strings.Contains(strings.Join(code, "\n"), "report_mutes") {
+		t.Error("migration 00022 must not touch report_mutes: the two tables are separate (G4)")
+	}
+	for _, name := range []string{"CREATE TABLE person_mutes", "person_mutes_not_self", "idx_person_mutes_muted",
+		"PRIMARY KEY (muter_id, muted_id)"} {
+		if !strings.Contains(text[:down], name) {
+			t.Errorf("migration 00022 Up must add %s", name)
+		}
+	}
+	if !strings.Contains(text[down:], "DROP TABLE person_mutes;") {
+		t.Error("migration 00022 Down must drop person_mutes")
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping the database part of the 00022 migration test")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("opening database: %v", err)
+	}
+	defer db.Close()
+
+	goose.SetBaseFS(MigrationsFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up: %v", err)
+	}
+
+	var a, b int64
+	t.Cleanup(func() {
+		_ = goose.Up(db, "migrations")
+		for _, id := range []int64{a, b} {
+			if id != 0 {
+				_, _ = db.Exec("DELETE FROM person_mutes WHERE muter_id = $1 OR muted_id = $1", id)
+				_, _ = db.Exec("DELETE FROM accounts WHERE id = $1", id)
+			}
+		}
+	})
+
+	present := func() (tables, indexes int) {
+		t.Helper()
+		if err := db.QueryRow(`SELECT count(*) FROM information_schema.tables
+			WHERE table_schema = 'public' AND table_name = 'person_mutes'`).Scan(&tables); err != nil {
+			t.Fatalf("counting tables: %v", err)
+		}
+		if err := db.QueryRow(`SELECT count(*) FROM pg_indexes WHERE indexname = 'idx_person_mutes_muted'`).Scan(&indexes); err != nil {
+			t.Fatalf("counting indexes: %v", err)
+		}
+		return
+	}
+	if tb, i := present(); tb != 1 || i != 1 {
+		t.Errorf("after Up: %d of 1 tables, %d of 1 indexes", tb, i)
+	}
+	var n int
+	if err := db.QueryRow(`SELECT count(*) FROM pg_constraint WHERE conname = 'person_mutes_not_self'`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("after Up: constraint person_mutes_not_self count %d (%v), want 1", n, err)
+	}
+
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00022-a@example.com') RETURNING id`).Scan(&a); err != nil {
+		t.Fatalf("inserting account: %v", err)
+	}
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00022-b@example.com') RETURNING id`).Scan(&b); err != nil {
+		t.Fatalf("inserting second account: %v", err)
+	}
+
+	wantCode := func(label, code, query string, args ...any) {
+		t.Helper()
+		_, err := db.Exec(query, args...)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != code {
+			t.Errorf("%s: want SQLSTATE %s, got %v", label, code, err)
+		}
+	}
+	wantCode("a mute of yourself", "23514", `INSERT INTO person_mutes (muter_id, muted_id) VALUES ($1, $1)`, a)
+	wantCode("a mute of an account that does not exist", "23503", `INSERT INTO person_mutes (muter_id, muted_id) VALUES ($1, 999999999)`, a)
+	if _, err := db.Exec(`INSERT INTO person_mutes (muter_id, muted_id) VALUES ($1, $2)`, a, b); err != nil {
+		t.Fatalf("inserting a mute: %v", err)
+	}
+	wantCode("the same mute twice", "23505", `INSERT INTO person_mutes (muter_id, muted_id) VALUES ($1, $2)`, a, b)
+	if _, err := db.Exec(`INSERT INTO person_mutes (muter_id, muted_id) VALUES ($1, $2)`, b, a); err != nil {
+		t.Errorf("the opposite mute is a different row and must insert: %v", err)
+	}
+
+	version, err := goose.NumericComponent("00022_add_person_mutes.sql")
+	if err != nil {
+		t.Fatalf("parsing version: %v", err)
+	}
+	// Down drops the table whole, so its rows need no clean up first.
+	if err := goose.DownTo(db, "migrations", version-1); err != nil {
+		t.Fatalf("goose down to %d: %v", version-1, err)
+	}
+	if tb, i := present(); tb != 0 || i != 0 {
+		t.Errorf("after Down: %d tables, %d indexes still present", tb, i)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up again: %v", err)
+	}
+	if tb, i := present(); tb != 1 || i != 1 {
+		t.Errorf("after Up again: %d of 1 tables, %d of 1 indexes", tb, i)
+	}
+}
