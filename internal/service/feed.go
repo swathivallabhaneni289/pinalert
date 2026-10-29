@@ -89,6 +89,14 @@ type ReportView struct {
 	// Only the reader's own tick reads it; nothing is hidden by default and
 	// Resolve never reads it.
 	KeptByReliableFilter bool
+	// CommentCount is the number of comments everyone can see on this report, a
+	// reply included: clear and not deleted only, never a held comment, so every
+	// reader gets the same number (D-03). It comes from the one batched extras read.
+	CommentCount int
+	// CommentsOpen is the server's word on whether people may still comment, reply
+	// and like: true for an active or disputed report, false for a resolved, faded
+	// or withheld one (CommentsOpen in comments.go). The page never decides it (D-15).
+	CommentsOpen bool
 }
 
 // ListableInAll reports whether a report with visibility v belongs in the Show

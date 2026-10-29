@@ -187,7 +187,8 @@ type FeedReportResponse struct {
 	// extras read, so the feed's round trips stay constant.
 	ViewerFlagged bool `json:"viewer_flagged" example:"false"`
 	// ViewerFollows is true when the calling account posted this report or voted
-	// on it in any way (confirm, dispute, resolve, reopen or unresolve). It is
+	// on it in any way (confirm, dispute, resolve, reopen or unresolve) or has a
+	// clear comment on it. It is
 	// viewer specific like your_vote, so it never says who else follows or how
 	// many do. It is computed from the vote rows the read already holds, so the
 	// feed's round trips stay constant. Always present.
@@ -196,6 +197,16 @@ type FeedReportResponse struct {
 	// report. It is viewer specific, never says who else muted, and is filled
 	// from the one batched extras read. Always present.
 	ViewerMuted bool `json:"viewer_muted" example:"false"`
+	// CommentCount is the number of comments everyone can see on this report, a
+	// reply included. A comment still held for a check or deleted is not counted,
+	// so every reader gets the same number. It is filled from the one batched
+	// extras read, so the feed's round trips stay constant. Always present.
+	CommentCount int `json:"comment_count" example:"3"`
+	// CommentsOpen is the server's word on whether people may still comment,
+	// reply and like on this report: true while it is active or disputed, false
+	// once it is resolved, faded or withheld. The client never decides it.
+	// Always present.
+	CommentsOpen bool `json:"comments_open" example:"true"`
 	// ConfirmedByPeople is the server authored Show Confirmed membership: true only
 	// for an active report that people at different nearby spots have confirmed
 	// (and whose disputes are not a majority). It is not the same as visibility
@@ -368,6 +379,8 @@ func reportViewToResponse(v service.ReportView) FeedReportResponse {
 		ViewerFlagged:         v.ViewerFlagged,
 		ViewerFollows:         v.ViewerFollows,
 		ViewerMuted:           v.ViewerMuted,
+		CommentCount:          v.CommentCount,
+		CommentsOpen:          v.CommentsOpen,
 		ConfirmedByPeople:     v.ConfirmedByPeople,
 		KeptByReliableFilter:  v.KeptByReliableFilter,
 	}
