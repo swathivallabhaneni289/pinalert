@@ -236,9 +236,13 @@ func TestProfileReportsRescueKeepsD23(t *testing.T) {
 		t.Fatalf("rows = %d, want 1", len(page.Rows))
 	}
 	v := page.Rows[0].View
-	_, _, want6 := service.CoarsePointAt(prpLat, prpLon, 6)
-	if v.Geohash != want6 || len(v.Geohash) != 6 {
-		t.Errorf("rescue geohash = %q, want the precision 6 cell %q", v.Geohash, want6)
+	// Amended 2026-10-30 (review IN-T01): a finished Rescue report on a profile
+	// is blurred like every other finished report, to the precision 5 cell. It
+	// used to keep precision 6, the same cell the anonymous Past row shows, which
+	// let a public username be matched to that row.
+	_, _, want5 := service.CoarsePointAt(prpLat, prpLon, 5)
+	if v.Geohash != want5 || len(v.Geohash) != 5 {
+		t.Errorf("rescue geohash = %q, want the precision 5 cell %q", v.Geohash, want5)
 	}
 	if v.Description != "" || v.ID != 0 {
 		t.Errorf("rescue row leaks text %q or id %d", v.Description, v.ID)

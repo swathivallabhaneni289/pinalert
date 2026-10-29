@@ -290,7 +290,7 @@ type viewInput struct {
 	Now             time.Time
 	// ProfileCoarse is set only by the profile read (plan 09-05, D-07): the
 	// finished view is then blurred with CoarsenFinishedForProfile, at precision 5
-	// for every category and precision 6 for Rescue, and its distance is measured
+	// for every category (Rescue too since review IN-T01), and its distance is measured
 	// from ProfileCentre, which is nil when the reader gave no centre.
 	ProfileCoarse bool
 	ProfileCentre *GeoPoint

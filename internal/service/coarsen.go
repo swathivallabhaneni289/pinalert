@@ -45,19 +45,17 @@ func CoarsePointAt(lat, lon float64, precision uint) (float64, float64, string) 
 
 // CoarsenFinishedForProfile blurs a finished report that is listed on a person's
 // profile. A profile ties many reports to one public username, so every finished
-// report is blurred here, not only Rescue: precision 5 is about 5 km, the same
-// grid as the stored home area (RESEARCH A4), and a finished Rescue report keeps
-// its stricter precision 6 (03.1 D-23). Latitude, longitude, geohash,
+// report is blurred here, Rescue included: precision 5 is about 5 km, the same
+// grid as the stored home area (RESEARCH A4). Until 2026-10-30 (review IN-T01) a
+// finished Rescue report kept precision 6, which is the anonymous Past row's own
+// point, so a public username could be matched to that row for the most
+// sensitive category; it now takes the coarser cell like the rest. Latitude, longitude, geohash,
 // description and distance all change together, like CoarsenFinishedRescue. The
 // distance is measured from centre to the coarse point, never to the exact one,
 // and is nil when centre is nil. Report is passed by value and the pointer
 // DistanceKm of the input is never written through. It is idempotent.
 func CoarsenFinishedForProfile(r Report, centre *GeoPoint) Report {
-	precision := uint(ProfileCoarsePrecision)
-	if r.Category == CategoryRescueNeeded {
-		precision = ApproxGeohashPrecision
-	}
-	lat, lon, cell := CoarsePointAt(r.Latitude, r.Longitude, precision)
+	lat, lon, cell := CoarsePointAt(r.Latitude, r.Longitude, ProfileCoarsePrecision)
 	r.Latitude = lat
 	r.Longitude = lon
 	r.Geohash = cell
