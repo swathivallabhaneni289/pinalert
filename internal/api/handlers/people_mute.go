@@ -47,13 +47,16 @@ func MutePerson(people *service.PeopleService) http.HandlerFunc {
 // @Description Undoes a mute. Send no body or an empty object. It works for any username in the
 // @Description caller's own list, also one whose profile went private since. A well formed username that
 // @Description matches nobody, or someone the caller did not mute, answers 204 and changes nothing. A
-// @Description malformed username answers the same 404 as the profile.
+// @Description malformed username answers the same 404 as the profile. The answer carries the header
+// @Description Pinalert-Changed, 1 when a mute of yours was taken back and 0 when nothing changed; it is 0
+// @Description alike for a name nobody holds, so it reveals nothing about other people.
 // @Description Requires a session verified by email; an unverified caller receives 401.
 // @Tags people
 // @Accept json
 // @Produce json
 // @Param username path string true "Username"
 // @Success 204 "Unmuted"
+// @Header 204 {string} Pinalert-Changed "1 when a mute was taken back, 0 when nothing changed"
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
@@ -62,7 +65,7 @@ func MutePerson(people *service.PeopleService) http.HandlerFunc {
 // @Failure 500 {object} ErrorResponse
 // @Router /people/{username}/unmute [post]
 func UnmutePerson(people *service.PeopleService) http.HandlerFunc {
-	return personAction("UnmutePerson", people.Unmute)
+	return personActionWith("UnmutePerson", people.UnmuteChanged, true)
 }
 
 // MutedPeopleList produces the handler of GET /me/muted-people.

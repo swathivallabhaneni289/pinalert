@@ -134,6 +134,9 @@ function load({ route }) {
     return Promise.resolve(route(method, address)).then((answer) => ({
       status: answer.status,
       ok: answer.status >= 200 && answer.status < 300,
+      // 2026-10-30 (09-REVIEW IN-B03): an answer may carry headers, as the
+      // unmute and unblock answers carry Pinalert-Changed.
+      headers: { get: (name) => (answer.headers && Object.hasOwn(answer.headers, name) ? answer.headers[name] : null) },
       json: () => (answer.body === undefined ? Promise.reject(new Error('no body')) : Promise.resolve(answer.body))
     }));
   };
@@ -565,6 +568,57 @@ test('a refused Unmute keeps the row and shows Couldn\'t unmute. Try again. abov
   assert.equal(h.els['people-list-action-error'].textContent, 'Couldn\'t unmute. Try again.');
   assert.equal(h.els['notice-live'].textContent, '', 'no status line on a failure');
 });
+
+// 2026-10-30 (09-REVIEW IN-B03): a 204 whose Pinalert-Changed header is 0 means
+// nothing was undone (the person renamed since the list was read). The row is not
+// removed with an untrue "is unmuted" sentence; the list is read again and a calm
+// line shows. Without the header (an older server) the row still goes.
+for (const [kind, path, said] of [['muted', 'unmute', 'is unmuted.'], ['blocked', 'unblock', 'is unblocked.']]) {
+  test('a ' + path + ' that changed nothing reads the list again, says no success and leaves the count alone (' + kind + ')', async () => {
+    let reads = 0;
+    const h = load({
+      route: (method) => {
+        if (method === 'GET') {
+          reads += 1;
+          return { status: 200, body: { entries: [{ username: 'old_name' }, { username: 'second_y' }] } };
+        }
+        return { status: 204, headers: { 'Pinalert-Changed': '0' } };
+      }
+    });
+    let changed = 0;
+    h.api.open({ kind, opener: opener(), onChange: () => { changed += 1; } });
+    await flush();
+    assert.equal(reads, 1);
+    rowsOf(h)[0].querySelector('button').fire('click');
+    await flush();
+    assert.equal(reads, 2, 'the list was read again');
+    assert.equal(rowsOf(h).length, 2, 'the row was not removed on a guess');
+    assert.notEqual(h.els['notice-live'].textContent, 'old_name ' + said);
+    assert.equal(h.els['notice-live'].textContent, '');
+    assert.equal(h.els['people-list-action-error'].hidden, false);
+    assert.equal(h.els['people-list-action-error'].textContent, 'That person is no longer listed under that name. The list is up to date now.');
+    assert.equal(changed, 0, 'the Settings count is not taken down');
+    assert.equal(h.state.active, rowsOf(h)[0].querySelector('button'));
+  });
+
+  test('a ' + path + ' with Pinalert-Changed 1 or no header removes the row as before (' + kind + ')', async () => {
+    for (const headers of [{ 'Pinalert-Changed': '1' }, undefined]) {
+      const h = load({
+        route: (method) => (method === 'GET'
+          ? { status: 200, body: { entries: [{ username: 'first_x' }, { username: 'second_y' }] } }
+          : { status: 204, headers })
+      });
+      let changed = 0;
+      h.api.open({ kind, opener: opener(), onChange: () => { changed += 1; } });
+      await flush();
+      rowsOf(h)[0].querySelector('button').fire('click');
+      await flush();
+      assert.equal(rowsOf(h).length, 1);
+      assert.equal(h.els['notice-live'].textContent, 'first_x ' + said);
+      assert.equal(changed, 1);
+    }
+  });
+}
 
 test('an empty muted list shows its words and the blocked list keeps Unblock', async () => {
   const m = load({ route: () => ({ status: 200, body: { entries: [] } }) });

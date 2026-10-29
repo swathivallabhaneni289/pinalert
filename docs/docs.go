@@ -2473,7 +2473,7 @@ const docTemplate = `{
         },
         "/people/{username}/unblock": {
             "post": {
-                "description": "Undoes a block. Send no body or an empty object. A well formed username that matches\nnobody, or someone you did not block, answers 204 and changes nothing. A malformed\nusername answers the same 404 as the profile. Follows that ended with the block do not\ncome back.\nRequires a session verified by email; an unverified caller receives 401.",
+                "description": "Undoes a block. Send no body or an empty object. A well formed username that matches\nnobody, or someone you did not block, answers 204 and changes nothing. A malformed\nusername answers the same 404 as the profile. Follows that ended with the block do not\ncome back. The answer carries the header Pinalert-Changed, 1 when a block of yours was\ntaken back and 0 when nothing changed; it is 0 alike for a name nobody holds, so it reveals\nnothing about other people.\nRequires a session verified by email; an unverified caller receives 401.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2495,7 +2495,13 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "204": {
-                        "description": "Unblocked"
+                        "description": "Unblocked",
+                        "headers": {
+                            "Pinalert-Changed": {
+                                "type": "string",
+                                "description": "1 when a block was taken back, 0 when nothing changed"
+                            }
+                        }
                     },
                     "400": {
                         "description": "Bad Request",
@@ -2603,7 +2609,7 @@ const docTemplate = `{
         },
         "/people/{username}/unmute": {
             "post": {
-                "description": "Undoes a mute. Send no body or an empty object. It works for any username in the\ncaller's own list, also one whose profile went private since. A well formed username that\nmatches nobody, or someone the caller did not mute, answers 204 and changes nothing. A\nmalformed username answers the same 404 as the profile.\nRequires a session verified by email; an unverified caller receives 401.",
+                "description": "Undoes a mute. Send no body or an empty object. It works for any username in the\ncaller's own list, also one whose profile went private since. A well formed username that\nmatches nobody, or someone the caller did not mute, answers 204 and changes nothing. A\nmalformed username answers the same 404 as the profile. The answer carries the header\nPinalert-Changed, 1 when a mute of yours was taken back and 0 when nothing changed; it is 0\nalike for a name nobody holds, so it reveals nothing about other people.\nRequires a session verified by email; an unverified caller receives 401.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2625,7 +2631,13 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "204": {
-                        "description": "Unmuted"
+                        "description": "Unmuted",
+                        "headers": {
+                            "Pinalert-Changed": {
+                                "type": "string",
+                                "description": "1 when a mute was taken back, 0 when nothing changed"
+                            }
+                        }
                     },
                     "400": {
                         "description": "Bad Request",

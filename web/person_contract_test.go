@@ -436,7 +436,13 @@ func TestStarsControlLook(t *testing.T) {
 			}
 		}
 	}
-	for _, bad := range []string{"#", "rgb(", "rgba(", "hsl(", "amber", "gold", "!important", "animation", "transition", "@keyframes", "box-shadow", "outline"} {
+	// Amended 2026-10-30 by the Phase 9 round 2 fix K2: the sheet now holds the
+	// #rate-host and #toast selectors, so the bare "#" ban became a ban on a hex
+	// colour (a # followed by three to eight hex digits).
+	if hex := regexp.MustCompile(`#[0-9a-fA-F]{3,8}\b`).FindString(noComments); hex != "" {
+		t.Errorf("stars.css holds a hex colour %q: the stars are never coloured", hex)
+	}
+	for _, bad := range []string{"rgb(", "rgba(", "hsl(", "amber", "gold", "!important", "animation", "transition", "@keyframes", "box-shadow", "outline"} {
 		if strings.Contains(noComments, bad) {
 			t.Errorf("stars.css holds %q: the stars are never coloured, ringed or animated", bad)
 		}

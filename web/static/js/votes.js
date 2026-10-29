@@ -2034,9 +2034,35 @@
     return controls.closest('.leaflet-popup') === null || isInOpenPopup(controls);
   }
 
+  // RATE_HOST_ID names the page's own place for the star box when the report
+  // card has closed (09-REVIEW K2, UI-SPEC 3b). It sits next to the message
+  // (#toast) in index and profile, is not a live region, and is empty most of
+  // the time. A page without it, or without the star script, shows no box for a
+  // closed report, as before.
+  var RATE_HOST_ID = 'rate-host';
+  // In the page host a rated box shows its one line for this long, then leaves.
+  var RATE_HOST_LINE_MS = 6000;
+
+  function rateHostElement() {
+    var host = document.getElementById(RATE_HOST_ID);
+    return host && typeof host.appendChild === 'function' ? host : null;
+  }
+
+  // focusAfterHostBoxLeaves hands focus that sat inside a box in the page host to
+  // the Undo of the resolve message while it is still there, else leaves it.
+  function focusAfterHostBoxLeaves() {
+    var toast = document.getElementById('toast');
+    var undo = toast && typeof toast.querySelector === 'function' ? toast.querySelector('.toast__action') : null;
+    if (undo && canTakeFocus(undo)) {
+      undo.focus();
+    }
+  }
+
   // buildRateBox makes the box for one prompt and returns it. username is the
-  // server's own word; it is shown by textContent only.
-  function buildRateBox(block, reportId, username) {
+  // server's own word; it is shown by textContent only. inHost is true when the
+  // box is mounted in the page host: it then leaves a few seconds after a
+  // saved rating, and a hand off of focus goes to the message's Undo.
+  function buildRateBox(block, reportId, username, inHost) {
     var box = document.createElement('div');
     box.className = 'rate-box';
     box.dataset.reportId = String(reportId);
@@ -2045,6 +2071,7 @@
     status.className = 'rate-box__status';
     status.setAttribute('role', 'status');
     status.setAttribute('tabindex', '-1');
+    var leaveTimer = null;
 
     var errorLine = document.createElement('p');
     errorLine.className = 'inline-error';
@@ -2079,6 +2106,14 @@
         if (hadFocus && typeof status.focus === 'function') {
           status.focus();
         }
+        if (inHost) {
+          // The page host holds no box for good: the one line is read, then the
+          // box leaves (the report view it belonged to is already closed).
+          leaveTimer = setTimeout(function () {
+            leaveTimer = null;
+            dismiss();
+          }, RATE_HOST_LINE_MS);
+        }
       },
       onGone: function () {
         // The person is gone: the box leaves quietly. A star that had focus
@@ -2094,11 +2129,17 @@
     // the Undo of the resolve if it can take focus.
     function dismiss() {
       var hadFocus = box.contains(document.activeElement);
+      if (leaveTimer !== null) {
+        clearTimeout(leaveTimer);
+        leaveTimer = null;
+      }
       removeRateBox(reportId);
       if (hadFocus) {
         var undo = block.takeBack && block.takeBack.undoBtn;
         if (undo && canTakeFocus(undo)) {
           undo.focus();
+        } else if (inHost) {
+          focusAfterHostBoxLeaves();
         }
       }
     }
@@ -2119,11 +2160,22 @@
   // page and the host are known to be there.
   function mountRateBox(block, reportId, prompt) {
     var key = String(reportId);
-    if (rateSkipped[key] === true || !rateHostIsLive(block)) {
+    var live = rateHostIsLive(block);
+    if (rateSkipped[key] === true || (!live && rateHostElement() === null)) {
       return;
     }
     var existing = rateBoxes[key];
     if (existing && existing.isConnected === true) {
+      return;
+    }
+    if (!live) {
+      // The card is gone (the resolve closed the report): the box goes in the
+      // page's own host beside the message, with no live region of its own and
+      // no move of focus on mount (09-REVIEW K2).
+      var pageHost = rateHostElement();
+      var hosted = buildRateBox(block, reportId, prompt.username, true);
+      pageHost.appendChild(hosted);
+      rateBoxes[key] = hosted;
       return;
     }
     // The vote block is the controls, the too far slot and the error line, in
@@ -2133,7 +2185,7 @@
     if (!host) {
       return;
     }
-    var box = buildRateBox(block, reportId, prompt.username);
+    var box = buildRateBox(block, reportId, prompt.username, false);
     host.insertBefore(box, anchor.nextSibling);
     rateBoxes[key] = box;
   }
@@ -2152,7 +2204,7 @@
       if (!window.PinalertStars || typeof window.PinalertStars.createControl !== 'function') {
         return;
       }
-      if (rateSkipped[String(reportId)] === true || !rateHostIsLive(block)) {
+      if (rateSkipped[String(reportId)] === true || (!rateHostIsLive(block) && rateHostElement() === null)) {
         return;
       }
       var wait = null;

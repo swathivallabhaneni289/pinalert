@@ -459,6 +459,22 @@ func profileReportRowResponse(row service.ProfileReportRow) ProfileReportRowResp
 // the gate, the username from the path, an empty body, one service call and a
 // 204.
 func personAction(name string, act func(ctx context.Context, accountID int64, username string) error) http.HandlerFunc {
+	return personActionWith(name, func(ctx context.Context, accountID int64, username string) (bool, error) {
+		return false, act(ctx, accountID, username)
+	}, false)
+}
+
+// ChangedHeader is the one place the answer of Unmute and Unblock says whether a
+// row changed (09-REVIEW IN-B03). The status stays 204 for every well formed
+// name, so the route still reveals nothing about who exists; the header is "1"
+// when the caller's own mute or block was deleted and "0" when nothing was
+// there, which is the same "0" for a name nobody holds and for a person the
+// caller never muted or blocked. web/static/js/people-list.js reads it.
+const ChangedHeader = "Pinalert-Changed"
+
+// personActionWith is personAction for an act that reports a change. With
+// reportChange the 204 carries ChangedHeader.
+func personActionWith(name string, act func(ctx context.Context, accountID int64, username string) (bool, error), reportChange bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acc, ok := account.FromContext(r.Context())
 		if !ok {
@@ -468,9 +484,17 @@ func personAction(name string, act func(ctx context.Context, accountID int64, us
 		if !decodeEmptyBody(w, r) {
 			return
 		}
-		if err := act(r.Context(), acc.ID, chi.URLParam(r, "username")); err != nil {
+		changed, err := act(r.Context(), acc.ID, chi.URLParam(r, "username"))
+		if err != nil {
 			peopleFailure(w, name, err)
 			return
+		}
+		if reportChange {
+			if changed {
+				w.Header().Set(ChangedHeader, "1")
+			} else {
+				w.Header().Set(ChangedHeader, "0")
+			}
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -578,13 +602,16 @@ func BlockPerson(people *service.PeopleService) http.HandlerFunc {
 // @Description Undoes a block. Send no body or an empty object. A well formed username that matches
 // @Description nobody, or someone you did not block, answers 204 and changes nothing. A malformed
 // @Description username answers the same 404 as the profile. Follows that ended with the block do not
-// @Description come back.
+// @Description come back. The answer carries the header Pinalert-Changed, 1 when a block of yours was
+// @Description taken back and 0 when nothing changed; it is 0 alike for a name nobody holds, so it reveals
+// @Description nothing about other people.
 // @Description Requires a session verified by email; an unverified caller receives 401.
 // @Tags people
 // @Accept json
 // @Produce json
 // @Param username path string true "Username"
 // @Success 204 "Unblocked"
+// @Header 204 {string} Pinalert-Changed "1 when a block was taken back, 0 when nothing changed"
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
@@ -593,7 +620,7 @@ func BlockPerson(people *service.PeopleService) http.HandlerFunc {
 // @Failure 500 {object} ErrorResponse
 // @Router /people/{username}/unblock [post]
 func UnblockPerson(people *service.PeopleService) http.HandlerFunc {
-	return personAction("UnblockPerson", people.Unblock)
+	return personActionWith("UnblockPerson", people.UnblockChanged, true)
 }
 
 // RemoveAllFollowers produces the handler of POST /me/followers/remove-all.

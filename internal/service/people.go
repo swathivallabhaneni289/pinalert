@@ -575,14 +575,25 @@ func (s *PeopleService) Block(ctx context.Context, blockerID int64, username str
 // one that went private since, and succeeds for a well formed username that
 // matches nobody. Follows that the block ended stay ended.
 func (s *PeopleService) Unblock(ctx context.Context, blockerID int64, username string) error {
+	_, err := s.UnblockChanged(ctx, blockerID, username)
+	return err
+}
+
+// UnblockChanged is Unblock that also says whether a block row was deleted
+// (09-REVIEW IN-B03). changed is false for a well formed name that matches
+// nobody and for a person the caller never blocked, and the two look the same,
+// so the answer shows only whether the caller's own block existed under that
+// name.
+func (s *PeopleService) UnblockChanged(ctx context.Context, blockerID int64, username string) (changed bool, err error) {
 	id, ok, err := s.idByUsername(ctx, username)
 	if err != nil || !ok {
-		return err
+		return false, err
 	}
-	if _, err := s.q.UnblockAccount(ctx, sqlcgen.UnblockAccountParams{BlockerID: blockerID, BlockedID: id}); err != nil {
-		return fmt.Errorf("service: Unblock: unblocking: %w", err)
+	n, err := s.q.UnblockAccount(ctx, sqlcgen.UnblockAccountParams{BlockerID: blockerID, BlockedID: id})
+	if err != nil {
+		return false, fmt.Errorf("service: Unblock: unblocking: %w", err)
 	}
-	return nil
+	return n > 0, nil
 }
 
 // BlockedPeople lists the people the account blocked, newest first, at most

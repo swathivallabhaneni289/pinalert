@@ -179,6 +179,31 @@ test('a refusal puts the switch back and shows the server sentence', async () =>
   assert.equal(el(page, 'notice-live').textContent, '');
 });
 
+// 2026-10-30 (Phase 9 round 2, server handoff): PATCH /api/me/visibility can
+// answer 429 with the field rate_visibility, in the same body shape as
+// rate_people_action. It shows the server's sentence the way the other 429s do,
+// puts the switch back, and the next try is clean.
+for (const field of ['rate_visibility', 'rate_people_action']) {
+  test('a 429 with ' + field + ' puts the switch back and shows the server sentence', async () => {
+    const page = load({ on: false });
+    flip(page);
+    await flush();
+    const sentence = 'You\'re doing that very quickly. You can try again in 12 seconds.';
+    answer(page.requests[0], 429, { error: { field, message: sentence }, retry_after_seconds: 12, serious: false });
+    await flush();
+    assert.equal(page.requests.length, 1);
+    assert.equal(el(page, 'settings-profile-switch').checked, false);
+    assert.equal(el(page, 'settings-profile-switch').disabled, false);
+    assert.equal(el(page, 'settings-people-error').hidden, false);
+    assert.equal(el(page, 'settings-people-error').textContent, sentence);
+    assert.equal(el(page, 'notice-live').textContent, '');
+    flip(page);
+    await flush();
+    assert.equal(page.requests.length, 2, 'the next try is sent');
+    assert.equal(el(page, 'settings-people-error').hidden, true);
+  });
+}
+
 test('any other failure restores the old value and says Couldn\'t save that', async () => {
   const page = load({ on: false });
   flip(page);
