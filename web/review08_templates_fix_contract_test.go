@@ -44,6 +44,18 @@ func TestTrustModelSharingRemovedReport(t *testing.T) {
 		"a removed one says it was removed (D-06)")
 }
 
+// TestPolicyCommentCheckKeptForEvery (WR-T04): every checked comment keeps
+// the check's verdict, its scores and the model with it, clear or borderline,
+// so the Policy must not say only a borderline one does.
+func TestPolicyCommentCheckKeptForEvery(t *testing.T) {
+	keeps := r71tPolicySection(t, "What Pinalert keeps")
+	if strings.Contains(keeps, "for a borderline one the check") {
+		t.Errorf("the Policy says only a borderline comment keeps its check result")
+	}
+	r08tMust(t, "the Policy's keeps list", keeps,
+		"A comment is checked by the same service as a report. For every comment the check's result, its scores and which model gave them are kept with the comment.")
+}
+
 // r08tReadRepo reads a file of the repository, relative to web/.
 func r08tReadRepo(t *testing.T, path string) string {
 	t.Helper()
