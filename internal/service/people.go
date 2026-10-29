@@ -2,7 +2,8 @@
 // (Phase 9, plan 09-04, D-01, D-03, D-12). Every call is keyed by the account
 // id the verified gate passes in, never by a request value (T-09-12); every
 // username argument is normalised and shape checked before any query. Mute is
-// in people_mute.go (plan 09-18); the Notify me bell is a later plan.
+// in people_mute.go (plan 09-18); the Notify me bell, SetNotify, is below the
+// follow rules (plan 09-23).
 //
 // Every follow end goes through endFollowPair or endFollowsOf (review W1) and
 // is soft (D-21): the rows stay with a reason, so they can be restored.
@@ -39,8 +40,25 @@ var ErrCannotFollow = errors.New("service: person cannot be followed")
 // people.
 var ErrFollowingCap = errors.New("service: following cap reached")
 
+// ErrNotifyUnavailable is returned by SetNotify when the bell cannot be changed
+// for this person: the caller does not follow them now, muted them, or the
+// follow ended while the call ran. The caller shows NotifyUnavailableMessage
+// for all of them.
+var ErrNotifyUnavailable = errors.New("service: notify me unavailable")
+
+// ErrNotifyCap is returned when the caller already has NotifyFollowsCap bells on.
+var ErrNotifyCap = errors.New("service: notify me cap reached")
+
 // FollowingCap is how many people one account can follow (D-12).
 const FollowingCap = 200
+
+// NotifyCapMessage is the refusal of a bell over the cap, built from
+// NotifyFollowsCap so the number never drifts (UI-SPEC P9-C26).
+var NotifyCapMessage = "You can turn on Notify me for up to " + strconv.Itoa(NotifyFollowsCap) + " people."
+
+// NotifyUnavailableMessage answers every other refusal of the bell (UI-SPEC
+// P9-C13). It never says which rule refused.
+const NotifyUnavailableMessage = "Couldn't change this. Try again."
 
 const (
 	// PeopleListPageSize is how many named people one list page holds.
@@ -80,6 +98,11 @@ type PeopleQuerier interface {
 	GetAccountIDByUsername(ctx context.Context, username string) (int64, error)
 	ReporterHistoryReports(ctx context.Context, arg sqlcgen.ReporterHistoryReportsParams) ([]sqlcgen.ReporterHistoryReportsRow, error)
 	CurrentVotesForReports(ctx context.Context, reportIds []int64) ([]sqlcgen.CurrentVotesForReportsRow, error)
+	// Phase 9 plan 23 (D-08, D-12): the Notify me bell, in people_notify.go.
+	SetFollowNotify(ctx context.Context, arg sqlcgen.SetFollowNotifyParams) (int64, error)
+	TurnOffFollowNotify(ctx context.Context, arg sqlcgen.TurnOffFollowNotifyParams) (int64, error)
+	CountNotifyFollows(ctx context.Context, followerID int64) (int64, error)
+	ActiveFollowNotify(ctx context.Context, arg sqlcgen.ActiveFollowNotifyParams) (bool, error)
 }
 
 // The generated Queries value satisfies the narrow querier.
@@ -329,6 +352,103 @@ func (s *PeopleService) Follow(ctx context.Context, followerID int64, username s
 			return nil
 		}
 		return ErrCannotFollow
+	}
+	return nil
+}
+
+// SetNotify switches Notify me for the person with this username (D-08, D-12).
+//
+// The bell exists only while the caller follows the person and has not muted
+// them. Order of the answers: a malformed, unknown, private, pending, deleted or
+// blocking person is ErrPersonNotFound (the uniform answer of every people
+// route, so the call never probes who opted in); a person the caller does not
+// follow, has muted or has blocked, and yourself, is ErrNotifyUnavailable;
+// turning a bell on when NotifyFollowsCap are already on is ErrNotifyCap, but a
+// repeat "on" for a bell that is already on changes nothing and is never
+// refused by the cap. Turning on records the time in SetFollowNotify (a repeat
+// keeps the first time), so only reports posted later raise a note; turning off
+// clears it. SetFollowNotify itself checks nothing else, so every rule is here.
+//
+// The cap is read and then the bell is written, so two simultaneous calls from
+// one account could pass the cap together and leave a bell or two above it. The
+// producer reads at most NotifyFollowsCap bells per account, so that cannot
+// fan out. The mute is read again after the write for the same reason: a mute
+// that lands in between turns the bell off again and the call is refused.
+func (s *PeopleService) SetNotify(ctx context.Context, followerID int64, username string, on bool) error {
+	name, ok := canonicalUsername(username)
+	if !ok {
+		return ErrPersonNotFound
+	}
+	person, err := s.q.GetPersonByUsername(ctx, name)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrPersonNotFound
+		}
+		return fmt.Errorf("service: SetNotify: reading the person: %w", err)
+	}
+	if person.ID == followerID {
+		return ErrNotifyUnavailable
+	}
+	rel, err := s.q.PersonRelation(ctx, sqlcgen.PersonRelationParams{ViewerID: followerID, OtherID: person.ID})
+	if err != nil {
+		return fmt.Errorf("service: SetNotify: reading the relation: %w", err)
+	}
+	if !publicFace(person.Username, person.UsernameScreen, person.ProfilePublic, rel.BlockedViewer) {
+		return ErrPersonNotFound
+	}
+	if rel.ViewerBlocked || !rel.ViewerFollows {
+		return ErrNotifyUnavailable
+	}
+	muted, err := s.q.PersonMuted(ctx, sqlcgen.PersonMutedParams{MuterID: followerID, MutedID: person.ID})
+	if err != nil {
+		return fmt.Errorf("service: SetNotify: reading the mute: %w", err)
+	}
+	if muted {
+		return ErrNotifyUnavailable
+	}
+
+	pair := sqlcgen.ActiveFollowNotifyParams{FollowerID: followerID, FolloweeID: person.ID}
+	if on {
+		already, err := s.q.ActiveFollowNotify(ctx, pair)
+		if err != nil {
+			return fmt.Errorf("service: SetNotify: reading the bell: %w", err)
+		}
+		if !already {
+			count, err := s.q.CountNotifyFollows(ctx, followerID)
+			if err != nil {
+				return fmt.Errorf("service: SetNotify: counting bells: %w", err)
+			}
+			if count >= NotifyFollowsCap {
+				return ErrNotifyCap
+			}
+		}
+	}
+
+	rows, err := s.q.SetFollowNotify(ctx, sqlcgen.SetFollowNotifyParams{
+		Notify:     on,
+		Now:        s.now().UTC(),
+		FollowerID: followerID,
+		FolloweeID: person.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("service: SetNotify: writing the bell: %w", err)
+	}
+	if rows == 0 {
+		// The follow ended between the read and the write.
+		return ErrNotifyUnavailable
+	}
+	if !on {
+		return nil
+	}
+	muted, err = s.q.PersonMuted(ctx, sqlcgen.PersonMutedParams{MuterID: followerID, MutedID: person.ID})
+	if err != nil {
+		return fmt.Errorf("service: SetNotify: re-reading the mute: %w", err)
+	}
+	if muted {
+		if _, err := s.q.TurnOffFollowNotify(ctx, sqlcgen.TurnOffFollowNotifyParams{FollowerID: followerID, FolloweeID: person.ID}); err != nil {
+			return fmt.Errorf("service: SetNotify: turning the bell off again: %w", err)
+		}
+		return ErrNotifyUnavailable
 	}
 	return nil
 }
