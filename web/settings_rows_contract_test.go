@@ -783,3 +783,131 @@ func TestNotificationsOfficialRow(t *testing.T) {
 		}
 	}
 }
+
+// Phase 7.1 plan 15 (IDENT-07, D-07, UI-SPEC Surface 8): the Username row and
+// window of Settings, About you.
+
+// TestSettingsUsernameRow pins the row order Username, Name, Home area, the
+// laptop line, the Username window (one X, hidden at load, the page's own edit
+// window look), the shared live check line and small line, Save username
+// switched off by aria-disabled and the btn--off look and never by the disabled
+// attribute, and an input a password manager cannot take for the login
+// (T-07.1-30).
+func TestSettingsUsernameRow(t *testing.T) {
+	page := p421ReadTemplate(t, "settings.html.tmpl")
+	for _, id := range []string{
+		"settings-username-row", "settings-username-value", "settings-username-window", "settings-username-title",
+		"settings-username-close", "settings-username-form", "settings-username-input", "settings-username-status",
+		"settings-username-help", "settings-username-error", "settings-username-save",
+	} {
+		if got := strings.Count(page, `id="`+id+`"`); got != 1 {
+			t.Errorf("id %s appears %d times, want 1", id, got)
+		}
+	}
+	p421InOrder(t, "About you rows", page,
+		`id="settings-username-row"`, `id="settings-name-row"`, `id="settings-home-row"`)
+	if got := strings.Count(page, "Your username, name and home area."); got != 1 {
+		t.Errorf("the laptop line appears %d times, want 1", got)
+	}
+	if strings.Contains(page, "Your name and home area.") {
+		t.Errorf("settings.html.tmpl still holds the old laptop line Your name and home area.")
+	}
+	row := openingTagOf(t, page, "settings-username-row")
+	for _, want := range []string{`aria-haspopup="dialog"`, `data-value="{{.Username}}"`} {
+		if !strings.Contains(row, want) {
+			t.Errorf("the Username row lacks %s", want)
+		}
+	}
+	for _, want := range []string{
+		`<span class="place-row__label">Username</span>`,
+		`<span class="place-row__sub">Shown on your comments, to everyone</span>`,
+		`id="settings-username-value">{{if .Username}}{{.Username}}{{else}}Not set{{end}}</span>`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the Username row lacks %q", want)
+		}
+	}
+
+	win := settingsWindowRegion(t, page, "settings-username-window")
+	if !strings.Contains(page, `id="settings-username-window" hidden>`) {
+		t.Errorf("the Username window is not hidden at load")
+	}
+	for _, want := range []string{
+		`role="dialog"`, `aria-modal="true"`, `aria-labelledby="settings-username-title"`, `class="app-window__title"`, ">Username</h2>",
+		`<form class="app-window__body" id="settings-username-form" novalidate>`,
+		`<label class="app-window__label" for="settings-username-input">Username</label>`,
+		`<div class="username-field">`, `class="username-field__at" aria-hidden="true">@</span>`,
+		`<p class="username-status" id="settings-username-status" role="status" aria-live="polite"></p>`,
+		`<p class="app-window__help" id="settings-username-help">Shown on your comments, to everyone.</p>`,
+		`<p class="inline-error" id="settings-username-error" role="alert" hidden></p>`,
+	} {
+		if !strings.Contains(win, want) {
+			t.Errorf("the Username window lacks %q", want)
+		}
+	}
+	if got := strings.Count(win, `aria-label="Close"`); got != 1 {
+		t.Errorf("the Username window has %d controls named Close, want exactly 1 (the X)", got)
+	}
+	lower := strings.ToLower(win)
+	for _, banned := range []string{">cancel<", ">done<", "backdrop", "autofocus"} {
+		if strings.Contains(lower, banned) {
+			t.Errorf("the Username window holds %q; the X is the only way to close", banned)
+		}
+	}
+
+	// Save username: switched off by aria-disabled and btn--off, not by disabled.
+	saveTag := openingTagOf(t, page, "settings-username-save")
+	for _, want := range []string{`type="submit"`, `class="btn btn--off"`, `aria-disabled="true"`} {
+		if !strings.Contains(saveTag, want) {
+			t.Errorf("Save username lacks %s: %s", want, saveTag)
+		}
+	}
+	if strings.Contains(saveTag, "disabled>") || strings.Contains(saveTag, " disabled ") || strings.Contains(saveTag, `btn--destructive`) {
+		t.Errorf("Save username uses the disabled attribute or the destructive look: %s", saveTag)
+	}
+	if !strings.Contains(win, ">Save username</button>") {
+		t.Errorf("the button reads something other than Save username")
+	}
+
+	// The input matches step 4: named handle, autocomplete off, never a login.
+	input := openingTagOf(t, page, "settings-username-input")
+	for _, want := range []string{`name="handle"`, `autocomplete="off"`, `maxlength="20"`, `autocapitalize="none"`, `autocorrect="off"`, `spellcheck="false"`} {
+		if !strings.Contains(input, want) {
+			t.Errorf("the Username input lacks %s: %s", want, input)
+		}
+	}
+	for _, banned := range []string{`autocomplete="username"`, `name="username"`, `type="password"`} {
+		if strings.Contains(page, banned) {
+			t.Errorf("settings.html.tmpl holds %s: a password manager would take the field for the login (T-07.1-30)", banned)
+		}
+	}
+
+	// The shared live check loads before settings.js, which attaches it.
+	p421InOrder(t, "script order", page,
+		`/static/js/username-check.js?v={{.AssetVersion}}`, `/static/js/settings.js?v={{.AssetVersion}}`, `/static/js/settings-alerts.js?v={{.AssetVersion}}`)
+	for _, dash := range []rune{0x2013, 0x2014} {
+		if strings.ContainsRune(page, dash) {
+			t.Errorf("settings.html.tmpl holds the dash character U+%04X", dash)
+		}
+	}
+}
+
+// TestSettingsUsernameScript pins settings.js: it uses the shared live check in
+// settings mode, writes text only, binds no backdrop click on the Username
+// window and never uses the disabled attribute for Save username.
+func TestSettingsUsernameScript(t *testing.T) {
+	js := stripJSComments(p421ReadStatic(t, "js/settings.js"))
+	for _, want := range []string{
+		"PinalertUsernameCheck", "mode: 'settings'", "showSaveError", "isGood()",
+		"settings-username-save", "'aria-disabled'", "btn--off", "btn--primary", "{ username: wanted }",
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("settings.js lacks %q", want)
+		}
+	}
+	for _, banned := range []string{"usernameWin.addEventListener('click'", "usernameSave.disabled", "autocomplete"} {
+		if strings.Contains(js, banned) {
+			t.Errorf("settings.js holds %q", banned)
+		}
+	}
+}

@@ -164,8 +164,11 @@ func TestSettingsRows(t *testing.T) {
 	//
 	// Amended 2026-10-29 by plan 05-14 (D-11): Phase 5 draws the official row, whose
 	// no home variant is a button too, so it sits between Critical and Reliable.
-	if strings.Join(buttonIDs, ",") != "settings-name-row,settings-home-row,settings-device-install,settings-critical-nohome,settings-official-nohome,settings-reliable-nohome,settings-muted-row,settings-logout-all-row,settings-delete-row" {
-		t.Errorf("Settings button rows are %v, want Name, Home area, the On this device install row, the three Add a home area first rows, Muted reports, Log out of all devices, Delete my account", buttonIDs)
+	//
+	// Amended 2026-10-29 by Phase 7.1 plan 15 (D-07, UI-SPEC Surface 8): the
+	// Username row is the first of About you, a button that opens its window.
+	if strings.Join(buttonIDs, ",") != "settings-username-row,settings-name-row,settings-home-row,settings-device-install,settings-critical-nohome,settings-official-nohome,settings-reliable-nohome,settings-muted-row,settings-logout-all-row,settings-delete-row" {
+		t.Errorf("Settings button rows are %v, want Username, Name, Home area, the On this device install row, the three Add a home area first rows, Muted reports, Log out of all devices, Delete my account", buttonIDs)
 	}
 	for _, want := range []string{
 		// Amended 2026-10-22 (owner: "too much details under the heading for

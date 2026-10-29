@@ -64,6 +64,26 @@
     return document.getElementById(id);
   }
 
+  // Phase 7.1 plan 15 (D-07, UI-SPEC Surface 8): the Username window. Every
+  // piece is optional here, so a page drawn without it (and the older test
+  // pages) keeps the Name and Home area windows working. The live check is the
+  // one step 4 uses (username-check.js, settings mode); it is attached the
+  // first time the window opens and judges the stored name on each later opening.
+  var usernameWin = el('settings-username-window');
+  var usernameRow = el('settings-username-row');
+  var usernameValue = el('settings-username-value');
+  var usernameClose = el('settings-username-close');
+  var usernameForm = el('settings-username-form');
+  var usernameInput = el('settings-username-input');
+  var usernameStatus = el('settings-username-status');
+  var usernameSave = el('settings-username-save');
+  var usernameError = el('settings-username-error');
+  var hasUsername = !!(usernameWin && usernameRow && usernameValue && usernameClose && usernameForm &&
+    usernameInput && usernameStatus && usernameSave && usernameError);
+  var usernameCheck = null;
+  var savingUsername = false;
+  var usernameFilled = '';
+
   var nameRow = el('settings-name-row');
   var nameValue = el('settings-name-value');
   var nameClose = el('settings-name-close');
@@ -87,6 +107,9 @@
     name: { win: nameWin, row: nameRow, close: nameClose },
     home: { win: homeWin, row: homeRow, close: homeClose }
   };
+  if (hasUsername) {
+    windows.username = { win: usernameWin, row: usernameRow, close: usernameClose };
+  }
 
   var current = null;
   // session numbers the openings of a window. A save remembers the number it was
@@ -362,7 +385,17 @@
     }
     current = which;
     session += 1;
-    if (which === 'name') {
+    if (which === 'username') {
+      hideLine(usernameError);
+      usernameFilled = storedValue(usernameRow);
+      usernameInput.value = usernameFilled;
+      if (usernameCheck === null && window.PinalertUsernameCheck && typeof window.PinalertUsernameCheck.attach === 'function') {
+        usernameCheck = window.PinalertUsernameCheck.attach(usernameInput, usernameStatus, { mode: 'settings', onChange: updateUsernameSave });
+      } else if (usernameCheck !== null) {
+        usernameCheck.refresh();
+      }
+      updateUsernameSave();
+    } else if (which === 'name') {
       hideLine(nameError);
       nameFilled = storedValue(nameRow);
       nameInput.value = nameFilled;
@@ -383,7 +416,11 @@
     }
     target.win.hidden = false;
     lockPage(target.win);
-    (which === 'name' ? nameInput : homeInput).focus();
+    var focusTarget = which === 'username' ? usernameInput : (which === 'name' ? nameInput : homeInput);
+    focusTarget.focus();
+    if (which === 'username' && typeof usernameInput.select === 'function') {
+      usernameInput.select();
+    }
   }
 
   // closeWindow is reached from the X and Escape only. restoreFocus puts focus
@@ -455,6 +492,97 @@
     homeRemove.hidden = storedValue(homeRow) === '';
     homeRemove.disabled = savingHome;
     homeSave.disabled = picked === null || savingHome;
+  }
+
+  // ---- Username -------------------------------------------------------------
+
+  // swapClass puts one class in place of another on a node, keeping the rest.
+  function swapClass(node, remove, add) {
+    var kept = String(node.className).split(/\s+/).filter(function (name) {
+      return name !== '' && name !== remove && name !== add;
+    });
+    kept.push(add);
+    node.className = kept.join(' ');
+  }
+
+  // updateUsernameSave draws Save username as on (the primary button) or off
+  // (aria-disabled and the btn--off look; never the disabled attribute, so it
+  // stays reachable). It is on only when the live check says the name is
+  // available and no save is out. The live check calls it on every change.
+  function updateUsernameSave(state, ctl) {
+    var check = ctl || usernameCheck;
+    if (!hasUsername) {
+      return;
+    }
+    if (check && check.isGood() && !savingUsername) {
+      usernameSave.removeAttribute('aria-disabled');
+      swapClass(usernameSave, 'btn--off', 'btn--primary');
+      return;
+    }
+    usernameSave.setAttribute('aria-disabled', 'true');
+    swapClass(usernameSave, 'btn--primary', 'btn--off');
+  }
+
+  // showUsernameRefusal puts the answer to a refused save where the person
+  // looks: the server's sentence for a 400 or 422 about the username goes under
+  // the Username (and switches Save off until the name is typed again); a rate
+  // limit, an ended session and anything else go to the general line.
+  function showUsernameRefusal(answer) {
+    var sent = serverSentence(answer.body);
+    var field = answer.body && answer.body.error ? answer.body.error.field : '';
+    if ((answer.status === 400 || answer.status === 422) && field === 'username' && sent !== '') {
+      usernameCheck.showSaveError(sent);
+      return;
+    }
+    if (answer.status === 401) {
+      showLine(usernameError, MESSAGE_SESSION_ENDED);
+      return;
+    }
+    if (answer.status === 429 && sent !== '') {
+      showLine(usernameError, sent);
+      return;
+    }
+    showLine(usernameError, MESSAGE_SAVE_FAILED);
+  }
+
+  function saveUsername() {
+    if (!hasUsername || savingUsername || usernameCheck === null || !usernameCheck.isGood()) {
+      return Promise.resolve();
+    }
+    var wanted = usernameCheck.name();
+    savingUsername = true;
+    updateUsernameSave();
+    hideLine(usernameError);
+    var mine = session;
+    return patchProfile({ username: wanted }).then(function (answer) {
+      savingUsername = false;
+      var sameWindow = mine === session;
+      if (!answer.ok) {
+        if (sameWindow) {
+          showUsernameRefusal(answer);
+        }
+        updateUsernameSave();
+        return;
+      }
+      var stored = answer.body && typeof answer.body.username === 'string' && answer.body.username !== '' ? answer.body.username : wanted;
+      setRow(usernameRow, usernameValue, stored);
+      if (sameWindow) {
+        closeWindow('username', true);
+      } else if (current === 'username' && usernameInput.value === usernameFilled) {
+        // A save from an earlier opening landed in the window open now: the
+        // untouched field takes the saved name (like the Name window).
+        usernameInput.value = stored;
+        usernameFilled = stored;
+        usernameCheck.refresh();
+      }
+      updateUsernameSave();
+    }, function () {
+      savingUsername = false;
+      if (mine === session) {
+        showLine(usernameError, MESSAGE_SAVE_FAILED);
+      }
+      updateUsernameSave();
+    });
   }
 
   // ---- Name -----------------------------------------------------------------
@@ -847,11 +975,26 @@
     onHomeInput();
   });
   homeSave.addEventListener('click', function () { saveHomeArea(); });
-  homeRemove.addEventListener('click', function () { removeHomeArea(); });
+  if (homeRemove) {
+    homeRemove.addEventListener('click', function () { removeHomeArea(); });
+  }
+  if (hasUsername) {
+    usernameRow.addEventListener('click', function () { openWindow('username'); });
+    usernameClose.addEventListener('click', function () { closeWindow('username', true); });
+    usernameWin.addEventListener('keydown', function (e) { onWindowKeydown('username', e); });
+    usernameForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      if (usernameSave.getAttribute('aria-disabled') === 'true') {
+        return;
+      }
+      saveUsername();
+    });
+  }
 
   window.PinalertSettings = {
     openWindow: openWindow,
     closeWindow: closeWindow,
+    saveUsername: saveUsername,
     saveName: saveName,
     saveHomeArea: saveHomeArea,
     removeHomeArea: removeHomeArea,

@@ -30,9 +30,18 @@
     <section class="place-section" aria-labelledby="settings-you-title">
       <div class="place-section__intro">
         <h2 class="place-section__title" id="settings-you-title">About you</h2>
-        <p class="place-section__line">Your name and home area.</p>
+        <p class="place-section__line">Your username, name and home area.</p>
       </div>
       <div class="place-box">
+        {{/* Phase 7.1 plan 15 (D-07, UI-SPEC Surface 8): the Username comes first, then Name and Home area. The value is the stored name, without the @. */}}
+        <button type="button" class="place-row" id="settings-username-row" aria-haspopup="dialog" data-value="{{.Username}}">
+          <span class="place-row__text">
+            <span class="place-row__label">Username</span>
+            <span class="place-row__sub">Shown on your comments, to everyone</span>
+          </span>
+          <span class="place-row__value" id="settings-username-value">{{if .Username}}{{.Username}}{{else}}Not set{{end}}</span>
+          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+        </button>
         <button type="button" class="place-row" id="settings-name-row" aria-haspopup="dialog" data-value="{{.DisplayName}}">
           <span class="place-row__text">
             <span class="place-row__label">Name</span>
@@ -251,6 +260,29 @@
     </div>
   </dialog>
 
+  {{/* Phase 7.1 plan 15 (D-07, UI-SPEC Surface 8): the Username window is the built edit window. The field, the live line and the small line are step 4's (username-check.js). The input is named handle with autocomplete off, so a password manager never takes it for the login (T-07.1-30). Save username starts switched off with aria-disabled and the btn--off look, never the disabled attribute. */}}
+  <div class="app-window app-window--edit" id="settings-username-window" hidden>
+    <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="settings-username-title">
+      <div class="app-window__head">
+        <h2 class="app-window__title" id="settings-username-title">Username</h2>
+        <button type="button" class="app-window__close" id="settings-username-close" aria-label="Close"><span class="app-icon app-icon--x" aria-hidden="true"></span></button>
+      </div>
+      <form class="app-window__body" id="settings-username-form" novalidate>
+        <label class="app-window__label" for="settings-username-input">Username</label>
+        <div class="username-field">
+          <span class="username-field__at" aria-hidden="true">@</span>
+          <input class="username-field__input" type="text" id="settings-username-input" name="handle" maxlength="20" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" enterkeyhint="done" placeholder="For example: ravi.k" aria-describedby="settings-username-status settings-username-help">
+        </div>
+        <p class="username-status" id="settings-username-status" role="status" aria-live="polite"></p>
+        <p class="app-window__help" id="settings-username-help">Shown on your comments, to everyone.</p>
+        <p class="inline-error" id="settings-username-error" role="alert" hidden></p>
+        <div class="app-window__actions">
+          <button type="submit" class="btn btn--off" id="settings-username-save" aria-disabled="true">Save username</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="app-window app-window--edit" id="settings-name-window" hidden>
     <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="settings-name-title">
       <div class="app-window__head">
@@ -359,6 +391,7 @@
   <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/app-bar.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/updates.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/username-check.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/settings.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/settings-alerts.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/reader.js?v={{.AssetVersion}}" defer></script>
