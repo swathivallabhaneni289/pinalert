@@ -36,7 +36,7 @@ type Deps struct {
 	Sessions *sqlcgen.Queries
 	Reports  *service.ReportService
 	// Votes backs the four vote routes registered below. Additive exactly
-	// as Dev and RequestLinkRateLimit were — a Deps{} literal that omits
+	// as Dev was — a Deps{} literal that omits
 	// it (such as swagger_test.go's) still compiles and still serves
 	// every route that does not touch voting.
 	Votes *service.VotingService
@@ -48,7 +48,7 @@ type Deps struct {
 	// Geocode backs GET /api/geocode (plan 07-01/07-03). Typed as the
 	// handlers.GeocodeSearcher interface, not *geocode.Client, so this file
 	// needs no import of internal/geocode and a test can substitute a stub.
-	// Additive exactly as Votes and RequestLinkRateLimit were — a Deps{}
+	// Additive exactly as Votes was — a Deps{}
 	// literal that omits it (such as swagger_test.go's) still compiles and
 	// still serves every route that does not touch geocoding, and a
 	// request to GET /api/geocode against a nil value degrades to the D-04
@@ -57,8 +57,8 @@ type Deps struct {
 	Geocode handlers.GeocodeSearcher
 	// GeocodeRateLimit configures the per account budget of GET /api/geocode
 	// only (quick 261016-sne; it was a per IP limiter before). Left at its
-	// zero value, GeocodeRateLimitDefault below is used, matching
-	// RequestLinkRateLimit's contract: cmd/server/main.go is the one place the
+	// zero value, GeocodeRateLimitDefault below is used:
+	// cmd/server/main.go is the one place the
 	// numbers are visible rather than buried as literals in this router.
 	GeocodeRateLimit GeocodeRateLimit
 	// PlaceSearch backs GET /api/geocode/place, the reader's place search on
@@ -83,12 +83,6 @@ type Deps struct {
 	// reference via `mask-image: url(...)` are never templated and so were
 	// never covered by that fix — this field is the other half of it).
 	Dev bool
-	// RequestLinkRateLimit configured the per-IP token-bucket limiter plan
-	// 01.1-05 wrapped around the emailed link request route.
-	// Amended 2026-10-29 by Phase 7.1 plan 14: that route and its limiter
-	// instance are gone, so this field is unused. It stays until plan 14c
-	// removes it with its type, its default and the main.go settings.
-	RequestLinkRateLimit RequestLinkRateLimit
 	// Chrome is the shared data for the unofficial bar (D-21, D-22, D-24),
 	// built once by cmd/server/main.go from the environment. Additive, as the
 	// fields above were: a zero value keeps every Deps{} literal compiling and
@@ -233,19 +227,6 @@ func (e *pathOnlyLogEntry) Panic(v interface{}, _ []byte) {
 	e.logger.Printf("[%s] %s %s panic: %v", e.reqID, e.method, e.path, v)
 }
 
-// RequestLinkRateLimit was the burst/refill configuration for the per-IP
-// limiter wrapping the emailed link request route (DEC-I).
-// Amended 2026-10-29 by Phase 7.1 plan 14: unused now, removed by plan 14c.
-type RequestLinkRateLimit struct {
-	Burst int
-	Every time.Duration
-}
-
-// RequestLinkRateLimitDefault is DEC-I's chosen budget — burst 5, one token
-// refilled every 60 seconds — used whenever Deps.RequestLinkRateLimit is
-// left at its zero value.
-var RequestLinkRateLimitDefault = RequestLinkRateLimit{Burst: 5, Every: 60 * time.Second}
-
 // GeocodeRateLimit is the burst/refill configuration for the per account
 // budget of GET /api/geocode only.
 type GeocodeRateLimit struct {
@@ -318,8 +299,7 @@ type RateLimits = handlers.RateLimits
 var OfficialRefreshLimit = BucketLimit{Every: 10 * time.Second, Burst: 6}
 
 // RateLimitsDefault mirrors the D-11 constants block in cmd/server/main.go, the
-// one named place. It is used for any field a Deps literal leaves zero, the
-// RequestLinkRateLimitDefault precedent.
+// one named place. It is used for any field a Deps literal leaves zero.
 var RateLimitsDefault = RateLimits{
 	ReportSerious: BucketLimit{Every: 5 * time.Minute, Burst: 5},
 	ReportOther:   BucketLimit{Every: 15 * time.Minute, Burst: 8},
@@ -402,8 +382,8 @@ var _ handlers.LoginState = (*service.CredentialService)(nil)
 // @description  Crowd-reported local emergency feed for floods, cyclones, and other disasters.
 // @description  Reports are posted by nearby people and confirmed or disputed by other nearby
 // @description  people; this API is the read/write surface for that data. Reading and writing
-// @description  reports both require a session verified by email through the magic-link flow —
-// @description  an unverified caller is refused with 401. Pinalert is an unofficial,
+// @description  reports both require a signed in session, an account signed in with an email
+// @description  and a password, and a session that is not signed in is refused with 401. Pinalert is an unofficial,
 // @description  unaffiliated project and is not a substitute for contacting emergency services.
 // @description  This document is Swagger 2.0 — swag (the generator behind this spec) does not
 // @description  emit OpenAPI 3.x, so tooling that expects OpenAPI 3.x specifically should account
@@ -693,11 +673,6 @@ func NewRouter(deps Deps) *chi.Mux {
 	// serves its UI assets from the binary — no third-party CDN request at
 	// view time.
 	r.Get("/swagger/*", httpSwagger.Handler(httpSwagger.URL("/swagger/doc.json")))
-	// Amended 2026-10-29 by Phase 7.1 plan 14: the emailed link request route and
-	// the per IP limiter instance built for it are gone. The settings type
-	// RequestLinkRateLimit, its default and the Deps field stay, unused, until
-	// plan 14c removes them.
-	//
 	// Every /api/* path is registered as a flat literal path (not nested under an
 	// r.Route("/api", ...) mount) so the exempt ones can stay outside the gated
 	// group below while /api/reports stays inside it: chi does not allow a
