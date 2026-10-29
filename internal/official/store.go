@@ -41,6 +41,9 @@ type SavedVersion struct {
 //   - Cancel marks every stored alert whose cap_identifier is in its references
 //     as cancelled, and stores its own row with cancelled_at set, so it never
 //     shows and is not fetched again. The rows are kept.
+//   - An Alert or Update is then marked cancelled or superseded when a message
+//     of another guid already stored names its identifier, so the order of
+//     storing never decides whether a withdrawn alert shows.
 //
 // Nothing here removes an alert because it is missing from the feed.
 func saveVersion(ctx context.Context, tx pgx.Tx, q *sqlcgen.Queries, v Version, p Placement, now time.Time) (SavedVersion, *SavedVersion, error) {
@@ -95,6 +98,14 @@ func saveVersion(ctx context.Context, tx pgx.Tx, q *sqlcgen.Queries, v Version, 
 		if _, err := qt.SupersedeOfficialAlertsByIdentifier(ctx, sqlcgen.SupersedeOfficialAlertsByIdentifierParams{
 			Now: now, Identifiers: v.References, Guid: v.GUID}); err != nil {
 			return SavedVersion{}, nil, fmt.Errorf("official: marking replaced alerts: %w", err)
+		}
+	}
+	// A Cancel or an Update stored before this alert (the refresher stores the
+	// newest first), or before this guid was fetched again with the same
+	// identifier, still withdraws it: the upsert above cleared the marks.
+	if !cancel {
+		if err := qt.MarkWithdrawnByStored(ctx, sqlcgen.MarkWithdrawnByStoredParams{ID: stored.ID, Now: now}); err != nil {
+			return SavedVersion{}, nil, fmt.Errorf("official: applying stored withdrawals: %w", err)
 		}
 	}
 

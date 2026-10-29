@@ -61,8 +61,10 @@ FOR UPDATE;
 -- name: UpsertOfficialAlert :one
 -- Stores one version of a series by its guid. A later version replaces the row
 -- in place and keeps first_seen_at. A new Alert or Update version clears a
--- cancelled or superseded mark because that version is the series' latest word;
--- a Cancel passes cancelled_at so the row never shows.
+-- cancelled or superseded mark because that version is the series' latest word,
+-- and saveVersion then sets the marks again from any stored message of another
+-- guid that names it (MarkWithdrawnByStored); a Cancel passes cancelled_at so
+-- the row never shows.
 INSERT INTO official_alerts (
     guid, cap_identifier, source_pubdate, sender, issuer, msg_type, references_text,
     event, severity, urgency, certainty, sent_at, effective_at, onset_at, expires_at,
@@ -135,6 +137,26 @@ SET superseded_at = COALESCE(superseded_at, sqlc.arg(now)::timestamptz)
 WHERE cap_identifier = ANY(sqlc.arg(identifiers)::text[])
   AND guid <> sqlc.arg(guid)::text
   AND superseded_at IS NULL;
+
+-- name: MarkWithdrawnByStored :exec
+-- A message stored earlier under another guid may already withdraw this one:
+-- the refresher stores the newest first, so a Cancel or an Update can be stored
+-- before the alert it names, and the upsert of an alert clears its marks. This
+-- sets them again from what is stored, so the in force read, the push queue and
+-- the worker all see the same truth (CR-S01 of the Phase 5 review). The first
+-- mark is kept.
+UPDATE official_alerts a
+SET cancelled_at = CASE WHEN EXISTS (
+        SELECT 1 FROM official_alerts n
+        WHERE n.guid <> a.guid AND n.msg_type = 'Cancel'
+          AND a.cap_identifier = ANY(string_to_array(n.references_text, ' ')))
+      THEN COALESCE(a.cancelled_at, sqlc.arg(now)::timestamptz) ELSE a.cancelled_at END,
+    superseded_at = CASE WHEN EXISTS (
+        SELECT 1 FROM official_alerts n
+        WHERE n.guid <> a.guid AND n.msg_type = 'Update'
+          AND a.cap_identifier = ANY(string_to_array(n.references_text, ' ')))
+      THEN COALESCE(a.superseded_at, sqlc.arg(now)::timestamptz) ELSE a.superseded_at END
+WHERE a.id = sqlc.arg(id)::bigint;
 
 -- name: OfficialAlertAreas :many
 SELECT district_lgd, state_lgd
