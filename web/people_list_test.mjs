@@ -214,6 +214,56 @@ test('Show more sends the cursor and appends the next page', async () => {
   assert.equal(h.els['people-list-others'].textContent, 'and 2 others');
 });
 
+// 2026-10-30 (09-REVIEW WR-B06): Show more stays on the page, disabled and busy,
+// while the next page loads, and focus goes to the first new row.
+test('Show more is kept busy while loading and focus goes to the first new row', async () => {
+  const pages = [
+    { entries: [{ username: 'one_a' }], others_count: 0, others_text: '', next: 'c1' },
+    { entries: [{ username: 'two_b' }, { username: 'three_c' }], others_count: 0, others_text: '', next: '' }
+  ];
+  let release = null;
+  const h = load({
+    route: (method, address) => (address.includes('after=')
+      ? new Promise((resolve) => { release = () => resolve({ status: 200, body: pages[1] }); })
+      : { status: 200, body: pages[0] })
+  });
+  h.api.open({ kind: 'followers', username: 'asha_k', own: false, opener: opener() });
+  await flush();
+  const more = h.els['people-list-more'];
+  more.fire('click');
+  assert.equal(more.hidden, false, 'the pressed button is not taken away');
+  assert.equal(more.disabled, true);
+  assert.equal(more.getAttribute('aria-busy'), 'true');
+  more.fire('click');
+  await flush();
+  assert.equal(h.calls.length, 2, 'a second tap while loading sends nothing');
+  release();
+  await flush();
+  assert.equal(more.disabled, false);
+  assert.equal(more.getAttribute('aria-busy'), null);
+  assert.equal(rowsOf(h).length, 3);
+  const firstNew = rowsOf(h)[1].children[0];
+  assert.equal(firstNew.focused, 1, 'focus lands on the first new row');
+  assert.equal(h.state.active, firstNew);
+});
+
+test('a failed Show more leaves focus on the button', async () => {
+  const first = { entries: [{ username: 'one_a' }], others_count: 0, others_text: '', next: 'c1' };
+  const h = load({
+    route: (method, address) => (address.includes('after=') ? { status: 500, body: {} } : { status: 200, body: first })
+  });
+  h.api.open({ kind: 'followers', username: 'asha_k', own: false, opener: opener() });
+  await flush();
+  const more = h.els['people-list-more'];
+  more.fire('click');
+  await flush();
+  assert.equal(more.hidden, false);
+  assert.equal(more.disabled, false);
+  assert.equal(more.focused, 1);
+  assert.equal(h.state.active, more);
+  assert.equal(h.els['people-list-action-error'].hidden, false);
+});
+
 test('empty states use the words of the kind and the owner', async () => {
   const empty = { entries: [], others_count: 0, others_text: '', next: '' };
   const cases = [

@@ -291,13 +291,22 @@ window.PinalertPeopleList = (function () {
     return li;
   }
 
+  // firstNewRow is the first row the last appendRows drew, or null when it drew
+  // none. Show more puts focus on it (09-REVIEW WR-B06).
+  var firstNewRow = null;
+
   function appendRows(entries) {
+    firstNewRow = null;
     for (var i = 0; i < entries.length; i++) {
       var name = entries[i] && typeof entries[i].username === 'string' ? entries[i].username : '';
       if (name === '') {
         continue;
       }
-      els.rows.appendChild(UNDO[kind] ? undoRow(name) : namedRow(name));
+      var row = UNDO[kind] ? undoRow(name) : namedRow(name);
+      if (firstNewRow === null) {
+        firstNewRow = row;
+      }
+      els.rows.appendChild(row);
     }
   }
 
@@ -655,9 +664,37 @@ window.PinalertPeopleList = (function () {
     on(els.close, 'click', function () { closeWindow(true); });
     on(win, 'keydown', onWindowKeydown);
     on(els.retry, 'click', function () { load(''); });
+    // Show more stays on the page, disabled and busy, while the next page loads,
+    // so focus is never dropped. It then goes to the first new row, or back to
+    // the button when there is none (09-REVIEW WR-B06).
     on(els.more, 'click', function () {
-      els.more.hidden = true;
-      load(next);
+      if (els.more.disabled) {
+        return;
+      }
+      els.more.disabled = true;
+      els.more.setAttribute('aria-busy', 'true');
+      firstNewRow = null;
+      load(next).then(function (ok) {
+        els.more.disabled = false;
+        els.more.removeAttribute('aria-busy');
+        if (!open_) {
+          return;
+        }
+        var target = null;
+        if (ok && firstNewRow !== null && typeof firstNewRow.querySelector === 'function') {
+          target = firstNewRow.querySelector(UNDO[kind] ? 'button' : 'a');
+        }
+        if (target) {
+          target.focus();
+        } else if (els.more.hidden === false) {
+          els.more.focus();
+        } else if (els.rows.hidden === false) {
+          var links = els.rows.querySelectorAll(UNDO[kind] ? 'button' : 'a');
+          if (links.length > 0) {
+            links[links.length - 1].focus();
+          }
+        }
+      });
     });
     on(els.removeAll, 'click', askRemoveAll);
     on(els.confirmGo, 'click', function () { runRemoveAll(); });
