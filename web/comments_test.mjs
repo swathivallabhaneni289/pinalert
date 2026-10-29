@@ -33,6 +33,13 @@ import vm from 'node:vm';
 
 const here = path.dirname(url.fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.join(here, 'static', 'js', 'comments.js'), 'utf8');
+// The real shared time limit of app.js (Pinalert.requestTimeout), cut out of
+// the file so the sandbox runs the page's own limit on its fake timers (review
+// fix WR-B01, 2026-10-29).
+const appSource = fs.readFileSync(path.join(here, 'static', 'js', 'app.js'), 'utf8');
+const limitAt = appSource.indexOf('  function requestTimeout(ms, what) {');
+assert.notEqual(limitAt, -1, 'app.js defines requestTimeout');
+const limitSource = appSource.slice(limitAt, appSource.indexOf('\n  }\n', limitAt) + 4);
 
 class FakeText {
   constructor(value) {
@@ -130,7 +137,7 @@ function find(el, cls) { return findAll(el, cls)[0] || null; }
 
 const flush = async () => { for (let i = 0; i < 30; i += 1) { await Promise.resolve(); } };
 
-function load({ online = true, visible = true } = {}) {
+function load({ online = true, visible = true, ignoreAbort = false } = {}) {
   const doc = {
     activeElement: null,
     visibilityState: visible ? 'visible' : 'hidden',
@@ -166,11 +173,20 @@ function load({ online = true, visible = true } = {}) {
             call.settled = true;
             resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) });
           },
-          fail(err) { call.settled = true; reject(err || new Error('network')); }
+          fail(err) { call.settled = true; reject(err || new Error('network')); },
+          // stall answers with the headers and a body read that never ends.
+          stall(status) {
+            call.settled = true;
+            resolve({ ok: status >= 200 && status < 300, status, json: () => new Promise(() => {}) });
+          }
         };
-        opts.signal.addEventListener('abort', () => {
-          if (!call.settled) { call.settled = true; reject(new Error('aborted')); }
-        });
+        // ignoreAbort is the WebKit case: an aborted request whose promise
+        // never settles (app.js requestTimeout).
+        if (!ignoreAbort && opts.signal) {
+          opts.signal.addEventListener('abort', () => {
+            if (!call.settled) { call.settled = true; reject(new Error('aborted')); }
+          });
+        }
         fetches.push(call);
       });
     },
@@ -182,6 +198,8 @@ function load({ online = true, visible = true } = {}) {
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
+  vm.runInContext(limitSource, sandbox);
+  sandbox.Pinalert.requestTimeout = sandbox.requestTimeout;
   vm.runInContext(source, sandbox, { filename: 'comments.js' });
   return {
     doc, fetches, sandbox, timers,
@@ -1079,4 +1097,72 @@ test('offline like says so', async () => {
   likeButton(li).fire('click');
   assert.equal(env.fetches.length, before, 'nothing is sent');
   assert.equal(actionError(li).textContent, "You're offline, so this wasn't saved. Try again when you have a signal.");
+});
+
+// ---- review fix WR-B01 (2026-10-29): every comment request ends at the page's
+// own 10 s limit (Pinalert.requestTimeout), even when the aborted request never
+// settles (WebKit) or the body read stalls after the headers. ----
+
+test('WR-B01: a post whose aborted request never settles gives Post back at 10 s', async () => {
+  const env = load({ ignoreAbort: true });
+  const page = await start(env, [cm(1)]);
+  type(page, 'Water at knee height near the bus stand');
+  page.post.fire('click');
+  assert.equal(page.post.textContent, 'Posting…');
+  env.advance(10000);
+  await flush();
+  assert.equal(page.post.textContent, 'Post', 'Post is back');
+  assert.equal(page.post.getAttribute('aria-disabled'), 'false');
+  assert.equal(page.error.hidden, false);
+  assert.equal(page.error.textContent, "Couldn't post your comment. Try again.");
+  assert.equal(page.input.value, 'Water at knee height near the bus stand', 'the words stay');
+  const before = posts(env).length;
+  page.post.fire('click');
+  assert.equal(posts(env).length, before + 1, 'a second press sends a second POST');
+});
+
+test('WR-B01: a like whose aborted request never settles gives Like back at 10 s', async () => {
+  const env = load({ ignoreAbort: true });
+  const page = await start(env, [cm(1)]);
+  const li = page.items()[0];
+  likeButton(li).fire('click');
+  assert.equal(likeButton(li).getAttribute('aria-disabled'), 'true');
+  env.advance(10000);
+  await flush();
+  assert.equal(likeButton(li).getAttribute('aria-disabled'), null, 'Like is back on');
+  assert.equal(actionError(li).hidden, false);
+  const before = posts(env).length;
+  likeButton(li).fire('click');
+  assert.equal(posts(env).length, before + 1, 'a second tap sends a second POST');
+});
+
+test('WR-B01: a like answered with a body that never ends gives Like back at 10 s', async () => {
+  const env = load();
+  const page = await start(env, [cm(1)]);
+  const li = page.items()[0];
+  likeButton(li).fire('click');
+  lastFetch(env).stall(200);
+  await flush();
+  env.advance(10000);
+  await flush();
+  assert.equal(likeButton(li).getAttribute('aria-disabled'), null, 'Like is back on');
+  const before = posts(env).length;
+  likeButton(li).fire('click');
+  assert.equal(posts(env).length, before + 1);
+});
+
+test('WR-B01: Show more whose body never ends can be pressed again at 10 s', async () => {
+  const env = load();
+  const page = await start(env, [cm(1)], { more: true, next_after: 1 });
+  const more = find(page.view.el, 'comments__more');
+  more.fire('click');
+  lastFetch(env).stall(200);
+  await flush();
+  env.advance(10000);
+  await flush();
+  assert.equal(more.getAttribute('aria-disabled'), null);
+  assert.equal(find(page.view.el, 'comments__more-error').hidden, false);
+  const before = env.fetches.length;
+  more.fire('click');
+  assert.equal(env.fetches.length, before + 1, 'Show more asks again');
 });

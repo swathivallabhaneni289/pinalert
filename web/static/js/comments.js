@@ -982,33 +982,42 @@ window.PinalertComments = (function () {
 
     // ---- requests ----
 
+    // request makes one comments request under the shared time limit of app.js
+    // (Pinalert.requestTimeout, review fix WR-B01): the page's own timer is
+    // raced against the request and against its body read, so a request whose
+    // aborted promise never settles (WebKit) or whose body stalls after the
+    // headers still ends at COMMENTS_TIMEOUT_MS, and Post, Like, Delete and
+    // Show more come back. The limit is cleared only once the body has come.
     function request(method, path, payload) {
-      var controller = new AbortController();
-      var timer = window.setTimeout(function () {
-        controller.abort();
-      }, COMMENTS_TIMEOUT_MS);
+      var limit = Pinalert.requestTimeout(COMMENTS_TIMEOUT_MS, 'comments');
       var opts = {
         method: method,
         credentials: 'same-origin',
         headers: { Accept: 'application/json' },
-        signal: controller.signal
+        signal: limit.signal
       };
       if (payload) {
         opts.headers['Content-Type'] = 'application/json';
         opts.body = JSON.stringify(payload);
       }
-      var promise = fetch(path, opts).then(function (res) {
-        window.clearTimeout(timer);
-        return res.json().then(function (body) {
+      var promise = Promise.race([fetch(path, opts), limit.expired]).then(function (res) {
+        return Promise.race([res.json(), limit.expired]).then(function (body) {
+          limit.clear();
           return { status: res.status, ok: res.ok, body: body };
         }, function () {
+          limit.clear();
           return { status: res.status, ok: res.ok, body: null };
         });
       }, function (err) {
-        window.clearTimeout(timer);
+        limit.clear();
         throw err;
       });
-      return { promise: promise, abort: function () { controller.abort(); } };
+      return { promise: promise, abort: function () {
+        limit.clear();
+        if (limit.controller) {
+          limit.controller.abort();
+        }
+      } };
     }
 
     function listPath(after) {
