@@ -225,6 +225,53 @@ func TestDemoVisitLimitChargesOnlyNewWorlds(t *testing.T) {
 	}
 }
 
+// TestDemoVisitLimitFailsClosed pins NP-3 of the Phase 5 review fix round: the
+// visit limit fails closed. A Demo page served without the limiter in front of
+// it (a path that skipped the page check) never starts a new world: it answers
+// 429 and the store does not grow. Only a move with a valid, living visit is
+// free, so that still answers 200 on the same unguarded path.
+func TestDemoVisitLimitFailsClosed(t *testing.T) {
+	tmpl, err := handlers.ParsePageTemplate()
+	if err != nil {
+		t.Fatalf("parsing the page templates: %v", err)
+	}
+	store := demo.NewStore(demo.WithWorldSetup(demo.SeedSetup))
+	cfg := handlers.PageConfig{
+		FallbackLat: 12.9716, FallbackLon: 77.5946, DefaultRadiusKm: 10, VoteRadiusKm: 1, AssetVersion: "test",
+	}
+	pages := map[string]http.HandlerFunc{
+		"/demo":          handlers.DemoPage(tmpl, store, cfg),
+		"/demo/alerts":   handlers.DemoAlertsPage(tmpl, store, cfg),
+		"/demo/activity": handlers.DemoActivityPage(tmpl, store, cfg),
+	}
+	for path, page := range pages {
+		for _, q := range []string{"", "?v=" + strings.Repeat("0", 22), "?v=nonsense"} {
+			rec := httptest.NewRecorder()
+			page.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path+q, nil))
+			if rec.Code != http.StatusTooManyRequests {
+				t.Errorf("GET %s%s with no limiter = %d, want 429: a new world is always charged", path, q, rec.Code)
+			}
+			if n := store.Len(); n != 0 {
+				t.Fatalf("GET %s%s with no limiter made a world (store holds %d)", path, q, n)
+			}
+		}
+	}
+	world, err := store.Create()
+	if err != nil {
+		t.Fatalf("creating a world: %v", err)
+	}
+	for path, page := range pages {
+		rec := httptest.NewRecorder()
+		page.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path+"?v="+world.ID, nil))
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET %s?v=<living visit> with no limiter = %d, want 200: a move is free", path, rec.Code)
+		}
+	}
+	if n := store.Len(); n != 1 {
+		t.Errorf("moving within one living visit left %d worlds, want 1", n)
+	}
+}
+
 // TestDemoPageRendersWhatItPromises renders the page and pins what a visitor
 // and a screen reader get: the strip first, the pretend position on the shell,
 // the Demo places in both bars, and nothing that asks for an account, a
