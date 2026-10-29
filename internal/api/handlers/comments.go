@@ -187,7 +187,7 @@ func writeCommentError(w http.ResponseWriter, err error) bool {
 // @Description viewer_flagged), and comments_open says whether people may still post and like.
 // @Description A comment that was deleted or removed but still has visible replies appears as a
 // @Description placeholder with no words. No account id, email or session is ever sent. A report
-// @Description that does not exist, is withheld or ended too long ago gets 404.
+// @Description that does not exist, is not available or ended too long ago gets 404.
 // @Description Requires a session verified by email; an unverified caller receives 401.
 // @Tags comments
 // @Produce json

@@ -405,6 +405,308 @@ const docTemplate = `{
                 }
             }
         },
+        "/comments/{id}/delete": {
+            "post": {
+                "description": "Deletes the caller's own comment, at any time and whatever the state of the report.\nThere is no edit. A comment that has visible replies stays as a placeholder with no\nwords. Deleting a comment that is already deleted answers 200 again. Someone else's\ncomment gets 403, and an unknown comment gets 404. Deleting is limited with likes,\nand a blocked delete gets 429 with a Retry-After header.\nRequires a session verified by email; an unverified caller receives 401.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "comments"
+                ],
+                "summary": "Delete your own comment",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Comment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.DeleteCommentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "The comment belongs to someone else",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/comments/{id}/flag": {
+            "post": {
+                "description": "Sends a comment to the moderators with one or more of five reasons: spam, abusive,\nfalse, dangerous or other, each at most once, and an optional note of at most 300\ncharacters that only moderators see. The note goes through the same text check as a\nreport flag note, and a refused note gets 422. A flag never hides or changes the\ncomment. Each account can flag a comment once, and a repeat gets 409; your own\ncomment also gets 409. Flagging stays open after the comments close. It shares the\nreport flag limit, and a blocked flag gets 429 with a Retry-After header.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "comments"
+                ],
+                "summary": "Flag a comment for the moderators",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Comment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "One or more of the five reasons and an optional note",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.FlagRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.FlagResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Your own comment, or already flagged by you",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "The note was refused by the text check",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/comments/{id}/like": {
+            "post": {
+                "description": "Adds the caller's like to a comment and answers the fresh count. One like counts per\naccount, so a repeat changes nothing. A like never changes any trust number. Likes\nare closed with the comments (409, field comments); a comment that is deleted,\nremoved or held back, or on a report that is not available, gets 404. Liking is\nlimited per verified account, and a blocked like gets 429 with a Retry-After header.\nRequires a session verified by email; an unverified caller receives 401.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "comments"
+                ],
+                "summary": "Like a comment",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Comment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.LikeResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Comments are closed",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/comments/{id}/unlike": {
+            "post": {
+                "description": "Removes the caller's like from a comment and answers the fresh count. Taking back a\nlike that was never given changes nothing. The same closed, gone and limit answers\nas a like apply.\nRequires a session verified by email; an unverified caller receives 401.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "comments"
+                ],
+                "summary": "Take back a like on a comment",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Comment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.LikeResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Comments are closed",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/geocode": {
             "get": {
                 "description": "Searches Photon first, which matches close spellings and half typed words, and\nreturns at most five matches, in India only. Requires a signed in session (an account signed in\nwith an email and a password); a session that is not signed in is refused with 401. The optional lat and lon (both or neither, the report\npin) make Photon prefer nearby places. With lat and lon, only places within 50 km of the pin are\nreturned, and a city or town named as typed; a search that finds only farther places\nreturns an empty list, and a shorter text of one word is not tried. Without them the search covers all\nof India. When Photon finds nothing the search asks\nNominatim with the whole text, preferring places near the pin, then Photon again\nwithout the first part and then without the second; matched_query then holds the\nshorter text that matched. A first Photon request that takes over 2 seconds is\nsent once more, with 2.5 seconds. When Photon fails, or is too slow both times,\nNominatim alone runs those tries, in a box around the pin first. At most four upstream requests are\nsent per search. Each verified account has its own budget of 8 searches at once,\nthen 1 a second; past it the answer is a 429. A\n503 means search is temporarily unavailable; report submission remains fully\nusable regardless.",
@@ -1352,6 +1654,152 @@ const docTemplate = `{
                 }
             }
         },
+        "/reports/{id}/comments": {
+            "get": {
+                "description": "Returns one page of the report's comments, top level comments oldest first, each\nfollowed by its replies, oldest first. The page holds at most 50 top level\ncomments; when more is true pass next_after as the after query value to read the\nnext page. comment_count is the number everyone can see. Every flag in the answer\nis written for the caller (is_own, is_reporter, can_delete, viewer_liked,\nviewer_flagged), and comments_open says whether people may still post and like.\nA comment that was deleted or removed but still has visible replies appears as a\nplaceholder with no words. No account id, email or session is ever sent. A report\nthat does not exist, is not available or ended too long ago gets 404.\nRequires a session verified by email; an unverified caller receives 401.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "comments"
+                ],
+                "summary": "List the comments of a report",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Report id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Id of the last top level comment of the previous page",
+                        "name": "after",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.CommentListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Posts a comment of at most 280 letters on a report, or a reply when reply_to names\na comment of the same report. The words go through the abuse check: a clear or\nborderline comment is posted (201), a refused one gets 422 with the same sentence\na refused report gets, and a comment whose check could not finish is posted held,\nwith held true, and is shown only to its author until it is checked. Comments are\nclosed (409, field comments) once the report is resolved or has faded, and an\naccount with no username gets 409 with field username. Posting is limited per\nverified account, every attempt counts, and a blocked post gets 429 with a\nRetry-After header; the words stay in the writer's box.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "comments"
+                ],
+                "summary": "Post a comment or a reply",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Report id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The words, and the comment answered if this is a reply",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.PostCommentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.CommentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Empty, too long or holding characters that cannot be posted",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "The report or the comment answered is not available",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Comments are closed, or the account has no username",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "The words were refused by the abuse check",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/reports/{id}/confirm": {
             "post": {
                 "description": "Casts one of five votes against a report: confirm/dispute are content votes (is\nthis report still true), resolve/reopen/unresolve are resolution votes (is this\nresolved). Unresolve is the take back of the caller's own earlier resolve: it needs\nno location, it never counts as a reopen, and it is refused with 409 when the caller\nhas no standing resolve on the report. The poster's reopen and every take back share\none limit of two per report; past it the answer is 409. A non poster's reopen is an\nordinary claim and is never limited.\nRequires a signed in session (an account signed in with an email and a password); a session that is not\nsigned in is refused with 401. The reporter receives 403 on confirm/dispute but may resolve\nor reopen their own report instantly. The response carries the freshly recomputed\nvisibility and reason so the client can render the outcome without guessing.\nA voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose\nerror field is location, on confirm, dispute, resolve and reopen, with one fixed\nsentence that never carries the distance. The reporter's own resolve and reopen\nare exempt, and so is the take back.\nThe response also carries the same trust object GET /reports returns for this report.\nResolve, reopen and unresolve responses also carry undos_left, the number of take\nbacks the caller has left on this report; confirm and dispute responses do not.\nA location is required on every vote except the reporter's own resolve and reopen\nand the take back.\nA body with no latitude and no longitude is 400 with error field latitude, and a body\nwith only one of the two is 400 naming the missing one.\nA vote that comes too fast gets 429 with a Retry-After header.",
@@ -1856,6 +2304,124 @@ const docTemplate = `{
                 }
             }
         },
+        "/reports/{id}/share": {
+            "post": {
+                "description": "Makes, or returns, the share link of one report. The link opens a public page with\nthe report's live status. The response carries the absolute link, a title and one\nfixed line, and never a count; repeated calls answer the same link. A report that\ndoes not exist, is too old, or is not shown to the reader gets 404 and no link is\nmade. Sharing is limited per signed in account, and a blocked call gets 429 with a\nRetry-After header. Requires a signed in session; otherwise 401.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Make a share link",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Report id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ShareResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/reports/{id}/timeline": {
+            "get": {
+                "description": "Returns the history of one report as short sentences, oldest first, built only\nfrom the report's vote log. Every count is the number of distinct spots the trust\nblock counts at that moment, the poster's own votes never count, and the history\nnames no voter, no account, no place and no cell. It shows upward steps and state\nchanges only (posted, confirmed, disputed, shown to everyone, marked Disputed,\nresolved, reopened, faded) plus the reader's own lines, which carry yours true.\nA report that does not exist, is too old, or is not shown to the reader gets 404.\nRequires a signed in session; otherwise 401.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "The history of a report, what happened so far",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Report id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.TimelineResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/reports/{id}/unmute": {
             "post": {
                 "description": "Undoes a mute for the signed in account only. Send no body or an empty object. A\nrepeat call changes nothing. It works for a report that has since been held, removed\nor gone, so a mute can always be cleared.\nRequires a session verified by email; an unverified caller receives 401.",
@@ -2254,6 +2820,113 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.CommentListResponse": {
+            "type": "object",
+            "properties": {
+                "comment_count": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "comments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.CommentResponse"
+                    }
+                },
+                "comments_open": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "more": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "next_after": {
+                    "type": "integer",
+                    "example": 0
+                }
+            }
+        },
+        "handlers.CommentResponse": {
+            "type": "object",
+            "properties": {
+                "at": {
+                    "type": "string",
+                    "example": "2026-10-29T10:15:00Z"
+                },
+                "author": {
+                    "type": "string",
+                    "example": "asha_k"
+                },
+                "author_kind": {
+                    "type": "string",
+                    "enum": [
+                        "user",
+                        "new_member",
+                        "deleted_account"
+                    ],
+                    "example": "user"
+                },
+                "can_delete": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "deleted": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "held": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "id": {
+                    "type": "integer",
+                    "example": 41
+                },
+                "is_own": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "is_reporter": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "likes": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "removed": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "replies": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.CommentResponse"
+                    }
+                },
+                "reply_count": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "reply_to_author": {
+                    "type": "string",
+                    "example": "ravi_m"
+                },
+                "viewer_flagged": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "viewer_liked": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "words": {
+                    "type": "string",
+                    "example": "The road is open again from the north side."
+                }
+            }
+        },
         "handlers.CurrencyResponse": {
             "type": "object",
             "properties": {
@@ -2338,6 +3011,15 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "confirm": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "handlers.DeleteCommentResponse": {
+            "type": "object",
+            "properties": {
+                "deleted": {
                     "type": "boolean",
                     "example": true
                 }
@@ -2431,6 +3113,16 @@ const docTemplate = `{
                         "other"
                     ],
                     "example": "flood"
+                },
+                "comment_count": {
+                    "description": "CommentCount is the number of comments everyone can see on this report, a\nreply included. A comment still held for a check or deleted is not counted,\nso every reader gets the same number. It is filled from the one batched\nextras read, so the feed's round trips stay constant. Always present.",
+                    "type": "integer",
+                    "example": 3
+                },
+                "comments_open": {
+                    "description": "CommentsOpen is the server's word on whether people may still comment,\nreply and like on this report: true while it is active or disputed, false\nonce it is resolved, faded or taken down. The client never decides it.\nAlways present.",
+                    "type": "boolean",
+                    "example": true
                 },
                 "confirmed_by_people": {
                     "description": "ConfirmedByPeople is the server authored Show Confirmed membership: true only\nfor an active report that people at different nearby spots have confirmed\n(and whose disputes are not a majority). It is not the same as visibility\nlive: a Critical report is shown at once but is confirmed only once people\nconfirm it. The client renders it and never recomputes it (TRUST-02). Always\npresent.",
@@ -2543,7 +3235,7 @@ const docTemplate = `{
                     "example": false
                 },
                 "viewer_follows": {
-                    "description": "ViewerFollows is true when the calling account posted this report or voted\non it in any way (confirm, dispute, resolve, reopen or unresolve). It is\nviewer specific like your_vote, so it never says who else follows or how\nmany do. It is computed from the vote rows the read already holds, so the\nfeed's round trips stay constant. Always present.",
+                    "description": "ViewerFollows is true when the calling account posted this report or voted\non it in any way (confirm, dispute, resolve, reopen or unresolve) or has a\nclear comment on it. It is\nviewer specific like your_vote, so it never says who else follows or how\nmany do. It is computed from the vote rows the read already holds, so the\nfeed's round trips stay constant. Always present.",
                     "type": "boolean",
                     "example": true
                 },
@@ -2781,6 +3473,19 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "Indiranagar, Bengaluru"
+                }
+            }
+        },
+        "handlers.LikeResponse": {
+            "type": "object",
+            "properties": {
+                "likes": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "viewer_liked": {
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },
@@ -3231,6 +3936,20 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.PostCommentRequest": {
+            "type": "object",
+            "properties": {
+                "reply_to": {
+                    "type": "integer",
+                    "example": 41
+                },
+                "words": {
+                    "type": "string",
+                    "maxLength": 280,
+                    "example": "The road is open again from the north side."
+                }
+            }
+        },
         "handlers.ProfileResponse": {
             "type": "object",
             "properties": {
@@ -3526,6 +4245,23 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.ShareResponse": {
+            "type": "object",
+            "properties": {
+                "line": {
+                    "type": "string",
+                    "example": "Open to see if this is still true right now"
+                },
+                "title": {
+                    "type": "string",
+                    "example": "Flood report near Benz Circle"
+                },
+                "url": {
+                    "type": "string",
+                    "example": "https://pinalert.example/r/Zk3pQ9xV1mTq7nBw5cLd2A"
+                }
+            }
+        },
         "handlers.SignInRequest": {
             "type": "object",
             "properties": {
@@ -3663,6 +4399,61 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.TimelineEventResponse": {
+            "type": "object",
+            "properties": {
+                "at": {
+                    "description": "At is the time of the vote that caused the line, RFC 3339 in UTC.",
+                    "type": "string",
+                    "example": "2026-10-01T12:05:00Z"
+                },
+                "kind": {
+                    "description": "Kind is one of posted, confirmed, disputed, resolved, reopened, faded or yours.",
+                    "type": "string",
+                    "enum": [
+                        "posted",
+                        "confirmed",
+                        "disputed",
+                        "resolved",
+                        "reopened",
+                        "faded",
+                        "yours"
+                    ],
+                    "example": "confirmed"
+                },
+                "text": {
+                    "description": "Text is the finished sentence, from closed server copy.",
+                    "type": "string",
+                    "example": "Confirmed from a second spot."
+                },
+                "tone": {
+                    "description": "Tone is good, neutral or bad.",
+                    "type": "string",
+                    "enum": [
+                        "good",
+                        "neutral",
+                        "bad"
+                    ],
+                    "example": "good"
+                },
+                "yours": {
+                    "description": "Yours is true for a line about the reader's own vote.",
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
+        "handlers.TimelineResponse": {
+            "type": "object",
+            "properties": {
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.TimelineEventResponse"
+                    }
+                }
+            }
+        },
         "handlers.TrustResponse": {
             "type": "object",
             "properties": {
@@ -3778,6 +4569,8 @@ const docTemplate = `{
                         "resolved",
                         "fading",
                         "reliable_nearby",
+                        "comment_on_yours",
+                        "reply_to_yours",
                         "more"
                     ],
                     "example": "reached_live"

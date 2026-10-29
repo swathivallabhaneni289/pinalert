@@ -204,7 +204,7 @@ type FeedReportResponse struct {
 	CommentCount int `json:"comment_count" example:"3"`
 	// CommentsOpen is the server's word on whether people may still comment,
 	// reply and like on this report: true while it is active or disputed, false
-	// once it is resolved, faded or withheld. The client never decides it.
+	// once it is resolved, faded or taken down. The client never decides it.
 	// Always present.
 	CommentsOpen bool `json:"comments_open" example:"true"`
 	// ConfirmedByPeople is the server authored Show Confirmed membership: true only

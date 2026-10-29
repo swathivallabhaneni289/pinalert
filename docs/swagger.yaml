@@ -99,6 +99,84 @@ definitions:
         example: true
         type: boolean
     type: object
+  handlers.CommentListResponse:
+    properties:
+      comment_count:
+        example: 12
+        type: integer
+      comments:
+        items:
+          $ref: '#/definitions/handlers.CommentResponse'
+        type: array
+      comments_open:
+        example: true
+        type: boolean
+      more:
+        example: false
+        type: boolean
+      next_after:
+        example: 0
+        type: integer
+    type: object
+  handlers.CommentResponse:
+    properties:
+      at:
+        example: "2026-10-29T10:15:00Z"
+        type: string
+      author:
+        example: asha_k
+        type: string
+      author_kind:
+        enum:
+        - user
+        - new_member
+        - deleted_account
+        example: user
+        type: string
+      can_delete:
+        example: false
+        type: boolean
+      deleted:
+        example: false
+        type: boolean
+      held:
+        example: false
+        type: boolean
+      id:
+        example: 41
+        type: integer
+      is_own:
+        example: false
+        type: boolean
+      is_reporter:
+        example: false
+        type: boolean
+      likes:
+        example: 3
+        type: integer
+      removed:
+        example: false
+        type: boolean
+      replies:
+        items:
+          $ref: '#/definitions/handlers.CommentResponse'
+        type: array
+      reply_count:
+        example: 1
+        type: integer
+      reply_to_author:
+        example: ravi_m
+        type: string
+      viewer_flagged:
+        example: false
+        type: boolean
+      viewer_liked:
+        example: false
+        type: boolean
+      words:
+        example: The road is open again from the north side.
+        type: string
+    type: object
   handlers.CurrencyResponse:
     properties:
       band:
@@ -171,6 +249,12 @@ definitions:
   handlers.DeleteAccountRequest:
     properties:
       confirm:
+        example: true
+        type: boolean
+    type: object
+  handlers.DeleteCommentResponse:
+    properties:
+      deleted:
         example: true
         type: boolean
     type: object
@@ -250,6 +334,22 @@ definitions:
         - other
         example: flood
         type: string
+      comment_count:
+        description: |-
+          CommentCount is the number of comments everyone can see on this report, a
+          reply included. A comment still held for a check or deleted is not counted,
+          so every reader gets the same number. It is filled from the one batched
+          extras read, so the feed's round trips stay constant. Always present.
+        example: 3
+        type: integer
+      comments_open:
+        description: |-
+          CommentsOpen is the server's word on whether people may still comment,
+          reply and like on this report: true while it is active or disputed, false
+          once it is resolved, faded or taken down. The client never decides it.
+          Always present.
+        example: true
+        type: boolean
       confirmed_by_people:
         description: |-
           ConfirmedByPeople is the server authored Show Confirmed membership: true only
@@ -370,7 +470,8 @@ definitions:
       viewer_follows:
         description: |-
           ViewerFollows is true when the calling account posted this report or voted
-          on it in any way (confirm, dispute, resolve, reopen or unresolve). It is
+          on it in any way (confirm, dispute, resolve, reopen or unresolve) or has a
+          clear comment on it. It is
           viewer specific like your_vote, so it never says who else follows or how
           many do. It is computed from the vote rows the read already holds, so the
           feed's round trips stay constant. Always present.
@@ -586,6 +687,15 @@ definitions:
       name:
         example: Indiranagar, Bengaluru
         type: string
+    type: object
+  handlers.LikeResponse:
+    properties:
+      likes:
+        example: 4
+        type: integer
+      viewer_liked:
+        example: true
+        type: boolean
     type: object
   handlers.MarkReadRequest:
     properties:
@@ -974,6 +1084,16 @@ definitions:
         example: true
         type: boolean
     type: object
+  handlers.PostCommentRequest:
+    properties:
+      reply_to:
+        example: 41
+        type: integer
+      words:
+        example: The road is open again from the north side.
+        maxLength: 280
+        type: string
+    type: object
   handlers.ProfileResponse:
     properties:
       display_name:
@@ -1202,6 +1322,18 @@ definitions:
         example: visitor@example.com
         type: string
     type: object
+  handlers.ShareResponse:
+    properties:
+      line:
+        example: Open to see if this is still true right now
+        type: string
+      title:
+        example: Flood report near Benz Circle
+        type: string
+      url:
+        example: https://pinalert.example/r/Zk3pQ9xV1mTq7nBw5cLd2A
+        type: string
+    type: object
   handlers.SignInRequest:
     properties:
       email:
@@ -1326,6 +1458,50 @@ definitions:
       report:
         $ref: '#/definitions/handlers.ReportResponse'
     type: object
+  handlers.TimelineEventResponse:
+    properties:
+      at:
+        description: At is the time of the vote that caused the line, RFC 3339 in
+          UTC.
+        example: "2026-10-01T12:05:00Z"
+        type: string
+      kind:
+        description: Kind is one of posted, confirmed, disputed, resolved, reopened,
+          faded or yours.
+        enum:
+        - posted
+        - confirmed
+        - disputed
+        - resolved
+        - reopened
+        - faded
+        - yours
+        example: confirmed
+        type: string
+      text:
+        description: Text is the finished sentence, from closed server copy.
+        example: Confirmed from a second spot.
+        type: string
+      tone:
+        description: Tone is good, neutral or bad.
+        enum:
+        - good
+        - neutral
+        - bad
+        example: good
+        type: string
+      yours:
+        description: Yours is true for a line about the reader's own vote.
+        example: false
+        type: boolean
+    type: object
+  handlers.TimelineResponse:
+    properties:
+      events:
+        items:
+          $ref: '#/definitions/handlers.TimelineEventResponse'
+        type: array
+    type: object
   handlers.TrustResponse:
     properties:
       confirmed_places:
@@ -1428,6 +1604,8 @@ definitions:
         - resolved
         - fading
         - reliable_nearby
+        - comment_on_yours
+        - reply_to_yours
         - more
         example: reached_live
         type: string
@@ -1806,6 +1984,230 @@ paths:
       summary: Confirm the code of a new account
       tags:
       - auth
+  /comments/{id}/delete:
+    post:
+      description: |-
+        Deletes the caller's own comment, at any time and whatever the state of the report.
+        There is no edit. A comment that has visible replies stays as a placeholder with no
+        words. Deleting a comment that is already deleted answers 200 again. Someone else's
+        comment gets 403, and an unknown comment gets 404. Deleting is limited with likes,
+        and a blocked delete gets 429 with a Retry-After header.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Comment id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.DeleteCommentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: The comment belongs to someone else
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Delete your own comment
+      tags:
+      - comments
+  /comments/{id}/flag:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Sends a comment to the moderators with one or more of five reasons: spam, abusive,
+        false, dangerous or other, each at most once, and an optional note of at most 300
+        characters that only moderators see. The note goes through the same text check as a
+        report flag note, and a refused note gets 422. A flag never hides or changes the
+        comment. Each account can flag a comment once, and a repeat gets 409; your own
+        comment also gets 409. Flagging stays open after the comments close. It shares the
+        report flag limit, and a blocked flag gets 429 with a Retry-After header.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Comment id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: One or more of the five reasons and an optional note
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.FlagRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handlers.FlagResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: Your own comment, or already flagged by you
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "422":
+          description: The note was refused by the text check
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Flag a comment for the moderators
+      tags:
+      - comments
+  /comments/{id}/like:
+    post:
+      description: |-
+        Adds the caller's like to a comment and answers the fresh count. One like counts per
+        account, so a repeat changes nothing. A like never changes any trust number. Likes
+        are closed with the comments (409, field comments); a comment that is deleted,
+        removed or held back, or on a report that is not available, gets 404. Liking is
+        limited per verified account, and a blocked like gets 429 with a Retry-After header.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Comment id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.LikeResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: Comments are closed
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Like a comment
+      tags:
+      - comments
+  /comments/{id}/unlike:
+    post:
+      description: |-
+        Removes the caller's like from a comment and answers the fresh count. Taking back a
+        like that was never given changes nothing. The same closed, gone and limit answers
+        as a like apply.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Comment id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.LikeResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: Comments are closed
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Take back a like on a comment
+      tags:
+      - comments
   /geocode:
     get:
       description: |-
@@ -2631,6 +3033,123 @@ paths:
       summary: Submit a new emergency report
       tags:
       - reports
+  /reports/{id}/comments:
+    get:
+      description: |-
+        Returns one page of the report's comments, top level comments oldest first, each
+        followed by its replies, oldest first. The page holds at most 50 top level
+        comments; when more is true pass next_after as the after query value to read the
+        next page. comment_count is the number everyone can see. Every flag in the answer
+        is written for the caller (is_own, is_reporter, can_delete, viewer_liked,
+        viewer_flagged), and comments_open says whether people may still post and like.
+        A comment that was deleted or removed but still has visible replies appears as a
+        placeholder with no words. No account id, email or session is ever sent. A report
+        that does not exist, is not available or ended too long ago gets 404.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Report id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Id of the last top level comment of the previous page
+        in: query
+        name: after
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.CommentListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: List the comments of a report
+      tags:
+      - comments
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Posts a comment of at most 280 letters on a report, or a reply when reply_to names
+        a comment of the same report. The words go through the abuse check: a clear or
+        borderline comment is posted (201), a refused one gets 422 with the same sentence
+        a refused report gets, and a comment whose check could not finish is posted held,
+        with held true, and is shown only to its author until it is checked. Comments are
+        closed (409, field comments) once the report is resolved or has faded, and an
+        account with no username gets 409 with field username. Posting is limited per
+        verified account, every attempt counts, and a blocked post gets 429 with a
+        Retry-After header; the words stay in the writer's box.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Report id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: The words, and the comment answered if this is a reply
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.PostCommentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handlers.CommentResponse'
+        "400":
+          description: Empty, too long or holding characters that cannot be posted
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: The report or the comment answered is not available
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: Comments are closed, or the account has no username
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "422":
+          description: The words were refused by the abuse check
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Post a comment or a reply
+      tags:
+      - comments
   /reports/{id}/confirm:
     post:
       consumes:
@@ -3069,6 +3588,98 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       summary: Cast a confirm, dispute, resolve, reopen or unresolve vote on a report
+      tags:
+      - reports
+  /reports/{id}/share:
+    post:
+      description: |-
+        Makes, or returns, the share link of one report. The link opens a public page with
+        the report's live status. The response carries the absolute link, a title and one
+        fixed line, and never a count; repeated calls answer the same link. A report that
+        does not exist, is too old, or is not shown to the reader gets 404 and no link is
+        made. Sharing is limited per signed in account, and a blocked call gets 429 with a
+        Retry-After header. Requires a signed in session; otherwise 401.
+      parameters:
+      - description: Report id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ShareResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Make a share link
+      tags:
+      - reports
+  /reports/{id}/timeline:
+    get:
+      description: |-
+        Returns the history of one report as short sentences, oldest first, built only
+        from the report's vote log. Every count is the number of distinct spots the trust
+        block counts at that moment, the poster's own votes never count, and the history
+        names no voter, no account, no place and no cell. It shows upward steps and state
+        changes only (posted, confirmed, disputed, shown to everyone, marked Disputed,
+        resolved, reopened, faded) plus the reader's own lines, which carry yours true.
+        A report that does not exist, is too old, or is not shown to the reader gets 404.
+        Requires a signed in session; otherwise 401.
+      parameters:
+      - description: Report id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.TimelineResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: The history of a report, what happened so far
       tags:
       - reports
   /reports/{id}/unmute:

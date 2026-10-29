@@ -412,6 +412,88 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 		}
 	}
 
+	// Amended 2026-10-29 by Phase 8 plan 19: the report page and comments
+	// routes are pinned with the answers each can give. Every one is gated, so
+	// each carries 401. A 429 always carries Retry-After. The moderator comment
+	// routes carry no swag annotations on purpose (plan 08-13), and the public
+	// page /r/{token} is HTML, so neither is in the spec.
+	for _, rt := range []struct {
+		path, method string
+		codes        []string
+		limited      bool
+	}{
+		{"/reports/{id}/timeline", "get", []string{"200", "401", "404"}, false},
+		{"/reports/{id}/share", "post", []string{"200", "401", "404", "429"}, true},
+		{"/reports/{id}/comments", "get", []string{"200", "401", "404"}, false},
+		{"/reports/{id}/comments", "post", []string{"201", "401", "404", "409", "422", "429"}, true},
+		{"/comments/{id}/like", "post", []string{"200", "401", "404", "409", "429"}, true},
+		{"/comments/{id}/unlike", "post", []string{"200", "401", "404", "429"}, true},
+		{"/comments/{id}/delete", "post", []string{"200", "401", "403", "404", "429"}, true},
+		{"/comments/{id}/flag", "post", []string{"201", "401", "404", "409", "422", "429"}, true},
+	} {
+		ops, ok := spec.Paths[rt.path]
+		if !ok {
+			t.Errorf("docs/swagger.json is missing the %s path", rt.path)
+			continue
+		}
+		op, ok := ops[rt.method]
+		if !ok {
+			t.Errorf("docs/swagger.json is missing the %s %s operation", rt.path, rt.method)
+			continue
+		}
+		var parsed struct {
+			Responses map[string]json.RawMessage `json:"responses"`
+		}
+		if err := json.Unmarshal(op, &parsed); err != nil {
+			t.Fatalf("parsing %s %s: %v", rt.method, rt.path, err)
+		}
+		for _, code := range rt.codes {
+			if _, ok := parsed.Responses[code]; !ok {
+				t.Errorf("docs/swagger.json %s %s is missing the %s response", rt.method, rt.path, code)
+			}
+		}
+		if rt.limited {
+			p15Assert429(t, strings.ToUpper(rt.method)+" "+rt.path, op)
+		}
+	}
+	for _, gone := range []string{"/moderation/comments", "/moderation/comments/{id}/keep", "/moderation/comments/{id}/remove"} {
+		if _, ok := spec.Paths[gone]; ok {
+			t.Errorf("docs/swagger.json documents %s, which carries no swag annotation by design", gone)
+		}
+	}
+	// The updates kind enum gains the two comment kinds, and the feed row
+	// gains the comment count and the open flag.
+	{
+		var defs struct {
+			Definitions map[string]json.RawMessage `json:"definitions"`
+		}
+		if err := json.Unmarshal(raw, &defs); err != nil {
+			t.Fatalf("parsing docs/swagger.json definitions: %v", err)
+		}
+		_, props := p07WalkSwaggerDefinitions(t, defs.Definitions, []string{"handlers.FeedReportResponse"})
+		for _, field := range []string{"comment_count", "comments_open"} {
+			p14SwaggerProp(t, props, "handlers.FeedReportResponse", field)
+		}
+		for _, def := range []string{"handlers.TimelineResponse", "handlers.CommentListResponse", "handlers.ShareResponse"} {
+			if _, ok := defs.Definitions[def]; !ok {
+				t.Errorf("docs/swagger.json is missing the %s definition", def)
+			}
+		}
+	}
+	{
+		var defs struct {
+			Definitions map[string]json.RawMessage `json:"definitions"`
+		}
+		if err := json.Unmarshal(raw, &defs); err != nil {
+			t.Fatalf("parsing docs/swagger.json definitions: %v", err)
+		}
+		_, props := p07WalkSwaggerDefinitions(t, defs.Definitions, []string{"handlers.UpdatesResponse"})
+		p14AssertEnum(t, p14SwaggerProp(t, props, "handlers.UpdateWire", "kind"), []string{
+			"reached_live", "hidden", "resolved", "fading", "reliable_nearby",
+			"comment_on_yours", "reply_to_yours", "more",
+		})
+	}
+
 	// 04-15's contribution: every 429 Phase 4 wires so far is documented, on
 	// POST /reports and on each of the five vote routes.
 	if op, ok := reportsOps["post"]; ok {

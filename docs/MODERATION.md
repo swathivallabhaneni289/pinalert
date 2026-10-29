@@ -189,6 +189,55 @@ is just wrong, and has an optional "Tell the moderators more" box of up to 300 c
 - Police guidance stays plain text on the legal pages. The Flag control sends nothing to anyone
   outside Pinalert.
 
+## Comments
+
+Phase 8 added comments on a report, one level of replies, a thumbs up like and a Flag on each
+comment. Anyone signed in with a username may write one. The rules (D-12 to D-15):
+
+- The text check is `ScreenAbuse`, the same abuse screen a Flag note and a username use, and not
+  the gibberish rule. A short reply such as "ok" or "same here" is gibberish by that rule and is a
+  good comment (`TestCommentShortReplies` shows it). The words are cleaned and bounded first
+  (`CleanCommentBody`, 1 to 280 characters, no control characters), with no provider call, so a
+  refused text, a closed report or a reply to a gone comment costs no check.
+- Three outcomes. Rejected (hateful, harassing or sexual): 422 on field `words`, the box keeps
+  its text, nothing is stored. Borderline: the comment is posted, shows to everyone, and is listed
+  for moderators. Unfinished (the provider cannot answer): the comment is held. Only its author
+  sees it, marked as held, and nobody is told about it, until the check passes. Comments have no
+  Critical exemption (`TestCommentScreeningOutcomes`).
+- The comment worker rechecks held comments every 30 seconds and once at start, with the same
+  claim, lease, backoff and error classes as the report worker (`TestCommentWorkerBacksOff`). A
+  pass makes the comment visible and sends its bell row. A borderline result makes it visible and
+  lists it. A rejection removes it with no notice. A comment whose report expired, or that its
+  author deleted meanwhile, is left alone (`TestCommentWorkerStopsAtExpiry`,
+  `TestCommentWorkerSkipsDeleted`). A moderator's Keep or Remove and the worker never both act on
+  one comment (`TestCommentWorkerNoDoubleNotify`).
+- A flag never hides a comment. Anyone signed in can flag a comment they did not write, with the
+  same reasons, the same optional note and the same flag allowance as a report flag. One flag per
+  account and comment, a repeat answers 409, flagging your own comment answers 409. Only
+  a moderator's Remove takes a comment down. Your own delete is allowed any time, there is no
+  editing, and a deleted comment that has replies leaves the line Comment deleted so the thread
+  still reads. The reporter cannot delete other people's comments on their report (D-14).
+- Comments close with the report (D-15). They stay open only while a report is active or disputed,
+  and become read only, with the line Comments are closed, once it is resolved, faded or withheld.
+- The moderator Comments list is `GET /api/moderation/comments`, behind the same plain 404 gate as
+  the report routes and left out of the public API reference on purpose. It lists, newest first and
+  capped at 200, each comment that is not deleted or removed and has an open flag, is marked for
+  review, or is held. A row shows the words, the category, the reasons (Flagged by people, Near the
+  line, Check not finished), the flag reasons and the count. It carries no account, email or
+  username. Keep and Remove run in one transaction: change the comment, dismiss its open flags and
+  write one `comment_moderation_actions` row (comment, moderator, keep or remove, time) that holds
+  no comment text. Keep of a comment that needs nothing answers 409 and a repeat Remove answers
+  404 (`TestCommentModerationAuditInTx`, `TestCommentRemove`, `TestModerateComments`).
+- A comment's author is shown only by a username whose screen word is clear. A name that could not
+  be judged reads New member. A deleted account reads Deleted account, and deleting an account
+  blanks its comments and removes the likes and flags it gave (`TestDeleteAccountComments`).
+- Comment limits are per account and are in the Limits table below. A comment post is never
+  given back, because each one may be a provider call. A refused 429 says how long to wait and
+  that the words are still in the box.
+
+Tests: `TestCommentScreening`, `TestCommentFlagRoutes`, `TestCommentRateLimit`,
+`TestLikeRateLimit`.
+
 ## Usernames
 
 Phase 7.1 gave every account a public username. It is screened like other short free text:
@@ -226,12 +275,20 @@ side by side in `cmd/server/main.go`.
 | Vote change cooldown | account, report and kind | 1 | 1 per 30 seconds | `voteChangeBurst`, `voteChangeEvery` |
 | Flags | account | 10 | 1 per 2 minutes | `flagBurst`, `flagEvery` |
 | Submit attempts | account | 20 | 1 per 6 seconds | `submitAttemptBurst`, `submitAttemptEvery` |
+| Comments and replies | account | 6 | 1 per 20 seconds | `commentBurst`, `commentEvery` |
+| Likes, unlikes, own comment deletes | account | 30 | 1 per 3 seconds | `likeBurst`, `likeEvery` |
+| Share link | account | 10 | 1 per 30 seconds | `shareBurst`, `shareEvery` |
 | Network backstop, reports | client address | 2000 | 1 per second | `ipBackstopReportBurst`, `ipBackstopReportEvery` |
 | Network backstop, votes | client address | 2000 | 1 per 150 milliseconds | `ipBackstopVoteBurst`, `ipBackstopVoteEvery` |
 | Network backstop, flags | client address | 1000 | 1 per 1.2 seconds | `ipBackstopFlagBurst`, `ipBackstopFlagEvery` |
+| Network backstop, comments | client address | 600 | 1 per 200 milliseconds | `ipBackstopCommentBurst`, `ipBackstopCommentEvery` |
+| Network backstop, likes | client address | 3000 | 1 per 30 milliseconds | `ipBackstopLikeBurst`, `ipBackstopLikeEvery` |
+| Network backstop, share | client address | 1000 | 1 per 1.2 seconds | `ipBackstopShareBurst`, `ipBackstopShareEvery` |
 
-The account block holds 12 constants, a burst and a refill for each of the six account buckets,
-and the backstop block beside it holds 6 more.
+The account block holds a burst and a refill for each account bucket, and the backstop block
+beside it does the same for each action family. Phase 8 added the comment, like and share buckets
+to both (a comment Flag spends the report Flag bucket and backstop). Amended 2026-10-29 by Phase 8
+plan 19.
 
 - The network backstop has one bucket per action family, so votes from a shared carrier address
   can never use up report posting from it. Each family is sized so that about 100 accounts behind
@@ -271,7 +328,10 @@ Tests: `TestPerKeyConcurrentBound`, `TestPerKeyRefundAtReservationInstant`,
 Nothing is deleted automatically today, because there is no retention job. Kept: accounts,
 reports with their location, votes as a rough precision 7 square, flags, text check results
 without the report text (borderline results at submit, and every result the background retry
-finishes, see Text check), and moderator actions without the report text. An expired report only
+finishes, see Text check), and moderator actions without the report text. Phase 8 adds comments
+(the words, with the screen verdict and scores), the likes an account gave, comment flags with
+their notes, and comment moderator actions without the comment text. Deleting an account blanks
+its comments and removes its likes and flags. A report's share token stays with the report. An expired report only
 stops showing in the lists. The Policy page says the same in general and offers removal through
 the contact line when `CONTACT_EMAIL` is set. One small gap: the Policy page lists the scores
 "for borderline reports", which understates the retry case above. If the Policy page is edited,
