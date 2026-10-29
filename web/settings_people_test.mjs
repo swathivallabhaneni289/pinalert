@@ -308,13 +308,20 @@ test('after a list changed, the counts are read again from the server', async ()
   assert.equal(el(page, 'settings-followers-value').textContent, '0');
   assert.equal(el(page, 'settings-following-value').textContent, '2');
 
+  // 2026-10-30 (09-REVIEW WR-B04): Blocked people goes down by one per Unblock
+  // and is not read from the list, which leaves out a name still being checked
+  // and stops at a cap. The list answer here is deliberately shorter than the
+  // count, and must not change it.
   fire(el(page, 'settings-blocked-row'), 'click');
   page.opens[1].onChange();
   await flush();
-  assert.match(page.requests[1].url, /\/api\/me\/blocked$/);
-  answer(page.requests[1], 200, { entries: [{ username: 'x_y' }] });
-  await flush();
+  assert.equal(page.requests.length, 1, 'no second read is sent');
   assert.equal(el(page, 'settings-blocked-value').textContent, '1');
+  page.opens[1].onChange();
+  page.opens[1].onChange();
+  await flush();
+  assert.equal(el(page, 'settings-blocked-value').textContent, '0', 'never below zero');
+  assert.equal(page.requests.length, 1);
 });
 
 test('a person with no username opens only the Blocked people list', () => {

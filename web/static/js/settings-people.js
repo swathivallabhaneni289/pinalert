@@ -56,7 +56,6 @@ window.PinalertSettingsPeople = (function () {
   }
 
   var VISIBILITY_URL = '/api/me/visibility';
-  var BLOCKED_URL = '/api/me/blocked';
   var PEOPLE_URL = '/api/people/';
   var REQUEST_TIMEOUT_MS = 10000;
 
@@ -282,21 +281,17 @@ window.PinalertSettingsPeople = (function () {
     function get(url) {
       return request(url, { method: 'GET', credentials: 'same-origin', headers: { Accept: 'application/json' } });
     }
-    if (kind === 'muted') {
-      // One Unmute was done in the window. Take the shown count down by one and
-      // never below zero.
-      var shown = parseInt(mutedPeopleValue ? mutedPeopleValue.textContent : '0', 10);
-      if (mutedPeopleValue) {
-        setText(mutedPeopleValue, isNaN(shown) || shown < 1 ? 0 : shown - 1);
+    if (kind === 'muted' || kind === 'blocked') {
+      // One Unmute or Unblock was done in the window. Take the shown count down
+      // by one and never below zero. The list is not read for this: it leaves
+      // out a person whose name is still being checked and stops at a cap, so
+      // its length is not the count (09-REVIEW WR-B04).
+      var target = kind === 'muted' ? mutedPeopleValue : blockedValue;
+      var shown = parseInt(target ? target.textContent : '0', 10);
+      if (target) {
+        setText(target, isNaN(shown) || shown < 1 ? 0 : shown - 1);
       }
       return Promise.resolve();
-    }
-    if (kind === 'blocked') {
-      return get(BLOCKED_URL).then(function (answer) {
-        if (answer.ok && answer.body && Array.isArray(answer.body.entries)) {
-          setText(blockedValue, answer.body.entries.length);
-        }
-      }, function () {});
     }
     if (username === '') {
       return Promise.resolve();
