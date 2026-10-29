@@ -126,11 +126,13 @@ type FeedReportResponse struct {
 	Longitude   float64 `json:"longitude" example:"80.2707"`
 	Geohash     string  `json:"geohash" example:"tdr1qgzp"`
 	// ShelterCapacityStatus is present only for shelter_open reports.
-	ShelterCapacityStatus *string  `json:"shelter_capacity_status,omitempty" enums:"available,limited,full,closed" example:"available"`
-	ShelterHeadcount      *int     `json:"shelter_headcount,omitempty" example:"42"`
-	CreatedAt             string   `json:"created_at" example:"2026-09-05T14:03:00.000Z"`
-	ExpiresAt             string   `json:"expires_at" example:"2026-09-06T14:03:00.000Z"`
-	DistanceKm            *float64 `json:"distance_km,omitempty" example:"1.42"`
+	ShelterCapacityStatus *string `json:"shelter_capacity_status,omitempty" enums:"available,limited,full,closed" example:"available"`
+	ShelterHeadcount      *int    `json:"shelter_headcount,omitempty" example:"42"`
+	CreatedAt             string  `json:"created_at" example:"2026-09-05T14:03:00.000Z"`
+	ExpiresAt             string  `json:"expires_at" example:"2026-09-06T14:03:00.000Z"`
+	// True while a confirmation from someone at a new spot would still move expires_at later. The map popup then ends its fade line with unless confirmed again. False for a finished report and once the report has reached the longest life it can have.
+	ConfirmExtends bool     `json:"confirm_extends" example:"true"`
+	DistanceKm     *float64 `json:"distance_km,omitempty" example:"1.42"`
 	// Visibility is the resolver's own answer, serialised verbatim from
 	// service.ReportView.Visibility; the client renders it and never
 	// recomputes it (TRUST-02, T-02-04). "retracted" is one of the four
@@ -372,6 +374,7 @@ func reportViewToResponse(v service.ReportView) FeedReportResponse {
 		ShelterHeadcount:      v.ShelterHeadcount,
 		CreatedAt:             v.CreatedAt.Format(rfc3339Milli),
 		ExpiresAt:             v.ExpiresAt.Format(rfc3339Milli),
+		ConfirmExtends:        v.ConfirmExtends,
 		DistanceKm:            v.DistanceKm,
 		Visibility:            string(v.Visibility),
 		VisibilityReason:      string(v.VisibilityReason),

@@ -352,6 +352,9 @@ func baseView(in viewInput) ReportView {
 		// extras row and the visibility the resolver already gave.
 		CommentCount: c.commentCount,
 		CommentsOpen: CommentsOpen(c.visibility, r.ExpiresAt, in.Now),
+		// The server's word on the popup's promise (backlog 999.12): false on every
+		// finished view by construction.
+		ConfirmExtends: ConfirmExtends(r.Severity, c.visibility, r.CreatedAt, r.ExpiresAt, in.Now),
 	}
 }
 

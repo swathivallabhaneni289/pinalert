@@ -1147,6 +1147,8 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 			// the extras row and the visibility and expiry already resolved above.
 			CommentCount: int(ex.CommentCount),
 			CommentsOpen: CommentsOpen(vis, r.ExpiresAt, now),
+			// The server's word on the popup's promise (backlog 999.12), display only.
+			ConfirmExtends: ConfirmExtends(r.Severity, vis, r.CreatedAt, r.ExpiresAt, now),
 		})
 		// Beside IsOwnReport and never inside Trust (D-04). Only a live view
 		// reaches here, and your own report links nowhere.

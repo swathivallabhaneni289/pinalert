@@ -369,6 +369,13 @@ definitions:
           Always present.
         example: true
         type: boolean
+      confirm_extends:
+        description: True while a confirmation from someone at a new spot would still
+          move expires_at later. The map popup then ends its fade line with unless
+          confirmed again. False for a finished report and once the report has reached
+          the longest life it can have.
+        example: true
+        type: boolean
       confirmed_by_people:
         description: |-
           ConfirmedByPeople is the server authored Show Confirmed membership: true only

@@ -131,8 +131,9 @@ type currencyInput struct {
 // currencyScore is 100 minus the ceiling of CurrencyPointsPerWindow * age /
 // window, with age clamped to between 0 and the whole lifetime (four
 // windows). The arithmetic is integer nanoseconds with no float. Lifetimes
-// come from ExpiryDuration (at most 24 hours), so the product cannot
-// overflow an int64. A window that is not positive scores 0.
+// come from at most ExpiryDuration (at most 24 hours; the window is capped
+// there even when a confirmation pushed the fade time further), so the product
+// cannot overflow an int64. A window that is not positive scores 0.
 func currencyScore(age, window time.Duration) int {
 	if window <= 0 {
 		return 0
@@ -210,7 +211,9 @@ func cellsSince(votes []placeVote, start time.Time) int {
 // buildCurrency is the one pure function behind the still current signal. Its
 // rules run in this order:
 //
-//  1. The window is the lifetime divided by CurrencyWindowDivisor. A window
+//  1. The window is the lifetime divided by CurrencyWindowDivisor, where the
+//     lifetime is expires_at minus created_at capped at ExpiryDuration of the
+//     severity, so an extension (backlog 999.12) never widens it. A window
 //     that is not positive gives band not_applicable and nothing else. It is
 //     unreachable through Submit and keeps the function total.
 //  2. WindowMinutes is the window rounded to the nearest whole minute, and
@@ -232,7 +235,14 @@ func cellsSince(votes []placeVote, start time.Time) int {
 //  9. The fade stage follows the band, except for critical and rescue needed
 //     reports (D-07, R-02).
 func buildCurrency(in currencyInput) CurrencySignal {
-	window := in.ExpiresAt.Sub(in.CreatedAt) / CurrencyWindowDivisor
+	// The life the window divides is capped at the normal lifetime, so a fade
+	// time a confirmation from a new spot pushed back never widens the window
+	// (backlog 999.12). A seeded shorter life keeps its own window.
+	life := in.ExpiresAt.Sub(in.CreatedAt)
+	if normal := ExpiryDuration(in.Meta.Severity); life > normal {
+		life = normal
+	}
+	window := life / CurrencyWindowDivisor
 	if window <= 0 {
 		return CurrencySignal{Band: CurrencyNotApplicable}
 	}

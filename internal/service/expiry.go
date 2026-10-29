@@ -54,6 +54,22 @@ func ExtendedExpiry(createdAt, current, confirmedAt time.Time, life, limit time.
 	return current
 }
 
+// ConfirmExtends is the server's word on whether a confirmation from a new spot
+// would still move this report's fade time: true while the report is live
+// (mayExtend, built on ViewOf, so a resolved, withheld or faded report is false)
+// and expiresAt is before createdAt plus ExpiryCap(s), that is, it has not
+// reached its cap. It is display only: it is the decision behind the popup's
+// "unless confirmed again", and Resolve never reads it.
+//
+// It does not ask ExtendedExpiry at now. For every report Submit makes,
+// expires_at is never later than now plus the lifetime, so the two answers
+// agree, and this form does not depend on the gap between the database clock
+// that stamps a vote and the service clock, so the promise never flickers off
+// right after a confirmation.
+func ConfirmExtends(s Severity, v Visibility, createdAt, expiresAt, now time.Time) bool {
+	return mayExtend(v, expiresAt, now) && expiresAt.Before(createdAt.Add(ExpiryCap(s)))
+}
+
 // mayExtend is the one place that says whether a report is still live enough for
 // a confirmation to move its fade time: its visibility is the active or the
 // disputed view at now. A Retracted report is the resolved view and a faded one

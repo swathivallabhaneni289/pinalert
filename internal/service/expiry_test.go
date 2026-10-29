@@ -86,3 +86,40 @@ func TestMayExtendOnlyWhileLive(t *testing.T) {
 		})
 	}
 }
+
+// TestConfirmExtendsFlag pins the server's word behind the popup's promise: true
+// while the report is live and before its cap, false for a resolved or withheld
+// report, a faded one, and one that has reached its cap.
+func TestConfirmExtendsFlag(t *testing.T) {
+	c := time.Date(2026, 10, 30, 6, 0, 0, 0, time.UTC)
+	h := func(n int) time.Time { return c.Add(time.Duration(n) * time.Hour) }
+	cases := []struct {
+		name    string
+		sev     Severity
+		vis     Visibility
+		expires time.Time
+		now     time.Time
+		want    bool
+	}{
+		{"live, fresh", SeverityMedium, VisibilityLive, h(8), h(1), true},
+		{"provisional", SeverityMedium, VisibilityProvisional, h(8), h(1), true},
+		{"hidden", SeverityMedium, VisibilityHidden, h(8), h(1), true},
+		{"retracted", SeverityMedium, VisibilityRetracted, h(8), h(1), false},
+		{"withheld", SeverityMedium, VisibilityWithheld, h(8), h(1), false},
+		{"faded", SeverityMedium, VisibilityLive, h(8), h(9), false},
+		{"at the cap", SeverityMedium, VisibilityLive, h(24), h(20), false},
+		{"critical before its cap", SeverityCritical, VisibilityLive, h(40), h(30), true},
+		{"critical at its cap", SeverityCritical, VisibilityLive, h(48), h(30), false},
+		{"extended but before the cap", SeverityMedium, VisibilityLive, h(20), h(1), true},
+		{"one nanosecond before the fade", SeverityMedium, VisibilityLive, h(8), h(8).Add(-time.Nanosecond), true},
+		{"at the fade", SeverityMedium, VisibilityLive, h(8), h(8), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ConfirmExtends(tc.sev, tc.vis, c, tc.expires, tc.now); got != tc.want {
+				t.Fatalf("ConfirmExtends(%s, %s, created C, expires C+%v, now C+%v) = %v, want %v",
+					tc.sev, tc.vis, tc.expires.Sub(c), tc.now.Sub(c), got, tc.want)
+			}
+		})
+	}
+}
