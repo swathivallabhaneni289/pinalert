@@ -439,14 +439,15 @@ func (q *Queries) SetAccountUsername(ctx context.Context, arg SetAccountUsername
 
 const updateAccountProfile = `-- name: UpdateAccountProfile :exec
 UPDATE accounts
-SET display_name   = CASE WHEN $1::boolean THEN $2::text ELSE display_name END,
-    home_area_name = CASE WHEN $3::boolean THEN $4::text ELSE home_area_name END,
-    home_area_cell = CASE WHEN $3::boolean THEN $5::text ELSE home_area_cell END
-WHERE id = $6
+SET display_name   = CASE WHEN $1::boolean AND ($2::boolean OR NOT profile_public) THEN $3::text ELSE display_name END,
+    home_area_name = CASE WHEN $4::boolean THEN $5::text ELSE home_area_name END,
+    home_area_cell = CASE WHEN $4::boolean THEN $6::text ELSE home_area_cell END
+WHERE id = $7
 `
 
 type UpdateAccountProfileParams struct {
 	SetName      bool
+	NameScreened bool
 	DisplayName  *string
 	SetHomeArea  bool
 	HomeAreaName *string
@@ -460,9 +461,15 @@ type UpdateAccountProfileParams struct {
 // display_name clears the name. With set_home_area the name and the precision
 // 5 cell are written together (accounts_home_area_pair); both NULL clears it.
 // The raw point is never an argument here.
+// name_screened says the caller screened the new Name for a public profile. A
+// Name that was not screened is written only while the profile is off, judged
+// inside this statement, so an edit that read the switch as off cannot put an
+// unscreened Name on a profile that turned public meanwhile (WR-S04, review
+// 2026-10-30). A Name write that loses this race changes nothing.
 func (q *Queries) UpdateAccountProfile(ctx context.Context, arg UpdateAccountProfileParams) error {
 	_, err := q.db.Exec(ctx, updateAccountProfile,
 		arg.SetName,
+		arg.NameScreened,
 		arg.DisplayName,
 		arg.SetHomeArea,
 		arg.HomeAreaName,

@@ -34,6 +34,23 @@ SET profile_public = sqlc.arg(is_public)::boolean,
 WHERE id = sqlc.arg(id)::bigint
   AND deleted_at IS NULL;
 
+-- name: SetProfilePublicOn :execrows
+-- Switches the profile on only while the stored Name is still the Name that was
+-- screened (WR-S04, review 2026-10-30). The Name screen is a slow network call;
+-- a Name edit that commits while it runs would otherwise go public unscreened.
+-- 0 rows means the account is deleted or the Name changed since the screen.
+-- profile_public_at moves only on a real off to on change, as in
+-- SetProfilePublic.
+UPDATE accounts
+SET profile_public = true,
+    profile_public_at = CASE
+        WHEN NOT profile_public THEN sqlc.arg(now)::timestamptz
+        ELSE profile_public_at
+    END
+WHERE id = sqlc.arg(id)::bigint
+  AND deleted_at IS NULL
+  AND display_name = sqlc.arg(screened_name)::text;
+
 -- name: MarkUsernameScreenClear :execrows
 -- The result of a re-screen of a pending name (07.1 D-16). Race safe: it writes
 -- only while the stored name still equals the screened name and the state is

@@ -38,8 +38,13 @@ WHERE id = sqlc.arg(id);
 -- display_name clears the name. With set_home_area the name and the precision
 -- 5 cell are written together (accounts_home_area_pair); both NULL clears it.
 -- The raw point is never an argument here.
+-- name_screened says the caller screened the new Name for a public profile. A
+-- Name that was not screened is written only while the profile is off, judged
+-- inside this statement, so an edit that read the switch as off cannot put an
+-- unscreened Name on a profile that turned public meanwhile (WR-S04, review
+-- 2026-10-30). A Name write that loses this race changes nothing.
 UPDATE accounts
-SET display_name   = CASE WHEN sqlc.arg(set_name)::boolean THEN sqlc.narg(display_name)::text ELSE display_name END,
+SET display_name   = CASE WHEN sqlc.arg(set_name)::boolean AND (sqlc.arg(name_screened)::boolean OR NOT profile_public) THEN sqlc.narg(display_name)::text ELSE display_name END,
     home_area_name = CASE WHEN sqlc.arg(set_home_area)::boolean THEN sqlc.narg(home_area_name)::text ELSE home_area_name END,
     home_area_cell = CASE WHEN sqlc.arg(set_home_area)::boolean THEN sqlc.narg(home_area_cell)::text ELSE home_area_cell END
 WHERE id = sqlc.arg(id);

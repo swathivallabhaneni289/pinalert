@@ -906,6 +906,38 @@ func (q *Queries) SetProfilePublic(ctx context.Context, arg SetProfilePublicPara
 	return result.RowsAffected(), nil
 }
 
+const setProfilePublicOn = `-- name: SetProfilePublicOn :execrows
+UPDATE accounts
+SET profile_public = true,
+    profile_public_at = CASE
+        WHEN NOT profile_public THEN $1::timestamptz
+        ELSE profile_public_at
+    END
+WHERE id = $2::bigint
+  AND deleted_at IS NULL
+  AND display_name = $3::text
+`
+
+type SetProfilePublicOnParams struct {
+	Now          time.Time
+	ID           int64
+	ScreenedName string
+}
+
+// Switches the profile on only while the stored Name is still the Name that was
+// screened (WR-S04, review 2026-10-30). The Name screen is a slow network call;
+// a Name edit that commits while it runs would otherwise go public unscreened.
+// 0 rows means the account is deleted or the Name changed since the screen.
+// profile_public_at moves only on a real off to on change, as in
+// SetProfilePublic.
+func (q *Queries) SetProfilePublicOn(ctx context.Context, arg SetProfilePublicOnParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setProfilePublicOn, arg.Now, arg.ID, arg.ScreenedName)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const turnOffFollowNotify = `-- name: TurnOffFollowNotify :execrows
 UPDATE account_follows
 SET notify = false,

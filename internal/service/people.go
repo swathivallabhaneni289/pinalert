@@ -74,6 +74,7 @@ type PeopleQuerier interface {
 	GetPersonByUsername(ctx context.Context, username string) (sqlcgen.GetPersonByUsernameRow, error)
 	GetPersonByID(ctx context.Context, id int64) (sqlcgen.GetPersonByIDRow, error)
 	SetProfilePublic(ctx context.Context, arg sqlcgen.SetProfilePublicParams) (int64, error)
+	SetProfilePublicOn(ctx context.Context, arg sqlcgen.SetProfilePublicOnParams) (int64, error)
 	MarkUsernameScreenClear(ctx context.Context, arg sqlcgen.MarkUsernameScreenClearParams) (int64, error)
 	FollowAccount(ctx context.Context, arg sqlcgen.FollowAccountParams) (int64, error)
 	EndFollowPair(ctx context.Context, arg sqlcgen.EndFollowPairParams) (int64, error)
@@ -273,12 +274,18 @@ func (s *PeopleService) SetProfilePublic(ctx context.Context, accountID int64, o
 		return ValidationError{Field: "profile_public", Message: PublicNameUnfinishedMessage}
 	}
 
-	rows, err := s.q.SetProfilePublic(ctx, sqlcgen.SetProfilePublicParams{IsPublic: true, Now: now, ID: accountID})
+	// The switch turns on only while the stored Name is still the one just
+	// screened (WR-S04): a Name edit that committed during the screen call
+	// leaves 0 rows, and the person tries again.
+	rows, err := s.q.SetProfilePublicOn(ctx, sqlcgen.SetProfilePublicOnParams{Now: now, ID: accountID, ScreenedName: *row.DisplayName})
 	if err != nil {
 		return fmt.Errorf("service: SetProfilePublic: switching on account %d: %w", accountID, err)
 	}
 	if rows == 0 {
-		return ErrPersonNotFound
+		if _, err := s.q.GetPersonByID(ctx, accountID); errors.Is(err, pgx.ErrNoRows) {
+			return ErrPersonNotFound
+		}
+		return ValidationError{Field: "profile_public", Message: PublicNameUnfinishedMessage}
 	}
 	return nil
 }
