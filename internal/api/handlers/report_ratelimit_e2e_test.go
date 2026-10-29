@@ -112,7 +112,6 @@ func p15Tweak(clk *p15Clock, scr *p15Screener, mutate func(d *api.Deps)) func(d 
 			IPBackstopFlag:   p15Open,
 		}
 		d.LimiterClock = clk.Now
-		d.RequestLinkRateLimit = api.RequestLinkRateLimit{Burst: 100, Every: time.Millisecond}
 		if scr != nil {
 			d.Reports = service.NewReportService(q, service.WithScreener(scr))
 		}

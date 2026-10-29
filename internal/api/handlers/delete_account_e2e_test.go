@@ -31,7 +31,6 @@ func newDelServer(t *testing.T) (srv *httptest.Server, mailer *recordingMailer, 
 	var poolRef *pgxpool.Pool
 	srv, mailer, pool = newE2EServerWith(t, func(d *api.Deps, _ *sqlcgen.Queries) {
 		d.ModeratorEmails = modAllowList(t, "mod@example.com")
-		d.RequestLinkRateLimit = api.RequestLinkRateLimit{Burst: 1000, Every: time.Millisecond}
 		d.AccountTx = func(ctx context.Context, fn func(q service.AccountDeleteQuerier) error) error {
 			txRuns.Add(1)
 			return service.PgxAccountTx(poolRef)(ctx, fn)

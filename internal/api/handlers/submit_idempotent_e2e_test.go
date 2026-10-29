@@ -63,7 +63,6 @@ func (c *p17Clock) Advance(d time.Duration) {
 func p17Tweak(clk *p17Clock, scr service.TextScreener, mutate func(d *api.Deps)) func(d *api.Deps, q *sqlcgen.Queries) {
 	return func(d *api.Deps, q *sqlcgen.Queries) {
 		d.LimiterClock = clk.Now
-		d.RequestLinkRateLimit = api.RequestLinkRateLimit{Burst: 100, Every: time.Millisecond}
 		if scr != nil {
 			d.Reports = service.NewReportService(q, service.WithScreener(scr))
 		}

@@ -172,7 +172,6 @@ func pwSetup(t *testing.T) *pwWorld {
 	w := &pwWorld{notifier: &pwNotifier{}, sender: &pwSender{}, namer: &pwNamer{}}
 	srv, mailer, pool := newE2EServerWith(t, func(d *api.Deps, q *sqlcgen.Queries) {
 		d.Page.PushPublicKey = pushTestKey
-		d.RequestLinkRateLimit = api.RequestLinkRateLimit{Burst: 1000, Every: time.Millisecond}
 		reports := service.NewReportService(q, service.WithReportChangeNotifier(w.notifier))
 		d.Reports = reports
 		d.Votes = service.NewVotingService(q, service.WithVoteChangeNotifier(w.notifier))

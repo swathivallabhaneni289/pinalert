@@ -151,7 +151,7 @@ type Chrome struct {
 // withDefaults returns a copy whose Numbers is the default set when the
 // primary number is empty, so a zero Chrome (any Deps literal or direct handler
 // call in a test) still renders the exact default sentence. It mirrors the
-// RequestLinkRateLimit zero value default in router.go. LoadEmergencyNumbers
+// zero value defaults in router.go. LoadEmergencyNumbers
 // always sets Primary, so a cleared older list is never refilled here.
 func (c Chrome) withDefaults() Chrome {
 	if c.Numbers.Primary == "" {

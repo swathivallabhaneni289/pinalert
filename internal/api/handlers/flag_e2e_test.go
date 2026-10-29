@@ -82,7 +82,6 @@ func p20Tweak(clk *p20Clock, mutate func(d *api.Deps)) func(d *api.Deps, q *sqlc
 			IPBackstopFlag:   p20Open,
 		}
 		d.LimiterClock = clk.Now
-		d.RequestLinkRateLimit = api.RequestLinkRateLimit{Burst: 100, Every: time.Millisecond}
 		if mutate != nil {
 			mutate(d)
 		}
