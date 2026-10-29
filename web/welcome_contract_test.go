@@ -374,7 +374,18 @@ func TestWelcomeStep3And4Privacy(t *testing.T) {
 	w10Count(t, "welcome.js", js, "longitude", 1)
 
 	// No reverse lookup and no stored position of its own.
-	for _, banned := range []string{"reverse", "nominatim", "localStorage", "watchPosition", "&lat=", "&lon="} {
+	//
+	// Amended 2026-10-29 by Phase 7.1 plan 13b (D-18): localStorage leaves the
+	// banned list, because the install pop-up keeps a list of account ids in the
+	// browser. It may be touched in exactly two places, reading and writing the
+	// key pinalert.installAsked, and the pins below fail on any other use; a
+	// position or a place is still never stored.
+	w10Count(t, "welcome.js", js, "localStorage", 2)
+	p13MustContain(t, "welcome.js", js,
+		"var INSTALL_ASKED_KEY = 'pinalert.installAsked';",
+		"window.localStorage.getItem(INSTALL_ASKED_KEY)",
+		"window.localStorage.setItem(INSTALL_ASKED_KEY, JSON.stringify(list.slice(-INSTALL_ASKED_KEEP)))")
+	for _, banned := range []string{"reverse", "nominatim", "watchPosition", "&lat=", "&lon="} {
 		if strings.Contains(strings.ToLower(js), strings.ToLower(banned)) {
 			t.Errorf("welcome.js uses %q: there is no reverse lookup and the position is saved only through PinalertPosition", banned)
 		}
@@ -543,7 +554,10 @@ func TestWelcomeAlertsAsk(t *testing.T) {
 	// so the welcome Tab trap never sees its keys and the native modal can make
 	// #welcome inert.
 	p13MustMatch(t, "alerts pop-up position", page, `(?s)</section>\s*</div>\s*</div>\s*`+regexp.QuoteMeta(open))
-	p13MustMatch(t, "alerts pop-up position", page, `(?s)</dialog>\s*<script src="/static/js/position\.js`)
+	// Amended 2026-10-29 by Phase 7.1 plan 13b: the install pop-up sits between the
+	// alerts pop-up and the scripts, so the alerts pop-up is followed by it and the
+	// install pop-up by the scripts (pinned in TestWelcomeInstallAsk).
+	p13MustMatch(t, "alerts pop-up position", page, `(?s)</dialog>\s*<dialog id="welcome-install-ask"`)
 
 	ask := regexp.MustCompile(`(?s)<dialog id="welcome-alerts-ask".*?</dialog>`).FindString(page)
 	if ask == "" {
@@ -608,10 +622,17 @@ func TestWelcomeAlertsAsk(t *testing.T) {
 		`id="welcome-alerts-status"`, `id="welcome-alerts-continue"`, `id="welcome-alerts-error"`,
 		`id="welcome-alerts-ready"`, `id="welcome-alerts-card"`, `id="welcome-alerts-nohome"`,
 		".AlertExample", ".HasHomeArea", "Get alerts when it matters", "Allow alerts")
-	// The install guide lives only in Settings, as before.
-	w10Count(t, "welcome.html.tmpl", page, `{{template "device_guide"}}`, 0)
-	w10Count(t, "welcome.html.tmpl", page, "/static/css/device-guide.css?v={{.AssetVersion}}", 0)
-	p13MustNotContain(t, "welcome.html.tmpl", page, "Home Screen", "Install to get alerts")
+	// Amended 2026-10-29 by Phase 7.1 plan 13b (D-17): the install guide used to
+	// live only in Settings. The partial and the stylesheet now appear once each,
+	// for the install pop-up (TestWelcomeInstallAsk). The alerts pop-up itself holds
+	// none of it, "Home Screen" may appear only inside #welcome-install-ask, and the
+	// Settings window title "Install to get alerts" still never appears here.
+	w10Count(t, "welcome.html.tmpl", page, `{{template "device_guide"}}`, 1)
+	w10Count(t, "welcome.html.tmpl", page, "/static/css/device-guide.css?v={{.AssetVersion}}", 1)
+	p13MustNotContain(t, "alerts pop-up", ask, "Home Screen", "device_guide")
+	outsideInstall := regexp.MustCompile(`(?s)<dialog id="welcome-install-ask".*?</dialog>`).ReplaceAllString(page, "")
+	p13MustNotContain(t, "welcome.html.tmpl outside the install pop-up", outsideInstall, "Home Screen", "device_guide")
+	p13MustNotContain(t, "welcome.html.tmpl", page, "Install to get alerts")
 
 	// Nothing in the page promises a sound, and no long dash is written.
 	if got := noiseWordsIn(htmlTagPattern.ReplaceAllString(templateCopy(stripReadTemplate(t, "welcome.html.tmpl")), " ")); len(got) != 0 {
@@ -727,6 +748,98 @@ func TestWelcomeAlertsScript(t *testing.T) {
 		"'Alerts'", "TITLE_LATER", "ALERTS_STEP", "alertsStep", "alertsSeq", "setAlertsBusy", "drawAlerts", "enterAlerts",
 		"toAlerts", "alertsDone", "welcome-step-5", "welcome-alerts-status", "welcome-alerts-nohome", "hasHomeArea", "doneErrorLine",
 		"'Install to get alerts'", "MESSAGE_ALERTS_")
+}
+
+// TestWelcomeInstallAsk pins Phase 7.1 plan 13b (D-17, D-18, UI-SPEC Surface
+// 10a): the install pop-up that ends sign up on an iPhone or iPad Safari tab. It
+// is a native modal dialog after the alerts pop-up, in the Log out box look, with
+// a title that names the home area and no question mark, the install guide
+// partial once, and one button, Not now. There is no Allow in it, the stylesheet
+// of the guide is linked, and welcome.js keeps it away from the browser's
+// notification prompt, shows it once per account through the list kept under
+// pinalert.installAsked, and records the flow as done from Not now, Escape and a
+// dialog that will not open.
+func TestWelcomeInstallAsk(t *testing.T) {
+	page := w10Template(t)
+
+	const open = `<dialog id="welcome-install-ask" class="logout-confirm" aria-labelledby="welcome-install-ask-title" data-home-area="{{.HomeAreaName}}">`
+	w10Count(t, "welcome.html.tmpl", page, `id="welcome-install-ask"`, 1)
+	w10Count(t, "welcome.html.tmpl", page, open, 1)
+	w10Count(t, "welcome.html.tmpl", page, "<dialog", 2)
+	// After the alerts pop-up, outside the flow root, before the scripts.
+	p13MustMatch(t, "install pop-up position", page, `(?s)</dialog>\s*`+regexp.QuoteMeta(open))
+	p13MustMatch(t, "install pop-up position", page, `(?s)</dialog>\s*<script src="/static/js/position\.js`)
+
+	ask := regexp.MustCompile(`(?s)<dialog id="welcome-install-ask".*?</dialog>`).FindString(page)
+	if ask == "" {
+		t.Fatalf("no install pop-up in welcome.html.tmpl")
+	}
+	const titleWords = "Get alerts for critical reports near "
+	p13MustContain(t, "install pop-up", ask,
+		`<div class="logout-confirm__body">`,
+		`<h2 class="logout-confirm__title" id="welcome-install-ask-title" tabindex="-1">`+titleWords+`{{if .HomeAreaName}}{{.HomeAreaName}}{{else}}your home area{{end}}</h2>`,
+		`<div class="logout-confirm__actions">`,
+		`<button type="button" class="btn" id="welcome-install-later">Not now</button>`)
+	// The box asks nothing, so the title has no question mark.
+	p13MustNotContain(t, "install pop-up", ask, "?</h2>")
+	// The guide partial exactly once, between the title and the button, and the
+	// one button is Not now: no Allow, no primary button, no link, no input.
+	w10Count(t, "install pop-up", ask, `{{template "device_guide"}}`, 1)
+	p13Ordered(t, ask, "install pop-up", `id="welcome-install-ask-title"`, `{{template "device_guide"}}`, `class="logout-confirm__actions"`, `id="welcome-install-later"`)
+	w10Count(t, "install pop-up", ask, "<button", 1)
+	p13MustNotContain(t, "install pop-up", ask, "Allow", "btn--primary", "autofocus", "<a ", "<input")
+	// The stylesheet of the guide is linked in the head, versioned like the others.
+	w10Count(t, "welcome.html.tmpl", page, `<link rel="stylesheet" href="/static/css/device-guide.css?v={{.AssetVersion}}">`, 1)
+	p13MustNotContain(t, "install pop-up", ask, "near you")
+
+	// The script.
+	raw := p421ReadStatic(t, "js/welcome.js")
+	js := stripJSComments(raw)
+	words := regexp.MustCompile(`var ASK_TITLE_START = '([^']*)';`).FindStringSubmatch(js)
+	if words == nil || words[1] != titleWords {
+		t.Errorf("ASK_TITLE_START is %v, want %q (the install pop-up title starts with it)", words, titleWords)
+	}
+	w10Count(t, "welcome.js", js, "'welcome-install-ask'", 1)
+	w10Count(t, "welcome.js", js, "'welcome-install-ask-title'", 1)
+	w10Count(t, "welcome.js", js, "'welcome-install-later'", 1)
+	p13MustContain(t, "welcome.js", js,
+		"var INSTALL_ASKED_KEY = 'pinalert.installAsked';",
+		"var INSTALL_ASKED_KEEP = 8;",
+		"installLater.addEventListener('click', onInstallLater);",
+		"installDialog.addEventListener('cancel', onInstallCancel);")
+
+	// Never the browser's prompt, never a turn-on, from any part of the install path.
+	for _, name := range []string{"canInstallAsk()", "openInstallAsk()", "onInstallLater()", "onInstallCancel(e)", "installAskedList()", "rememberInstallAsk()", "closeInstall()"} {
+		body := jsFunctionBody(t, js, name)
+		p13MustNotContain(t, name, body, "enable(", "requestPermission", "Notification.", "innerHTML", "insertAdjacentHTML")
+	}
+	// It opens only for needs-install, so it never opens beside the alerts pop-up
+	// (which needs maybe or ready).
+	can := jsFunctionBody(t, js, "canInstallAsk()")
+	p13MustContain(t, "canInstallAsk", can, "installDialog", "showModal", "baseState()", "'needs-install'", "installShown", "installAskedList()")
+	p13MustMatch(t, "canInstallAsk", can, `(?s)try \{.*baseState\(\).*\} catch`)
+	p13MustNotContain(t, "canInstallAsk", can, "'maybe'", "'ready'")
+	// endFlow tries the alerts pop-up, then the install pop-up, then the done record.
+	end := jsFunctionBody(t, js, "endFlow()")
+	p13Ordered(t, end, "endFlow", "canAsk()", "openAsk()", "canInstallAsk()", "openInstallAsk()", "postDone()")
+	// The id is written just before showModal, inside a try, and the box shows the
+	// home area through textContent only.
+	openFn := jsFunctionBody(t, js, "openInstallAsk()")
+	p13Ordered(t, openFn, "openInstallAsk", "setText(installTitle", "rememberInstallAsk()", "installDialog.showModal()", "postDone()", "installTitle.focus()")
+	remember := jsFunctionBody(t, js, "rememberInstallAsk()")
+	p13Ordered(t, remember, "rememberInstallAsk", "try {", "installAskedList()", "setItem(INSTALL_ASKED_KEY", "} catch")
+	// Not now closes the box and then records the flow as done, once; Escape is the
+	// cancel event and does the same, never a close event.
+	later := jsFunctionBody(t, js, "onInstallLater()")
+	p13Ordered(t, later, "onInstallLater", "if (installBusy) {", "installBusy = true;", "closeInstall()", "postDone()")
+	p13MustContain(t, "onInstallCancel", jsFunctionBody(t, js, "onInstallCancel(e)"), "e.preventDefault();", "onInstallLater()")
+	// A failed record puts the box away and frees it, so the next Continue works.
+	p13MustContain(t, "doneFailed", jsFunctionBody(t, js, "doneFailed()"), "closeInstall()", "installBusy = false;")
+	// The list holds the last 8 ids, each a plain account id string.
+	p13MustContain(t, "installAskedList", jsFunctionBody(t, js, "installAskedList()"), "ACCOUNT_ID_PATTERN", "Array.isArray(list)", "JSON.parse(raw)")
+	p13MustContain(t, "rememberInstallAsk", remember, "slice(-INSTALL_ASKED_KEEP)")
+	// The flow is still recorded from one sender.
+	w10Count(t, "welcome.js", js, "request(DONE_URL", 1)
 }
 
 // TestWelcomeStep4Required pins Phase 7.1 plan 13 (D-06, D-08, UI-SPEC Surface 7):

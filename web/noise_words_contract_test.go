@@ -183,6 +183,11 @@ func TestNotifyLeavesInstallToTheBrowser(t *testing.T) {
 // TestDeviceGuideCopy pins the words of the iPhone install guide (UI-SPEC
 // Surface 4a): the lead, the three steps with their key words in strong, the
 // three icons, and no title, button, link or long dash.
+//
+// Amended 2026-10-29 by Phase 7.1 plan 13b (D-17, UI-SPEC row P71-C30): step 3
+// now reads "Open Pinalert from your Home Screen and sign in. Tap Allow when it
+// asks about alerts." with Allow in strong; the old "In Settings, turn on On
+// this device" ending appears nowhere. Every other assertion is unchanged.
 func TestDeviceGuideCopy(t *testing.T) {
 	src := readEmbeddedCopyFile(t, "templates/device_guide.html.tmpl")
 	body := templateCopy(src)
@@ -198,7 +203,7 @@ func TestDeviceGuideCopy(t *testing.T) {
 		`<span class="app-icon app-icon--bell" aria-hidden="true"></span>`,
 		`Tap the <strong>Share</strong> button.`,
 		`Choose <strong>Add to Home Screen</strong>, then tap <strong>Add</strong>.`,
-		`Open Pinalert from your Home Screen. In Settings, turn on <strong>On this device</strong>.`,
+		`Open Pinalert from your Home Screen and sign in. Tap <strong>Allow</strong> when it asks about alerts.`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("device_guide.html.tmpl lacks %s", want)
@@ -218,7 +223,7 @@ func TestDeviceGuideCopy(t *testing.T) {
 	wantSteps := []string{
 		"Tap the Share button.",
 		"Choose Add to Home Screen, then tap Add.",
-		"Open Pinalert from your Home Screen. In Settings, turn on On this device.",
+		"Open Pinalert from your Home Screen and sign in. Tap Allow when it asks about alerts.",
 	}
 	if len(steps) != len(wantSteps) {
 		t.Fatalf("found %d step texts %q, want %d", len(steps), steps, len(wantSteps))
@@ -227,6 +232,9 @@ func TestDeviceGuideCopy(t *testing.T) {
 		if steps[i] != wantSteps[i] {
 			t.Errorf("step %d reads %q, want %q", i+1, steps[i], wantSteps[i])
 		}
+	}
+	if strings.Contains(body, "In Settings, turn on") {
+		t.Errorf("device_guide.html.tmpl still holds the old step 3 ending %q", "In Settings, turn on")
 	}
 	// No title (the step title or the window title holds it), no control, no
 	// hint line.

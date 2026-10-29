@@ -42,12 +42,26 @@
 // small modal pop-up that reuses the Log out box. When step 4 finishes (Continue)
 // it opens if window.PinalertNotify.baseState() says this device can
 // turn alerts on (maybe or ready, no request and no prompt) and the page has a
-// push key. On an iPhone Safari tab (needs-install), a blocked or unsupported
-// device, a page without a key, a missing PinalertNotify or a browser without
-// dialog support there is no pop-up and the flow is recorded as done directly.
+// push key. On an iPhone Safari tab (needs-install) the install pop-up below
+// follows instead (plan 13b). On a blocked or unsupported device, a page without
+// a key, a missing PinalertNotify or a browser without dialog support there is no
+// alerts pop-up and the flow is recorded as done directly.
 // Allow calls enable, Not now and Escape do not; every answer, and whatever
 // enable answers, then records the flow as done, so nothing about alerts can stop
 // anyone finishing. The words are in the template.
+//
+// The install ask (Phase 7.1 plan 13b, D-17, D-18, UI-SPEC Surface 10a): on an
+// iPhone or iPad Safari tab (baseState needs-install) alerts cannot work until
+// Pinalert is on the Home Screen, so the flow ends with a second small pop-up
+// instead, which holds the install guide and one button, Not now. It never calls
+// enable and never asks the browser for anything. It shows once per account on a
+// browser: the browser key pinalert.installAsked holds a small JSON list of the
+// last 8 account ids (the format of pinalert.changesAsked in changes-ask.js), the
+// id is added just before the box opens, and the box does not open again while the
+// list holds it. A key that cannot be read or written does not stop the box. Not
+// now and Escape close it and then record the flow as done; a box that will not
+// open records it at once. The alerts pop-up needs maybe or ready and this one
+// needs needs-install, so the two never open together.
 //
 // Plan 03.3-19 (the 03.3-UAT gap for test 4, owner, 2026-10-27): the pop-up
 // names the home area in its title, asks for it when none is known (the step 4
@@ -94,6 +108,14 @@
   var ASK_TITLE_START = 'Get alerts for critical reports near ';
   var ASK_TITLE_NO_HOME = 'your home area';
   var ASK_TITLE_END = '?';
+  // The install pop-up (plan 13b) repeats the same words with no question mark,
+  // because it asks nothing; TestWelcomeInstallAsk pins them equal to the
+  // template. The browser key below holds the account ids shown the box.
+  var INSTALL_ASKED_KEY = 'pinalert.installAsked';
+  // How many account ids the list keeps on one browser, and the shape of an id
+  // (the one notify.js and changes-ask.js use).
+  var INSTALL_ASKED_KEEP = 8;
+  var ACCOUNT_ID_PATTERN = /^[1-9][0-9]{0,18}$/;
   // Step 4 uses the place search of Settings, asking for areas only (kind=area:
   // neighbourhoods, localities, towns, cities, districts, never a street or a
   // building, since the stored home area is a cell about 5 km wide). It has its
@@ -200,6 +222,16 @@
   // The pop-up's error line: the home area picked in it was not saved (WR-05).
   var askError = el('welcome-alerts-ask-error');
   var pushKey = root.getAttribute('data-push-key') || '';
+  // The install pop-up of an iPhone or iPad Safari tab (plan 13b): a native dialog
+  // outside the flow root, like the alerts pop-up. installShown is true once it
+  // has been opened in this visit, so a later Continue (after a failed
+  // first-run-done) never opens it again; installBusy is true from the moment Not
+  // now or Escape is answered until the answer is handled.
+  var installDialog = el('welcome-install-ask');
+  var installTitle = el('welcome-install-ask-title');
+  var installLater = el('welcome-install-later');
+  var installShown = false;
+  var installBusy = false;
 
   // The step a person must agree on, and the highest step an address may name
   // for an account that has not agreed yet. A person may look at any step in
@@ -253,6 +285,9 @@
   // typed text that was never picked. askPick is the place picked in the pop-up
   // itself, saved only when Allow is tapped.
   var homeName = askDialog ? (askDialog.getAttribute('data-home-area') || '').trim() : '';
+  if (homeName === '' && installDialog) {
+    homeName = (installDialog.getAttribute('data-home-area') || '').trim();
+  }
   var askPick = null;
 
   // ---- Small helpers --------------------------------------------------------
@@ -472,6 +507,12 @@
       // example the browser's back gesture): put it away without answering, so
       // nothing is sent and the next Continue asks again.
       closeAsk();
+      setFinishing(false);
+    }
+    if (installDialog && installDialog.open && !installBusy) {
+      // The same for the install pop-up (plan 13b). It was shown, so it is not
+      // shown again: the next Continue records the flow as done directly.
+      closeInstall();
       setFinishing(false);
     }
     el('welcome-step-' + n + '-title').focus();
@@ -1115,6 +1156,10 @@
     closeAsk();
     askBusy = false;
     setAskDisabled(false);
+    // The install pop-up (plan 13b) goes too, and a later Continue records the
+    // flow as done without showing it again (installShown stays true).
+    closeInstall();
+    installBusy = false;
   }
 
   // refocusOpener puts focus back on the step 4 button that was pressed, as the
@@ -1238,15 +1283,147 @@
     askTitle.focus();
   }
 
-  // endFlow ends step 4: the pop-up where alerts can be turned on, otherwise the
-  // flow is recorded as done at once. The step 4 buttons stay disabled until the
-  // pop-up is answered or a failure frees them.
+  // endFlow ends step 4: the pop-up where alerts can be turned on, the install
+  // pop-up on an iPhone or iPad Safari tab (plan 13b), otherwise the flow is
+  // recorded as done at once. The step 4 buttons stay disabled until the pop-up
+  // is answered or a failure frees them.
   function endFlow() {
     if (canAsk()) {
       openAsk();
       return;
     }
+    if (canInstallAsk()) {
+      openInstallAsk();
+      return;
+    }
     postDone();
+  }
+
+  // ---- The install pop-up (iPhone and iPad Safari tab) ------------------------
+
+  // installAskedList reads the account ids that were shown the box on this
+  // browser, as text. Nothing stored is an empty list, one plain id is a list of
+  // one (the older format of changes-ask.js), a JSON list keeps only its id
+  // strings, and a value that is neither is an empty list too (not shown). The
+  // caller holds the try: a storage that cannot be read throws. Phase 7.1 plan 13c
+  // reuses this reader for its own key.
+  function installAskedList() {
+    var raw = window.localStorage.getItem(INSTALL_ASKED_KEY);
+    if (raw === null || raw === undefined) {
+      return [];
+    }
+    if (ACCOUNT_ID_PATTERN.test(raw)) {
+      return [raw];
+    }
+    var list = null;
+    try {
+      list = JSON.parse(raw);
+    } catch (err) {
+      return [];
+    }
+    if (!Array.isArray(list)) {
+      return [];
+    }
+    return list.filter(function (id) {
+      return typeof id === 'string' && ACCOUNT_ID_PATTERN.test(id);
+    });
+  }
+
+  // accountId is the id the server wrote on the flow root, or '' when it is not
+  // an id.
+  function accountId() {
+    var id = root.getAttribute('data-account-id') || '';
+    return ACCOUNT_ID_PATTERN.test(id) ? id : '';
+  }
+
+  // canInstallAsk says whether the install pop-up should open now. It reads the
+  // base state only (no request, no prompt). It is true only for needs-install,
+  // with a dialog that has showModal, not yet shown in this visit, and with this
+  // account not in the list kept in the browser. A list that cannot be read still
+  // lets the box open, because this path is rare and the box is the only place the
+  // steps are shown outside Settings (D-18). Any other throw answers false.
+  function canInstallAsk() {
+    if (installShown || !installDialog || typeof installDialog.showModal !== 'function' || !installTitle || !installLater) {
+      return false;
+    }
+    try {
+      var notify = window.PinalertNotify;
+      if (!notify || typeof notify.baseState !== 'function' || notify.baseState() !== 'needs-install') {
+        return false;
+      }
+    } catch (err) {
+      return false;
+    }
+    var account = accountId();
+    if (account === '') {
+      return true;
+    }
+    try {
+      return installAskedList().indexOf(account) === -1;
+    } catch (err) {
+      return true;
+    }
+  }
+
+  // rememberInstallAsk adds this account to the list, keeping the last 8, just
+  // before the box opens, so a tab closed mid-box does not show it again. A
+  // storage that cannot be read or written changes nothing else.
+  function rememberInstallAsk() {
+    var account = accountId();
+    if (account === '') {
+      return;
+    }
+    try {
+      var list = installAskedList().filter(function (id) { return id !== account; });
+      list.push(account);
+      window.localStorage.setItem(INSTALL_ASKED_KEY, JSON.stringify(list.slice(-INSTALL_ASKED_KEEP)));
+    } catch (err) {
+      // The box still opens.
+    }
+  }
+
+  // closeInstall puts the install pop-up away when it is open. Nothing is sent
+  // from the dialog's close event.
+  function closeInstall() {
+    if (installDialog && installDialog.open && typeof installDialog.close === 'function') {
+      installDialog.close();
+    }
+  }
+
+  // openInstallAsk shows the install pop-up the way the Log out box opens:
+  // showModal, then the title takes focus, so no button looks chosen. The title
+  // names the home area (the stored one or the one saved at step 4) with
+  // textContent. A dialog that will not open sends the flow on without it. This
+  // pop-up never turns alerts on and never asks the browser for anything.
+  function openInstallAsk() {
+    installShown = true;
+    setText(installTitle, ASK_TITLE_START + (homeName !== '' ? homeName : ASK_TITLE_NO_HOME));
+    rememberInstallAsk();
+    try {
+      installDialog.showModal();
+    } catch (err) {
+      postDone();
+      return;
+    }
+    installTitle.focus();
+  }
+
+  // onInstallLater is Not now, and Escape (below): the box closes and the flow is
+  // recorded as done, once.
+  function onInstallLater() {
+    if (installBusy) {
+      return;
+    }
+    installBusy = true;
+    closeInstall();
+    postDone();
+  }
+
+  // onInstallCancel is Escape on the install pop-up. The browser would close it by
+  // itself, so that is prevented and the answer is Not now.
+  function onInstallCancel(e) {
+    e.preventDefault();
+    onInstallLater();
   }
 
   // saveAskHome saves the place picked in the pop-up as the home area (the same
@@ -1544,6 +1721,10 @@
     askAllow.addEventListener('click', onAskAllow);
     askLater.addEventListener('click', onAskLater);
     askDialog.addEventListener('cancel', onAskCancel);
+  }
+  if (installDialog && installTitle && installLater) {
+    installLater.addEventListener('click', onInstallLater);
+    installDialog.addEventListener('cancel', onInstallCancel);
   }
   root.addEventListener('keydown', onKeydown);
 

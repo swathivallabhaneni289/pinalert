@@ -1,8 +1,9 @@
 /* device-guide.css: the iPhone install guide (Phase 3.3, plan 06, UI-SPEC
    Surface 4a). One partial (device_guide.html.tmpl), shown in the Settings
-   guide window only (step 5 of the first-time flow showed it until 2026-10-27,
-   quick 261027-jhd). settings.html.tmpl links this file. The glyph base
-   (.app-icon) comes from app-bar.css.
+   guide window and, since Phase 7.1 plan 13b, in the install pop-up at the end
+   of sign up (step 5 of the first-time flow showed it until 2026-10-27, quick
+   261027-jhd). settings.html.tmpl and welcome.html.tmpl link this file. The
+   glyph base (.app-icon) comes from app-bar.css.
 
    Tokens only: no gradient, no shadow, no animation. */
 
@@ -19,6 +20,20 @@
 
 .app-window__body > .device-guide__lead {
   margin-bottom: var(--space-sm);
+}
+
+/* The guide inside the install pop-up at the end of sign up (Phase 7.1 plan
+   13b, UI-SPEC Surface 10a). The Log out box body is a plain block, not a flex
+   column, so nothing spaces the parts for it: the lead keeps the same 16px
+   distance to the steps as in the Settings window, and the steps leave the same
+   24px above the button as the Log out box leaves under its title. At 320 wide
+   the box is 288px, the steps wrap inside it and nothing scrolls sideways. */
+.logout-confirm__body > .device-guide__lead {
+  margin: 0 0 var(--space-md);
+}
+
+.logout-confirm__body > .device-guide__steps {
+  margin: 0 0 var(--space-lg);
 }
 
 /* One box, a hairline between the rows, none above the first. */

@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="/static/css/legal.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/window.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/welcome.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/device-guide.css?v={{.AssetVersion}}">
   <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
 </head>
 <body class="welcome-page">
@@ -38,7 +39,8 @@
   Quick 261027-jhd (owner, 2026-10-27) makes step 2's Agree and Disagree wait
   until the end of the text has been seen, which welcome.js does (the marker is
   the last child of the text box; the hold is never written here). The install
-  guide lives only in Settings (the device guide partial, shown in its window).
+  guide (the device guide partial) is shown in the Settings window and, since
+  Phase 7.1 plan 13b, in the install pop-up at the end of this page.
   Phase 7.1 plan 13 (D-06, D-07, D-08, UI-SPEC Surface 7) makes step 4 the
   required About you: a Username with its live check (username-check.js), a Name
   and a Home area, no Skip, and Continue switched off (aria-disabled, btn--off)
@@ -219,6 +221,25 @@
       <div class="logout-confirm__actions">
         <button type="button" class="btn" id="welcome-alerts-later">Not now</button>
         <button type="button" class="btn btn--primary" id="welcome-alerts-allow">Allow</button>
+      </div>
+    </div>
+  </dialog>
+  {{/*
+    The install pop-up (Phase 7.1 plan 13b, D-17, D-18, UI-SPEC Surface 10a): on an
+    iPhone or iPad Safari tab alerts cannot work until Pinalert is on the Home
+    Screen, so welcome.js opens this box after step 4 instead of the alerts
+    pop-up. It reuses the Log out box and the install guide partial, has one
+    button and asks the browser for nothing. The title has no question mark
+    because the box asks nothing; welcome.js writes the same words with the home
+    area saved at step 4. It sits outside #welcome for the same reason as the
+    alerts pop-up.
+  */}}
+  <dialog id="welcome-install-ask" class="logout-confirm" aria-labelledby="welcome-install-ask-title" data-home-area="{{.HomeAreaName}}">
+    <div class="logout-confirm__body">
+      <h2 class="logout-confirm__title" id="welcome-install-ask-title" tabindex="-1">Get alerts for critical reports near {{if .HomeAreaName}}{{.HomeAreaName}}{{else}}your home area{{end}}</h2>
+      {{template "device_guide"}}
+      <div class="logout-confirm__actions">
+        <button type="button" class="btn" id="welcome-install-later">Not now</button>
       </div>
     </div>
   </dialog>
