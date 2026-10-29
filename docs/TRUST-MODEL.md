@@ -677,7 +677,7 @@ The Name is screened. When the switch goes on, and on every later edit of the Na
 
 One not found. A profile that does not exist, is private, is pending, belongs to a deleted account, belongs to someone who blocked you, or is malformed answers the same bytes, so the route confirms nothing about a person (`TestProfileNotFoundIsUniform`). The one exception is a person you blocked yourself: your own profile read says Blocked by you, and their lists and reports answer the uniform not found.
 
-Public lists. Followers and Following are public to every signed in account (D-03). A person with a public profile of their own is named and links to it; everyone else is only counted, in a plain line such as "and 3 others" that is never a link. A list holds `PeopleListPageSize` named people a page. Your Blocked and Muted lists are yours alone.
+Public lists. Followers and Following are public to every signed in account (D-03). A person with a public profile of their own is named and links to it; everyone else is only counted, in a plain line such as "and 3 others" that is never a link. A list holds `PeopleListPageSize` named people a page. The paging cursor is signed by the server, so only a cursor it issued is accepted and nobody can craft one to learn when a person followed (`TestPeopleCursorIsSigned`); a cursor from before a restart is refused and the reader starts the list again. Your Blocked and Muted lists are yours alone.
 
 Recent reports (D-07, D-20). A profile lists the person's reports of the last 30 days (`ProfileReportsWindow`), newest first, at most `ProfileReportsCap`, through the same read path as the feed, so a held or removed report is never listed and every state word is the feed's own. The two kinds of row are different on purpose.
 
