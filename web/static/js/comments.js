@@ -195,6 +195,9 @@ window.PinalertComments = (function () {
     var more = false;
     var nextAfter = 0;
     var loadedMore = false;
+    // The after cursor of the last page Show more read, which the poll reads
+    // too once Show more has been used (review fix WR-B04).
+    var lastPageAfter = 0;
     var loadSeq = 0;
     var inflight = null;
     var pollTimer = null;
@@ -846,14 +849,34 @@ window.PinalertComments = (function () {
       rootIds.splice(rootIds.indexOf(id), 1);
     }
 
-    // mergeRoots writes one answer into the list: known comments are updated,
-    // new ones inserted in order, and comments that the answer should have held
-    // but did not (a held comment that failed its check, a deleted one) are
-    // dropped, only inside the range the answer covers.
-    function mergeRoots(comments, covered) {
+    // insertRoot puts a new top level comment into the list by its id. The
+    // server sends top level comments oldest first and pages them by id, so id
+    // order is the list's order: a later page, or your own post on a report
+    // with pages still unread, lands in its place (review fix WR-B04).
+    function insertRoot(rec) {
+      var n = Number(rec.id);
+      var at = rootIds.length;
+      for (var i = 0; i < rootIds.length; i++) {
+        if (Number(rootIds[i]) > n) {
+          at = i;
+          break;
+        }
+      }
+      var next = at < rootIds.length && nodes[rootIds[at]] ? nodes[rootIds[at]].li : null;
+      rootIds.splice(at, 0, rec.id);
+      list.insertBefore(rec.li, next);
+    }
+
+    // mergeRoots writes one page into the list: known comments are updated,
+    // new ones inserted in id order, and comments that the answer should have
+    // held but did not (a held comment that failed its check, a deleted one)
+    // are dropped, only inside the range the answer covers: after the page's
+    // cursor (after, 0 for the first page) up to its last comment, or to the
+    // end when no page follows.
+    function mergeRoots(comments, covered, after) {
+      var from = typeof after === 'number' ? after : 0;
       var seen = {};
-      var prev = null;
-      var lastId = 0;
+      var lastId = from;
       for (var i = 0; i < comments.length; i++) {
         var data = comments[i];
         var id = String(data.id);
@@ -863,20 +886,15 @@ window.PinalertComments = (function () {
         if (!rec) {
           rec = makeRecord(data, false, id);
           nodes[id] = rec;
-          rootIds.push(id);
+          insertRoot(rec);
         }
         writeComment(rec, data);
         var replies = Array.isArray(data.replies) ? data.replies : [];
         placeReplies(rec, replies);
-        var at = prev === null ? list.firstChild : prev.li.nextSibling;
-        if (rec.li.parentNode !== list || at !== rec.li) {
-          list.insertBefore(rec.li, at);
-        }
-        prev = rec;
       }
       var limit = covered === 'all' ? Infinity : lastId;
       var stale = rootIds.filter(function (id) {
-        return !seen[id] && Number(id) <= limit;
+        return !seen[id] && Number(id) > from && Number(id) <= limit;
       });
       for (var j = 0; j < stale.length; j++) {
         removeRoot(stale[j]);
@@ -888,6 +906,9 @@ window.PinalertComments = (function () {
     function clearList() {
       nodes = {};
       rootIds = [];
+      // A cleared list starts again from the first page.
+      loadedMore = false;
+      lastPageAfter = 0;
       while (list.firstChild) {
         list.removeChild(list.firstChild);
       }
@@ -971,11 +992,25 @@ window.PinalertComments = (function () {
         total = body.comment_count;
       }
       applyOpenState(body.comments_open !== false);
-      mergeRoots(comments, body.more === true ? 'range' : 'all');
+      mergeRoots(comments, body.more === true ? 'range' : 'all', 0);
       if (!loadedMore) {
         more = body.more === true;
         nextAfter = typeof body.next_after === 'number' ? body.next_after : 0;
       }
+      syncParts();
+      writeOwnDisc();
+    }
+
+    // renderTail writes the last page read so far, from Show more or from the
+    // poll once Show more has been used (review fix WR-B04). That page is the
+    // list's end, so its answer says whether Show more is needed again.
+    function renderTail(body, after) {
+      if (typeof body.comment_count === 'number') {
+        total = body.comment_count;
+      }
+      mergeRoots(body.comments, body.more === true ? 'range' : 'all', after);
+      more = body.more === true;
+      nextAfter = typeof body.next_after === 'number' ? body.next_after : 0;
       syncParts();
       writeOwnDisc();
     }
@@ -1066,6 +1101,7 @@ window.PinalertComments = (function () {
         }
         root.hidden = false;
         render(res.body);
+        loadTail(mine);
       }).catch(function () {
         if (mine !== loadSeq) {
           return;
@@ -1073,6 +1109,32 @@ window.PinalertComments = (function () {
         inflight = null;
         if (mode !== 'rows') {
           showError(navigator.onLine === false ? OFFLINE_LINE : ERROR_LINE);
+        }
+      });
+    }
+
+    // loadTail is the second read of a poll once Show more has been used: the
+    // last page read so far, where every new top level comment lands (review
+    // fix WR-B04). It takes the poll's place in inflight, so stopLoad ends it,
+    // and a failed read leaves the nodes alone.
+    function loadTail(mine) {
+      if (!loadedMore || lastPageAfter <= 0 || mine !== loadSeq || !active) {
+        return;
+      }
+      var after = lastPageAfter;
+      inflight = request('GET', listPath(after));
+      inflight.promise.then(function (res) {
+        if (mine !== loadSeq) {
+          return;
+        }
+        inflight = null;
+        if (!res.ok || !res.body || !Array.isArray(res.body.comments) || after !== lastPageAfter) {
+          return;
+        }
+        renderTail(res.body, after);
+      }).catch(function () {
+        if (mine === loadSeq) {
+          inflight = null;
         }
       });
     }
@@ -1085,7 +1147,8 @@ window.PinalertComments = (function () {
       moreBusy = true;
       moreError.hidden = true;
       moreButton.setAttribute('aria-disabled', 'true');
-      var call = request('GET', listPath(nextAfter));
+      var after = nextAfter;
+      var call = request('GET', listPath(after));
       call.promise.then(function (res) {
         moreBusy = false;
         moreButton.removeAttribute('aria-disabled');
@@ -1093,26 +1156,8 @@ window.PinalertComments = (function () {
           throw new Error('more comments failed');
         }
         loadedMore = true;
-        var comments = res.body.comments;
-        for (var i = 0; i < comments.length; i++) {
-          var data = comments[i];
-          var id = String(data.id);
-          var rec = nodes[id];
-          if (!rec) {
-            rec = makeRecord(data, false, id);
-            nodes[id] = rec;
-            rootIds.push(id);
-            list.appendChild(rec.li);
-          }
-          writeComment(rec, data);
-          placeReplies(rec, Array.isArray(data.replies) ? data.replies : []);
-        }
-        more = res.body.more === true;
-        nextAfter = typeof res.body.next_after === 'number' ? res.body.next_after : 0;
-        if (typeof res.body.comment_count === 'number') {
-          total = res.body.comment_count;
-        }
-        syncParts();
+        lastPageAfter = after;
+        renderTail(res.body, after);
       }).catch(function () {
         moreBusy = false;
         moreButton.removeAttribute('aria-disabled');
@@ -1271,8 +1316,7 @@ window.PinalertComments = (function () {
         if (!nodes[id]) {
           var rec = makeRecord(data, false, id);
           nodes[id] = rec;
-          rootIds.push(id);
-          list.appendChild(rec.li);
+          insertRoot(rec);
           writeComment(rec, data);
         }
       }

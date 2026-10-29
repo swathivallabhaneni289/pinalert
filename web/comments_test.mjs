@@ -1219,3 +1219,71 @@ test('WR-B03: the sent reply clears its own target and the box', async () => {
   assert.equal(page.input.value, '');
   assert.equal(page.replying.hidden, true);
 });
+
+// ---- review fix WR-B04 (2026-10-29): after Show more the poll also reads the
+// last page, so new comments keep appearing on a report with more than 50, and
+// every top level comment sits in id order, your own post too. ----
+
+function roots(from, to) {
+  const out = [];
+  for (let id = from; id <= to; id += 1) { out.push(cm(id, { words: 'c' + id })); }
+  return out;
+}
+function shownIds(page) { return page.items().map((li) => wordsOf(li).textContent); }
+
+test('WR-B04: after Show more, a new comment on the last page appears at the next poll', async () => {
+  const env = load();
+  const page = await start(env, roots(1, 50), { more: true, next_after: 50, comment_count: 70 });
+  find(page.view.el, 'comments__more').fire('click');
+  assert.ok(lastFetch(env).address.endsWith('?after=50'));
+  lastFetch(env).reply(200, body(roots(51, 70), { more: false, next_after: 0 }));
+  await flush();
+  assert.equal(page.items().length, 70);
+  env.advance(30000);
+  lastFetch(env).reply(200, body(roots(1, 50), { more: true, next_after: 50, comment_count: 71 }));
+  await flush();
+  const tail = lastFetch(env);
+  assert.ok(tail.address.endsWith('?after=50'), 'the poll reads the last page too, it asked ' + tail.address);
+  tail.reply(200, body(roots(51, 71), { more: false, next_after: 0, comment_count: 71 }));
+  await flush();
+  const ids = shownIds(page);
+  assert.equal(ids.length, 71);
+  assert.equal(ids[70], 'c71', 'the new comment is last');
+  assert.equal(ids[0], 'c1', 'the first page stays first');
+});
+
+test('WR-B04: a last page that grew past 50 brings Show more back', async () => {
+  const env = load();
+  const page = await start(env, roots(1, 50), { more: true, next_after: 50 });
+  const more = find(page.view.el, 'comments__more');
+  more.fire('click');
+  lastFetch(env).reply(200, body(roots(51, 60), { more: false, next_after: 0 }));
+  await flush();
+  assert.equal(more.hidden, true);
+  env.advance(30000);
+  lastFetch(env).reply(200, body(roots(1, 50), { more: true, next_after: 50 }));
+  await flush();
+  lastFetch(env).reply(200, body(roots(51, 100), { more: true, next_after: 100 }));
+  await flush();
+  assert.equal(more.hidden, false, 'Show more is back for the comments past the last page');
+  more.fire('click');
+  assert.ok(lastFetch(env).address.endsWith('?after=100'));
+});
+
+test('WR-B04: your own post on a long report lands after the older pages', async () => {
+  const env = load();
+  const page = await start(env, roots(1, 50), { more: true, next_after: 50, comment_count: 70 });
+  type(page, 'Shelter is full');
+  page.post.fire('click');
+  lastFetch(env).reply(201, cm(100, { is_own: true, can_delete: true, author: 'me.k', words: 'c100' }));
+  await flush();
+  lastFetch(env).reply(200, body(roots(1, 50), { more: true, next_after: 50, comment_count: 71 }));
+  await flush();
+  find(page.view.el, 'comments__more').fire('click');
+  lastFetch(env).reply(200, body(roots(51, 70).concat([cm(100, { is_own: true, author: 'me.k', words: 'c100' })]), { more: false, next_after: 0 }));
+  await flush();
+  const ids = shownIds(page);
+  assert.equal(ids.length, 71);
+  assert.equal(ids[50], 'c51', 'page 2 follows page 1');
+  assert.equal(ids[70], 'c100', 'your own post is last, in order');
+});
