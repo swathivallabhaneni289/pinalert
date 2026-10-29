@@ -1185,6 +1185,11 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.Handle("/api/moderation/comments", handlers.ModerationComments(commentModeration))
 		r.Handle("/api/moderation/comments/{id}/keep", handlers.ModerationCommentKeep(commentModeration))
 		r.Handle("/api/moderation/comments/{id}/remove", handlers.ModerationCommentRemove(commentModeration))
+		// Phase 9 plan 15 (D-14): the tapped ratings tool. The rights check is this
+		// group's requireModerator; the service methods check none.
+		r.Handle("/api/moderation/people/{username}/ratings", handlers.ModerationRatingsList(deps.Ratings))
+		r.Handle("/api/moderation/people/{username}/ratings/remove", handlers.ModerationRatingRemove(deps.Ratings))
+		r.Handle("/api/moderation/raters/{username}/remove-ratings", handlers.ModerationRaterRemoveAll(deps.Ratings))
 	})
 
 	return r
