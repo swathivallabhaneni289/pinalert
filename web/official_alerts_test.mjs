@@ -1302,3 +1302,167 @@ test('IN-S05-browser: under the unavailable notice nothing is drawn unless the G
   }));
   assert.equal(shown(page, 'official-section'), false, 'a SACHET row is never drawn from an unavailable feed');
 });
+
+// ---- An idle Demo visit never leaves the page by itself (Phase 5 review fix NP-1) ----
+// Added 2026-10-29. The Demo's sample answer never ages (it is always fresh
+// with age 0, and the world behind it ends after 30 idle minutes), so a Demo
+// page never asks again on its own: not at the fresh limit, not when a shown
+// row ends, not when the tab is shown again. Only the reader's own load (the
+// first one and Try again) may hand an ended visit over to PinalertDemoEnded,
+// which starts a new visit, so no visit is spent without a press.
+
+const demoShell = () => ({ account: null, demo: true, dataApiBase: '/demo/api/v/abc_DEF-123', fixedLat: '16.5', fixedLon: '80.6' });
+const demoAnswer = () => withRows({ age_seconds: 0, last_success_at: '2026-10-29T10:34:00Z',
+  groups: [group('reader', 'Where you are', [row({ demo: true, expires_at: '2026-10-29T10:50:00Z' })])] });
+const visitEnded = { error: { field: 'visit', message: 'This Demo has ended. Reload the page to start again.' } };
+
+test('NP-1: an idle Demo Official alerts page makes no request and never restarts on its own', async () => {
+  const page = await open(demoShell(), demoAnswer());
+  let ended = 0;
+  page.sandbox.PinalertDemoEnded = () => { ended += 1; };
+  for (let i = 0; i < 31; i++) { page.advance(60000); }
+  await flush();
+  assert.equal(page.requests.length, 1, 'no ask at the fresh limit or when the sample row ends');
+  showTab(page, 'hidden');
+  for (let i = 0; i < 90; i++) { page.advance(60000); }
+  showTab(page);
+  (page.sandbox.windowListeners.pageshow || []).forEach((h) => h({ type: 'pageshow', persisted: true }));
+  await flush();
+  assert.equal(page.requests.length, 1, 'no ask when the tab is shown again or the page is restored');
+  assert.equal(ended, 0, 'nothing restarted the Demo');
+  assert.ok(hasInForce(page), 'the sample answer stays drawn');
+});
+
+test('NP-1: on the Demo, Try again on an ended visit starts the Demo again, once', async () => {
+  const page = loadPage(demoShell());
+  let ended = 0;
+  page.sandbox.PinalertDemoEnded = () => { ended += 1; };
+  await flush();
+  answer(page.requests[0], 500);
+  await flush();
+  assert.ok(shown(page, 'official-error'));
+  assert.equal(ended, 0);
+  fire(el(page, 'official-retry'), 'click');
+  await flush();
+  answer(page.requests[1], 404, visitEnded);
+  await flush();
+  assert.equal(ended, 1, 'the press hands the ended visit over');
+});
+
+test('NP-1: an automatic ask that meets an ended visit never restarts anything', async () => {
+  // A page that asks on its own (not the Demo) and still has the hand over set.
+  const page = await open({}, view(staleAt()));
+  let ended = 0;
+  page.sandbox.PinalertDemoEnded = () => { ended += 1; };
+  page.advance(5 * 60000);
+  await flush();
+  assert.equal(page.requests.length, 2);
+  answer(page.requests[1], 404, visitEnded);
+  await flush();
+  assert.equal(ended, 0, 'only a load the reader started hands over');
+  assert.ok(shown(page, 'official-error'), 'the load error with Try again shows instead');
+});
+
+// ---- An automatic ask keeps focus and open rows (Phase 5 review fix NP-4) ----
+// Added 2026-10-29. The asks of CR-B01 rebuild the list. A reader who has a row
+// focused and open keeps it: after the new answer is drawn, the row with the
+// same id is open again and holds focus. The fake document leaves activeElement
+// on the old, removed button, so each case checks that focus is on a button
+// that is in the list now, not on one that was thrown away.
+
+const panelOf = (page, button) => page.doc.byId[button.getAttribute('aria-controls')];
+const focusAndOpen = (page, button) => { button.focus(); fire(button, 'click'); };
+const assertKept = (page, label, headline) => {
+  const active = page.doc.activeElement;
+  assert.ok(rowsOf(page).includes(active), label + ': focus is on a row of the list as drawn now');
+  assert.ok(textOf(active).includes(headline), label + ': it is the same row');
+  assert.equal(active.getAttribute('aria-expanded'), 'true', label + ': the row is still open');
+  assert.equal(panelOf(page, active).hidden, false, label + ': its details show');
+};
+
+test('NP-4: the five minute ask of a stale answer keeps the focused, open row', async () => {
+  const page = await open({}, withRows(staleAt()));
+  focusAndOpen(page, rowsOf(page)[1]);
+  page.advance(5 * 60000);
+  await flush();
+  assert.equal(page.requests.length, 2);
+  answer(page.requests[1], 200, withRows({ ...staleAt(), age_seconds: 7500 }));
+  await flush();
+  assertKept(page, 'stale', 'Heavy rain');
+});
+
+test('NP-4: the ask at the fresh limit keeps the focused, open row', async () => {
+  const page = await open({}, withRows());
+  focusAndOpen(page, rowsOf(page)[0]);
+  for (let i = 0; i < 26; i++) { page.advance(60000); }
+  await flush();
+  assert.equal(page.requests.length, 2);
+  assert.equal(hasInForce(page), false, 'the claim still goes while the new answer is out');
+  answer(page.requests[1], 200, withRows({ age_seconds: 30 }));
+  await flush();
+  assertKept(page, 'fresh limit', 'Cyclone warning for the coast');
+});
+
+test('NP-4: the ask when the tab is shown again keeps the focused, open row', async () => {
+  const page = await open({}, withRows());
+  focusAndOpen(page, rowsOf(page)[1]);
+  page.advance(70000);
+  showTab(page, 'hidden');
+  showTab(page);
+  await flush();
+  assert.equal(page.requests.length, 2);
+  answer(page.requests[1], 200, withRows());
+  await flush();
+  assertKept(page, 'tab shown', 'Heavy rain');
+});
+
+test('NP-4: the ask of a restored page keeps the focused, open row', async () => {
+  const page = await open({}, withRows());
+  focusAndOpen(page, rowsOf(page)[0]);
+  page.advance(70000);
+  (page.sandbox.windowListeners.pageshow || []).forEach((h) => h({ type: 'pageshow', persisted: true }));
+  await flush();
+  assert.equal(page.requests.length, 2);
+  answer(page.requests[1], 200, withRows());
+  await flush();
+  assertKept(page, 'restored', 'Cyclone warning for the coast');
+});
+
+test('NP-4: every open row is open again, and focus stays where it was', async () => {
+  const page = await open({}, withRows(staleAt()));
+  const [first, second] = rowsOf(page);
+  fire(first, 'click');
+  focusAndOpen(page, second);
+  page.advance(5 * 60000);
+  await flush();
+  answer(page.requests[1], 200, withRows({ ...staleAt(), age_seconds: 7500 }));
+  await flush();
+  const now = rowsOf(page);
+  assert.equal(now[0].getAttribute('aria-expanded'), 'true', 'the first open row is open again');
+  assert.equal(panelOf(page, now[0]).hidden, false);
+  assertKept(page, 'two open', 'Heavy rain');
+});
+
+test('NP-4: a focused row that left the answer puts focus on the section title, never the body', async () => {
+  const page = await open({}, withRows(staleAt()));
+  focusAndOpen(page, rowsOf(page)[1]);
+  page.advance(5 * 60000);
+  await flush();
+  answer(page.requests[1], 200, withRows({ ...staleAt(), age_seconds: 7500, groups: [group('reader', 'Where you are', [row()])] }));
+  await flush();
+  assert.ok(page.doc.activeElement === el(page, 'official-title'), 'focus is on the section title');
+  assert.equal(el(page, 'official-title').getAttribute('tabindex'), '-1');
+});
+
+test('NP-4: focus the reader moved elsewhere is never pulled back to a row', async () => {
+  const page = await open({}, withRows(staleAt()));
+  focusAndOpen(page, rowsOf(page)[1]);
+  const elsewhere = el(page, 'official-status');
+  page.advance(5 * 60000);
+  await flush();
+  elsewhere.focus();
+  answer(page.requests[1], 200, withRows({ ...staleAt(), age_seconds: 7500 }));
+  await flush();
+  assert.ok(page.doc.activeElement === elsewhere, 'focus stays where the reader put it');
+  assert.equal(rowsOf(page)[1].getAttribute('aria-expanded'), 'true', 'the open row is still open again');
+});

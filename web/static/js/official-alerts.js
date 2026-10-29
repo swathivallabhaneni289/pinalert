@@ -31,7 +31,8 @@
 // Phase 5 review fix CR-B01, one more when the answer reaches the 30 minute
 // fresh limit, every five minutes while it is stale or unavailable, when a shown
 // row ends, and when the tab is shown again more than a minute after the last
-// request. Between those, the minutes of the status line move once a minute
+// request; a Demo page makes none of these automatic asks (Phase 5 review fix
+// NP-1). Between those, the minutes of the status line move once a minute
 // from the server's age plus the time that passed here, with no live region.
 //
 // The renderer is source agnostic: it reads its API base and its position from
@@ -112,6 +113,7 @@
   var requestSeq = 0; // moves on with each request and when one is given up
   var controller = null; // aborts the request that is out, when the browser can
   var detailCount = 0;
+  var rowButtons = []; // the row buttons as drawn now, in list order (NP-4)
 
   // ---- Times --------------------------------------------------------------
 
@@ -317,6 +319,13 @@
     return pageAttr('data-demo') === '1' ? null : DEFAULT_BASE;
   }
 
+  // demoPage is true on the Demo's Official alerts (Phase 5 review fix NP-1).
+  // Its sample answer never ages (always fresh, age 0), and the world behind it
+  // ends after 30 idle minutes, so the page never asks again on its own: an
+  // automatic ask could only meet an ended visit. It asks on the reader's load
+  // and on Try again only.
+  var demoPage = window.PinalertDemoPage === true || pageAttr('data-demo') === '1';
+
   // ---- Showing and hiding -------------------------------------------------
 
   function setHidden(node, hidden) {
@@ -346,7 +355,7 @@
   function renderError() {
     current = null;
     hideBlocks();
-    listEl.textContent = '';
+    clearList();
     statusEl.textContent = 'Not checked';
     clearHazardLine();
     retryEl.disabled = false;
@@ -512,7 +521,7 @@
 
   // renderRow builds one item: a button of spans (the row on the laptop, the card
   // on the phone) and, after it, the details panel.
-  function renderRow(row) {
+  function renderRow(row, kind) {
     detailCount += 1;
     var panelId = 'official-details-' + detailCount;
     var item = make('div', 'official-item');
@@ -520,6 +529,10 @@
     button.setAttribute('type', 'button');
     button.setAttribute('aria-expanded', 'false');
     button.setAttribute('aria-controls', panelId);
+    // A key that outlives a rebuild (the panel ids do not), so an automatic ask
+    // can open the same rows again and put focus back (Phase 5 review fix NP-4).
+    button.setAttribute('data-row-key', String(kind || '') + ':' + String(row.source || '') + ':' + String(row.id));
+    rowButtons.push(button);
 
     var level = make('span', 'official-row__level');
     var chip = make('span', 'official-chip ' + levelClass(row.level));
@@ -611,6 +624,82 @@
     }
   }
 
+  // clearList empties the list and forgets its row buttons.
+  function clearList() {
+    listEl.textContent = '';
+    rowButtons = [];
+  }
+
+  // ---- Keeping the reader's place over an automatic ask (NP-4) ------------
+  //
+  // An automatic ask (CR-B01) draws the new answer over the old one, which
+  // throws the row buttons away. takePlace notes the row that holds focus and
+  // every open row, by key; keepPlace, after the new answer is drawn, opens
+  // those rows again and puts focus back on the same row. When that row has
+  // left the answer, focus goes to the title of the block now shown, never to
+  // the page body. Focus the reader has moved somewhere else is left there.
+
+  function takePlace() {
+    var place = { focused: null, open: {}, old: rowButtons.slice() };
+    var active = document.activeElement;
+    for (var k = 0; k < rowButtons.length; k += 1) {
+      var key = rowButtons[k].getAttribute('data-row-key');
+      if (rowButtons[k] === active) {
+        place.focused = key;
+      }
+      if (rowButtons[k].getAttribute('aria-expanded') === 'true') {
+        place.open[key] = true;
+      }
+    }
+    return place;
+  }
+
+  // focusLost says whether focus has left the reader's row by the page's own
+  // doing: it is on nothing, on the body, or on a row button just thrown away.
+  function focusLost(place) {
+    var active = document.activeElement;
+    return !active || active === document.body || place.old.indexOf(active) !== -1;
+  }
+
+  function shownTitle() {
+    var titles = [[sectionEl, titleEl], [emptyEl, emptyTitleEl], [unavailableEl, unavailableTitleEl],
+      [noareaEl, noareaTitleEl], [errorEl, errorTitleEl]];
+    for (var k = 0; k < titles.length; k += 1) {
+      if (!titles[k][0].hidden) {
+        return titles[k][1];
+      }
+    }
+    return null;
+  }
+
+  function keepPlace(place) {
+    if (!place) {
+      return;
+    }
+    var target = null;
+    for (var k = 0; k < rowButtons.length; k += 1) {
+      var key = rowButtons[k].getAttribute('data-row-key');
+      if (place.open[key] === true && rowButtons[k].getAttribute('aria-expanded') !== 'true') {
+        toggleDetails(rowButtons[k]);
+      }
+      if (place.focused !== null && key === place.focused) {
+        target = rowButtons[k];
+      }
+    }
+    if (place.focused === null || !focusLost(place)) {
+      return;
+    }
+    if (!target) {
+      target = shownTitle();
+      if (target && !target.hasAttribute('tabindex')) {
+        target.setAttribute('tabindex', '-1');
+      }
+    }
+    if (target && typeof target.focus === 'function') {
+      target.focus({ preventScroll: true });
+    }
+  }
+
   // countRows counts the rows in force: a GDACS row marked ended is listed but
   // never counted (WR-S04). countListed counts every row drawn.
   function countRows(view) {
@@ -664,7 +753,7 @@
   // renderGroups draws the column head row (laptop) and the groups in the order
   // the server sent them. A group with no rows is not drawn.
   function renderGroups(view) {
-    listEl.textContent = '';
+    clearList();
     if (countListed(view) === 0) {
       return;
     }
@@ -683,7 +772,7 @@
       var box = make('div', 'official-group');
       box.appendChild(make('h3', 'official-group__label', String(source.label || '')));
       for (var r = 0; r < source.rows.length; r += 1) {
-        box.appendChild(renderRow(source.rows[r]));
+        box.appendChild(renderRow(source.rows[r], source.kind));
       }
       listEl.appendChild(box);
     }
@@ -715,7 +804,7 @@
     renderedAt = Date.now();
     serverNowAtRender = serverNow(view);
     hideBlocks();
-    listEl.textContent = '';
+    clearList();
     renderStatus(view, 0);
 
     if (view.state === 'unavailable') {
@@ -770,15 +859,28 @@
   }
 
   // load makes the one request and draws the answer. A press while a request is
-  // out does nothing.
-  function load() {
+  // out does nothing. byReader is true for the loads the reader started (the
+  // first one and Try again): only those may hand an ended Demo visit over to
+  // PinalertDemoEnded, which starts a new visit (Phase 5 review fix NP-1). An
+  // automatic ask that meets an ended visit shows the load error, whose Try
+  // again is the press that starts the Demo again.
+  function load(byReader) {
     if (requestOut) {
       return;
     }
     requestOut = true;
     lastLoadAt = Date.now();
     retryEl.disabled = true;
-    showLoading();
+    // An automatic ask keeps the reader's place (Phase 5 review fix NP-4). Over
+    // a stale or unavailable answer, which claims nothing that can go out of
+    // date, it leaves the drawing up while it asks and notes the place when the
+    // answer comes. Over a fresh answer it notes the place and blanks first, so
+    // the claim never waits for the new answer (CR-B01).
+    var quiet = byReader !== true && !!current && current.state !== 'fresh';
+    var place = byReader !== true && !quiet ? takePlace() : null;
+    if (!quiet) {
+      showLoading();
+    }
     var point = areaSource();
     var base = apiBase();
     var target = base + '/official/alerts';
@@ -804,7 +906,7 @@
         // set by demo.js on Demo pages only, so a real page never reads it.
         if (res.status === 404 && typeof window.PinalertDemoEnded === 'function' && typeof res.json === 'function') {
           return res.json().then(function (body) {
-            if (mine === requestSeq && body && body.error && body.error.field === 'visit') {
+            if (mine === requestSeq && byReader === true && body && body.error && body.error.field === 'visit') {
               window.PinalertDemoEnded();
             }
           }, function () {}).then(function () {
@@ -821,14 +923,22 @@
       requestOut = false;
       controller = null;
       retryEl.disabled = false;
+      if (quiet) {
+        place = takePlace();
+      }
       render(body);
+      keepPlace(place);
     }, function () {
       if (mine !== requestSeq) {
         return;
       }
       requestOut = false;
       controller = null;
+      if (quiet) {
+        place = takePlace();
+      }
       renderError();
+      keepPlace(place);
     });
   }
 
@@ -860,7 +970,9 @@
   // tick asks again when a fresh answer reaches that limit, or when a row it
   // shows has passed its Until time since it was drawn; a stale or unavailable
   // answer is asked about again every few minutes, so it can recover or move on.
-  // load() hides every block first, so no claim waits for the new answer.
+  // load() hides every block first over a fresh answer, so no claim waits for
+  // the new answer; over a stale or unavailable one it keeps the drawing up
+  // (NP-4), and either way the reader's open rows and focus are kept.
   // Showing the tab again, or a page restored from the back and forward cache,
   // asks again when the last request is more than a minute old.
 
@@ -897,20 +1009,22 @@
       return;
     }
     var elapsed = Date.now() - renderedAt;
-    if (answerTooOld(current, elapsed)) {
-      load();
+    if (!demoPage && answerTooOld(current, elapsed)) {
+      load(false);
       return;
     }
     renderStatus(current, elapsed);
   }
 
   function askIfOld() {
-    if (Date.now() - lastLoadAt >= SHOWN_AGAIN_MS) {
-      load();
+    if (!demoPage && Date.now() - lastLoadAt >= SHOWN_AGAIN_MS) {
+      load(false);
     }
   }
 
-  retryEl.addEventListener('click', load);
+  retryEl.addEventListener('click', function () {
+    load(true);
+  });
   setInterval(tick, STATUS_TICK_MS);
   if (typeof document.addEventListener === 'function') {
     document.addEventListener('visibilitychange', function () {
@@ -935,5 +1049,5 @@
     untilText: untilText
   };
 
-  load();
+  load(true);
 }());

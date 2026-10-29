@@ -95,6 +95,7 @@ function loadLayer(options = {}) {
   const overlays = [];
   const cards = [];
   const closes = [];
+  const openerOnMapAtClose = [];
   let now = NOW;
   let nextTimer = 1;
   const doc = {
@@ -157,9 +158,15 @@ function loadLayer(options = {}) {
     openCard(latlng, node, name, opts) { cards.push({ latlng, node, name, opts }); return true; },
     // Amended 2026-10-29 by the Phase 5 review fix (WR-B02): the map closes the
     // open card on request and runs its onClose once, as map.js does.
+    // Amended 2026-10-29 by the Phase 5 review fix (NP-2): it also records
+    // whether the pin that opened the card is still on the map when the card
+    // closes. map.js moves focus to the opener when it is still there, and to
+    // the map when it is gone, so the pin must be removed first.
     closeCard() {
       closes.push(1);
       const last = cards[cards.length - 1];
+      const opener = last && last.opts ? last.opts.opener : null;
+      openerOnMapAtClose.push(groups.some((g) => g.markers.some((m) => m.el === opener)));
       if (last && !last.closed) {
         last.closed = true;
         if (last.opts && typeof last.opts.onClose === 'function') { last.opts.onClose(); }
@@ -194,7 +201,7 @@ function loadLayer(options = {}) {
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox, { filename: 'official-pins.js' });
   const emit = (type, detail) => (listeners[type] || []).forEach((fn) => fn({ type, detail }));
-  return { doc, api: sandbox.PinalertOfficialPins, requests, overlays, cards, closes, groups, advance, emit, intervals, sandbox };
+  return { doc, api: sandbox.PinalertOfficialPins, requests, overlays, cards, closes, openerOnMapAtClose, groups, advance, emit, intervals, sandbox };
 }
 
 const flush = async () => { for (let i = 0; i < 8; i++) { await new Promise((r) => setImmediate(r)); } };
@@ -650,6 +657,40 @@ test('WR-B02: clearing with no card open asks the map for nothing', async () => 
   const layer = await open(fresh([pin()]));
   layer.api.drawPins({ state: 'unavailable' });
   assert.equal(layer.closes.length, 0);
+});
+
+// ---- Focus lands on the map, never the page body (Phase 5 review fix NP-2) ----
+// Added 2026-10-29. When a refresh removes the pin of the open card, the pin is
+// taken off the map before the card is closed, so map.js finds the opener gone
+// and puts focus on the map container rather than on a node about to leave.
+
+test('NP-2: a stale answer removes the pins before it closes the open card', async () => {
+  const layer = await open(fresh([pin()]));
+  openFirst(layer);
+  layer.api.drawPins({ state: 'stale', pins: [] });
+  assert.deepEqual(layer.openerOnMapAtClose, [false], 'the opener was already off the map when the card closed');
+});
+
+test('NP-2: a failed refresh removes the pins before it closes the open card', async () => {
+  const layer = await open(fresh([pin()]));
+  openFirst(layer);
+  layer.advance(300000);
+  await flush();
+  answer(layer.requests[1], 500);
+  await flush();
+  assert.deepEqual(layer.openerOnMapAtClose, [false]);
+});
+
+test('NP-2: a redraw that replaces or drops the open pin removes it before closing the card', async () => {
+  const layer = await open(fresh([pin(), pin({ id: 8, name: 'Flood in Assam', lat: 26.1, lon: 91.7 })]));
+  openFirst(layer);
+  layer.api.drawPins(fresh([pin({ alert_level: 'orange', level_word: 'Orange' }),
+    pin({ id: 8, name: 'Flood in Assam', lat: 26.1, lon: 91.7 })]));
+  assert.deepEqual(layer.openerOnMapAtClose, [false], 'replaced: the old marker is gone first');
+  const seven = markersOf(layer).find((m) => m.latlng[0] === 16.5);
+  fire(seven.el, 'keydown', { key: 'Enter' });
+  layer.api.drawPins(fresh([pin({ id: 8, name: 'Flood in Assam', lat: 26.1, lon: 91.7 })]));
+  assert.deepEqual(layer.openerOnMapAtClose, [false, false], 'dropped: the marker is gone first');
 });
 
 // ---- Each card names itself (Phase 5 review fix WR-B04) ----

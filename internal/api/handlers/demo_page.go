@@ -124,7 +124,10 @@ func demoVisitFor(store *demo.Store, r *http.Request) (*demo.World, error) {
 	}
 	// Only a new world spends the per address visit limit (WR-S06 of the Phase 5
 	// review): moving between the places of a living visit is never refused.
-	if charge, ok := r.Context().Value(demoVisitChargeKey{}).(func() bool); ok && !charge() {
+	// The limit fails closed (NP-3 of the review fix round): a request whose
+	// context carries no charge, because its page was served without
+	// demoVisitLimiter in front of it, is refused, never given a free world.
+	if charge, ok := r.Context().Value(demoVisitChargeKey{}).(func() bool); !ok || !charge() {
 		return nil, errDemoTooManyVisits
 	}
 	return store.Create()

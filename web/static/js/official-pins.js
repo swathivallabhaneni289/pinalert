@@ -410,11 +410,15 @@
     }
   }
 
+  // clearAll and drawPins take a pin off the map before they close its card
+  // (Phase 5 review fix NP-2): map.js then finds the opener gone and puts focus
+  // on the map, never on a pin about to leave the page, which would drop focus
+  // to the page body.
   function clearAll() {
-    closeOpenCard();
     if (layer) {
       layer.clearLayers();
     }
+    closeOpenCard();
     entries = {};
   }
 
@@ -447,10 +451,10 @@
         continue;
       }
       if (existing) {
+        group.removeLayer(existing.marker);
         if (openId === pin.id) {
           closeOpenCard();
         }
-        group.removeLayer(existing.marker);
       }
       entries[pin.id] = addPin(group, pin, key);
       count += 1;
@@ -458,10 +462,10 @@
     var ids = Object.keys(entries);
     for (var j = 0; j < ids.length; j += 1) {
       if (seen[ids[j]] !== true) {
+        group.removeLayer(entries[ids[j]].marker);
         if (openId !== null && String(openId) === ids[j]) {
           closeOpenCard();
         }
-        group.removeLayer(entries[ids[j]].marker);
         delete entries[ids[j]];
       }
     }
