@@ -199,7 +199,9 @@ var DefaultCredentialLimits = CredentialLimits{
 }
 
 // codeRowRetention is how long an expired code row is kept before the prune
-// deletes it.
+// deletes it. The prune runs when a code is sent (issueAndSend), so a row can
+// stay longer than this on a site where nobody sends a code (review fix round
+// 4, skeptic SK3-01).
 const codeRowRetention = 24 * time.Hour
 
 // CredentialService is the server side of Create account, the typed code,
