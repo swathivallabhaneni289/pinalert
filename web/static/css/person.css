@@ -394,6 +394,7 @@ main.person-page {
   gap: var(--space-sm) var(--space-12);
   align-items: center;
   box-sizing: border-box;
+  min-height: var(--touch-target-min);
   padding: var(--space-md);
   border-radius: 12px;
   color: var(--color-text);
@@ -622,6 +623,7 @@ a.person-report__body:hover {
 
 .people-row__action {
   flex: none;
+  min-height: var(--touch-target-min);
 }
 
 .people-list__others:not([hidden]) {

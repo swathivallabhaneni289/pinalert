@@ -372,6 +372,12 @@ var touchControls = []string{
 	// More, Edit in Settings and Unblock buttons are .btn, listed above. No
 	// other entry changed.
 	".person-count", ".person-menu__item",
+	// Phase 9 plan 11 (UI-SPEC 4a, 5a and Interaction and Accessibility): the
+	// row link of a Followers or Following list, the Unblock button of a
+	// Blocked people row, and the live report row of Recent reports, each 44px
+	// or more through --touch-target-min or a 56px row in person.css. Show more
+	// and Remove all followers are .btn, listed above. No other entry changed.
+	".people-row__link", ".people-row__action", ".person-report__body",
 }
 
 // touchValue reads a height or min-height value as pixels: a px length, a
@@ -517,6 +523,9 @@ var phaseScripts = []string{
 	// Phase 9 plan 08: the profile page script joins the scripts held to the
 	// plain punctuation rule. No other entry changed.
 	"person.js",
+	// Phase 9 plan 11: the list window script and the distance script join the
+	// scripts held to the plain punctuation rule. No other entry changed.
+	"people-list.js", "person-reports.js",
 }
 
 // TestNewScriptsUsePlainPunctuation holds the phase's new scripts to the house
