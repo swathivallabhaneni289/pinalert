@@ -20,6 +20,7 @@ package handlers
 // cmd/server/main.go and in its mirror api.AuthLimitsDefault.
 
 import (
+	"context"
 	"net/http"
 	"net/netip"
 	"strings"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/go-chi/chi/v5/middleware"
 
+	"pinalert/internal/mailer"
 	"pinalert/internal/ratelimit"
 	"pinalert/internal/session"
 )
@@ -228,6 +230,30 @@ func (g *AuthGate) reserveDeviceNetworkShared(r *http.Request, deviceBucket, ipB
 		return both(device, network, shared)
 	}
 	return both(device, network)
+}
+
+// MailSender is the sender key of a code sending request for the mail
+// ceiling's share of the reset reserve (review CR-S03): the client network
+// (IPv4 address or IPv6 /64) when CLIENT_IP_HEADER is set, the one shared
+// cookieless key for a request without a valid session cookie, and "" (no
+// share) otherwise. It never depends on the typed address, so the share treats
+// a known and an unknown address alike.
+func (g *AuthGate) MailSender(r *http.Request) string {
+	if g != nil && g.backstopOn {
+		if key := ipBucketKey(middleware.GetClientIP(r.Context())); key != "" {
+			return "net:" + key
+		}
+	}
+	if arrivedWithoutValidCookie(r) {
+		return cookielessKey
+	}
+	return ""
+}
+
+// withMailSender is the request context with the sender key for the mail
+// ceiling.
+func withMailSender(r *http.Request, gate *AuthGate) context.Context {
+	return mailer.WithSender(r.Context(), gate.MailSender(r))
 }
 
 // ReserveCodeTry takes one typed code try token for the browser. There is no

@@ -188,16 +188,39 @@ const (
 	usernameSaveEvery     = 10 * time.Second
 )
 
-// The daily email ceiling. The Resend free plan allows 100 emails a day, so the
-// program stops at 90 for headroom, counting the link emails and all four code
-// emails together. Of those, 20 are kept for the two Forgot password emails, so
-// a flood of sign ups can never stop a real person resetting a password. The
-// count is in memory: a restart resets it, and the provider enforces the true
-// limit.
+// The email send ceiling (review CR-S03). The Resend free plan allows 100
+// emails a day, so the program stops at 90 for headroom, counting all four code
+// emails together. Of those, 20 are kept for the two Forgot password emails
+// (the reset code and the "no account" note, one class so a refusal never says
+// whether an account exists). Sends are also paced: at most 15 in any 10
+// minutes, 5 of them kept for the Forgot password emails, so a burst cannot
+// spend the day and a refused person gets in a few minutes later. One sender
+// (a client network with CLIENT_IP_HEADER, or every request without a valid
+// cookie together) may take at most 3 of the kept slots a day, so one network
+// flooding Forgot password for made up addresses cannot spend the reserve. The
+// counts are in memory: a restart resets them, and the provider enforces the
+// true limit. mailer.DefaultCeilingLimits mirrors these values, and a test in
+// this package pins the two together.
 const (
-	authDailyEmailCeiling = 90
-	authResetEmailReserve = 20
+	authDailyEmailCeiling     = 90
+	authResetEmailReserve     = 20
+	authEmailWindow           = 10 * time.Minute
+	authEmailsPerWindow       = 15
+	authWindowResetReserve    = 5
+	authSenderResetShareByDay = 3
 )
+
+// ceilingLimits is the ceiling block above as the mailer's type.
+func ceilingLimits() mailer.CeilingLimits {
+	return mailer.CeilingLimits{
+		PerDay:             authDailyEmailCeiling,
+		ResetReserve:       authResetEmailReserve,
+		Window:             authEmailWindow,
+		PerWindow:          authEmailsPerWindow,
+		WindowResetReserve: authWindowResetReserve,
+		SenderReserveShare: authSenderResetShareByDay,
+	}
+}
 
 // authLimits is the auth bucket block above as the Deps field.
 func authLimits() api.AuthLimits {
@@ -266,9 +289,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("loading mailer: %v", err)
 	}
-	// The daily ceiling wraps the mailer once, so the link emails and the code
-	// emails count together and 20 sends a day stay for Forgot password.
-	mail = mailer.NewDailyCeiling(mail, authDailyEmailCeiling, authResetEmailReserve, time.Now)
+	// The send ceiling wraps the mailer once, so every code email counts
+	// together, sends are paced and part of each budget stays for Forgot
+	// password.
+	mail = mailer.NewSendCeiling(mail, ceilingLimits(), time.Now)
 
 	// LoadScreener selects the OpenAI moderation client when OPENAI_API_KEY is
 	// set, a pass everything screener with a WARNING in development, and fails

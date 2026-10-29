@@ -19,6 +19,10 @@ package handlers
 // slow mail provider is answered and not dropped. The other three handlers
 // answer in well under the limit and leave the deadline alone. Plans 08, 09,
 // 10, 10b, 14 and 14b follow the same choice for any handler that sends mail.
+//
+// The same three handlers put the request's sender key (AuthGate.MailSender)
+// in the context they pass to the service, for the mail ceiling's per sender
+// share of the reset reserve (review CR-S03).
 
 import (
 	"encoding/json"
@@ -262,7 +266,7 @@ func SignUp(creds *service.CredentialService, gate *AuthGate) http.HandlerFunc {
 			return
 		}
 		extendWriteDeadline(w)
-		if err := creds.SignUp(r.Context(), sessionID, req.Email, req.Password); err != nil {
+		if err := creds.SignUp(withMailSender(r, gate), sessionID, req.Email, req.Password); err != nil {
 			if isValidation(err) {
 				send.Cancel()
 			}
@@ -352,7 +356,7 @@ func ResendCode(creds *service.CredentialService, gate *AuthGate) http.HandlerFu
 			return
 		}
 		extendWriteDeadline(w)
-		if err := creds.ResendCode(r.Context(), sessionID); err != nil {
+		if err := creds.ResendCode(withMailSender(r, gate), sessionID); err != nil {
 			if isValidation(err) {
 				send.Cancel()
 			}
@@ -445,7 +449,7 @@ func RequestReset(creds *service.CredentialService, gate *AuthGate) http.Handler
 			return
 		}
 		extendWriteDeadline(w)
-		if err := creds.RequestReset(r.Context(), sessionID, req.Email); err != nil {
+		if err := creds.RequestReset(withMailSender(r, gate), sessionID, req.Email); err != nil {
 			if isValidation(err) {
 				send.Cancel()
 			}
