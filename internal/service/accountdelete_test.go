@@ -137,6 +137,18 @@ func (f *fakeDeleteQuerier) DeleteAccountPushSubscriptions(ctx context.Context, 
 	return 0, f.step("DeleteAccountPushSubscriptions")
 }
 
+// Amended 2026-10-29 by Phase 9 plan 02 (research G6): the fake gained the two
+// social graph deletes.
+func (f *fakeDeleteQuerier) DeleteAccountFollows(ctx context.Context, accountID int64) (int64, error) {
+	f.accountIDs["DeleteAccountFollows"] = accountID
+	return 0, f.step("DeleteAccountFollows")
+}
+
+func (f *fakeDeleteQuerier) DeleteAccountBlocks(ctx context.Context, accountID int64) (int64, error) {
+	f.accountIDs["DeleteAccountBlocks"] = accountID
+	return 0, f.step("DeleteAccountBlocks")
+}
+
 func (f *fakeDeleteQuerier) RevokeAccountSessions(ctx context.Context, arg sqlcgen.RevokeAccountSessionsParams) (int64, error) {
 	f.revokeArg = arg
 	return 2, f.step("RevokeAccountSessions")
@@ -175,6 +187,15 @@ func (f *fakeDeleteQuerier) ScrubDeletedAccount(ctx context.Context, arg sqlcgen
 // the Phase 7.1 steps and before DeleteAccountUpdates, so the twelve steps
 // became fifteen (and thirteen became sixteen in wantDeleteOrderKeyed). Every
 // old step and its order is kept.
+//
+// Amended 2026-10-29 by Phase 9 plan 02 (research G6, review M5):
+// DeleteAccountFollows and DeleteAccountBlocks now run after every Phase 5, 7.1
+// and 8 step, right after DeleteAccountPushSubscriptions and just before
+// RevokeAccountSessions, so the fifteen steps became seventeen (and sixteen
+// became eighteen in wantDeleteOrderKeyed). Every old step and its order is
+// kept. The plan text said the list ends with DeleteAccountCommentFlags then the
+// two new steps; DeleteAccountCommentFlags is an early Phase 8 step with the
+// updates, cursors, mutes and push steps after it, so those are not reordered.
 var wantDeleteOrder = []string{
 	"AccountEmailForDelete",
 	"DeleteEmailCooldownForEmail",
@@ -189,6 +210,8 @@ var wantDeleteOrder = []string{
 	"DeleteAccountPushOutbox",
 	"DeleteAccountOfficialPushOutbox",
 	"DeleteAccountPushSubscriptions",
+	"DeleteAccountFollows",
+	"DeleteAccountBlocks",
 	"RevokeAccountSessions",
 	"ScrubDeletedAccount",
 }
@@ -209,6 +232,8 @@ var wantDeleteOrderKeyed = []string{
 	"DeleteAccountPushOutbox",
 	"DeleteAccountOfficialPushOutbox",
 	"DeleteAccountPushSubscriptions",
+	"DeleteAccountFollows",
+	"DeleteAccountBlocks",
 	"RevokeAccountSessions",
 	"ScrubDeletedAccount",
 }
@@ -372,6 +397,12 @@ func TestDeleteAccountRunsInOneTx(t *testing.T) {
 // TestDeleteAccountTouchesNoOtherPersonsData: the querier interface the service
 // uses has no method that could reach votes, reports, flags or moderation
 // actions.
+//
+// Amended 2026-10-29 by Phase 9 plan 02 (D-12, D-21): every other assertion is
+// kept. DeleteAccountFollows and DeleteAccountBlocks are the named exception:
+// they delete follow and block rows that name the person in both directions, so
+// a follower's following list and a followee's follower list each lose the row.
+// They touch no vote, report, flag or moderation action.
 func TestDeleteAccountTouchesNoOtherPersonsData(t *testing.T) {
 	typ := reflect.TypeOf((*service.AccountDeleteQuerier)(nil)).Elem()
 	// Amended 2026-10-29 by Phase 7.1 plan 06: the interface also holds
@@ -660,6 +691,67 @@ func TestDeleteAccountComments(t *testing.T) {
 	}
 	if _, ok := seen[alone]; ok {
 		t.Error("the unanswered comment of the deleted account must not be listed")
+	}
+}
+
+// TestDeleteAccountEndsFollowsAndBlocks (Phase 9 plan 02, research G6, T-09-07):
+// deleting an account hard deletes every follow and block row that names it, in
+// both directions, active or ended, switches its profile off, and leaves every
+// row between other people alone. It needs a database and skips without
+// DATABASE_URL.
+func TestDeleteAccountEndsFollowsAndBlocks(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+	now := time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)
+
+	a := testutil.SeedPerson(t, pool, "graph-del-a@example.com", "going.away", true)
+	b := testutil.SeedPerson(t, pool, "graph-del-b@example.com", "staying.one", true)
+	c := testutil.SeedPerson(t, pool, "graph-del-c@example.com", "staying.two", true)
+	d := testutil.SeedPerson(t, pool, "graph-del-d@example.com", "staying.three", true)
+	testutil.SeedFollow(t, pool, a, b, now) // a follows b
+	testutil.SeedFollow(t, pool, b, a, now) // b follows a back
+	testutil.SeedFollow(t, pool, c, a, now) // an ended follow of a
+	testutil.MustExec(t, pool, `UPDATE account_follows SET ended_at = now(), end_reason = 'unfollowed' WHERE follower_id = $1`, c)
+	testutil.SeedBlock(t, pool, c, a)       // a block against a
+	testutil.SeedBlock(t, pool, a, d)       // a block by a
+	testutil.SeedFollow(t, pool, b, c, now) // rows between other people stay
+	testutil.SeedBlock(t, pool, d, c)
+
+	count := func(query string, args ...any) int {
+		t.Helper()
+		var n int
+		if err := pool.QueryRow(ctx, query, args...).Scan(&n); err != nil {
+			t.Fatalf("counting: %v", err)
+		}
+		return n
+	}
+	if n := count(`SELECT count(*) FROM account_follows WHERE follower_id = $1 OR followee_id = $1`, a); n != 3 {
+		t.Fatalf("seed failed: %d follow rows name the account, want 3", n)
+	}
+
+	if err := service.NewAccountDeletionService(q, service.PgxAccountTx(pool)).DeleteAccount(ctx, a); err != nil {
+		t.Fatalf("DeleteAccount: %v", err)
+	}
+	if n := count(`SELECT count(*) FROM account_follows WHERE follower_id = $1 OR followee_id = $1`, a); n != 0 {
+		t.Errorf("follow rows still naming the deleted account = %d, want 0", n)
+	}
+	if n := count(`SELECT count(*) FROM person_blocks WHERE blocker_id = $1 OR blocked_id = $1`, a); n != 0 {
+		t.Errorf("block rows still naming the deleted account = %d, want 0", n)
+	}
+	if n := count(`SELECT count(*) FROM account_follows WHERE follower_id = $1 AND followee_id = $2 AND ended_at IS NULL`, b, c); n != 1 {
+		t.Errorf("the follow between two other people = %d, want 1 untouched", n)
+	}
+	if n := count(`SELECT count(*) FROM person_blocks WHERE blocker_id = $1 AND blocked_id = $2`, d, c); n != 1 {
+		t.Errorf("the block between two other people = %d, want 1 untouched", n)
+	}
+	for _, id := range []int64{b, c, d} {
+		if n := count(`SELECT count(*) FROM accounts WHERE id = $1 AND profile_public AND deleted_at IS NULL AND username IS NOT NULL`, id); n != 1 {
+			t.Errorf("account %d changed otherwise: want still public, live and named", id)
+		}
+	}
+	if n := count(`SELECT count(*) FROM accounts WHERE id = $1 AND NOT profile_public AND deleted_at IS NOT NULL`, a); n != 1 {
+		t.Errorf("the scrubbed row must have profile_public false and deleted_at set")
 	}
 }
 
