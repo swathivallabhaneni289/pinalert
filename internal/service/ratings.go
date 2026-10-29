@@ -63,6 +63,7 @@ type RatingQuerier interface {
 	ModeratorRatingsForReporter(ctx context.Context, arg sqlcgen.ModeratorRatingsForReporterParams) ([]sqlcgen.ModeratorRatingsForReporterRow, error)
 	RemoveRating(ctx context.Context, arg sqlcgen.RemoveRatingParams) (time.Time, error)
 	RemoveRatingsByRater(ctx context.Context, arg sqlcgen.RemoveRatingsByRaterParams) ([]sqlcgen.RemoveRatingsByRaterRow, error)
+	RemovedRatingsByRater(ctx context.Context, raterID int64) ([]sqlcgen.RemovedRatingsByRaterRow, error)
 	MarkRaterRemoved(ctx context.Context, arg sqlcgen.MarkRaterRemovedParams) (int64, error)
 	RestoreTagLostFollows(ctx context.Context, arg sqlcgen.RestoreTagLostFollowsParams) (int64, error)
 	GetPersonByUsername(ctx context.Context, username string) (sqlcgen.GetPersonByUsernameRow, error)
@@ -432,10 +433,24 @@ func (s *RatingService) ModeratorRemove(ctx context.Context, moderatorID int64, 
 		Now: now, ModeratorID: moderatorID, RaterID: raterID, ReporterID: reporterID,
 	})
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("service: ModeratorRemove: removing the rating: %w", err)
+		}
+		// Nothing left to remove. When the rating is already removed, an
+		// earlier call may have failed after the removal committed, so the
+		// re-evaluation runs again (WR-S02, review 2026-10-30). A missing or
+		// live rating changes nothing.
+		row, gerr := s.q.GetRating(ctx, sqlcgen.GetRatingParams{RaterID: raterID, ReporterID: reporterID})
+		if gerr != nil {
+			if errors.Is(gerr, pgx.ErrNoRows) {
+				return nil
+			}
+			return fmt.Errorf("service: ModeratorRemove: reading the rating: %w", gerr)
+		}
+		if !row.RemovedAt.Valid {
 			return nil
 		}
-		return fmt.Errorf("service: ModeratorRemove: removing the rating: %w", err)
+		return s.reevaluateAfterRemoval(ctx, reporterID, row.CreatedAt, now)
 	}
 	log.Printf("service: ratings: moderator %d removed a rating of account %d", moderatorID, reporterID)
 	return s.reevaluateAfterRemoval(ctx, reporterID, since, now)
@@ -461,10 +476,19 @@ func (s *RatingService) ModeratorRemoveRater(ctx context.Context, moderatorID in
 		return 0, fmt.Errorf("service: ModeratorRemoveRater: removing the ratings: %w", err)
 	}
 	log.Printf("service: ratings: moderator %d removed %d ratings of one rater", moderatorID, len(removed))
-	for _, r := range removed {
+	// Re-evaluate every reporter this rater's removed ratings touch, not only the
+	// ones removed just now, so a repeat after a failed run finishes the work
+	// (WR-S02). A failure on one reporter does not stop the others; the errors
+	// come back joined.
+	all, err := s.q.RemovedRatingsByRater(ctx, raterID)
+	if err != nil {
+		return int64(len(removed)), fmt.Errorf("service: ModeratorRemoveRater: reading the removed ratings: %w", err)
+	}
+	var errs []error
+	for _, r := range all {
 		if err := s.reevaluateAfterRemoval(ctx, r.ReporterID, r.CreatedAt, now); err != nil {
-			return int64(len(removed)), err
+			errs = append(errs, err)
 		}
 	}
-	return int64(len(removed)), nil
+	return int64(len(removed)), errors.Join(errs...)
 }

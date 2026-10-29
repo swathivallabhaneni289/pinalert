@@ -66,7 +66,7 @@ func (q *Queries) DeleteAccountRatings(ctx context.Context, accountID int64) (in
 }
 
 const getRating = `-- name: GetRating :one
-SELECT stars, updated_at, cleared_at, removed_at
+SELECT stars, created_at, updated_at, cleared_at, removed_at
 FROM profile_ratings
 WHERE rater_id = $1::bigint
   AND reporter_id = $2::bigint
@@ -79,6 +79,7 @@ type GetRatingParams struct {
 
 type GetRatingRow struct {
 	Stars     int16
+	CreatedAt time.Time
 	UpdatedAt time.Time
 	ClearedAt pgtype.Timestamptz
 	RemovedAt pgtype.Timestamptz
@@ -91,6 +92,7 @@ func (q *Queries) GetRating(ctx context.Context, arg GetRatingParams) (GetRating
 	var i GetRatingRow
 	err := row.Scan(
 		&i.Stars,
+		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClearedAt,
 		&i.RemovedAt,
@@ -375,6 +377,42 @@ func (q *Queries) RemoveRatingsByRater(ctx context.Context, arg RemoveRatingsByR
 	var items []RemoveRatingsByRaterRow
 	for rows.Next() {
 		var i RemoveRatingsByRaterRow
+		if err := rows.Scan(&i.ReporterID, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const removedRatingsByRater = `-- name: RemovedRatingsByRater :many
+SELECT reporter_id, created_at
+FROM profile_ratings
+WHERE rater_id = $1::bigint
+  AND removed_at IS NOT NULL
+ORDER BY reporter_id
+`
+
+type RemovedRatingsByRaterRow struct {
+	ReporterID int64
+	CreatedAt  time.Time
+}
+
+// Every rating of one rater that a moderator removed, with the time it was first
+// written. A repeat of a removal that failed half way reads this to finish the
+// re-evaluation of each reporter (WR-S02, review 2026-10-30).
+func (q *Queries) RemovedRatingsByRater(ctx context.Context, raterID int64) ([]RemovedRatingsByRaterRow, error) {
+	rows, err := q.db.Query(ctx, removedRatingsByRater, raterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RemovedRatingsByRaterRow
+	for rows.Next() {
+		var i RemovedRatingsByRaterRow
 		if err := rows.Scan(&i.ReporterID, &i.CreatedAt); err != nil {
 			return nil, err
 		}

@@ -32,7 +32,7 @@ SELECT (
 -- name: GetRating :one
 -- The rater's own row for one reporter, for the daily rule and for telling a
 -- removed rating from a rating that is merely too recent to change (D-02).
-SELECT stars, updated_at, cleared_at, removed_at
+SELECT stars, created_at, updated_at, cleared_at, removed_at
 FROM profile_ratings
 WHERE rater_id = sqlc.arg(rater_id)::bigint
   AND reporter_id = sqlc.arg(reporter_id)::bigint;
@@ -166,6 +166,16 @@ SET removed_at = sqlc.arg(now)::timestamptz,
 WHERE rater_id = sqlc.arg(rater_id)::bigint
   AND removed_at IS NULL
 RETURNING reporter_id, created_at;
+
+-- name: RemovedRatingsByRater :many
+-- Every rating of one rater that a moderator removed, with the time it was first
+-- written. A repeat of a removal that failed half way reads this to finish the
+-- re-evaluation of each reporter (WR-S02, review 2026-10-30).
+SELECT reporter_id, created_at
+FROM profile_ratings
+WHERE rater_id = sqlc.arg(rater_id)::bigint
+  AND removed_at IS NOT NULL
+ORDER BY reporter_id;
 
 -- name: MarkRaterRemoved :execrows
 -- Stamps the rater as removed (W4): RaterMayRate refuses such an account for
