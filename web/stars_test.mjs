@@ -251,7 +251,7 @@ test('set is ignored while a save is out and works again after it', async () => 
   const m = load({ route: () => gate.then(OK), current: 2 });
   m.tap(5);
   await flush();
-  m.control.set(2);
+  m.control.set(4);
   assert.deepEqual(m.pressed(), ['false', 'true', 'false', 'false', 'false'], 'no redraw while busy');
   release();
   await flush();
