@@ -35,8 +35,14 @@ type LiveCode struct {
 	ResendSecondsLeft int
 }
 
-// SpentCode describes a code this browser itself confirmed inside the resume
-// window (Phase 7.1 review fix round 3, skeptic SK2-01): which kind it was and
+// spentCodeMemory is how long after the spend SpentCode still reports a
+// confirmed code: long enough for a reload after a lost answer, short enough
+// that the next person on a shared phone sees neither the address nor the line
+// (review fix round 4, skeptic SK3-02).
+const spentCodeMemory = 10 * time.Minute
+
+// SpentCode describes a code this browser itself confirmed a short time ago
+// (Phase 7.1 review fix round 3, skeptic SK2-01): which kind it was and
 // the address it was sent to (page text only, never a URL, D-05). A confirm
 // whose answer was lost leaves the browser on the session id it sent the code
 // with, so the sign in page can still tell it what happened.
@@ -544,10 +550,19 @@ func (s *CredentialService) LiveCode(ctx context.Context, sessionID string) (Liv
 // because its email did not go out, and a row of any other browser are false.
 // It reads nothing about the address's account, so it tells this browser only
 // what its own right code already did.
+//
+// It counts a spent code only for spentCodeMemory after the spend, not for the
+// whole resume window (review fix round 4, skeptic SK3-02): ConfirmReset keeps
+// the browser's session id, so a longer memory would show the address and the
+// line to the next person on a shared phone. The lost answer case is a reload
+// within seconds or a few minutes, which this still covers. used_at is the
+// transaction's now(), and expires_at equals it, so the spend time is read from
+// the row.
 func (s *CredentialService) SpentCode(ctx context.Context, sessionID string) (SpentCode, bool, error) {
+	now := s.now()
 	row, err := s.q.GetLatestAuthCode(ctx, sqlcgen.GetLatestAuthCodeParams{
 		SessionID: sessionID,
-		Since:     s.now().Add(-s.limits.ResumeWindow),
+		Since:     now.Add(-s.limits.ResumeWindow),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -556,6 +571,9 @@ func (s *CredentialService) SpentCode(ctx context.Context, sessionID string) (Sp
 		return SpentCode{}, false, fmt.Errorf("service: reading latest code: %w", err)
 	}
 	if !row.UsedAt.Valid || row.Delivery != DeliveryCode || row.Attempts < 1 || !row.UsedAt.Time.Equal(row.ExpiresAt) {
+		return SpentCode{}, false, nil
+	}
+	if !row.UsedAt.Time.After(now.Add(-spentCodeMemory)) {
 		return SpentCode{}, false, nil
 	}
 	return SpentCode{Purpose: row.Purpose, Email: row.Email}, true, nil

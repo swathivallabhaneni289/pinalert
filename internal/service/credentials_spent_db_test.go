@@ -127,6 +127,19 @@ func TestSpentCodeOnDatabase(t *testing.T) {
 		}
 	}
 
+	// Round 4 (skeptic SK3-02): a spent code is told only for a short time after
+	// the spend, not for the whole resume window, so the next person on a shared
+	// phone does not see the address and the line. A few minutes later it still
+	// shows (the lost answer case); eleven minutes later it is gone.
+	offset.Store(int64(5 * time.Minute))
+	if _, ok, err := svc.SpentCode(ctx, "spent-D"); err != nil || !ok {
+		t.Errorf("SpentCode five minutes after the spend = %v, %v; want true", ok, err)
+	}
+	offset.Store(int64(11 * time.Minute))
+	if _, ok, err := svc.SpentCode(ctx, "spent-D"); err != nil || ok {
+		t.Errorf("SpentCode eleven minutes after the spend = %v, %v; want false (inside the resume window)", ok, err)
+	}
+
 	// Outside the resume window the spent row says nothing.
 	offset.Store(int64(limits.ResumeWindow + time.Minute))
 	if _, ok, err := svc.SpentCode(ctx, "spent-D"); err != nil || ok {
