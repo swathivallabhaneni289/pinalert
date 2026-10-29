@@ -416,9 +416,20 @@ func TestStarsControlLook(t *testing.T) {
 		}
 	}
 	noComments := regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(css, "")
-	for _, m := range regexp.MustCompile(`var\(--color-[a-z-]+\)`).FindAllString(noComments, -1) {
-		if m != "var(--color-text)" && m != "var(--color-surface)" {
-			t.Errorf("stars.css uses %s, only the text and surface colours are allowed", m)
+	// Amended 2026-10-29 by Phase 9 plan 17 (UI-SPEC 3b): the star box after
+	// Yes, mark resolved is a bordered block, so the rules whose selector names
+	// .rate-box may also use the border and background tokens. The control's own
+	// rules keep the text and surface colours only, as before.
+	for _, rule := range regexp.MustCompile(`([^{}]+)\{([^{}]*)\}`).FindAllStringSubmatch(noComments, -1) {
+		allowed := map[string]bool{"var(--color-text)": true, "var(--color-surface)": true}
+		if strings.Contains(rule[1], ".rate-box") {
+			allowed["var(--color-border)"] = true
+			allowed["var(--color-bg)"] = true
+		}
+		for _, m := range regexp.MustCompile(`var\(--color-[a-z-]+\)`).FindAllString(rule[2], -1) {
+			if !allowed[m] {
+				t.Errorf("stars.css uses %s in %q, only the text and surface colours are allowed (the .rate-box rules add the border and background)", m, strings.TrimSpace(rule[1]))
+			}
 		}
 	}
 	for _, bad := range []string{"#", "rgb(", "rgba(", "hsl(", "amber", "gold", "!important", "animation", "transition", "@keyframes", "box-shadow", "outline"} {

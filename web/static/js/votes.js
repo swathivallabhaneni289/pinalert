@@ -1667,8 +1667,10 @@
       Pinalert.setText(affirmBtn, RESOLVE_BUTTON_LABEL_IN_FLIGHT);
     }
 
+    var resolveResult = null;
     castVote(reportId, transportAction, { ownReport: block.isOwnReport === true, location: taken }).then(function (result) {
       if (isResolveAffirm) {
+        resolveResult = result;
         removal = captureRemovalFocus(origin);
         closeResolveConfirm(block);
         Pinalert.showToast(resolutionOutcomeMessage('resolve', result), resolveToastAction(reportId, result));
@@ -1692,6 +1694,11 @@
         showSavedButNotRefreshed(block, action);
       }
       focusAfterVote(origin, action, removal);
+      // The skippable star box (plan 09-17), after the refetch so a report the
+      // resolve just closed, whose card is gone by now, shows no box.
+      if (isResolveAffirm) {
+        offerRateBox(block, reportId, resolveResult);
+      }
     }).catch(function (err) {
       // Order is load-bearing here: clear busy BEFORE closing the
       // confirmation. Closing sets hidden on the two confirmation
@@ -1879,6 +1886,8 @@
     setVoteButtonLabel(button, isReopen ? REOPEN_BUTTON_LABEL_IN_FLIGHT : TAKE_BACK_BUTTON_LABEL_IN_FLIGHT);
 
     castVote(origin.reportId, action, { ownReport: isReopen && block.isOwnReport === true }).then(function (result) {
+      // A taken back resolve takes the star box with it (plan 09-17).
+      removeRateBox(origin.reportId);
       var message = isReopen ? REOPEN_SUCCEEDED_TOAST : takeBackSuccessMessage(wasClosed, result);
       return readAfterWrite(block).then(function () {
         setVoteButtonLabel(button, restingLabel);
@@ -1923,6 +1932,8 @@
   function takeBackFromToast(reportId, wasClosed, link) {
     var origin = { reportId: String(reportId), controls: document.getElementById('toast') };
     return castVote(reportId, 'unresolve').then(function (result) {
+      // A taken back resolve takes the star box with it (plan 09-17).
+      removeRateBox(reportId);
       relinkAfterToastUndo(reportId, wasClosed, link, result);
       return Pinalert.fetchReports({ afterWrite: true }).then(function () {
         focusAfterTakeBack(origin);
@@ -1982,6 +1993,175 @@
       return;
     }
     Pinalert.setFocusId(reportId);
+  }
+
+  // The skippable star box after Yes, mark resolved (Phase 9 plan 17, D-02,
+  // UI-SPEC 3b). The server alone decides when it is offered: it sends
+  // rate_prompt on the resolve answer for a reader who may rate the reporter, has
+  // not yet, and may open that reporter's profile. The browser reads that member
+  // and nothing else; it never looks at who the reporter is or who the reader is.
+  // The box is one div.rate-box inside the card's actions group, right after the
+  // vote block, so it travels with the card node into the laptop panel and the
+  // phone detail pane and always sits above the timeline. It holds the shared
+  // star control (stars.js, titled Rate {username}) and an outlined Skip. Skip
+  // sends nothing and keeps the box away for this report until the page is read
+  // again; a saved tap collapses the box to one line; an Undo of the resolve
+  // removes it. Every string reaches the page through textContent.
+  var RATE_SKIP_LABEL = 'Skip';
+  var RATE_LEGEND_PREFIX = 'Rate ';
+  // report id -> the box on this page, and the ids Skip was pressed for.
+  var rateBoxes = {};
+  var rateSkipped = {};
+
+  // removeRateBox takes the box of one report out of the page, if there is one.
+  function removeRateBox(reportId) {
+    var key = String(reportId);
+    var box = rateBoxes[key];
+    delete rateBoxes[key];
+    if (box && box.parentNode && typeof box.parentNode.removeChild === 'function') {
+      box.parentNode.removeChild(box);
+    }
+  }
+
+  // rateHostIsLive says the vote controls are still on the page and, in a map
+  // popup, that the popup is still open (a closing popup stays attached for a
+  // fade, see isInOpenPopup). A report the resolve just closed has no live host.
+  function rateHostIsLive(block) {
+    var controls = block && block.controls;
+    if (!controls || controls.isConnected !== true) {
+      return false;
+    }
+    return controls.closest('.leaflet-popup') === null || isInOpenPopup(controls);
+  }
+
+  // buildRateBox makes the box for one prompt and returns it. username is the
+  // server's own word; it is shown by textContent only.
+  function buildRateBox(block, reportId, username) {
+    var box = document.createElement('div');
+    box.className = 'rate-box';
+    box.dataset.reportId = String(reportId);
+
+    var status = document.createElement('p');
+    status.className = 'rate-box__status';
+    status.setAttribute('role', 'status');
+    status.setAttribute('tabindex', '-1');
+
+    var errorLine = document.createElement('p');
+    errorLine.className = 'inline-error';
+    errorLine.setAttribute('role', 'alert');
+    errorLine.hidden = true;
+
+    var skip = document.createElement('button');
+    skip.type = 'button';
+    skip.className = 'btn rate-box__skip';
+    skip.textContent = RATE_SKIP_LABEL;
+
+    var control = window.PinalertStars.createControl({
+      username: username,
+      current: 0,
+      legend: RATE_LEGEND_PREFIX + username,
+      onError: function (line) {
+        errorLine.textContent = line;
+        errorLine.hidden = line === '';
+      },
+      onStatus: function (line) {
+        // The box collapses in place to the one line. Focus that sat on a star
+        // moves to the line, so it never falls to the page body.
+        var hadFocus = box.contains(document.activeElement);
+        status.textContent = line;
+        control.destroy();
+        if (errorLine.parentNode === box) {
+          box.removeChild(errorLine);
+        }
+        if (skip.parentNode === box) {
+          box.removeChild(skip);
+        }
+        if (hadFocus && typeof status.focus === 'function') {
+          status.focus();
+        }
+      },
+      onGone: function () {
+        removeRateBox(reportId);
+      }
+    });
+
+    skip.addEventListener('click', function () {
+      rateSkipped[String(reportId)] = true;
+      var hadFocus = box.contains(document.activeElement);
+      removeRateBox(reportId);
+      if (hadFocus) {
+        var undo = block.takeBack && block.takeBack.undoBtn;
+        if (undo && canTakeFocus(undo)) {
+          undo.focus();
+        }
+      }
+    });
+
+    box.appendChild(control.el);
+    box.appendChild(errorLine);
+    box.appendChild(skip);
+    box.appendChild(status);
+    return box;
+  }
+
+  // mountRateBox puts the box right after the vote block of the card, once the
+  // page and the host are known to be there.
+  function mountRateBox(block, reportId, prompt) {
+    var key = String(reportId);
+    if (rateSkipped[key] === true || !rateHostIsLive(block)) {
+      return;
+    }
+    var existing = rateBoxes[key];
+    if (existing && existing.isConnected === true) {
+      return;
+    }
+    // The vote block is the controls, the too far slot and the error line, in
+    // that order; the box follows the last of them, before the Share button.
+    var anchor = block.error && block.error.parentNode ? block.error : block.controls;
+    var host = anchor.parentNode;
+    if (!host) {
+      return;
+    }
+    var box = buildRateBox(block, reportId, prompt.username);
+    host.insertBefore(box, anchor.nextSibling);
+    rateBoxes[key] = box;
+  }
+
+  // offerRateBox runs after a resolve was saved and the list was read again. It
+  // never throws and never changes the vote's outcome: a page without the star
+  // script, a prompt with no username, or any failure inside simply shows
+  // nothing. When the first post or vote pop-up is on the page, the box waits
+  // until that pop-up is answered, so the two are never open together.
+  function offerRateBox(block, reportId, result) {
+    try {
+      var prompt = result && result.rate_prompt;
+      if (!prompt || typeof prompt.username !== 'string' || prompt.username === '') {
+        return;
+      }
+      if (!window.PinalertStars || typeof window.PinalertStars.createControl !== 'function') {
+        return;
+      }
+      if (rateSkipped[String(reportId)] === true || !rateHostIsLive(block)) {
+        return;
+      }
+      var wait = null;
+      if (window.PinalertChangesAsk && typeof window.PinalertChangesAsk.settled === 'function') {
+        wait = window.PinalertChangesAsk.settled();
+      }
+      if (wait && typeof wait.then === 'function') {
+        wait.then(function () {
+          try {
+            mountRateBox(block, reportId, prompt);
+          } catch (err) {
+            // The star box never changes a vote's result.
+          }
+        }, function () {});
+        return;
+      }
+      mountRateBox(block, reportId, prompt);
+    } catch (err) {
+      // The star box never changes a vote's result.
+    }
   }
 
   window.PinalertVotes = {

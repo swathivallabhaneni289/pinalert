@@ -9,6 +9,7 @@ package service
 import (
 	"context"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -269,6 +270,18 @@ type VotingQuerier interface {
 	ReporterHistoryReports(ctx context.Context, arg sqlcgen.ReporterHistoryReportsParams) ([]sqlcgen.ReporterHistoryReportsRow, error)
 	// ResolutionUndoCounts is the caller's own take back and reopen count per report, for the two undo limit (D-22).
 	ResolutionUndoCounts(ctx context.Context, arg sqlcgen.ResolutionUndoCountsParams) ([]sqlcgen.ResolutionUndoCountsRow, error)
+	// PublicProfilePathsForViewer answers which of the reporters has a profile
+	// the voter may open (plan 09-17): the star box after Yes, mark resolved
+	// names the reporter only when this read returns them.
+	PublicProfilePathsForViewer(ctx context.Context, arg sqlcgen.PublicProfilePathsForViewerParams) ([]sqlcgen.PublicProfilePathsForViewerRow, error)
+}
+
+// RatePrompter is the part of the rating service the star box after Yes, mark
+// resolved needs (plan 09-17, D-02): who may rate a reporter, and whether this
+// voter already has a rating. RatingService is the one real implementation.
+type RatePrompter interface {
+	MayRate(ctx context.Context, raterID, reporterID int64) (bool, error)
+	YourRating(ctx context.Context, raterID, reporterID int64) (int, bool, error)
 }
 
 // VotingService authorizes, records, and resolves confirm/dispute/
@@ -280,10 +293,23 @@ type VotingService struct {
 
 	// signals supplies extra reporter tag inputs (plan 09-13). Nil reads outcomes only.
 	signals SignalSource
+
+	// ratePrompts decides the star box after a resolve (plan 09-17). Nil means
+	// no resolve ever carries a prompt.
+	ratePrompts RatePrompter
 }
 
 // VotingOption configures a VotingService at construction time.
 type VotingOption func(*VotingService)
+
+// WithVotingRatePrompts hands the service the rating source that decides the
+// skippable star box after Yes, mark resolved (plan 09-17, D-02). With none, no
+// vote response carries a rate prompt.
+func WithVotingRatePrompts(p RatePrompter) VotingOption {
+	return func(s *VotingService) {
+		s.ratePrompts = p
+	}
+}
 
 // WithVotingSignals hands the service the source of extra reporter tag inputs
 // (plan 09-13 is the first real one), so the vote response shows the same tag
@@ -355,6 +381,65 @@ type CastVoteResult struct {
 	// after this vote (D-22). It is nil for a content vote, which has no
 	// undo budget.
 	UndosLeft *int
+
+	// RatePrompt is set only after a resolve, when the caller may rate the
+	// reporter, has not rated them yet, and the reporter's profile is one the
+	// caller may open (plan 09-17, D-02). It is viewer dependent, so it lives
+	// here beside UndosLeft and never inside Trust, which is built once and
+	// compared byte for byte across the feed and the vote response.
+	RatePrompt *RatePrompt
+}
+
+// RatePrompt names the reporter for the skippable star box after Yes, mark
+// resolved: the username and the profile path, both read only for a reporter
+// whose profile the caller may open.
+type RatePrompt struct {
+	Username    string
+	ProfilePath string
+}
+
+// ratePromptFor builds the star box prompt for a caller who just resolved a
+// report of reporterID, or nil. It runs after the vote is written, so the
+// resolve just cast already counts as the caller's qualifying vote (a witness at
+// the scene qualifies). Any error is logged with the ids and leaves the prompt
+// empty: a failed read must never fail the vote (T-09-64). The username read
+// goes through PublicProfilePathsForViewer only, so a private, pending, deleted
+// or blocking reporter is never named (T-09-62).
+func (s *VotingService) ratePromptFor(ctx context.Context, raterID int64, reporterID *int64, reportID int64) *RatePrompt {
+	if s.ratePrompts == nil || reporterID == nil || *reporterID == raterID || raterID == 0 {
+		return nil
+	}
+	rows, err := s.q.PublicProfilePathsForViewer(ctx, sqlcgen.PublicProfilePathsForViewerParams{AccountIds: []int64{*reporterID}, ViewerID: raterID})
+	if err != nil {
+		log.Printf("service: rate prompt: profile read for report %d, reporter %d, rater %d: %v", reportID, *reporterID, raterID, err)
+		return nil
+	}
+	var username string
+	for _, r := range rows {
+		if r.ID == *reporterID {
+			username = r.Username
+		}
+	}
+	if username == "" {
+		return nil
+	}
+	may, err := s.ratePrompts.MayRate(ctx, raterID, *reporterID)
+	if err != nil {
+		log.Printf("service: rate prompt: MayRate for report %d, reporter %d, rater %d: %v", reportID, *reporterID, raterID, err)
+		return nil
+	}
+	if !may {
+		return nil
+	}
+	_, has, err := s.ratePrompts.YourRating(ctx, raterID, *reporterID)
+	if err != nil {
+		log.Printf("service: rate prompt: YourRating for report %d, reporter %d, rater %d: %v", reportID, *reporterID, raterID, err)
+		return nil
+	}
+	if has {
+		return nil
+	}
+	return &RatePrompt{Username: username, ProfilePath: "/u/" + username}
 }
 
 // CastVote authorizes, records, and resolves a single confirm/dispute/
@@ -615,5 +700,12 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 		Now:               now,
 		Reporter:          reporterSignalRef(signals, rc.ReporterAccountID),
 	})
-	return CastVoteResult{Visibility: vis, Reason: reason, Trust: trust, UndosLeft: undosLeft}, nil
+
+	// The star box after Yes, mark resolved (plan 09-17, D-02): only a resolve,
+	// built after the write so the vote just cast counts, and never a failure.
+	var ratePrompt *RatePrompt
+	if in.Kind == VoteKindResolution && in.Value == VoteResolve {
+		ratePrompt = s.ratePromptFor(ctx, in.AccountID, rc.ReporterAccountID, in.ReportID)
+	}
+	return CastVoteResult{Visibility: vis, Reason: reason, Trust: trust, UndosLeft: undosLeft, RatePrompt: ratePrompt}, nil
 }

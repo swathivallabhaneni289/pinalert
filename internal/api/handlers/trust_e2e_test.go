@@ -67,7 +67,7 @@ func newTrustE2EServer(t *testing.T, clock func() time.Time) (*httptest.Server, 
 	fm := &recordingMailer{}
 
 	reportOpts := []service.ReportOption{service.WithReportSignals(ratings)}
-	votingOpts := []service.VotingOption{service.WithVotingSignals(ratings)}
+	votingOpts := []service.VotingOption{service.WithVotingSignals(ratings), service.WithVotingRatePrompts(ratings)}
 	if clock != nil {
 		reportOpts = append(reportOpts, service.WithReportClock(clock))
 		votingOpts = append(votingOpts, service.WithVotingClock(clock))

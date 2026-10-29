@@ -26,6 +26,7 @@ var ratingsWiringCalls = []struct {
 		calls: []string{
 			"WithReportSignals(ratingService)",
 			"WithVotingSignals(ratingService)",
+			"WithVotingRatePrompts(ratingService)",
 			"WithAuthSignals(ratingService)",
 			"WithDispatchSignals(ratingService)",
 			"WithFollowSweepSignals(ratingService)",

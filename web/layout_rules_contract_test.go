@@ -386,6 +386,11 @@ var touchControls = []string{
 	// five star buttons of the rating control and its Remove my rating button,
 	// each 44px through --touch-target-min in stars.css. No other entry changed.
 	".stars-control__star", ".stars-control__remove",
+	// Phase 9 plan 17 (UI-SPEC 3b): the Skip button of the star box after Yes,
+	// mark resolved, 44px through --touch-target-min in stars.css. The five stars
+	// inside the box are the .stars-control__star entry above. No other entry
+	// changed.
+	".rate-box__skip",
 }
 
 // touchValue reads a height or min-height value as pixels: a px length, a

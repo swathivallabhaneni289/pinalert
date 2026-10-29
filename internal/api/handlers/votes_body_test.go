@@ -25,6 +25,11 @@ type bodyVoteFake struct {
 	undoRows []sqlcgen.ResolutionUndoCountsRow
 }
 
+// PublicProfilePathsForViewer answers nothing: the body tests carry no rate prompter.
+func (f *bodyVoteFake) PublicProfilePathsForViewer(ctx context.Context, arg sqlcgen.PublicProfilePathsForViewerParams) ([]sqlcgen.PublicProfilePathsForViewerRow, error) {
+	return nil, nil
+}
+
 func (f *bodyVoteFake) ResolutionUndoCounts(ctx context.Context, arg sqlcgen.ResolutionUndoCountsParams) ([]sqlcgen.ResolutionUndoCountsRow, error) {
 	return f.undoRows, nil
 }
