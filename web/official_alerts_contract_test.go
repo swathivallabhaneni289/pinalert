@@ -394,3 +394,18 @@ func TestOfficialRowHoverKeepsMutedTextReadable(t *testing.T) {
 		}
 	}
 }
+
+// TestOfficialHazardLineSitsCloseOnBothSizes pins the Phase 5 review fix IN-T05
+// (added 2026-10-29): the GDACS hazard status line sits 4px under the first
+// status line on the phone and on the laptop. On the laptop the first line's
+// 8px bottom padding is dropped when the hazard line follows, so the gap is the
+// hazard line's own 4px there too, not 12px.
+func TestOfficialHazardLineSitsCloseOnBothSizes(t *testing.T) {
+	p16MustDecl(t, "hazard line", officialRule(t, "", ".official-status.official-status--hazards:not([hidden])"),
+		map[string]string{"padding-top": "var(--space-xs)"})
+	p16MustDecl(t, "phone first status line", officialRule(t, "", ".official-status"),
+		map[string]string{"padding": "var(--space-12) var(--space-md) 0"})
+	p16MustDecl(t, "laptop first status line before the hazard line",
+		officialRule(t, "@media (min-width: 900px)", ".official-status:has(+ .official-status--hazards:not([hidden]))"),
+		map[string]string{"padding-bottom": "0"})
+}

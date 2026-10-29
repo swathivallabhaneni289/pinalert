@@ -491,6 +491,13 @@
     padding: 0 var(--space-lg) var(--space-sm);
   }
 
+  /* When the hazard line follows, the first line drops its bottom padding, so
+     the hazard line sits 4px under it as on the phone, not 12px (Phase 5
+     review fix IN-T05, 2026-10-29). */
+  .official-status:has(+ .official-status--hazards:not([hidden])) {
+    padding-bottom: 0;
+  }
+
   .official-notice:not([hidden]) {
     margin: var(--space-12) var(--space-lg) 0;
   }
