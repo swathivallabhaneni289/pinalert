@@ -43,6 +43,13 @@
   margin: 0 0 var(--space-md) 0;
 }
 
+/* The title takes the focus when a panel swaps (tabindex -1, never a Tab stop)
+   and draws no ring, as UI-SPEC 1c and sketch 010 say and as the first time
+   flow and the Log out box titles do (Phase 7.1 review fix WR-T06). */
+.login-card h1:focus {
+  outline: none;
+}
+
 .login-card p,
 #check-inbox p {
   font-size: var(--font-size-body);

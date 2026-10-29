@@ -89,3 +89,23 @@ func TestLoginFieldFocusRing(t *testing.T) {
 		}
 	}
 }
+
+// TestLoginCardTitleNoRing (WR-T06): the card title takes focus when a panel
+// swaps (tabindex -1, never a Tab stop) and draws no ring, as UI-SPEC 1c and
+// sketch 010 say, like the first time flow title and the Log out box title.
+// Without the rule, :focus-visible draws a ring after a keyboard Enter.
+func TestLoginCardTitleNoRing(t *testing.T) {
+	auth := r71tRules(t, "static/css/auth.css")
+	r, ok := r71tFind(auth, "", ".login-card h1:focus")
+	if !ok {
+		t.Fatalf("auth.css has no .login-card h1:focus rule, so the title shows a ring when the code panel opens")
+	}
+	p16MustDecl(t, ".login-card h1:focus", r, map[string]string{"outline": "none"})
+	// The same pin the Log out box title has, kept beside it.
+	p16MustDecl(t, ".logout-confirm__title:focus", p16Rule(t, auth, "", ".logout-confirm__title:focus"), map[string]string{"outline": "none"})
+	// The title is still the focus target and still not a Tab stop.
+	page := p711RenderVM(t, p711Vm())
+	if tag := p711Tag(t, page, "login-title"); !strings.Contains(tag, `tabindex="-1"`) {
+		t.Errorf("#login-title lost tabindex -1: %s", tag)
+	}
+}
