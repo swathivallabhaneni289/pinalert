@@ -255,8 +255,15 @@ func TestReliabilityTable(t *testing.T) {
 		{"5 corroborated all at 45 days", relOutcomes(relC, 5, 45*relDay), service.ReporterReliable, 86, 5, 5},
 		{"5 corroborated all at 89 days", relOutcomes(relC, 5, 89*relDay), service.ReporterReliable, 86, 5, 5},
 		{"30 corroborated", relOutcomes(relC, 30, 0), service.ReporterReliable, 97, 30, 30},
-		{"4 corroborated and 1 unconfirmed sit exactly on 75", relJoin(relOutcomes(relC, 4, 0), relOutcomes(relU, 1, 0)), service.ReporterReliable, 75, 5, 4},
-		{"4 corroborated and 1 contradicted", relJoin(relOutcomes(relC, 4, 0), relOutcomes(relX, 1, 0)), service.ReporterMixed, 71, 5, 4},
+		// Amended 2026-10-29 by Phase 9 plan 01 (D-05): the bar moved from 75 to 70,
+		// so 75 is still Reliable but no longer a boundary, and the score 71 row
+		// below now reads Reliable reporter instead of Mixed record. The three
+		// rows after them are the new anchors: 70 is exact, 69 is Mixed.
+		{"4 corroborated and 1 unconfirmed score 75, still Reliable (no longer a boundary)", relJoin(relOutcomes(relC, 4, 0), relOutcomes(relU, 1, 0)), service.ReporterReliable, 75, 5, 4},
+		{"4 corroborated and 1 contradicted", relJoin(relOutcomes(relC, 4, 0), relOutcomes(relX, 1, 0)), service.ReporterReliable, 71, 5, 4},
+		{"6 corroborated and 2 contradicted sit exactly on 70", relJoin(relOutcomes(relC, 6, 0), relOutcomes(relX, 2, 0)), service.ReporterReliable, 70, 8, 6},
+		{"9 corroborated, 2 contradicted and 2 unconfirmed sit exactly on 70", relJoin(relOutcomes(relC, 9, 0), relOutcomes(relX, 2, 0), relOutcomes(relU, 2, 0)), service.ReporterReliable, 70, 13, 9},
+		{"4 corroborated and 2 unconfirmed score 69, Mixed record", relJoin(relOutcomes(relC, 4, 0), relOutcomes(relU, 2, 0)), service.ReporterMixed, 69, 6, 4},
 		{"3 corroborated and 2 unconfirmed", relJoin(relOutcomes(relC, 3, 0), relOutcomes(relU, 2, 0)), service.ReporterMixed, 64, 5, 3},
 		{"3 corroborated and 2 contradicted", relJoin(relOutcomes(relC, 3, 0), relOutcomes(relX, 2, 0)), service.ReporterMixed, 57, 5, 3},
 		{"5 corroborated and 5 unconfirmed", relJoin(relOutcomes(relC, 5, 0), relOutcomes(relU, 5, 0)), service.ReporterMixed, 60, 10, 5},
@@ -267,7 +274,7 @@ func TestReliabilityTable(t *testing.T) {
 		{"2 contradicted and 3 unconfirmed sit exactly on 25", relJoin(relOutcomes(relX, 2, 0), relOutcomes(relU, 3, 0)), service.ReporterUnreliable, 25, 5, 0},
 		{"1 corroborated and 4 contradicted", relJoin(relOutcomes(relC, 1, 0), relOutcomes(relX, 4, 0)), service.ReporterUnreliable, 29, 5, 1},
 		{"5 contradicted", relOutcomes(relX, 5, 0), service.ReporterUnreliable, 14, 5, 0},
-		{"8 corroborated and 2 contradicted sit exactly on 75", relJoin(relOutcomes(relC, 8, 0), relOutcomes(relX, 2, 0)), service.ReporterReliable, 75, 10, 8},
+		{"8 corroborated and 2 contradicted score 75, still Reliable (no longer a boundary)", relJoin(relOutcomes(relC, 8, 0), relOutcomes(relX, 2, 0)), service.ReporterReliable, 75, 10, 8},
 		{"6 corroborated and 12 contradicted sit exactly on 35", relJoin(relOutcomes(relC, 6, 0), relOutcomes(relX, 12, 0)), service.ReporterMixed, 35, 18, 6},
 		{"mixed ages across the half life", relJoin(
 			relOutcomes(relC, 1, 5*relDay), relOutcomes(relC, 1, 20*relDay), relOutcomes(relC, 1, 50*relDay),
@@ -279,7 +286,8 @@ func TestReliabilityTable(t *testing.T) {
 		{"4 corroborated is below the minimum of 5", relOutcomes(relC, 4, 0), service.ReporterNew, -1, 4, 4},
 		{"neutral outcomes are not judged", relJoin(relOutcomes(relC, 4, 0), relOutcomes(relN, 3, 0)), service.ReporterNew, -1, 4, 4},
 		{"an outcome outside the closed set is ignored like neutral", relJoin(relOutcomes(relC, 5, 0), relOutcomes("", 1, 0)), service.ReporterReliable, 86, 5, 5},
-		{"6 corroborated, 1 unconfirmed, 1 contradicted rounds 72.5 up to 73", relJoin(relOutcomes(relC, 6, 0), relOutcomes(relU, 1, 0), relOutcomes(relX, 1, 0)), service.ReporterMixed, 73, 8, 6},
+		// Amended 2026-10-29 by Phase 9 plan 01 (D-05): score 73 is now Reliable reporter.
+		{"6 corroborated, 1 unconfirmed, 1 contradicted rounds 72.5 up to 73", relJoin(relOutcomes(relC, 6, 0), relOutcomes(relU, 1, 0), relOutcomes(relX, 1, 0)), service.ReporterReliable, 73, 8, 6},
 		{"2 corroborated, 1 unconfirmed, 5 contradicted rounds 32.5 up to 33", relJoin(relOutcomes(relC, 2, 0), relOutcomes(relU, 1, 0), relOutcomes(relX, 5, 0)), service.ReporterUnreliable, 33, 8, 2},
 	}
 	for _, tc := range cases {
@@ -339,7 +347,10 @@ func TestReliabilityDecayAndWindow(t *testing.T) {
 
 	t.Run("uniform ageing keeps the exact boundaries", func(t *testing.T) {
 		check(t, relJoin(relOutcomes(relC, 4, 45*relDay), relOutcomes(relU, 1, 45*relDay)), service.ReporterReliable, 75, 5)
-		check(t, relJoin(relOutcomes(relC, 6, 45*relDay), relOutcomes(relU, 1, 45*relDay), relOutcomes(relX, 1, 45*relDay)), service.ReporterMixed, 73, 8)
+		// Amended 2026-10-29 by Phase 9 plan 01 (D-05): score 73 is now Reliable reporter.
+		check(t, relJoin(relOutcomes(relC, 6, 45*relDay), relOutcomes(relU, 1, 45*relDay), relOutcomes(relX, 1, 45*relDay)), service.ReporterReliable, 73, 8)
+		check(t, relJoin(relOutcomes(relC, 6, 45*relDay), relOutcomes(relX, 2, 45*relDay)), service.ReporterReliable, 70, 8)
+		check(t, relJoin(relOutcomes(relC, 4, 45*relDay), relOutcomes(relU, 2, 45*relDay)), service.ReporterMixed, 69, 6)
 		check(t, relJoin(relOutcomes(relC, 8, 70*relDay), relOutcomes(relX, 2, 70*relDay)), service.ReporterReliable, 75, 10)
 		check(t, relJoin(relOutcomes(relC, 6, 70*relDay), relOutcomes(relX, 12, 70*relDay)), service.ReporterMixed, 35, 18)
 		check(t, relJoin(relOutcomes(relX, 2, 45*relDay), relOutcomes(relU, 3, 45*relDay)), service.ReporterUnreliable, 25, 5)
@@ -444,10 +455,12 @@ func TestReliabilityInvariants(t *testing.T) {
 		return h
 	}
 	expectedTag := func(score int) service.ReporterTag {
+		// Amended 2026-10-29 by Phase 9 plan 01 (D-05): reads the two constants
+		// instead of the literals 75 and 35.
 		switch {
-		case score >= 75:
+		case score >= service.ReliableMinScore:
 			return service.ReporterReliable
-		case score >= 35:
+		case score >= service.MixedMinScore:
 			return service.ReporterMixed
 		}
 		return service.ReporterUnreliable

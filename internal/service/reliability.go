@@ -145,9 +145,13 @@ const (
 	ReliabilityHistoryReadCap = 100
 	// UnconfirmedCredit is the credit an unconfirmed report earns (D-23).
 	UnconfirmedCredit = 0.25
-	// ReliableMinScore is the lowest score tagged Reliable reporter (D-15, Q2).
-	ReliableMinScore = 75
-	// MixedMinScore is the lowest score tagged Mixed record (D-15, Q2).
+	// ReliableMinScore is the lowest score tagged Reliable reporter: 3.5 stars
+	// (D-05, owner decision 2026-10-17, chosen over the advice of 4 stars).
+	// Changed 2026-10-29 by Phase 9 (D-05): it was 75 (D-15, Q2).
+	ReliableMinScore = 70
+	// MixedMinScore is the lowest score tagged Mixed record (D-15, Q2). It
+	// maps to stars the same way as the other bar: 35 points is 1.75 stars,
+	// shown as 1.7 because StarsText floors (research assumption A2).
 	MixedMinScore = 35
 )
 
@@ -231,13 +235,16 @@ func reporterTagForScore(score int) ReporterTag {
 // (unweighted) the reporter is New with a nil score and the real Judged and
 // Corroborated counts.
 //
-// The tag is cut from the rounded integer score: 75 or more is Reliable
-// reporter, 35 to 74 Mixed record, 34 or less Unreliable reporter (D-15).
+// The tag is cut from the rounded integer score: 70 or more is Reliable
+// reporter, 35 to 69 Mixed record, 34 or less Unreliable reporter (D-15,
+// bar moved from 75 to 70 by Phase 9 D-05).
 //
 // The arithmetic is exact integer arithmetic over int64 sums, so the
-// boundaries 75, 35 and 25 are exact and the result does not depend on input
-// order. Invariants: I1 a history of only corroborated outcomes is Reliable
-// with score round(100 (n + 1) / (n + 2)); I2 restated for the credit 0.25, a
+// boundaries 70, 35 and 25 are exact (6 corroborated and 2 contradicted at
+// equal ages is exactly 70) and the result does not depend on input order.
+// Invariants: I1 a history of only corroborated outcomes scores
+// round(100 (n + 1) / (n + 2)), which is Reliable on the outcomes score alone
+// (a later plan of Phase 9 combines it with tapped stars); I2 restated for the credit 0.25, a
 // history of only unconfirmed outcomes with at least 5 judged always reads
 // Unreliable with score round(25 (n + 4) / (n + 2)); I3 a better outcome never
 // lowers the score and order never matters; I4 the score lies in
