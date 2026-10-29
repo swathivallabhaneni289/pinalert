@@ -568,3 +568,191 @@ func TestFollowBellErrorKeepsReliableStep(t *testing.T) {
 		t.Errorf("Reliable alerts attempted for %v, want [100] even though the follow step failed", got)
 	}
 }
+
+// listItem reads the reader's bell list and returns the row of one update id.
+func (r *followRig) listItem(reader, updateID int64) UpdateItem {
+	r.t.Helper()
+	page, err := r.updates.List(context.Background(), reader, ActivityUpdatesListSize)
+	if err != nil {
+		r.t.Fatalf("List: %v", err)
+	}
+	for _, it := range page.Items {
+		if it.ID == updateID {
+			return it
+		}
+	}
+	r.t.Fatalf("update %d is not in the list of reader %d", updateID, reader)
+	return UpdateItem{}
+}
+
+// noteID is the id of the follow note a reader holds about a report.
+func (r *followRig) noteID(reader, report int64) int64 {
+	r.t.Helper()
+	var id int64
+	err := r.pool.QueryRow(context.Background(),
+		`SELECT id FROM updates WHERE account_id = $1 AND report_id = $2 AND kind = 'followed_posted'`, reader, report).Scan(&id)
+	if err != nil {
+		r.t.Fatalf("reading the follow note of report %d: %v", report, err)
+	}
+	return id
+}
+
+// wantGone checks the shape of a row that reads as gone: the unavailable line
+// and nothing that names a person or leads to a report.
+func wantGone(t *testing.T, what string, it UpdateItem) {
+	t.Helper()
+	if it.Available || it.ReportID != nil || it.Event != UnavailableLine || it.ReportLine != "" || it.Trust != "" || it.Category != "" || it.Severity != "" {
+		t.Errorf("%s: row = %+v, want the unavailable line with no username, no report id and no detail", what, it)
+	}
+	if it.Kind != UpdateFollowedPosted {
+		t.Errorf("%s: kind = %q, want followed_posted (the row stays as history)", what, it.Kind)
+	}
+}
+
+// TestFollowBellRowWords: a follow note for a Provisional report reads the
+// username, the category and severity words and Not confirmed yet.; once people
+// nearby confirm the report the same row reads the confirmed sentence, with no
+// new row written.
+func TestFollowBellRowWords(t *testing.T) {
+	r := newFollowRig(t)
+	person, session := r.person("bell.words")
+	reader := r.follower("reader")
+	r.bellOn(reader, person, r.base.Add(10*time.Minute))
+	report := r.report(session, SeverityLow, r.base.Add(20*time.Minute), "clear")
+	critical := r.report(session, SeverityCritical, r.base.Add(21*time.Minute), "clear")
+	r.refresh(reader, r.base.Add(30*time.Minute))
+
+	it := r.listItem(reader, r.noteID(reader, report))
+	if !it.Available || it.ReportID == nil || *it.ReportID != report {
+		t.Fatalf("row = %+v, want an available row linking report %d", it, report)
+	}
+	if it.Event != "bell.words posted a report." {
+		t.Errorf("line 1 = %q", it.Event)
+	}
+	if it.ReportLine != "Flood, Low." {
+		t.Errorf("line 2 = %q, want the category and severity words, never the report's text", it.ReportLine)
+	}
+	if it.Trust != "Not confirmed yet." {
+		t.Errorf("trust line = %q, want Not confirmed yet.", it.Trust)
+	}
+	if got := r.listItem(reader, r.noteID(reader, critical)).ReportLine; got != "Flood, Critical." {
+		t.Errorf("line 2 of the critical report = %q", got)
+	}
+
+	// Two people at different spots confirm it: the same row reads the confirmed
+	// sentence and no row is added.
+	for i, cell := range []string{"tdr1v8y", "tdr1vc3"} {
+		voter := testutil.SeedReporterAccount(t, r.pool, fmt.Sprintf("p9-22-confirmer-%d@example.com", i), fmt.Sprintf("p9-22-confirmer-sess-%d", i))
+		r.vote(report, voter, "content", "confirm", cell, r.base.Add(31*time.Minute))
+	}
+	r.refresh(reader, r.base.Add(32*time.Minute))
+	again := r.listItem(reader, it.ID)
+	if !strings.HasPrefix(again.Trust, "Confirmed by ") {
+		t.Errorf("trust line after the confirmations = %q, want the confirmed sentence", again.Trust)
+	}
+	if got := r.notes(reader, report); got != 1 {
+		t.Errorf("notes for the confirmed report = %d, want 1 (updated in place, no new row)", got)
+	}
+	if again.Event != it.Event || again.ReportLine != it.ReportLine {
+		t.Errorf("lines 1 and 2 changed to %q and %q", again.Event, again.ReportLine)
+	}
+}
+
+// TestFollowBellEndedFollowReadsUnavailable: after the follow ends, the person
+// goes private or is deleted, or the person blocks the reader, the row reads as
+// gone with no username and no report link. A bell switched off with the follow
+// kept leaves the row readable.
+func TestFollowBellEndedFollowReadsUnavailable(t *testing.T) {
+	r := newFollowRig(t)
+	reader := r.follower("reader")
+	type fixture struct {
+		person int64
+		report int64
+		note   int64
+	}
+	fix := map[string]*fixture{}
+	for _, name := range []string{"unfollowed", "private", "deleted", "blocker", "bellOff", "control"} {
+		person, session := r.person("bell." + strings.ToLower(name))
+		r.bellOn(reader, person, r.base.Add(10*time.Minute))
+		fix[name] = &fixture{person: person, report: r.report(session, SeverityLow, r.base.Add(20*time.Minute), "clear")}
+	}
+	r.refresh(reader, r.base.Add(30*time.Minute))
+	for name, f := range fix {
+		f.note = r.noteID(reader, f.report)
+		if it := r.listItem(reader, f.note); !it.Available || !strings.HasSuffix(it.Event, " posted a report.") {
+			t.Fatalf("%s: row before the change = %+v, want a readable row", name, it)
+		}
+	}
+
+	r.cur = r.base.Add(40 * time.Minute)
+	if _, err := endFollowPair(context.Background(), r.q, reader, fix["unfollowed"].person, FollowEndUnfollowed, r.cur); err != nil {
+		t.Fatalf("ending the follow: %v", err)
+	}
+	testutil.MustExec(t, r.pool, `UPDATE accounts SET profile_public = false WHERE id = $1`, fix["private"].person)
+	testutil.MustExec(t, r.pool, `UPDATE accounts SET deleted_at = $2 WHERE id = $1`, fix["deleted"].person, r.cur)
+	testutil.SeedBlock(t, r.pool, fix["blocker"].person, reader)
+	r.setBell(reader, fix["bellOff"].person, false, r.cur)
+
+	for _, name := range []string{"unfollowed", "private", "deleted", "blocker"} {
+		wantGone(t, name, r.listItem(reader, fix[name].note))
+	}
+	for _, name := range []string{"bellOff", "control"} {
+		if it := r.listItem(reader, fix[name].note); !it.Available || it.ReportID == nil {
+			t.Errorf("%s: row = %+v, want it still readable (the follow lasts)", name, it)
+		}
+	}
+}
+
+// TestFollowBellFinishedReportDropsName: once a report is resolved or has
+// expired, its follow note reads as gone with no username and no report id,
+// while the follow lasts and the person stays public (D-20).
+func TestFollowBellFinishedReportDropsName(t *testing.T) {
+	r := newFollowRig(t)
+	person, session := r.person("bell.finished")
+	reader := r.follower("reader")
+	r.bellOn(reader, person, r.base.Add(10*time.Minute))
+	at := r.base.Add(20 * time.Minute)
+	toResolve := r.report(session, SeverityLow, at, "clear")
+	toExpire := testutil.InsertStoredReport(t, r.pool, testutil.StoredReport{
+		SessionID: session, Category: "flood", Severity: "low", Description: "p9-22 short lived",
+		Latitude: r.lat, Longitude: r.lon, CreatedAt: at, ExpiresAt: at.Add(25 * time.Minute), ModerationState: "clear",
+	})
+	r.refresh(reader, at.Add(10*time.Minute))
+	resolveNote, expireNote := r.noteID(reader, toResolve), r.noteID(reader, toExpire)
+	for _, id := range []int64{resolveNote, expireNote} {
+		if it := r.listItem(reader, id); !it.Available || it.ReportID == nil {
+			t.Fatalf("row %d before the report finished = %+v, want a readable row", id, it)
+		}
+	}
+
+	// The person marks one resolved; the other runs out of time.
+	r.vote(toResolve, person, "resolution", "resolve", "tdr1v8y", at.Add(12*time.Minute))
+	r.cur = at.Add(40 * time.Minute)
+	wantGone(t, "resolved", r.listItem(reader, resolveNote))
+	wantGone(t, "expired", r.listItem(reader, expireNote))
+
+	// The follow and the public profile are still there, so this is the report
+	// finishing and nothing else.
+	var active, public bool
+	if err := r.pool.QueryRow(context.Background(),
+		`SELECT EXISTS (SELECT 1 FROM account_follows WHERE follower_id = $1 AND followee_id = $2 AND ended_at IS NULL),
+		        (SELECT profile_public FROM accounts WHERE id = $2)`, reader, person).Scan(&active, &public); err != nil {
+		t.Fatalf("reading the follow and the profile: %v", err)
+	}
+	if !active || !public {
+		t.Fatalf("follow active = %v, profile public = %v, want both still true", active, public)
+	}
+}
+
+// TestFollowBellListReadsOnlyForFollowNotes: a page with no follow note makes
+// neither of the two extra reads.
+func TestFollowBellListReadsOnlyForFollowNotes(t *testing.T) {
+	f := newFollowFake()
+	svc := newFollowService(f, nil)
+	if _, err := svc.List(context.Background(), 5, BellListSize); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if n := len(f.named("PublicProfilePathsForViewer")) + len(f.named("ActiveFollowsAmong")); n != 0 {
+		t.Errorf("extra reads on a page with no follow note = %d, want 0", n)
+	}
+}
