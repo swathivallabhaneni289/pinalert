@@ -230,10 +230,33 @@ func TestOfficialAlertsLaptopGridAndPhoneCard(t *testing.T) {
 	p16MustDecl(t, "reduced motion chevron", officialRule(t, "@media (prefers-reduced-motion: reduce)", ".official-row__chevron"), map[string]string{
 		"transition": "none",
 	})
-	for _, head := range []string{".official-badge", ".demo-tag"} {
-		p16MustDecl(t, head, officialRule(t, "", head), map[string]string{
+	// Amended 2026-10-29 by the Phase 5 review fix (IN-T09): the Demo tag has
+	// one definition, in demo.css, which every page that can show it loads
+	// after official.css. The same declarations are checked there, and no other
+	// stylesheet may define .demo-tag, forced colours included.
+	tagRules := map[string]p16CSSRule{
+		".official-badge": officialRule(t, "", ".official-badge"),
+		".demo-tag":       p31mRule(t, "static/css/demo.css", "", ".demo-tag"),
+	}
+	for head, rule := range tagRules {
+		p16MustDecl(t, head, rule, map[string]string{
 			"min-height": "24px", "border-radius": "4px", "border": "1px solid var(--color-text)", "background": "var(--color-bg)",
 		})
+	}
+	for _, r := range p16AllCSS(t) {
+		if r.File == "static/css/demo.css" {
+			continue
+		}
+		for _, part := range p16HeadParts(r.Head) {
+			if part == ".demo-tag" {
+				t.Errorf("%s defines .demo-tag in %q (media %q); the one definition is in demo.css", r.File, r.Head, r.Media)
+			}
+		}
+	}
+	for _, page := range []string{"demo.html.tmpl", "demo_alerts.html.tmpl", "demo_activity.html.tmpl"} {
+		if !strings.Contains(p421ReadTemplate(t, page), "/static/css/demo.css") {
+			t.Errorf("%s shows the Demo tag but does not load demo.css", page)
+		}
 	}
 
 	// Rows are 44px or taller on both sizes.

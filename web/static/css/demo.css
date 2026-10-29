@@ -116,9 +116,11 @@
 
 /* ---- The Demo tag ----------------------------------------------------------- */
 
-/* The same neutral tag as the Demo tag of the Official alerts page (official.css
-   draws it there): word and shape carry the meaning, so it never competes with
-   the severity colour. First item of a row's state position, and in the badge
+/* The one definition of the Demo tag (Phase 5 review fix IN-T09, 2026-10-29:
+   official.css no longer draws its own copy; the Demo alerts page loads this
+   file after it). The same neutral look as the authority badge: word and shape
+   carry the meaning, so it never competes with the severity colour. First item
+   of a row's state position, on a Demo alert row, and in the badge
    row of a popup. */
 .demo-tag {
   display: inline-flex;

@@ -309,11 +309,12 @@
   mask-image: url("/static/icons/shield-check.svg");
 }
 
-/* The authority badge, the Demo tag and the Original language tag are neutral:
-   they carry meaning by word and shape, so they never compete with the severity
-   colour (UI-SPEC Color). */
+/* The authority badge and the Original language tag are neutral: they carry
+   meaning by word and shape, so they never compete with the severity colour
+   (UI-SPEC Color). The Demo tag looks the same and has its one definition in
+   demo.css, which every Demo page loads after this file (Phase 5 review fix
+   IN-T09, 2026-10-29). */
 .official-badge,
-.demo-tag,
 .official-tag {
   box-sizing: border-box;
   min-height: 24px;
@@ -329,7 +330,6 @@
 }
 
 .official-badge,
-.demo-tag,
 .official-tag {
   display: inline-flex;
   align-items: center;
@@ -545,7 +545,6 @@
 @media (forced-colors: active) {
   .official-chip,
   .official-badge,
-  .demo-tag,
   .official-tag,
   .official-notice,
   .official-item {
