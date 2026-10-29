@@ -483,6 +483,18 @@ window.PinalertEndedNearby = (function () {
     var limit = Pinalert.requestTimeout(READ_TIMEOUT_MS, 'endedNearby');
     var answered = fetch(url, { signal: limit.signal }).then(function (res) {
       if (!res.ok) {
+        // An ended Demo visit answers 404 with the field visit: the Demo then
+        // starts again (Phase 5 review fix WR-B08). window.PinalertDemoEnded is
+        // set by demo.js on Demo pages only.
+        if (res.status === 404 && typeof window.PinalertDemoEnded === 'function' && typeof res.json === 'function') {
+          return res.json().then(function (body) {
+            if (body && body.error && body.error.field === 'visit') {
+              window.PinalertDemoEnded();
+            }
+          }, function () {}).then(function () {
+            throw new Error('endedNearby: HTTP ' + res.status);
+          });
+        }
         throw new Error('endedNearby: HTTP ' + res.status);
       }
       return res.json();

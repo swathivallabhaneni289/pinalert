@@ -735,6 +735,18 @@
     }
     fetch(target, init).then(function (res) {
       if (!res.ok) {
+        // An ended Demo visit answers 404 with the field visit: the Demo then
+        // starts again (Phase 5 review fix WR-B08). window.PinalertDemoEnded is
+        // set by demo.js on Demo pages only, so a real page never reads it.
+        if (res.status === 404 && typeof window.PinalertDemoEnded === 'function' && typeof res.json === 'function') {
+          return res.json().then(function (body) {
+            if (mine === requestSeq && body && body.error && body.error.field === 'visit') {
+              window.PinalertDemoEnded();
+            }
+          }, function () {}).then(function () {
+            throw new Error('status ' + res.status);
+          });
+        }
         throw new Error('status ' + res.status);
       }
       return res.json();

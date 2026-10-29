@@ -1206,3 +1206,34 @@ test('WR-B09: a tab centre older than 30 minutes, or with no time, is not used',
   timeless.sessionStorage.setItem('pinalert.nearbyCentre', JSON.stringify({ account: '7', lat: 17.38, lon: 78.48 }));
   assert.equal(timeless.api.areaSource(), null);
 });
+
+// ---- An ended Demo visit restarts the Demo (Phase 5 review fix WR-B08) ----
+// Added 2026-10-29. The Demo API answers 404 with the field visit once the
+// visit is gone; the page then hands over to window.PinalertDemoEnded (set by
+// demo.js on Demo pages only) instead of blaming the connection for ever.
+
+test('WR-B08: a 404 for an ended visit calls PinalertDemoEnded once', async () => {
+  const page = loadPage({ account: null, demo: true, dataApiBase: '/demo/api/v/abc_DEF-123', fixedLat: '16.5', fixedLon: '80.6' });
+  let ended = 0;
+  page.sandbox.PinalertDemoEnded = () => { ended += 1; };
+  await flush();
+  answer(page.requests[0], 404, { error: { field: 'visit', message: 'This Demo has ended. Reload the page to start again.' } });
+  await flush();
+  assert.equal(ended, 1);
+});
+
+test('WR-B08: any other failure keeps the load error and never restarts anything', async () => {
+  const page = loadPage();
+  let ended = 0;
+  page.sandbox.PinalertDemoEnded = () => { ended += 1; };
+  await flush();
+  answer(page.requests[0], 404, { error: { field: 'body', message: 'Not found' } });
+  await flush();
+  assert.equal(ended, 0);
+  assert.ok(shown(page, 'official-error'));
+  fire(el(page, 'official-retry'), 'click');
+  await flush();
+  answer(page.requests[1], 500, { error: { field: 'visit' } });
+  await flush();
+  assert.equal(ended, 0, 'only a 404 says the visit is gone');
+});

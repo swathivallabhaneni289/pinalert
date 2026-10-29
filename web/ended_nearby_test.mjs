@@ -1060,3 +1060,31 @@ test('CR-B02: a real My activity page with no base still reads /api', async () =
   await settle();
   assert.equal(new URL(m.fetches[0].url, 'http://x').pathname, '/api/reports');
 });
+
+// ---- An ended Demo visit restarts the Demo (Phase 5 review fix WR-B08) ----
+// Added 2026-10-29.
+
+test('WR-B08: the part read answering 404 for an ended visit calls PinalertDemoEnded once', async () => {
+  const base = '/demo/api/v/abc_DEF-123';
+  const m = load({
+    fixed: [16.5424, 80.6386], pageAccount: null, apiBase: base,
+    answers: [{ refuse: 404, error: { field: 'visit', message: 'This Demo has ended. Reload the page to start again.' } }]
+  });
+  let ended = 0;
+  m.sandbox.PinalertDemoEnded = () => { ended += 1; };
+  m.start();
+  await settle();
+  await settle();
+  assert.equal(ended, 1);
+});
+
+test('WR-B08: another 404 keeps the load error and restarts nothing', async () => {
+  const m = load({ position: [12.97, 77.59], answers: [{ refuse: 404, error: { field: 'report' } }] });
+  let ended = 0;
+  m.sandbox.PinalertDemoEnded = () => { ended += 1; };
+  m.start();
+  await settle();
+  await settle();
+  assert.equal(ended, 0);
+  assert.equal(m.by('ended-error').hasAttribute('hidden'), false);
+});
