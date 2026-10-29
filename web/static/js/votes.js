@@ -620,6 +620,14 @@
             err.field = fieldError.field;
             err.fieldMessage = fieldError.message;
             err.status = res.status;
+            // An ended Demo visit answers 404 with the field visit: the Demo
+            // starts again (Phase 5 review fix IN-B01). The rejection is the
+            // same, so the controls stay as they were. window.PinalertDemoEnded
+            // is set by demo.js on Demo pages only.
+            if (res.status === 404 && fieldError.field === 'visit' &&
+                typeof window.PinalertDemoEnded === 'function') {
+              window.PinalertDemoEnded();
+            }
             if (res.status === 429) {
               // The server's own sentence and wait are remembered, so a tap
               // during the wait is answered without a request. A 429 is

@@ -406,3 +406,32 @@ test('WR-B09 app.js: the fallback centre is announced as not own and not a place
   const second = m.events.filter((e) => e.type === 'pinalert:feed-centre')[1];
   assert.deepEqual({ ...second.detail }, { lat: 16.4975, lon: 80.6553, own: false, place: true }, 'a searched place');
 });
+
+// ---- A vote on an ended Demo visit restarts the Demo (Phase 5 review fix IN-B01) ----
+// Added 2026-10-29.
+
+test('IN-B01 votes.js: a 404 for an ended visit calls PinalertDemoEnded once and still rejects with the server words', async () => {
+  const m = load({ shellAttrs: demoShell(DEMO_BASE), scripts: ['api-base.js', 'app.js', 'votes.js'] });
+  let ended = 0;
+  m.win.PinalertDemoEnded = () => { ended += 1; };
+  m.win.Pinalert.setCenter(16.5424, 80.6386, true);
+  let refused = null;
+  const voted = m.win.PinalertVotes.castVote('7', 'confirm').catch((err) => { refused = err; });
+  await settle();
+  m.answer(m.fetches[0], { error: { field: 'visit', message: 'This Demo has ended. Reload the page to start again.' } }, 404);
+  await voted;
+  assert.equal(ended, 1);
+  assert.equal(refused.fieldMessage, 'This Demo has ended. Reload the page to start again.');
+});
+
+test('IN-B01 votes.js: another refusal restarts nothing', async () => {
+  const m = load({ shellAttrs: demoShell(DEMO_BASE), scripts: ['api-base.js', 'app.js', 'votes.js'] });
+  let ended = 0;
+  m.win.PinalertDemoEnded = () => { ended += 1; };
+  m.win.Pinalert.setCenter(16.5424, 80.6386, true);
+  const voted = m.win.PinalertVotes.castVote('7', 'confirm').catch(() => {});
+  await settle();
+  m.answer(m.fetches[0], { error: { field: 'report', message: 'Not found' } }, 404);
+  await voted;
+  assert.equal(ended, 0);
+});
