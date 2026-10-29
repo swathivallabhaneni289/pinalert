@@ -823,6 +823,14 @@
     if (!host) {
       return;
     }
+    // The same path again keeps the same node, so a poll never drops the focus
+    // of a reader who has Tabbed to the link (09-REVIEW WR-B02).
+    if (target.profileLink && typeof path === 'string' &&
+        target.profileLink.parentNode === host &&
+        target.profileLink.getAttribute('href') === path &&
+        PROFILE_PATH.test(path)) {
+      return;
+    }
     if (target.profileLink) {
       target.profileLink.remove();
       target.profileLink = null;
