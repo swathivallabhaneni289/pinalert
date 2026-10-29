@@ -481,6 +481,63 @@ func TestRefreshPartialRunKeepsLastSuccess(t *testing.T) {
 	}
 }
 
+// ctxAlerts and ctxFeeds refuse a write on an ended context, as the database does.
+type ctxAlerts struct{ *fakeAlerts }
+
+func (a ctxAlerts) save(ctx context.Context, v Version, p Placement, now time.Time) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return a.fakeAlerts.save(ctx, v, p, now)
+}
+
+type ctxFeeds struct{ *fakeFeeds }
+
+func (f ctxFeeds) success(ctx context.Context, feed Feed, now time.Time, res Result) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return f.fakeFeeds.success(ctx, feed, now, res)
+}
+
+// slowCAPs ends the run's context while the CAP fetches run, as the 55 second
+// budget does on a day SACHET answers slowly.
+type slowCAPs struct {
+	*fakeSachet
+	end func()
+}
+
+func (s slowCAPs) FetchCAPs(ctx context.Context, items []Item) []CAPResult {
+	out := s.fakeSachet.FetchCAPs(ctx, items)
+	s.end()
+	return out
+}
+
+// TestRefreshKeepsWhatWasFetchedAfterTheDeadline pins WR-S02 of the Phase 5
+// review: messages fetched before the run's context ended are still stored, and
+// the success is still recorded, so a slow SACHET day makes progress.
+func TestRefreshKeepsWhatWasFetchedAfterTheDeadline(t *testing.T) {
+	ctx, end := context.WithCancel(context.Background())
+	defer end()
+	api := slowCAPs{fakeSachet: &fakeSachet{list: ListResult{Items: manyItems(5), ETag: `W/"e"`}}, end: end}
+	feeds := ctxFeeds{newFakeFeeds(0)}
+	alerts := ctxAlerts{newFakeAlerts()}
+	c := &clock{t: refreshT0}
+	r := NewRefresher(nil, nil, withStores(feeds, alerts), WithRefresherClock(c.now))
+	r.Register(FeedSachet, newSachetFetcher(api, areas.Default(), func() alertStore { return alerts }, c.now), MinRefreshGap)
+
+	res, err := r.RefreshIfDue(ctx, FeedSachet)
+	if err != nil || res.Stored != 5 {
+		t.Fatalf("got %+v, %v; want the five fetched messages stored", res, err)
+	}
+	if len(alerts.saved) != 5 {
+		t.Errorf("%d saved, want 5", len(alerts.saved))
+	}
+	if got := feeds.rows[FeedSachet].LastSuccessAt; got == nil || !got.Equal(c.now()) {
+		t.Errorf("the success was not recorded after the deadline: %v", got)
+	}
+}
+
 func TestRefreshRetriesWhatFailed(t *testing.T) {
 	items := manyItems(3)
 	failing := items[1].GUID

@@ -61,6 +61,10 @@ const AnomalyFloor = 10
 const markTimeout = 5 * time.Second
 
 // errAnomaly is the failure for a feed that emptied after a full one.
+// saveTimeout bounds the saves of one run once its CAP fetches are done, so the
+// messages fetched before the run's own deadline are still stored.
+const saveTimeout = 10 * time.Second
+
 var errAnomaly = errors.New("official: the feed returned no items after a full one")
 
 // ErrUnknownFeed is returned for a feed nothing was registered for.
@@ -321,7 +325,9 @@ func (r *Refresher) run(ctx context.Context, feed Feed, reg registration) (Resul
 			feed, res.ItemsSeen, res.Fetched, res.Stored, res.Cancelled)
 		return res, nil
 	}
-	if err := r.feeds.success(ctx, feed, now, res); err != nil {
+	sctx, scancel := context.WithTimeout(context.WithoutCancel(ctx), markTimeout)
+	defer scancel()
+	if err := r.feeds.success(sctx, feed, now, res); err != nil {
 		res.ErrorClass = "network"
 		return res, fmt.Errorf("official: recording the success: %w", err)
 	}
@@ -402,7 +408,13 @@ func (f *sachetFetcher) Fetch(ctx context.Context, st FeedStatus) (Result, error
 	failed := 0
 	var first error
 	if len(need) > 0 {
-		for _, cr := range f.api.FetchCAPs(ctx, need) {
+		caps := f.api.FetchCAPs(ctx, need)
+		// The saves run on their own bounded context: when the run's budget ends
+		// during the fetches, what was fetched is still kept (WR-S02 of the Phase
+		// 5 review), and the next run does not fetch it again.
+		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), saveTimeout)
+		defer cancel()
+		for _, cr := range caps {
 			if cr.Err != nil {
 				failed++
 				if first == nil {
@@ -416,7 +428,7 @@ func (f *sachetFetcher) Fetch(ctx context.Context, st FeedStatus) (Result, error
 				continue
 			}
 			p := Place(cr.Version, f.ix)
-			if err := f.store().save(ctx, cr.Version, p, f.now()); err != nil {
+			if err := f.store().save(sctx, cr.Version, p, f.now()); err != nil {
 				failed++
 				if first == nil {
 					first = err
