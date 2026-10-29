@@ -1,0 +1,268 @@
+/*
+ * Pinalert - share.css
+ *
+ * Owned by Phase 8 plan 06 (COORD-08, D-04, UI-SPEC Surface 5a). The look of
+ * the Share window that share.js opens from the Share button of an opened
+ * report: the laptop window and the parts both sizes share (the header, the
+ * card of what people get in a forward, the error line and the two buttons).
+ * The phone bottom sheet is phone.css, inside its one narrow block, as the
+ * house rule says. It links after report-page.css and before chrome.css and
+ * phone.css, so the shared button and message rules of chrome.css and the
+ * phone rules win a tie without a specificity trick.
+ *
+ * Tokens only. The card is neutral on purpose: no severity colour, no count and
+ * no state word, because a forward must never carry a number that went stale
+ * (D-04). The off look of a button waiting for the link is the shared
+ * .btn--off look of chrome.css (an aria-disabled button with full contrast
+ * text), toggled only through aria-disabled by share.js. Every rule that sets
+ * display carries :not([hidden]) so the hidden attribute still hides the
+ * element (the failure of Phase 1's .modal-backdrop). No opacity on text.
+ */
+
+/* ---- The window (laptop; the phone sheet is in phone.css) ---------------- */
+
+/* The shared backdrop is centred and 55 percent dim. The window dim is 45. */
+.modal-backdrop.share-window:not([hidden]) {
+  background: rgb(0 0 0 / 45%);
+}
+
+.share-window .share-window__panel {
+  box-sizing: border-box;
+  width: min(440px, calc(100% - var(--space-xl)));
+  max-width: none;
+  max-height: calc(100% - var(--space-xl));
+  padding: 0;
+  border-radius: 12px;
+  box-shadow: var(--shadow-window);
+  overflow-y: auto;
+}
+
+/* modal.css spaces a panel's children with a top margin; this panel spaces its
+   parts with gaps. */
+.share-window .share-window__panel > * + * {
+  margin-top: 0;
+}
+
+.share-window__head:not([hidden]) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md) var(--space-sm) var(--space-lg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Two classes, so the title outranks the shared h2 rule of 24px. */
+.share-window .share-window__title {
+  margin: 0;
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+/* The title takes the first focus when the window opens (tabindex -1), so a
+   screen reader starts at its name. It draws no ring; the controls keep theirs. */
+.share-window .share-window__title:focus {
+  outline: none;
+}
+
+.share-window__close:not([hidden]) {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  height: var(--touch-target-min);
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.share-window__close .app-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.share-window__body:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+}
+
+/* ---- The card: what people get in a forward ------------------------------ */
+
+.share-card {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* The band takes the text colour, never the muted one, on the surface fill. */
+.share-card__band:not([hidden]) {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.share-card__disc:not([hidden]) {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-xl);
+  height: var(--space-xl);
+  box-sizing: border-box;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.share-card__glyph {
+  width: var(--space-md);
+  height: var(--space-md);
+}
+
+.share-card__brand {
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.share-card__body:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-12) var(--space-md);
+  background: var(--color-bg);
+}
+
+.share-card__title {
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.share-card__line,
+.share-card__link {
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* One tap selects the whole link, which is also how a refused clipboard is
+   worked around. */
+.share-card__link {
+  -webkit-user-select: all;
+  user-select: all;
+}
+
+/* The link line while the link is not known yet: a short bar in the app's
+   skeleton look. */
+.share-card__bar:not([hidden]) {
+  display: block;
+  width: 60%;
+  height: var(--space-md);
+  border-radius: 6px;
+  background-color: var(--color-surface);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+/* ---- The error line and its Try again button ------------------------------ */
+
+/* The shared .inline-error is a row of icon and text. The text fills the rest
+   of the first row, so the button wraps under it, level with the words. */
+.share-window__error:not([hidden]) {
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+.share-window__error-text {
+  flex: 1 1 calc(100% - var(--space-lg));
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.share-window__retry:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+  margin-left: var(--space-lg);
+  padding: 0 var(--space-md);
+  border-radius: 8px;
+}
+
+/* ---- The two buttons ------------------------------------------------------ */
+
+/* Two equal buttons with an 8px gap. They never shrink below their words, so
+   at 200 percent text they wrap onto two rows. */
+.share-window__actions:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.share-window__whatsapp:not([hidden]),
+.share-window__copy:not([hidden]) {
+  flex: 1 1 0;
+  min-width: max-content;
+  min-height: var(--touch-target-min);
+  box-sizing: border-box;
+  border-radius: 8px;
+  gap: var(--space-sm);
+}
+
+/* The link glyph before the words of Copy link; Link copied swaps it for the
+   check by class. */
+.share-window__glyph {
+  width: 20px;
+  height: 20px;
+}
+
+.share-window__glyph--link {
+  -webkit-mask-image: url("/static/icons/link.svg");
+  mask-image: url("/static/icons/link.svg");
+}
+
+/* The phone sheet slides up with this (phone.css names it; a keyframes block
+   cannot sit inside the narrow block of that file). */
+@keyframes share-sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .share-card__bar {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .share-card__disc {
+    border-color: CanvasText;
+  }
+}

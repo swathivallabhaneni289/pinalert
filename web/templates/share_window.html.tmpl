@@ -1,0 +1,37 @@
+{{/* The one Share window, opened by the Share button of an opened report. Static markup: share.js opens it, locks the page behind it and writes every word that changes. It is a window on a laptop and a bottom sheet on a phone. The card shows exactly what people get in a forward: the title, the fixed line and the link, never a count, a state word or a severity colour. The fixed line, the title and the link all come from the server, so none of them is typed here. */}}
+  <div class="modal-backdrop share-window" id="share-window" hidden>
+    <div class="modal-panel share-window__panel" role="dialog" aria-modal="true" aria-labelledby="share-window-title">
+      <header class="share-window__head">
+        <h2 id="share-window-title" class="share-window__title" tabindex="-1">Share this report</h2>
+        <button type="button" class="share-window__close" id="share-window-close" aria-label="Close">
+          <span class="app-icon app-icon--x" aria-hidden="true"></span>
+        </button>
+      </header>
+      <div class="share-window__body">
+        <div class="share-card" role="group" aria-label="What people see">
+          <div class="share-card__band">
+            <span class="share-card__disc" aria-hidden="true"><span class="icon-glyph icon-glyph--other share-card__glyph" id="share-card-glyph"></span></span>
+            <span class="share-card__brand">Pinalert</span>
+          </div>
+          <div class="share-card__body">
+            <p class="share-card__title" id="share-card-title"></p>
+            <p class="share-card__line" id="share-card-line"></p>
+            <p class="share-card__link" id="share-card-link" hidden></p>
+            <span class="share-card__bar" id="share-card-bar" aria-hidden="true"></span>
+          </div>
+        </div>
+        <p class="visually-hidden" id="share-status" role="status"></p>
+        <div class="inline-error share-window__error" id="share-window-error" hidden>
+          <p class="share-window__error-text" id="share-window-error-text"></p>
+          <button type="button" class="btn share-window__retry" id="share-window-retry">Try again</button>
+        </div>
+        <div class="share-window__actions">
+          <a class="btn btn--primary btn--off share-window__whatsapp" id="share-window-whatsapp" role="link" aria-disabled="true" target="_blank" rel="noopener noreferrer">WhatsApp</a>
+          <button type="button" class="btn btn--off share-window__copy" id="share-window-copy" aria-disabled="true">
+            <span class="app-icon share-window__glyph share-window__glyph--link" id="share-window-copy-glyph" aria-hidden="true"></span>
+            <span id="share-window-copy-word">Copy link</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>

@@ -408,6 +408,14 @@ func TestReadOnlyLabelsRoundedControlsNot(t *testing.T) {
 		if r.File == "static/css/report-page.css" && (r.Head == ".report-timeline__dot::before" || r.Head == ".report-timeline__bar--dot") {
 			continue
 		}
+		// Amended 2026-10-29 by Phase 8 plan 06 (UI-SPEC Surface 5a, Radii: 50
+		// percent is for discs): the 32px disc that holds the category glyph in
+		// the Share window card is a drawing, not a control. It is aria-hidden
+		// and cannot be pressed, and the word Pinalert beside it names the card.
+		// share.css is exempted for exactly this head and nothing else.
+		if r.File == "static/css/share.css" && r.Head == ".share-card__disc:not([hidden])" {
+			continue
+		}
 		exempt := false
 		for _, name := range exemptControls {
 			if strings.Contains(r.Head, name) {

@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="/static/css/feed.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/trust.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/report-page.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/share.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/app-bar.css?v={{.AssetVersion}}">
@@ -224,6 +225,8 @@
 
     {{template "flag_dialog.html.tmpl" .}}
     <div id="toast" role="status" aria-live="polite" hidden></div>
+    {{/* Phase 8 plan 06 (COORD-08, D-04): the Share window, a window on a laptop and a bottom sheet on a phone. share.js opens it from the Share button of an opened report. */}}
+    {{template "share_window.html.tmpl" .}}
   </div>
 
   {{template "reader_dialog.html.tmpl" .}}

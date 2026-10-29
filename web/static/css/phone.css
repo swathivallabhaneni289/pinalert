@@ -1354,6 +1354,30 @@
   html[data-report-gone] .app-shell > .pane--list {
     visibility: hidden;
   }
+
+  /* ---- The Share window as a bottom sheet (Phase 8 plan 06, UI-SPEC 5a) ----
+     The same window the laptop draws centred (share.css), anchored to the
+     bottom on a phone: full width, at most 90 percent of the screen high,
+     16px top corners and the sheet shadow, over the same dim backdrop. It
+     slides up in 200ms; the reduced motion block at the end of this file
+     makes it instant. The body keeps clear of the home indicator. */
+  .modal-backdrop.share-window:not([hidden]) {
+    align-items: flex-end;
+    justify-content: stretch;
+  }
+
+  .share-window .share-window__panel {
+    width: 100%;
+    max-height: 90%;
+    border-radius: 16px 16px 0 0;
+    box-shadow: var(--shadow-sheet);
+    animation: share-sheet-up 200ms ease-out;
+  }
+
+  .share-window .share-window__body:not([hidden]) {
+    padding: var(--space-md);
+    padding-bottom: calc(var(--space-md) + env(safe-area-inset-bottom, 0px));
+  }
 }
 
 /* A landscape phone has little height, so the strip goes and the report
@@ -1448,6 +1472,11 @@
   /* The sheet that steps aside for a report detail goes at once too. */
   html[data-popup-open] .app-shell > .pane--list {
     transition: none;
+  }
+
+  /* The Share sheet appears at once (Phase 8 plan 06). */
+  .share-window .share-window__panel {
+    animation: none;
   }
 }
 

@@ -343,6 +343,11 @@ var touchControls = []string{
 	// error block, each 44px through --touch-target-min in report-page.css. No
 	// other entry changed.
 	".report-page__share", ".report-page__retry",
+	// Amended 2026-10-29 by Phase 8 plan 06 (COORD-08, UI-SPEC Interaction and
+	// Accessibility): the X, the WhatsApp link, the Copy link button and the Try
+	// again button of the Share window, each 44px through --touch-target-min in
+	// share.css. No other entry changed.
+	".share-window__close", ".share-window__whatsapp", ".share-window__copy", ".share-window__retry",
 }
 
 // touchValue reads a height or min-height value as pixels: a px length, a
