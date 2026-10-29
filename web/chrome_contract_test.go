@@ -46,12 +46,12 @@ func TestDisclaimerBarOnEveryFullPage(t *testing.T) {
 	// wrapper alone, "header" the wrapper holding only the account header,
 	// "none" a body with no wrapper.
 	opening := map[string]string{
-		"templates/index.html.tmpl":          "strip+top",
-		"templates/profile.html.tmpl":        "top",
-		"templates/alerts.html.tmpl":         "top",
-		"templates/settings.html.tmpl":       "top",
-		"templates/low.html.tmpl":            "header",
-		"templates/moderate.html.tmpl":       "header",
+		"templates/index.html.tmpl":      "strip+top",
+		"templates/profile.html.tmpl":    "top",
+		"templates/alerts.html.tmpl":     "top",
+		"templates/settings.html.tmpl":   "top",
+		"templates/low.html.tmpl":        "header",
+		"templates/moderate.html.tmpl":   "header",
 		"templates/login_gate.html.tmpl": "none",
 		// Amended 2026-10-29 by Phase 7.1 plan 16: the link landing page entry is
 		// removed with the page (D-12).

@@ -167,8 +167,20 @@ func TestAudit29SignInHasOneRhythm(t *testing.T) {
 	p16MustDecl(t, ".login-column", col, map[string]string{"gap": "var(--space-md)", "background": "var(--color-bg)"})
 	p16MustDecl(t, ".login-card p", p31mRule(t, "static/css/auth.css", "", ".login-card p"),
 		map[string]string{"margin": "0 0 var(--space-md) 0"})
-	p16MustDecl(t, ".auth-error:empty", p31mRule(t, "static/css/auth.css", "", ".auth-error:empty"),
-		map[string]string{"min-height": "0", "margin": "0"})
+	// Amended 2026-10-29 by the Phase 7.1 review fix (templates): the empty
+	// .auth-error line belonged to the old emailed link sign in, whose rules
+	// IN-T03 removed. The card's error lines are p.inline-error elements that
+	// carry the hidden attribute while empty, so they take no room
+	// (.login-card .inline-error:not([hidden])); that guard is pinned here
+	// instead.
+	for _, r := range p16ParseCSS("static/css/auth.css", p16ReadStatic(t, "static/css/auth.css")) {
+		if strings.Contains(r.Head, ".auth-error") {
+			t.Errorf("auth.css still has a .auth-error rule (%q)", r.Head)
+		}
+	}
+	p16MustDecl(t, ".login-card .inline-error:not([hidden])",
+		p31mRule(t, "static/css/auth.css", "", ".login-card .inline-error:not([hidden])"),
+		map[string]string{"margin": "0 0 var(--space-md)"})
 }
 
 // TestAudit29SettingsValueDoesNotShrink (finding 8): "Not set" never breaks

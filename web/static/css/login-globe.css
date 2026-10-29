@@ -251,6 +251,24 @@
   }
 }
 
+/* From 360px wide the gate and the card pad 24px instead of 16px (auth.css), so
+   the card's main button sits 16px lower and the box keeps 420px for the card
+   instead of 404px (Phase 7.1 review fix IN-T01: at 360x640, 375x548 and
+   389x600 the button ended 5 or 6px under the first screen). Only --g moves,
+   vh first and svh in @supports as above; this block comes after the phone
+   block so it wins. */
+@media (min-width: 360px) and (max-width: 899.98px) {
+  .login-gate.has-globe {
+    --g: clamp(140px, min(100vw - 48px, (100vh - 420px) * 1.28), 300px);
+  }
+
+  @supports (height: 100svh) {
+    .login-gate.has-globe {
+      --g: clamp(140px, min(100vw - 48px, (100svh - 420px) * 1.28), 300px);
+    }
+  }
+}
+
 /* Solid again without backdrop-filter. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .login-gate.has-globe .login-column {
