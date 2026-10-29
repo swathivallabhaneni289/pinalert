@@ -23,6 +23,7 @@ import (
 	"pinalert/internal/api"
 	"pinalert/internal/api/handlers"
 	"pinalert/internal/auth"
+	"pinalert/internal/mailer"
 	"pinalert/internal/service"
 	"pinalert/internal/session"
 	sqlcgen "pinalert/internal/store/sqlc"
@@ -40,6 +41,56 @@ type recordingMailer struct {
 	email string
 	link  string
 	sends int
+	// auth holds every auth email by address, oldest first, and authSends
+	// counts them (plan 07.1-03). sends and sendCount above count link sends
+	// only.
+	auth      map[string][]mailer.AuthEmail
+	authSends int
+}
+
+// SendAuthEmail records an auth email under the address it was sent to.
+func (m *recordingMailer) SendAuthEmail(ctx context.Context, to string, msg mailer.AuthEmail) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.auth == nil {
+		m.auth = map[string][]mailer.AuthEmail{}
+	}
+	m.auth[to] = append(m.auth[to], msg)
+	m.authSends++
+	return nil
+}
+
+// lastAuthFor returns the newest auth email sent to email.
+func (m *recordingMailer) lastAuthFor(email string) (mailer.AuthEmail, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	sent := m.auth[email]
+	if len(sent) == 0 {
+		return mailer.AuthEmail{}, false
+	}
+	return sent[len(sent)-1], true
+}
+
+// codeFor returns the code of the newest auth email sent to email. It fails
+// the test when nothing was sent to that address or when the newest email
+// carries no code (an account_exists or no_account email).
+func (m *recordingMailer) codeFor(t *testing.T, email string) string {
+	t.Helper()
+	msg, ok := m.lastAuthFor(email)
+	if !ok {
+		t.Fatalf("no auth email was sent to %q", email)
+	}
+	if msg.Code == "" {
+		t.Fatalf("the newest auth email to %q is %q and has no code", email, msg.Kind)
+	}
+	return msg.Code
+}
+
+// authSendCount reports how many auth emails have been sent in all.
+func (m *recordingMailer) authSendCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.authSends
 }
 
 func (m *recordingMailer) SendVerificationLink(ctx context.Context, email, link string) error {

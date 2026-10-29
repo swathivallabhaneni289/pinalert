@@ -22,6 +22,7 @@ import (
 
 	"pinalert/internal/api/handlers"
 	"pinalert/internal/demo"
+	"pinalert/internal/mailer"
 	"pinalert/internal/service"
 	"pinalert/internal/session"
 	sqlcgen "pinalert/internal/store/sqlc"
@@ -37,6 +38,37 @@ import (
 type gateFakeMailer struct {
 	mu   sync.Mutex
 	link string
+	// auth holds every auth email by address, oldest first (plan 07.1-03).
+	auth map[string][]mailer.AuthEmail
+}
+
+// SendAuthEmail records an auth email under the address it was sent to.
+func (m *gateFakeMailer) SendAuthEmail(_ context.Context, to string, msg mailer.AuthEmail) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.auth == nil {
+		m.auth = map[string][]mailer.AuthEmail{}
+	}
+	m.auth[to] = append(m.auth[to], msg)
+	return nil
+}
+
+// codeFor returns the code of the newest auth email sent to email. It fails
+// the test when nothing was sent to that address or when the newest email
+// carries no code (an account_exists or no_account email).
+func (m *gateFakeMailer) codeFor(t *testing.T, email string) string {
+	t.Helper()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	sent := m.auth[email]
+	if len(sent) == 0 {
+		t.Fatalf("no auth email was sent to %q", email)
+	}
+	last := sent[len(sent)-1]
+	if last.Code == "" {
+		t.Fatalf("the newest auth email to %q is %q and has no code", email, last.Kind)
+	}
+	return last.Code
 }
 
 func (m *gateFakeMailer) SendVerificationLink(_ context.Context, _, link string) error {
