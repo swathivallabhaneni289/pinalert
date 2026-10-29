@@ -65,6 +65,13 @@ func TestOfficialAlertsShell(t *testing.T) {
 	if tag := bellTagWith(t, page, `id="official-notice"`); strings.Contains(tag, "role=") || strings.Contains(tag, "aria-live") {
 		t.Errorf("the stale notice is a live region: %s", tag)
 	}
+	// Amended 2026-10-29 by the Phase 5 review fix (follow-up, WR-B06): the Demo
+	// alerts page ships the same notice, so it gets the same check; its template
+	// still carried role="status".
+	demoPage := p421ReadTemplate(t, "demo_alerts.html.tmpl")
+	if tag := bellTagWith(t, demoPage, `id="official-notice"`); strings.Contains(tag, "role=") || strings.Contains(tag, "aria-live") {
+		t.Errorf("the Demo stale notice is a live region: %s", tag)
+	}
 	// The status line is plain text, not a live region (UI-SPEC 1a: no chatter).
 	if tag := bellTagWith(t, page, `id="official-status"`); strings.Contains(tag, "aria-live") || strings.Contains(tag, "role=") {
 		t.Errorf("the status line is a live region: %s", tag)

@@ -206,7 +206,12 @@ func TestDemoStripCopyAndExit(t *testing.T) {
 	p13MustContain(t, "demo strip", strip,
 		`{{define "demo_strip"}}`, `<aside class="demo-strip" role="note" aria-label="Demo">`,
 		`Demo. Nothing here is real.`, `class="btn demo-strip__exit"`, `href="{{.ExitHref}}"`,
-		`aria-label="Exit the demo"`, `>Exit demo</a>`)
+		`>Exit demo</a>`)
+	// Amended 2026-10-29 by the Phase 5 review fix (WR-T07): the case that required
+	// `aria-label="Exit the demo"` is reversed. A label that differs from the visible
+	// words fails WCAG 2.5.3 (Label in Name) for voice control, so the accessible
+	// name is now the visible text "Exit demo" and no aria-label is allowed.
+	p13MustNotContain(t, "demo strip", strip, `aria-label="Exit the demo"`)
 	p13MustNotContain(t, "demo strip", strip, "<button", "tel:")
 
 	css := p13ReadStatic(t, "static/css/demo.css")

@@ -250,14 +250,16 @@ func TestDemoPageRendersWhatItPromises(t *testing.T) {
 		// The wordmark still points at the bare /demo.
 		`href="/demo"`, `href="/demo/alerts?v=`, `href="/demo/activity?v=`,
 		`<h1 class="app-topbar__title">Pinalert</h1>`, `href="/demo?post=1"`,
-		`aria-label="Exit the demo"`, `id="theme-toggle"`, `/static/js/api-base.js`,
+		// Amended 2026-10-29 by the Phase 5 review fix (WR-T07): Exit demo is named by
+		// its visible text, so the aria-label "Exit the demo" is gone (WCAG 2.5.3).
+		`>Exit demo</a>`, `id="theme-toggle"`, `/static/js/api-base.js`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the Demo page is missing %s", want)
 		}
 	}
 	for _, banned := range []string{
-		"data-account-id", "data-push-key", "tel:", "bell-trigger", "app-topbar__gear",
+		`aria-label="Exit the demo"`, "data-account-id", "data-push-key", "tel:", "bell-trigger", "app-topbar__gear",
 		"account-menu", "map-search", "Unofficial, not a government service", "notice-strip",
 		"/static/js/queue.js", "/static/js/notify.js", "/static/js/flag.js", "/static/js/mute.js",
 		"/static/js/position.js", "manifest.webmanifest", `href="/alerts"`, `href="/profile`,
