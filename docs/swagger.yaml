@@ -87,6 +87,18 @@ definitions:
         example: live
         type: string
     type: object
+  handlers.CodeRequest:
+    properties:
+      code:
+        example: "482913"
+        type: string
+    type: object
+  handlers.CodeSentResponse:
+    properties:
+      sent:
+        example: true
+        type: boolean
+    type: object
   handlers.CurrencyResponse:
     properties:
       band:
@@ -927,6 +939,12 @@ definitions:
         example: sachet
         type: string
     type: object
+  handlers.PasswordSetResponse:
+    properties:
+      password_set:
+        example: true
+        type: boolean
+    type: object
   handlers.PlaceResponse:
     properties:
       matched_query:
@@ -1181,6 +1199,47 @@ definitions:
     properties:
       email:
         example: visitor@example.com
+        type: string
+    type: object
+  handlers.ResendRequest:
+    type: object
+  handlers.ResetCodeRequest:
+    properties:
+      code:
+        example: "482913"
+        type: string
+      password:
+        example: wide river morning 47
+        type: string
+    type: object
+  handlers.ResetRequest:
+    properties:
+      email:
+        example: visitor@example.com
+        type: string
+    type: object
+  handlers.SignInRequest:
+    properties:
+      email:
+        example: visitor@example.com
+        type: string
+      password:
+        example: wide river morning 47
+        type: string
+    type: object
+  handlers.SignUpRequest:
+    properties:
+      email:
+        example: visitor@example.com
+        type: string
+      password:
+        example: wide river morning 47
+        type: string
+    type: object
+  handlers.SignedInResponse:
+    properties:
+      next:
+        example: /
         type: string
     type: object
   handlers.SubmitReportRequest:
@@ -1470,6 +1529,51 @@ info:
   title: Pinalert API
   version: "1.0"
 paths:
+  /auth/code/resend:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Sends a new code for the code screen this browser is showing, under the same
+        per address limits. The body is an empty object. The answer is the same for every
+        address.
+      parameters:
+      - description: Empty object
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.ResendRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.CodeSentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Send the code again
+      tags:
+      - auth
   /auth/request-link:
     post:
       consumes:
@@ -1505,6 +1609,232 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       summary: Request a magic-link verification email
+      tags:
+      - auth
+  /auth/reset:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Emails a 6 digit code to an address that has an account, and a short note to an
+        address that has none. The answer is the same for every address, so it never says
+        whether an account exists.
+      parameters:
+      - description: Email
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.ResetRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.CodeSentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Ask for a password reset code
+      tags:
+      - auth
+  /auth/reset/code:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Checks the 6 digit code and the new password. A right code sets the password and
+        ends every session of the account. It does not sign this browser in.
+      parameters:
+      - description: The typed code and the new password
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.ResetCodeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.PasswordSetResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Set a new password with the reset code
+      tags:
+      - auth
+  /auth/sign-in:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Checks the email and the password. A wrong email, a wrong password and an account
+        without a password all get the same answer. A good sign in puts this browser on a
+        new session and names the page to go to next. The response never carries a session
+        identifier.
+      parameters:
+      - description: Email and password
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.SignInRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.SignedInResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Sign in with an email and a password
+      tags:
+      - auth
+  /auth/sign-up:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Checks the email and the password, then emails a 6 digit code to type on the next
+        screen. The answer is the same for every address, so it never says whether an
+        account already exists. The password is held only as a hash until the code is
+        confirmed. The response never carries a session identifier.
+      parameters:
+      - description: Email and password
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.SignUpRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.CodeSentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Create an account with an email and a password
+      tags:
+      - auth
+  /auth/sign-up/code:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Checks the 6 digit code typed by the person. A right code creates the account, sets
+        the password typed at Create account and signs this browser in. The response names
+        the page to go to next and never carries a session identifier.
+      parameters:
+      - description: The typed code
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.CodeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.SignedInResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Confirm the code of a new account
       tags:
       - auth
   /geocode:
