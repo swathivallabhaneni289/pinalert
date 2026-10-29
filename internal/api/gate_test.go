@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"pinalert/internal/api/handlers"
+	"pinalert/internal/auth"
 	"pinalert/internal/demo"
 	"pinalert/internal/mailer"
 	"pinalert/internal/service"
@@ -96,6 +97,9 @@ func newGateTestServer(t *testing.T) (*httptest.Server, *pgxpool.Pool, *gateFake
 // the existing gate suites never hit a limit. The limit tests set their own
 // buckets through the tweak hook of newGateTestServerWith. The request link
 // limiter is left at its default on purpose: the spoof test relies on it.
+// Amended 2026-10-29 by Phase 7.1 plan 08: that is still true. The sign in
+// helper no longer touches the request link limiter, and plan 09 re-aims the
+// spoof test at the new send routes.
 var gateGenerousBucket = BucketLimit{Every: time.Millisecond, Burst: 1000}
 
 var gateGenerousRateLimits = RateLimits{
@@ -136,6 +140,11 @@ func newGateTestServerWith(t *testing.T, tweak func(d *Deps, q *sqlcgen.Queries)
 		Auth:        handlers.AuthConfig{AssetVersion: "test"},
 		Template:    tmpl,
 		RateLimits:  gateGenerousRateLimits,
+		// Amended 2026-10-29 by Phase 7.1 plan 08: the code and password
+		// service with the test hasher and open buckets, which
+		// gateVerifySession needs.
+		Credentials: newGateTestCredentials(queries, fm),
+		AuthLimits:  gateGenerousAuthLimits,
 	}
 	if tweak != nil {
 		tweak(&deps, queries)
@@ -164,44 +173,89 @@ func newGateJarClient(t *testing.T) *http.Client {
 	}
 }
 
-// gateVerifySession drives the real request-link-then-verify flow for
-// client against srv, so the browser it represents ends up bound to a
-// verified account.
+// gateTestPassword is the password every gate test account uses. It passes the
+// password rule of plan 07.1-02 (length, not common, not the email) and is the
+// same value as e2eTestPassword in package handlers_test, which this package
+// cannot import.
+const gateTestPassword = "wide river morning 47"
+
+// gateGenerousAuthLimits opens every bucket of the code and password routes
+// (Phase 7.1, plan 08), for the reason gateGenerousRateLimits exists: the gate
+// suites must never meet a limit by accident. The limit tests set their own
+// buckets through the tweak hook of newGateTestServerWith.
+var gateGenerousAuthLimits = AuthLimits{
+	SignInDevice:     gateGenerousBucket,
+	SignInIP:         gateGenerousBucket,
+	CodeSendDevice:   gateGenerousBucket,
+	CodeSendIP:       gateGenerousBucket,
+	CodeSendNoCookie: gateGenerousBucket,
+	CodeTryDevice:    gateGenerousBucket,
+	UsernameCheck:    gateGenerousBucket,
+	UsernameSave:     gateGenerousBucket,
+}
+
+// newGateTestCredentials builds the CredentialService the gate router uses. It
+// is the only place in this package that passes the fast test hasher;
+// production never does. The keys are fixed 32 byte test values and
+// SendCooldown is one millisecond, so a sign up followed by a reset on the same
+// address in one test is not refused by the 45 second per address cooldown.
+func newGateTestCredentials(q *sqlcgen.Queries, m *gateFakeMailer) *service.CredentialService {
+	limits := service.DefaultCredentialLimits
+	limits.SendCooldown = time.Millisecond
+	return service.NewCredentialService(q, m,
+		service.WithHasher(auth.NewHasher(auth.TestParams())),
+		service.WithCodeKey(bytes.Repeat([]byte("c"), 32)),
+		service.WithThrottleKey(bytes.Repeat([]byte("t"), 32)),
+		service.WithCredentialLimits(limits),
+	)
+}
+
+// gatePostJSON posts body as JSON to path on srv with client and returns the
+// status and the body bytes.
+func gatePostJSON(t *testing.T, client *http.Client, srv *httptest.Server, path string, body any) (int, []byte) {
+	t.Helper()
+	buf, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshalling request body for %s: %v", path, err)
+	}
+	resp, err := client.Post(srv.URL+path, "application/json", bytes.NewReader(buf))
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading the answer of %s: %v", path, err)
+	}
+	return resp.StatusCode, raw
+}
+
+// gateVerifySession signs client in as email against srv, so the browser it
+// represents ends up bound to a verified account.
+//
+// Amended 2026-10-29 by Phase 7.1 plan 08: it used to request a login link and
+// open it. It now tries POST /api/auth/sign-in with gateTestPassword first (a
+// 200 means the account already has that password, so a second browser for the
+// same address needs no second code email). A 400 on the field credentials
+// means no such account yet, and it then creates the account with
+// POST /api/auth/sign-up and the code the recording mailer captured. Any other
+// answer fails the test. Step 4 of onboarding (the profile) is not filled here.
 func gateVerifySession(t *testing.T, client *http.Client, srv *httptest.Server, mailer *gateFakeMailer, email string) {
 	t.Helper()
 
-	resp, err := client.Post(srv.URL+"/api/auth/request-link", "application/json",
-		bytes.NewReader([]byte(`{"email":"`+email+`"}`)))
-	if err != nil {
-		t.Fatalf("POST /api/auth/request-link: %v", err)
+	status, raw := gatePostJSON(t, client, srv, "/api/auth/sign-in", map[string]string{"email": email, "password": gateTestPassword})
+	if status != http.StatusOK {
+		var failure handlers.ErrorResponse
+		if status != http.StatusBadRequest || json.Unmarshal(raw, &failure) != nil || failure.Error.Field != "credentials" {
+			t.Fatalf("POST /api/auth/sign-in for %s: status=%d body=%s", email, status, raw)
+		}
+		if got, body := gatePostJSON(t, client, srv, "/api/auth/sign-up", map[string]string{"email": email, "password": gateTestPassword}); got != http.StatusOK {
+			t.Fatalf("POST /api/auth/sign-up for %s: status=%d body=%s", email, got, body)
+		}
+		status, raw = gatePostJSON(t, client, srv, "/api/auth/sign-up/code", map[string]string{"code": mailer.codeFor(t, email)})
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		t.Fatalf("POST /api/auth/request-link status = %d, want 200: %s", resp.StatusCode, b)
-	}
-
-	link := mailer.lastLink()
-	parsedLink, err := url.Parse(link)
-	if err != nil {
-		t.Fatalf("parsing mailed link %q: %v", link, err)
-	}
-	token := parsedLink.Query().Get("token")
-	if token == "" {
-		t.Fatalf("mailed link %q has no token query parameter", link)
-	}
-
-	resp2, err := client.Get(srv.URL + "/auth/verify?token=" + url.QueryEscape(token))
-	if err != nil {
-		t.Fatalf("GET /auth/verify: %v", err)
-	}
-	defer resp2.Body.Close()
-	body, err := io.ReadAll(resp2.Body)
-	if err != nil {
-		t.Fatalf("reading /auth/verify body: %v", err)
-	}
-	if resp2.StatusCode != http.StatusOK || !strings.Contains(string(body), "Email verified") {
-		t.Fatalf("verifying session for %s: status=%d body=%s", email, resp2.StatusCode, body)
+	if status != http.StatusOK || !strings.Contains(string(raw), `"next"`) {
+		t.Fatalf("signing in %s: status=%d body=%s", email, status, raw)
 	}
 }
 
