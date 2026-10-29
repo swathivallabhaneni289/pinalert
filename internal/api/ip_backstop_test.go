@@ -178,3 +178,77 @@ func TestIPBackstop(t *testing.T) {
 		})
 	}
 }
+
+// authPostWithHeaders POSTs body as JSON to path with the given extra headers and
+// returns the status. It uses http.DefaultClient, which has no cookie jar, so every
+// call arrives without a session cookie, as a script that drops cookies would.
+func authPostWithHeaders(t *testing.T, srvURL, path string, body any, headers map[string]string) int {
+	t.Helper()
+	buf, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshalling request body for %s: %v", path, err)
+	}
+	req, err := http.NewRequest(http.MethodPost, srvURL+path, bytes.NewReader(buf))
+	if err != nil {
+		t.Fatalf("building request for %s: %v", path, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return resp.StatusCode
+}
+
+// TestIPBackstopAuthSends is the network bucket of the sign in route, added by
+// Phase 7.1 plan 09 (T-07.1-10, research Pitfall 9). With CLIENT_IP_HEADER set,
+// wrong sign ins from cookieless requests on one header address spend one shared
+// network bucket (burst 3 here), the fourth is a 429, a good sign in gives its
+// token back, and another header address is not blocked.
+//
+// The account is made through the code routes, which take no sign in token, so
+// the counts are exact. The good sign in comes first: if it did not refund its
+// token, the third wrong attempt below would already be a 429.
+func TestIPBackstopAuthSends(t *testing.T) {
+	srv, _, mailer := newGateTestServerWith(t, func(d *Deps, _ *sqlcgen.Queries) {
+		limits := gateGenerousAuthLimits
+		limits.SignInIP = BucketLimit{Every: time.Hour, Burst: 3}
+		d.AuthLimits = limits
+		d.ClientIPHeader = p09BackstopHeader
+	})
+	const email = "p71-backstop-signin@example.com"
+
+	maker := newGateJarClient(t)
+	if status, body := gatePostJSON(t, maker, srv, "/api/auth/sign-up", map[string]string{"email": email, "password": gateTestPassword}); status != http.StatusOK {
+		t.Fatalf("sign up status = %d, want 200: %s", status, body)
+	}
+	if status, body := gatePostJSON(t, maker, srv, "/api/auth/sign-up/code", map[string]string{"code": mailer.codeFor(t, email)}); status != http.StatusOK {
+		t.Fatalf("sign up code status = %d, want 200: %s", status, body)
+	}
+
+	signIn := func(password, address string) int {
+		return authPostWithHeaders(t, srv.URL, "/api/auth/sign-in",
+			map[string]string{"email": email, "password": password},
+			map[string]string{p09BackstopHeader: address})
+	}
+	const shared = "203.0.113.60"
+	if got := signIn(gateTestPassword, shared); got != http.StatusOK {
+		t.Fatalf("good sign in from the shared address = %d, want 200", got)
+	}
+	for i := 1; i <= 3; i++ {
+		if got := signIn("not the right one 99", shared); got != http.StatusBadRequest {
+			t.Fatalf("wrong sign in %d from the shared address = %d, want 400 (the good sign in must have refunded its token)", i, got)
+		}
+	}
+	if got := signIn("not the right one 99", shared); got != http.StatusTooManyRequests {
+		t.Fatalf("fourth wrong sign in from the shared address = %d, want 429", got)
+	}
+	if got := signIn(gateTestPassword, "203.0.113.61"); got != http.StatusOK {
+		t.Fatalf("good sign in from another address = %d, want 200", got)
+	}
+}

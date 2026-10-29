@@ -442,6 +442,12 @@ func TestAccessGateAllowsVerified(t *testing.T) {
 // end proves /api/reports, /alerts and /api/official/alerts stay gated for a
 // caller with no session (401, 302 and 401). Every older row is unchanged.
 //
+// Amended 2026-10-29 by Phase 7.1 plan 09 (D-03, research Pitfall 18): six rows
+// were added for the POST routes of the password sign in (sign up, sign up code,
+// code resend, sign in, reset, reset code). Each is reached with no session and
+// must answer neither a redirect nor a 401; the counts in the paragraph above
+// predate them. The rows for the old link routes stay until the cleanup plan.
+//
 // Amended 2026-10-29 by plan 05-12 (D-15): the external cron's door joins the
 // exempt list. With a token configured and a fake refresher, POST
 // /internal/official/refresh with the bearer token must answer 200 for a caller
@@ -496,6 +502,17 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 		{"policy page", http.MethodGet, "/policy", ""},
 		{"globe tile", http.MethodGet, "/globe/tiles/0/0/0.jpg", ""},
 		{"demo feed", http.MethodGet, demoFeedPath, ""},
+		// Amended 2026-10-29 by Phase 7.1 plan 09: the six POST routes of the
+		// password sign in. A person with no session must reach every one (D-03)
+		// and never be answered 401 or a redirect (research Pitfall 18, which is why
+		// a wrong sign in is a 400 on the field credentials). The expected answers
+		// here are 200 for the three that send a code and 400 for the others.
+		{"sign up", http.MethodPost, "/api/auth/sign-up", `{"email":"exempt-sign-up@example.com","password":"` + gateTestPassword + `"}`},
+		{"sign up code", http.MethodPost, "/api/auth/sign-up/code", `{"code":"123456"}`},
+		{"code resend", http.MethodPost, "/api/auth/code/resend", `{}`},
+		{"sign in", http.MethodPost, "/api/auth/sign-in", `{"email":"exempt-sign-in@example.com","password":"` + gateTestPassword + `"}`},
+		{"reset", http.MethodPost, "/api/auth/reset", `{"email":"exempt-reset@example.com"}`},
+		{"reset code", http.MethodPost, "/api/auth/reset/code", `{"code":"123456","password":"` + gateTestPassword + `"}`},
 	}
 	for _, p := range appAssets {
 		cases = append(cases, struct {
@@ -533,6 +550,12 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 			}
 			if resp.StatusCode == http.StatusUnauthorized {
 				t.Fatalf("%s %s returned 401 — this route must be reachable without verification", tc.method, tc.path)
+			}
+			// Amended 2026-10-29 by Phase 7.1 plan 09: the password routes answer from
+			// their own handlers, so the answer is a 200 or a 400, not a 403, 404 or 5xx.
+			if tc.method == http.MethodPost && strings.HasPrefix(tc.path, "/api/auth/") && tc.path != "/api/auth/request-link" &&
+				resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("%s %s returned %d, want the route's own 200 or 400", tc.method, tc.path, resp.StatusCode)
 			}
 			if mustBeOK[tc.path] && resp.StatusCode != http.StatusOK {
 				t.Fatalf("%s %s returned %d: this public page or app asset must answer 200 without verification", tc.method, tc.path, resp.StatusCode)
