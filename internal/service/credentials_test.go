@@ -24,6 +24,8 @@ var (
 	credDecomposedPassword = "caf" + string(rune(0x65)) + string(rune(0x0301)) + " tulip 4821"
 	credComposedPassword   = "caf" + string(rune(0xE9)) + " tulip 4821"
 	credNBSP               = string(rune(0xA0))
+	// Six Arabic-Indic digits: six runes, not six ASCII digits.
+	arabicIndicDigits = string([]rune{0x661, 0x662, 0x663, 0x664, 0x665, 0x666})
 )
 
 const (
@@ -96,6 +98,7 @@ type credFakeQuerier struct {
 	throttles map[string]*credThrottle
 	sendMax   int32
 
+	consumeZero    bool
 	pruneCodes     int
 	pruneThrottles int
 	pushDeleted    []string
@@ -218,6 +221,9 @@ func (f *credFakeQuerier) BumpAuthCodeAttempt(_ context.Context, arg sqlcgen.Bum
 
 func (f *credFakeQuerier) ConsumeAuthCode(_ context.Context, id int64) (int64, error) {
 	f.log("ConsumeAuthCode")
+	if f.consumeZero {
+		return 0, nil
+	}
 	for i := range f.codes {
 		r := &f.codes[i]
 		if r.id == id && r.used == nil && r.expires.After(f.clk.Now()) {
@@ -1010,5 +1016,716 @@ func TestCredentialMessagesPlainPunctuation(t *testing.T) {
 	}
 	if service.WrongCredentialsMessage != "Email or password is wrong." {
 		t.Errorf("wrong credentials sentence = %q", service.WrongCredentialsMessage)
+	}
+	for _, m := range messages {
+		if strings.ContainsRune(m, 0x2019) {
+			t.Errorf("message %q holds a curly apostrophe", m)
+		}
+	}
+}
+
+// ---------------------------------------------------------------- Task 2 ----
+
+// addPasswordAccount makes an account whose password is credPassword (or the
+// given one), hashed with the rig's cheap hasher.
+func (r *credRig) addPasswordAccount(t *testing.T, email, password string) *credAccount {
+	t.Helper()
+	h, err := r.hasher.inner.Hash(context.Background(), auth.NormalizePassword(password))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r.q.addAccount(email, &h)
+}
+
+// signUpAndCode runs Create account on a session and returns the emailed code.
+func (r *credRig) signUpAndCode(t *testing.T, session, email, password string) string {
+	t.Helper()
+	if err := r.svc.SignUp(context.Background(), session, email, password); err != nil {
+		t.Fatalf("SignUp: %v", err)
+	}
+	return r.codeSent(t)
+}
+
+func (r *credRig) callIndex(prefix string) int {
+	for i, c := range r.q.calls {
+		if strings.HasPrefix(c, prefix) {
+			return i
+		}
+	}
+	return -1
+}
+
+func TestConfirmSignUpCreatesAccountAndRotates(t *testing.T) {
+	r := newCredRig(t)
+	ctx := context.Background()
+	code := r.signUpAndCode(t, "sess-a", credEmail, credPassword)
+	// A stale throttle row for the address is cleared by the confirm.
+	r.q.throttles[r.svc.ThrottleKey(credEmail)] = &credThrottle{failures: 3, last: r.clk.Now()}
+
+	// A pasted code with spaces and a no break space still works.
+	typed := code[:3] + " " + credNBSP + code[3:]
+	res, err := r.svc.ConfirmSignUp(ctx, "sess-a", typed, credSessionIDs("fresh"))
+	if err != nil {
+		t.Fatalf("ConfirmSignUp: %v", err)
+	}
+	if res.SessionID != "fresh-1" || res.SessionID == "sess-a" {
+		t.Errorf("session id = %q, want a freshly drawn id", res.SessionID)
+	}
+	acct := r.q.accounts[credEmail]
+	if acct == nil || res.AccountID != acct.id {
+		t.Fatalf("account = %+v result = %+v", acct, res)
+	}
+	if acct.passwordHash == nil {
+		t.Fatal("the password was not set")
+	}
+	if ok, _, err := r.hasher.inner.Verify(ctx, *acct.passwordHash, credPassword); err != nil || !ok {
+		t.Errorf("the stored password does not verify: ok=%v err=%v", ok, err)
+	}
+	if s := r.q.sessions["fresh-1"]; s == nil || s.account == nil || *s.account != acct.id {
+		t.Errorf("the fresh session is not bound to the account")
+	}
+	if s := r.q.sessions["sess-a"]; s != nil && s.account != nil {
+		t.Errorf("the pre sign in id must never be bound")
+	}
+	if len(r.q.throttles) != 0 {
+		t.Error("the throttle was not cleared")
+	}
+	if len(r.q.codes) != 0 {
+		t.Errorf("every code row of the address must be deleted, %d left", len(r.q.codes))
+	}
+	if consume, del := r.callIndex("ConsumeAuthCode"), r.callIndex("DeleteAuthCodesForEmail"); consume < 0 || del < consume {
+		t.Errorf("delete (%d) must follow consume (%d)", del, consume)
+	}
+	if got := r.q.count("BindSessionAccount"); got != 1 {
+		t.Errorf("bind calls = %d, want 1", got)
+	}
+}
+
+func TestConfirmSignUpLegacyKeepsAccount(t *testing.T) {
+	ctx := context.Background()
+	t.Run("an account made with the old link keeps its id", func(t *testing.T) {
+		r := newCredRig(t)
+		legacy := r.q.addAccount(credEmail, nil)
+		code := r.signUpAndCode(t, "sess-a", credEmail, credPassword)
+		res, err := r.svc.ConfirmSignUp(ctx, "sess-a", code, credSessionIDs("fresh"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.AccountID != legacy.id || len(r.q.accounts) != 1 {
+			t.Errorf("result = %+v, accounts = %d; the legacy account and its reports must be kept", res, len(r.q.accounts))
+		}
+		if legacy.passwordHash == nil {
+			t.Error("the password was not set on the legacy account")
+		}
+		if r.q.count("RevokeAccountSessions") != 0 {
+			t.Error("no sessions are ended when there was no password to replace")
+		}
+	})
+
+	t.Run("an account that gained a password meanwhile has every session ended first", func(t *testing.T) {
+		r := newCredRig(t)
+		acct := r.q.addAccount(credEmail, nil)
+		code := r.signUpAndCode(t, "sess-a", credEmail, credPassword)
+		old := "$argon2id$v=19$m=64,t=1,p=1$c2FsdA$a2V5"
+		acct.passwordHash = &old
+		r.q.bindSession("other-browser", acct.id)
+		if _, err := r.svc.ConfirmSignUp(ctx, "sess-a", code, credSessionIDs("fresh")); err != nil {
+			t.Fatal(err)
+		}
+		logout, set := r.callIndex("RevokeAccountSessions"), r.callIndex("SetAccountPassword")
+		if logout < 0 || set < logout {
+			t.Errorf("LogOutAllDevices (%d) must run before the password is replaced (%d)", logout, set)
+		}
+		if !r.q.sessions["other-browser"].revoked {
+			t.Error("the other browser's session must be revoked")
+		}
+	})
+}
+
+func TestConfirmSignUpWrongCode(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("a wrong code bumps once", func(t *testing.T) {
+		r := newCredRig(t)
+		code := r.signUpAndCode(t, "sess-a", credEmail, credPassword)
+		_, err := r.svc.ConfirmSignUp(ctx, "sess-a", credWrongCode(code), credSessionIDs("f"))
+		if !errors.Is(err, service.ErrWrongCode) {
+			t.Fatalf("err = %v", err)
+		}
+		if r.q.codes[0].attempts != 1 || r.q.count("BumpAuthCodeAttempt") != 1 {
+			t.Errorf("attempts = %d", r.q.codes[0].attempts)
+		}
+		if len(r.q.accounts) != 0 {
+			t.Error("a wrong code must not create an account")
+		}
+	})
+
+	t.Run("a code that is not 6 digits never bumps", func(t *testing.T) {
+		r := newCredRig(t)
+		r.signUpAndCode(t, "sess-a", credEmail, credPassword)
+		for _, bad := range []string{"", "12345", "1234567", "12345a", "12 34", arabicIndicDigits} {
+			if _, err := r.svc.ConfirmSignUp(ctx, "sess-a", bad, credSessionIDs("f")); !errors.Is(err, service.ErrWrongCode) {
+				t.Errorf("%q: err = %v", bad, err)
+			}
+		}
+		if r.q.count("BumpAuthCodeAttempt") != 0 {
+			t.Error("a malformed code must not spend a try")
+		}
+	})
+
+	t.Run("after five wrong codes even the right one is refused", func(t *testing.T) {
+		r := newCredRig(t)
+		code := r.signUpAndCode(t, "sess-a", credEmail, credPassword)
+		for i := 0; i < 5; i++ {
+			if _, err := r.svc.ConfirmSignUp(ctx, "sess-a", credWrongCode(code), credSessionIDs("f")); !errors.Is(err, service.ErrWrongCode) {
+				t.Fatalf("try %d: %v", i+1, err)
+			}
+		}
+		if _, err := r.svc.ConfirmSignUp(ctx, "sess-a", code, credSessionIDs("f")); !errors.Is(err, service.ErrWrongCode) {
+			t.Fatalf("the right code after the budget: %v", err)
+		}
+		if len(r.q.accounts) != 0 {
+			t.Error("no account may exist")
+		}
+	})
+
+	t.Run("an expired code", func(t *testing.T) {
+		r := newCredRig(t)
+		code := r.signUpAndCode(t, "sess-a", credEmail, credPassword)
+		r.clk.Advance(11 * time.Minute)
+		if _, err := r.svc.ConfirmSignUp(ctx, "sess-a", code, credSessionIDs("f")); !errors.Is(err, service.ErrWrongCode) {
+			t.Fatalf("err = %v", err)
+		}
+	})
+
+	t.Run("an account exists row can never be confirmed", func(t *testing.T) {
+		r := newCredRig(t)
+		now := r.clk.Now()
+		r.q.codes = append(r.q.codes, credCodeRow{
+			id: 1, session: "sess-a", purpose: service.PurposeSignUp, delivery: service.DeliveryAccountExists,
+			email: credEmail, codeHash: auth.CodeHash(credCodeKey, "signup", credEmail, "123456"),
+			created: now, expires: now.Add(10 * time.Minute),
+		})
+		if _, err := r.svc.ConfirmSignUp(ctx, "sess-a", "123456", credSessionIDs("f")); !errors.Is(err, service.ErrWrongCode) {
+			t.Fatalf("err = %v", err)
+		}
+		if len(r.q.accounts) != 0 || r.q.count("ConsumeAuthCode") != 0 {
+			t.Error("nothing may be consumed or created")
+		}
+	})
+
+	t.Run("a parallel submit that already consumed the row", func(t *testing.T) {
+		r := newCredRig(t)
+		code := r.signUpAndCode(t, "sess-a", credEmail, credPassword)
+		r.q.consumeZero = true
+		if _, err := r.svc.ConfirmSignUp(ctx, "sess-a", code, credSessionIDs("f")); !errors.Is(err, service.ErrWrongCode) {
+			t.Fatalf("err = %v", err)
+		}
+		if len(r.q.accounts) != 0 {
+			t.Error("no account may be created when the consume lost")
+		}
+	})
+
+	t.Run("a code typed in another browser", func(t *testing.T) {
+		r := newCredRig(t)
+		code := r.signUpAndCode(t, "sess-a", credEmail, credPassword)
+		if _, err := r.svc.ConfirmSignUp(ctx, "sess-b", code, credSessionIDs("f")); !errors.Is(err, service.ErrWrongCode) {
+			t.Fatalf("err = %v", err)
+		}
+	})
+}
+
+func TestConfirmSignUpCleansReplacedSessionPush(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("bound to a different account", func(t *testing.T) {
+		r := newCredRig(t)
+		other := r.addPasswordAccount(t, "other@example.com", credPassword)
+		r.q.bindSession("sess-a", other.id)
+		code := r.signUpAndCode(t, "sess-a", credEmail, credPassword)
+		res, err := r.svc.ConfirmSignUp(ctx, "sess-a", code, credSessionIDs("fresh"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(r.q.pushDeleted) != 1 || r.q.pushDeleted[0] != "sess-a" {
+			t.Errorf("push subscriptions deleted for %v, want [sess-a]", r.q.pushDeleted)
+		}
+		if !r.q.sessions["sess-a"].revoked {
+			t.Error("the replaced session must be revoked so its cookie stops working")
+		}
+		push, revoke, bind := r.callIndex("DeletePushSubscriptionsForSession"), r.callIndex("RevokeSession"), r.callIndex("BindSessionAccount")
+		if !(push >= 0 && revoke > push && bind > revoke) {
+			t.Errorf("order: push %d, revoke %d, bind %d", push, revoke, bind)
+		}
+		if res.SessionID != "fresh-1" {
+			t.Errorf("session = %q", res.SessionID)
+		}
+	})
+
+	t.Run("unbound", func(t *testing.T) {
+		r := newCredRig(t)
+		r.q.sessions["sess-a"] = &credSession{}
+		code := r.signUpAndCode(t, "sess-a", credEmail, credPassword)
+		if _, err := r.svc.ConfirmSignUp(ctx, "sess-a", code, credSessionIDs("fresh")); err != nil {
+			t.Fatal(err)
+		}
+		if r.q.count("DeletePushSubscriptionsForSession") != 0 || r.q.count("RevokeSession") != 0 {
+			t.Error("an unbound session is left alone")
+		}
+	})
+
+	t.Run("bound to the same account", func(t *testing.T) {
+		r := newCredRig(t)
+		acct := r.q.addAccount(credEmail, nil)
+		r.q.bindSession("sess-a", acct.id)
+		code := r.signUpAndCode(t, "sess-a", credEmail, credPassword)
+		if _, err := r.svc.ConfirmSignUp(ctx, "sess-a", code, credSessionIDs("fresh")); err != nil {
+			t.Fatal(err)
+		}
+		if r.q.count("DeletePushSubscriptionsForSession") != 0 || r.q.count("RevokeSession") != 0 {
+			t.Error("a session of the same account is left alone")
+		}
+	})
+}
+
+func TestSignInSuccessRotates(t *testing.T) {
+	r := newCredRig(t)
+	ctx := context.Background()
+	acct := r.addPasswordAccount(t, credEmail, credPassword)
+	key := r.svc.ThrottleKey(credEmail)
+	r.q.throttles[key] = &credThrottle{failures: 2, last: r.clk.Now()}
+
+	res, err := r.svc.SignIn(ctx, "sess-c", " Ravi@Example.com", credPassword, credSessionIDs("fresh"))
+	if err != nil {
+		t.Fatalf("SignIn: %v", err)
+	}
+	if res.AccountID != acct.id || res.SessionID != "fresh-1" {
+		t.Errorf("result = %+v", res)
+	}
+	if s := r.q.sessions["sess-c"]; s != nil && s.account != nil {
+		t.Error("the request's own id must never be bound")
+	}
+	if s := r.q.sessions["fresh-1"]; s == nil || s.account == nil || *s.account != acct.id {
+		t.Error("the fresh id is not bound")
+	}
+	if _, left := r.q.throttles[key]; left {
+		t.Error("a good sign in clears the throttle")
+	}
+	if len(r.hasher.verified) != 1 {
+		t.Errorf("verify calls = %d, want 1", len(r.hasher.verified))
+	}
+}
+
+func TestSignInWrongPasswordRecordsFailure(t *testing.T) {
+	r := newCredRig(t)
+	ctx := context.Background()
+	r.addPasswordAccount(t, credEmail, credPassword)
+	_, err := r.svc.SignIn(ctx, "sess-c", credEmail, "some other password 1", credSessionIDs("f"))
+	if !errors.Is(err, service.ErrWrongCredentials) {
+		t.Fatalf("err = %v", err)
+	}
+	th := r.q.throttles[r.svc.ThrottleKey(credEmail)]
+	if th == nil || th.failures != 1 {
+		t.Fatalf("throttle = %+v, want one failure", th)
+	}
+	if r.q.count("BindSessionAccount") != 0 {
+		t.Error("a wrong password must not bind a session")
+	}
+	if strings.Contains(err.Error(), credEmail) {
+		t.Error("the error carries the address")
+	}
+}
+
+func TestSignInUnknownUsesDummyHash(t *testing.T) {
+	r := newCredRig(t)
+	_, err := r.svc.SignIn(context.Background(), "sess-c", "nobody@example.com", credPassword, credSessionIDs("f"))
+	if !errors.Is(err, service.ErrWrongCredentials) {
+		t.Fatalf("err = %v", err)
+	}
+	if len(r.hasher.verified) != 1 || r.hasher.verified[0].encoded != r.hasher.DummyHash() {
+		t.Errorf("verified = %+v, want exactly one verify against the dummy hash", r.hasher.verified)
+	}
+	if th := r.q.throttles[r.svc.ThrottleKey("nobody@example.com")]; th == nil || th.failures != 1 {
+		t.Errorf("an unknown address is throttled like a known one: %+v", th)
+	}
+}
+
+func TestSignInPasswordlessUsesDummyHash(t *testing.T) {
+	r := newCredRig(t)
+	r.q.addAccount(credEmail, nil)
+	_, err := r.svc.SignIn(context.Background(), "sess-c", credEmail, credPassword, credSessionIDs("f"))
+	if !errors.Is(err, service.ErrWrongCredentials) {
+		t.Fatalf("err = %v", err)
+	}
+	if len(r.hasher.verified) != 1 || r.hasher.verified[0].encoded != r.hasher.DummyHash() {
+		t.Errorf("verified = %+v, want exactly one verify against the dummy hash (W3)", r.hasher.verified)
+	}
+	if th := r.q.throttles[r.svc.ThrottleKey(credEmail)]; th == nil || th.failures != 1 {
+		t.Errorf("throttle = %+v", th)
+	}
+}
+
+func TestSignInNormalizesPassword(t *testing.T) {
+	r := newCredRig(t)
+	ctx := context.Background()
+	code := r.signUpAndCode(t, "sess-a", credEmail, credDecomposedPassword)
+	if _, err := r.svc.ConfirmSignUp(ctx, "sess-a", code, credSessionIDs("up")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.svc.SignIn(ctx, "sess-b", credEmail, credComposedPassword, credSessionIDs("in")); err != nil {
+		t.Fatalf("a password typed decomposed must sign in when typed composed: %v", err)
+	}
+	if len(r.hasher.hashed) != 1 || r.hasher.hashed[0] != credComposedPassword {
+		t.Errorf("hash input = %q, want the NFKC form", r.hasher.hashed)
+	}
+	for _, v := range r.hasher.verified {
+		if v.password != credComposedPassword {
+			t.Errorf("verify input = %q, want the NFKC form", v.password)
+		}
+	}
+	if len(r.hasher.verified) == 0 {
+		t.Error("sign in verified nothing")
+	}
+}
+
+func TestSignInHashBusy(t *testing.T) {
+	r := newCredRig(t)
+	r.addPasswordAccount(t, credEmail, credPassword)
+	r.hasher.verifyErr = auth.ErrHasherBusy
+	_, err := r.svc.SignIn(context.Background(), "sess-c", credEmail, credPassword, credSessionIDs("f"))
+	if !errors.Is(err, service.ErrBusy) {
+		t.Fatalf("err = %v, want ErrBusy", err)
+	}
+	if r.q.count("RecordAuthFailure") != 0 {
+		t.Error("a busy hasher is not a wrong password")
+	}
+}
+
+func TestConfirmDeletesOtherCodesForAddress(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("sign up", func(t *testing.T) {
+		r := newCredRig(t)
+		codeA := r.signUpAndCode(t, "sess-a", credEmail, credPassword)
+		r.clk.Advance(46 * time.Second)
+		codeB := r.signUpAndCode(t, "sess-b", credEmail, credPassword)
+		if _, err := r.svc.ConfirmSignUp(ctx, "sess-a", codeA, credSessionIDs("f")); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := r.svc.ConfirmSignUp(ctx, "sess-b", codeB, credSessionIDs("g")); !errors.Is(err, service.ErrWrongCode) {
+			t.Fatalf("the other browser's pending code must be dead: %v", err)
+		}
+	})
+
+	t.Run("reset", func(t *testing.T) {
+		r := newCredRig(t)
+		r.addPasswordAccount(t, credEmail, credPassword)
+		if err := r.svc.RequestReset(ctx, "sess-a", credEmail); err != nil {
+			t.Fatal(err)
+		}
+		codeA := r.codeSent(t)
+		r.clk.Advance(46 * time.Second)
+		if err := r.svc.RequestReset(ctx, "sess-b", credEmail); err != nil {
+			t.Fatal(err)
+		}
+		codeB := r.codeSent(t)
+		if err := r.svc.ConfirmReset(ctx, "sess-a", codeA, "a brand new password 55"); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.svc.ConfirmReset(ctx, "sess-b", codeB, "another new password 66"); !errors.Is(err, service.ErrWrongCode) {
+			t.Fatalf("the other browser's pending code must be dead: %v", err)
+		}
+	})
+}
+
+func TestSignInLockedRefusedBeforeHash(t *testing.T) {
+	r := newCredRig(t)
+	ctx := context.Background()
+	r.addPasswordAccount(t, credEmail, credPassword)
+	for i := 1; i <= 6; i++ {
+		_, err := r.svc.SignIn(ctx, "sess-c", credEmail, "wrong password "+fmt.Sprint(i), credSessionIDs("f"))
+		if !errors.Is(err, service.ErrWrongCredentials) {
+			t.Fatalf("attempt %d: %v", i, err)
+		}
+	}
+	verifies, lookups, failures := len(r.hasher.verified), r.q.count("GetAccountForSignIn"), r.q.count("RecordAuthFailure")
+
+	_, err := r.svc.SignIn(ctx, "sess-c", credEmail, credPassword, credSessionIDs("f"))
+	var locked service.SignInLockedError
+	if !errors.As(err, &locked) {
+		t.Fatalf("the 7th attempt with the right password: err = %v, want SignInLockedError", err)
+	}
+	if locked.Wait <= 0 || locked.Wait > 5*time.Minute {
+		t.Errorf("wait = %v, want up to 5 minutes", locked.Wait)
+	}
+	if len(r.hasher.verified) != verifies || r.q.count("GetAccountForSignIn") != lookups || r.q.count("RecordAuthFailure") != failures {
+		t.Error("a locked address is refused before any hashing, lookup or failure record")
+	}
+	// The lock ends: the right password works again.
+	r.clk.Advance(5*time.Minute + time.Second)
+	if _, err := r.svc.SignIn(ctx, "sess-c", credEmail, credPassword, credSessionIDs("g")); err != nil {
+		t.Fatalf("after the lock: %v", err)
+	}
+}
+
+func TestSignInRehashesOldParams(t *testing.T) {
+	ctx := context.Background()
+	oldHasher := auth.NewHasher(auth.Params{MemoryKiB: 64, Time: 2, Threads: 1})
+
+	t.Run("an old hash is upgraded", func(t *testing.T) {
+		r := newCredRig(t)
+		old, err := oldHasher.Hash(ctx, auth.NormalizePassword(credPassword))
+		if err != nil {
+			t.Fatal(err)
+		}
+		acct := r.q.addAccount(credEmail, &old)
+		if _, err := r.svc.SignIn(ctx, "sess-c", credEmail, credPassword, credSessionIDs("f")); err != nil {
+			t.Fatal(err)
+		}
+		if *acct.passwordHash == old {
+			t.Fatal("the hash was not upgraded")
+		}
+		ok, needs, err := r.hasher.inner.Verify(ctx, *acct.passwordHash, credPassword)
+		if err != nil || !ok || needs {
+			t.Errorf("new hash: ok=%v needsRehash=%v err=%v", ok, needs, err)
+		}
+	})
+
+	t.Run("a failed upgrade never fails a good sign in", func(t *testing.T) {
+		r := newCredRig(t)
+		old, err := oldHasher.Hash(ctx, auth.NormalizePassword(credPassword))
+		if err != nil {
+			t.Fatal(err)
+		}
+		acct := r.q.addAccount(credEmail, &old)
+		r.hasher.hashErr = auth.ErrHasherBusy
+		if _, err := r.svc.SignIn(ctx, "sess-c", credEmail, credPassword, credSessionIDs("f")); err != nil {
+			t.Fatalf("err = %v", err)
+		}
+		if *acct.passwordHash != old {
+			t.Error("the stored hash must be unchanged")
+		}
+	})
+}
+
+func TestConfirmResetSetsPasswordAndEndsSessions(t *testing.T) {
+	r := newCredRig(t)
+	ctx := context.Background()
+	acct := r.addPasswordAccount(t, credEmail, credPassword)
+	r.q.bindSession("phone", acct.id)
+	r.q.bindSession("laptop", acct.id)
+	r.q.throttles[r.svc.ThrottleKey(credEmail)] = &credThrottle{failures: 9, last: r.clk.Now()}
+
+	if err := r.svc.RequestReset(ctx, "sess-d", credEmail); err != nil {
+		t.Fatal(err)
+	}
+	code := r.codeSent(t)
+	newPassword := "a brand new password 55"
+	if err := r.svc.ConfirmReset(ctx, "sess-d", code, newPassword); err != nil {
+		t.Fatalf("ConfirmReset: %v", err)
+	}
+	if ok, _, err := r.hasher.inner.Verify(ctx, *acct.passwordHash, newPassword); err != nil || !ok {
+		t.Errorf("the new password does not verify: ok=%v err=%v", ok, err)
+	}
+	for _, id := range []string{"phone", "laptop"} {
+		if !r.q.sessions[id].revoked {
+			t.Errorf("session %s must be revoked", id)
+		}
+	}
+	if len(r.q.revokedAll) != 1 || r.q.revokedAll[0] != acct.id {
+		t.Errorf("LogOutAllDevices calls = %v", r.q.revokedAll)
+	}
+	if r.q.count("DeleteAccountPushSubscriptions") != 1 {
+		t.Error("push subscriptions of the account must be deleted")
+	}
+	if len(r.q.throttles) != 0 {
+		t.Error("a reset clears the throttle")
+	}
+	if r.q.count("BindSessionAccount") != 0 {
+		t.Error("a reset never signs the browser in")
+	}
+	if len(r.q.codes) != 0 {
+		t.Error("every code row of the address is deleted")
+	}
+
+	t.Run("a no account row can never be confirmed", func(t *testing.T) {
+		r := newCredRig(t)
+		if err := r.svc.RequestReset(ctx, "sess-d", "ghost@example.com"); err != nil {
+			t.Fatal(err)
+		}
+		now := r.clk.Now()
+		r.q.codes[0].codeHash = auth.CodeHash(credCodeKey, "reset", "ghost@example.com", "123456")
+		r.q.codes[0].expires = now.Add(time.Minute)
+		if err := r.svc.ConfirmReset(ctx, "sess-d", "123456", "a brand new password 55"); !errors.Is(err, service.ErrWrongCode) {
+			t.Fatalf("err = %v", err)
+		}
+		if len(r.q.accounts) != 0 {
+			t.Error("a reset must not create an account")
+		}
+	})
+
+	t.Run("a wrong code does not touch the account", func(t *testing.T) {
+		r := newCredRig(t)
+		a := r.addPasswordAccount(t, credEmail, credPassword)
+		before := *a.passwordHash
+		if err := r.svc.RequestReset(ctx, "sess-d", credEmail); err != nil {
+			t.Fatal(err)
+		}
+		code := r.codeSent(t)
+		if err := r.svc.ConfirmReset(ctx, "sess-d", credWrongCode(code), "a brand new password 55"); !errors.Is(err, service.ErrWrongCode) {
+			t.Fatalf("err = %v", err)
+		}
+		if *a.passwordHash != before || r.q.count("RevokeAccountSessions") != 0 {
+			t.Error("a wrong code changes nothing")
+		}
+	})
+
+	t.Run("a busy hasher does not burn the right code", func(t *testing.T) {
+		r := newCredRig(t)
+		r.addPasswordAccount(t, credEmail, credPassword)
+		if err := r.svc.RequestReset(ctx, "sess-d", credEmail); err != nil {
+			t.Fatal(err)
+		}
+		code := r.codeSent(t)
+		r.hasher.hashErr = auth.ErrHasherBusy
+		if err := r.svc.ConfirmReset(ctx, "sess-d", code, "a brand new password 55"); !errors.Is(err, service.ErrBusy) {
+			t.Fatalf("err = %v, want ErrBusy", err)
+		}
+		r.hasher.hashErr = nil
+		if err := r.svc.ConfirmReset(ctx, "sess-d", code, "a brand new password 55"); err != nil {
+			t.Fatalf("the same code must still work: %v", err)
+		}
+	})
+}
+
+func TestConfirmResetPolicyBeforeAttempt(t *testing.T) {
+	r := newCredRig(t)
+	ctx := context.Background()
+	r.addPasswordAccount(t, credEmail, credPassword)
+	if err := r.svc.RequestReset(ctx, "sess-d", credEmail); err != nil {
+		t.Fatal(err)
+	}
+	code := r.codeSent(t)
+	cases := []struct{ password, message string }{
+		{"short1", service.PasswordTooShortMessage},
+		{"password123", service.PasswordCommonMessage},
+		{credEmail, service.PasswordIsEmailMessage},
+	}
+	for _, c := range cases {
+		err := r.svc.ConfirmReset(ctx, "sess-d", code, c.password)
+		var ve service.ValidationError
+		if !errors.As(err, &ve) || ve.Field != "password" || ve.Message != c.message {
+			t.Errorf("%q: err = %v, want password / %q", c.password, err, c.message)
+		}
+	}
+	if r.q.count("BumpAuthCodeAttempt") != 0 || r.q.codes[0].attempts != 0 {
+		t.Error("a refused password must not spend a try")
+	}
+	// The same code still works with an acceptable password.
+	if err := r.svc.ConfirmReset(ctx, "sess-d", code, "a brand new password 55"); err != nil {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestLiveCode(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("none", func(t *testing.T) {
+		r := newCredRig(t)
+		if _, ok, err := r.svc.LiveCode(ctx, "sess-a"); err != nil || ok {
+			t.Fatalf("ok=%v err=%v", ok, err)
+		}
+	})
+
+	t.Run("seconds left round up and never go negative", func(t *testing.T) {
+		r := newCredRig(t)
+		r.signUpAndCode(t, "sess-a", credEmail, credPassword)
+		lc, ok, err := r.svc.LiveCode(ctx, "sess-a")
+		if err != nil || !ok {
+			t.Fatalf("ok=%v err=%v", ok, err)
+		}
+		if lc.Purpose != service.PurposeSignUp || lc.Email != credEmail || lc.SecondsLeft != 600 {
+			t.Errorf("live code = %+v", lc)
+		}
+		r.clk.Advance(500*time.Second + 400*time.Millisecond)
+		if lc, _, _ = r.svc.LiveCode(ctx, "sess-a"); lc.SecondsLeft != 100 {
+			t.Errorf("seconds left = %d, want 100 (rounded up)", lc.SecondsLeft)
+		}
+		r.clk.Advance(5 * time.Minute)
+		lc, ok, _ = r.svc.LiveCode(ctx, "sess-a")
+		if !ok || lc.SecondsLeft != 0 {
+			t.Errorf("expired row: ok=%v live=%+v, want shown with 0 seconds", ok, lc)
+		}
+	})
+
+	t.Run("a consumed row is not live", func(t *testing.T) {
+		r := newCredRig(t)
+		code := r.signUpAndCode(t, "sess-a", credEmail, credPassword)
+		if _, err := r.svc.ConfirmSignUp(ctx, "sess-a", code, credSessionIDs("f")); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok, _ := r.svc.LiveCode(ctx, "sess-a"); ok {
+			t.Error("the row was consumed and deleted")
+		}
+		used := r.clk.Now()
+		r.q.codes = append(r.q.codes, credCodeRow{id: 99, session: "sess-z", purpose: "reset", delivery: "code",
+			email: credEmail, codeHash: strings.Repeat("a", 64), created: used, expires: used.Add(time.Minute), used: &used})
+		if _, ok, _ := r.svc.LiveCode(ctx, "sess-z"); ok {
+			t.Error("a used row is not live")
+		}
+	})
+
+	t.Run("older than the resume window", func(t *testing.T) {
+		r := newCredRig(t)
+		r.signUpAndCode(t, "sess-a", credEmail, credPassword)
+		r.clk.Advance(61 * time.Minute)
+		if _, ok, _ := r.svc.LiveCode(ctx, "sess-a"); ok {
+			t.Error("a row older than the resume window is not shown")
+		}
+	})
+}
+
+func TestSignedInAndEndedByPasswordSwitch(t *testing.T) {
+	r := newCredRig(t)
+	ctx := context.Background()
+	withPw := r.addPasswordAccount(t, credEmail, credPassword)
+	noPw := r.q.addAccount("old@example.com", nil)
+	r.q.bindSession("good", withPw.id)
+	r.q.bindSession("old", noPw.id)
+	r.q.bindSession("gone", withPw.id)
+	r.q.sessions["gone"].revoked = true
+
+	for id, want := range map[string]bool{"good": true, "old": false, "gone": false, "never": false} {
+		got, err := r.svc.SignedIn(ctx, id)
+		if err != nil || got != want {
+			t.Errorf("SignedIn(%s) = %v, %v; want %v", id, got, err, want)
+		}
+	}
+	for id, want := range map[string]bool{"good": false, "old": true, "never": false} {
+		got, err := r.svc.EndedByPasswordSwitch(ctx, id)
+		if err != nil || got != want {
+			t.Errorf("EndedByPasswordSwitch(%s) = %v, %v; want %v", id, got, err, want)
+		}
+	}
+}
+
+func TestSignInLockedMessage(t *testing.T) {
+	cases := []struct {
+		wait time.Duration
+		want string
+	}{
+		{4*time.Minute + 10*time.Second, "Too many tries. Wait 5 minutes, or reset your password."},
+		{time.Minute, "Too many tries. Wait 1 minute, or reset your password."},
+		{30 * time.Second, "Too many tries. Wait 1 minute, or reset your password."},
+		{61 * time.Second, "Too many tries. Wait 2 minutes, or reset your password."},
+		{60 * time.Minute, "Too many tries. Wait 60 minutes, or reset your password."},
+	}
+	for _, c := range cases {
+		if got := service.SignInLockedMessage(c.wait); got != c.want {
+			t.Errorf("SignInLockedMessage(%v) = %q, want %q", c.wait, got, c.want)
+		}
+	}
+	if (service.SignInLockedError{Wait: 5 * time.Minute}).Error() != service.SignInLockedMessage(5*time.Minute) {
+		t.Error("the error text must be the message")
 	}
 }
