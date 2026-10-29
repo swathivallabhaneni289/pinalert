@@ -56,6 +56,24 @@ func TestPolicyCommentCheckKeptForEvery(t *testing.T) {
 		"A comment is checked by the same service as a report. For every comment the check's result, its scores and which model gave them are kept with the comment.")
 }
 
+// TestPolicyAndReadmeSharedPageFields (WR-T05): the public page also shows
+// the severity, the confirmation count in its sentence and, for a Critical
+// report with a pick, what is happening. The Policy and the README say so.
+func TestPolicyAndReadmeSharedPageFields(t *testing.T) {
+	keeps := r71tPolicySection(t, "What Pinalert keeps")
+	if strings.Contains(keeps, "only the report's kind, a rough area, its state in one short sentence and when") {
+		t.Errorf("the Policy's share line still leaves out the severity, the count and the pick")
+	}
+	r08tMust(t, "the Policy's share line", keeps,
+		"Anyone with the link can see only the report's kind and severity, a rough area, what is happening for a Critical report, its state and how many people confirmed it in one short sentence, and when.")
+	readme := strings.Join(strings.Fields(r08tReadRepo(t, "../README.md")), " ")
+	r08tMust(t, "README.md", readme,
+		"The public page shows only the category and severity, a rough area, what is happening for a Critical report, whether it is still active, disputed, resolved or ended with how many people confirmed it, and when.")
+	// The page itself still shows those three, so the words stay true.
+	page := p13ReadTemplate(t, "share_status.html.tmpl")
+	r08tMust(t, "share_status.html.tmpl", page, "{{.SeverityWord}}", "{{.Happening}}", "{{.Sentence}}")
+}
+
 // r08tReadRepo reads a file of the repository, relative to web/.
 func r08tReadRepo(t *testing.T, path string) string {
 	t.Helper()
