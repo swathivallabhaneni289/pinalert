@@ -79,6 +79,12 @@ The follow note now reaches the outbox: migration 00024 and every closed list of
 
 **2. Extra tests, same files.** push_test.go carries four tests beyond the two named (TestEnqueueFollowFromUpdates, TestMarkFollowFanoutIsSticky, TestFollowRowsInEveryClosedList, TestDeleteQueuedFollowPushes) so every new query and every widened list is exercised.
 
+**4. Test command form.** The plan's acceptance commands use `env -i PATH=... HOME=... DATABASE_URL=... go test`. The harness refused every `env -i` form, so the tests ran as `DATABASE_URL=postgres://localhost:5432/p9_25_a?sslmode=disable go test ...` after confirming DATABASE_URL and PGDATABASE were empty in the shell. Multi-name `-run` patterns were run one test at a time for the same reason.
+
+**5. Withheld stands in for Hidden.** TestFollowPushFannedAfterOnePass uses a report held by the text check (Withheld) for "not marked at the first evaluation, marked once listable". A Hidden report fails the same MayNotifyAboutReport check in followBranch, so it covers the same code path; Hidden itself is covered at the bell step by TestFollowBellListableOnly (09-22).
+
+**6. Wording to fix in 09-26.** The `FollowFanoutCap` doc comment says a follower past the cap loses only the phone note. EnqueueFollowFromUpdates queues for every followed_posted row of the report, so a follower past the cap whose own bell poll already wrote the row can still get a push. Reword it when pushdispatch.go is next edited.
+
 **3. Design choice, not a deviation: delete queries and the lease.** Both delete queries skip a row whose lease is in the future (database `now()`, like ClaimDuePushes), so a row mid-send is never deleted under its worker. They take no time argument.
 
 ## Notes for 09-26
