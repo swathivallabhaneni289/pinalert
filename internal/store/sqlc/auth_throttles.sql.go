@@ -175,9 +175,12 @@ type RefundSignInTryParams struct {
 // try. failures goes down by one and the lock goes. Clearing the lock is the
 // state before the try: the reserve only updates a row whose lock had already
 // ended (or never existed), and an ended lock and no lock read the same to the
-// reserve's guard. The forget rule also reads the same, because last_failure_at
-// is kept at this try's time, which is never before an ended lock. Every
-// address, known or unknown, takes this same statement.
+// reserve's guard. The forget rule does not read the same (review fix round 3,
+// skeptic SK2-02): the reserve moved last_failure_at to this try's time and the
+// refund keeps it, so the forget window restarts from the busy try and the
+// earlier failures are remembered for longer. That only makes the lock
+// stricter; it never gives a guesser an extra check, because no password was
+// checked. Every address, known or unknown, takes this same statement.
 func (q *Queries) RefundSignInTry(ctx context.Context, arg RefundSignInTryParams) (int64, error) {
 	result, err := q.db.Exec(ctx, refundSignInTry,
 		arg.Scope,
