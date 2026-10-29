@@ -1,5 +1,7 @@
-// settings.js: the Name and Home area edit windows of the Settings page
-// (Phase 3.4, plan 06, UI-SPEC Surface 6, D-24b, D-02).
+// settings.js: the Username, Name and Home area edit windows of the Settings
+// page (Phase 3.4, plan 06, UI-SPEC Surface 6, D-24b, D-02; the Username window
+// and the rule that a name or a home area is never emptied or removed are
+// Phase 7.1, plan 15).
 //
 // Self contained, like account-menu.js: it needs no other script of the app,
 // only the ids settings.html.tmpl renders, and it leaves quietly on a page that
@@ -56,6 +58,10 @@
   var MESSAGE_UNAVAILABLE = 'Search unavailable. Try again in a moment.';
   var MESSAGE_RATE_LIMITED = 'Too many searches. Wait a few seconds and try again.';
   var MESSAGE_SAVE_FAILED = 'Could not save. Try again in a moment.';
+  // Phase 7.1 plan 15 (D-15, UI-SPEC Surface 8): the name and the home area can
+  // be changed but not emptied. The server refuses both too (plan 06).
+  var MESSAGE_NAME_EMPTY = "Your name can't be empty.";
+  var MESSAGE_CHOOSE_HOME = 'Choose a home area.';
   var MESSAGE_SESSION_ENDED = 'Your session has ended. Reload the page and log in again.';
 
   var FOCUSABLE_SELECTOR = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
@@ -100,7 +106,6 @@
   var homeStatus = el('settings-home-status');
   var homeResults = el('settings-home-results');
   var homeSave = el('settings-home-save');
-  var homeRemove = el('settings-home-remove');
   var homeError = el('settings-home-error');
 
   var windows = {
@@ -218,7 +223,7 @@
   }
 
   // isShown says whether node and every ancestor up to the window are visible,
-  // so the focus trap skips the hidden Remove button and a hidden results list.
+  // so the focus trap skips a hidden results list.
   function isShown(node, win) {
     for (var n = node; n && n !== win; n = n.parentNode) {
       if (n.hidden) {
@@ -336,7 +341,9 @@
 
   function clearPick() {
     picked = null;
-    homeSave.disabled = true;
+    // Save home area is always pressable; only a save still out switches it off
+    // (Phase 7.1 plan 15). With nothing picked, a press says what to do.
+    homeSave.disabled = savingHome;
     var options = homeResults.querySelectorAll('button');
     for (var i = 0; i < options.length; i++) {
       options[i].setAttribute('aria-selected', 'false');
@@ -408,11 +415,9 @@
       cancelSearch();
       resetTyping();
       picked = null;
-      homeSave.disabled = true;
+      homeSave.disabled = savingHome;
       homeFilled = storedValue(homeRow);
       homeInput.value = homeFilled;
-      homeRemove.hidden = storedValue(homeRow) === '';
-      homeRemove.disabled = savingHome;
     }
     target.win.hidden = false;
     lockPage(target.win);
@@ -489,9 +494,7 @@
       homeInput.value = value;
       homeFilled = value;
     }
-    homeRemove.hidden = storedValue(homeRow) === '';
-    homeRemove.disabled = savingHome;
-    homeSave.disabled = picked === null || savingHome;
+    homeSave.disabled = savingHome;
   }
 
   // ---- Username -------------------------------------------------------------
@@ -591,11 +594,15 @@
     if (savingName) {
       return Promise.resolve();
     }
+    if (nameInput.value.trim() === '') {
+      // Nothing is sent and the stored name stays.
+      showLine(nameError, MESSAGE_NAME_EMPTY);
+      return Promise.resolve();
+    }
     savingName = true;
     nameSave.disabled = true;
     hideLine(nameError);
     var mine = session;
-    // An emptied name is sent as an empty string, which removes the stored one.
     return patchProfile({ display_name: nameInput.value.trim() }).then(function (answer) {
       savingName = false;
       nameSave.disabled = false;
@@ -880,14 +887,13 @@
     }, TYPING_PAUSE_MS);
   }
 
-  // afterHomeSave settles a save or a removal of the home area. sameWindow says
+  // afterHomeSave settles a save of the home area. sameWindow says
   // whether the window that sent it is still the one open: only then does the
   // answer write a refusal into the window. The row always takes what the
   // server stored, and the buttons always follow the flag and the pick.
   function afterHomeSave(answer, sameWindow) {
     savingHome = false;
-    homeSave.disabled = picked === null;
-    homeRemove.disabled = false;
+    homeSave.disabled = false;
     if (!answer.ok) {
       if (sameWindow) {
         showLine(homeError, saveMessage(answer));
@@ -896,13 +902,18 @@
     }
     var name = answer.body && typeof answer.body.home_area_name === 'string' ? answer.body.home_area_name : '';
     setRow(homeRow, homeValue, name);
-    homeRemove.hidden = name === '';
     refillAfterEarlierSave('home', sameWindow, name);
     return true;
   }
 
   function saveHomeArea() {
-    if (savingHome || picked === null) {
+    if (savingHome) {
+      return Promise.resolve();
+    }
+    // A home area can be changed but not removed (D-15): with nothing picked
+    // nothing is sent, the stored area stays, and the person is told what to do.
+    if (picked === null) {
+      showLine(homeError, MESSAGE_CHOOSE_HOME);
       return Promise.resolve();
     }
     savingHome = true;
@@ -915,36 +926,7 @@
       }
     }, function () {
       savingHome = false;
-      homeSave.disabled = picked === null;
-      if (mine === session) {
-        showLine(homeError, MESSAGE_SAVE_FAILED);
-      }
-    });
-  }
-
-  // removeHomeArea deletes the stored home area at once. The window stays open
-  // with an empty field, so the person can pick another place or close it.
-  function removeHomeArea() {
-    if (savingHome) {
-      return Promise.resolve();
-    }
-    savingHome = true;
-    homeRemove.disabled = true;
-    hideLine(homeError);
-    var mine = session;
-    return patchProfile({ home_area: null }).then(function (answer) {
-      var sameWindow = mine === session;
-      if (afterHomeSave(answer, sameWindow) && sameWindow) {
-        homeInput.value = '';
-        hideLine(homeStatus);
-        homeResults.textContent = '';
-        homeResults.hidden = true;
-        clearPick();
-        homeInput.focus();
-      }
-    }, function () {
-      savingHome = false;
-      homeRemove.disabled = false;
+      homeSave.disabled = false;
       if (mine === session) {
         showLine(homeError, MESSAGE_SAVE_FAILED);
       }
@@ -975,9 +957,6 @@
     onHomeInput();
   });
   homeSave.addEventListener('click', function () { saveHomeArea(); });
-  if (homeRemove) {
-    homeRemove.addEventListener('click', function () { removeHomeArea(); });
-  }
   if (hasUsername) {
     usernameRow.addEventListener('click', function () { openWindow('username'); });
     usernameClose.addEventListener('click', function () { closeWindow('username', true); });
@@ -997,7 +976,6 @@
     saveUsername: saveUsername,
     saveName: saveName,
     saveHomeArea: saveHomeArea,
-    removeHomeArea: removeHomeArea,
     searchPlaces: searchPlaces
   };
 }());

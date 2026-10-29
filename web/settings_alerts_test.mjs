@@ -251,7 +251,9 @@ function buildPage({ count = 0, withMarkup = true, home = true, on = false, radi
   homeRow.setAttribute('data-value', home ? 'Kochi' : '');
   const homeWin = make('div', 'settings-home-window', doc.body);
   homeWin.hidden = true;
-  make('p', 'settings-home-alerts-note', homeWin).hidden = !(home && (on || critical || official));
+  // Amended 2026-10-29 by Phase 7.1 plan 15: the sentence about removing the home
+  // area (settings-home-alerts-note) left the page with the Remove home area
+  // button, so the fixture no longer draws it.
 
   // Phase 3.3 plan 14: the install guide window.
   const guide = make('div', 'device-guide-window', doc.body);
@@ -832,14 +834,14 @@ test('the script never asks for the device position and exposes its handles', ()
 
 const SAVE_FAILED = 'Couldn\'t save that. Try again.';
 const OFFLINE = 'You\'re offline, so this wasn\'t saved. Try again when you have a signal.';
-// Amended 2026-10-18 by Phase 3.3 plan 14 (UI-SPEC W2, D-12): the status after
-// the home area is removed is "Home area removed. Alerts near your home area
-// are off.", replacing P32-C23's second string.
-const HOME_REMOVED = 'Home area removed. Alerts near your home area are off.';
+// Amended 2026-10-29 by Phase 7.1 plan 15 (D-15): a home area can no longer be
+// removed in Settings, so the status "Home area removed. Alerts near your home
+// area are off." (3.3 plan 14, UI-SPEC W2) is gone with the Remove home area
+// button. The no home rows stay as a defensive state for data repair: the tests
+// below that empty the Home area row's data-value now expect no status line.
 
 const ok = (reliable, km) => ({ reliable_alerts: reliable, alert_radius_km: km, has_home_area: true });
 const errorLine = (page) => byId(page, 'settings-alerts-error');
-const note = (page) => byId(page, 'settings-home-alerts-note');
 const live = (page) => byId(page, 'notice-live');
 
 // turnOn flips the switch the way a tap does: the checkbox changes, then the
@@ -863,27 +865,22 @@ test('turning the switch on sends PATCH reliable_alerts, locks the switch and ke
   assert.equal(req.init.body, '{"reliable_alerts":true}');
   assert.equal(page.sw.disabled, true, 'the sender is disabled while the save is in flight');
   assert.equal(page.select.disabled, false);
-  assert.equal(note(page).hidden, false, 'the Home area note shows while the switch is on');
 
   answer(req, 200, ok(true, 5));
   await flush();
   assert.equal(page.sw.checked, true);
   assert.equal(page.sw.disabled, false);
   assert.equal(errorLine(page).hidden, true);
-  assert.equal(note(page).hidden, false);
 });
 
-test('turning the switch off sends reliable_alerts false and hides the Home area note', async () => {
+test('turning the switch off sends reliable_alerts false', async () => {
   const page = loadAlerts({ on: true });
-  assert.equal(note(page).hidden, false);
   turnSwitch(page, false);
   await flush();
   assert.equal(page.requests[0].init.body, '{"reliable_alerts":false}');
-  assert.equal(note(page).hidden, true);
   answer(page.requests[0], 200, ok(false, 5));
   await flush();
   assert.equal(page.sw.checked, false);
-  assert.equal(note(page).hidden, true);
 });
 
 test('a failed save puts the switch back and says so in one error line', async () => {
@@ -896,7 +893,6 @@ test('a failed save puts the switch back and says so in one error line', async (
   assert.equal(page.sw.disabled, false);
   assert.equal(errorLine(page).hidden, false);
   assert.equal(errorLine(page).textContent, SAVE_FAILED);
-  assert.equal(note(page).hidden, true);
 });
 
 test('a 400 puts the switch back with the same sentence', async () => {
@@ -917,7 +913,6 @@ test('a network failure puts the switch back with the same sentence', async () =
   await flush();
   assert.equal(page.sw.checked, true);
   assert.equal(errorLine(page).textContent, SAVE_FAILED);
-  assert.equal(note(page).hidden, false);
 });
 
 test('a save that never answers ends in the same sentence', async () => {
@@ -1060,7 +1055,7 @@ test('a Home area window opened from the Home area row keeps focus where setting
   assert.equal(page.doc.activeElement, page.homeRow);
 });
 
-test('removing the home area while the alert is on turns the switch off, says so and sends nothing', async () => {
+test('a home area that goes empty (data repair) turns the switch off, says nothing and sends nothing', async () => {
   const page = loadAlerts({ home: true, on: true });
   page.homeRow.setAttribute('data-value', '');
   await flush();
@@ -1068,12 +1063,11 @@ test('removing the home area while the alert is on turns the switch off, says so
   assert.equal(page.alertsOn.hidden, true);
   assert.equal(page.alertsOff.hidden, false);
   assert.equal(page.sw.checked, false);
-  assert.equal(note(page).hidden, true);
-  assert.equal(live(page).textContent, HOME_REMOVED);
+  assert.equal(live(page).textContent, '', 'nothing is announced: a home area is never removed in Settings');
   assert.equal(page.requests.length, 0);
 });
 
-test('removing the home area while the alert is off redraws without a status line', async () => {
+test('a home area that goes empty while the alert is off redraws without a status line', async () => {
   const page = loadAlerts({ home: true, on: false });
   page.homeRow.setAttribute('data-value', '');
   await flush();
@@ -1091,7 +1085,6 @@ test('changing the home area to another place changes nothing in the section', a
   assert.equal(page.sw.checked, true);
   assert.equal(page.select.value, '10');
   assert.equal(live(page).textContent, '');
-  assert.equal(note(page).hidden, false);
 });
 
 test('a failed switch save after the home area was removed leaves the switch off', async () => {
@@ -1103,7 +1096,6 @@ test('a failed switch save after the home area was removed leaves the switch off
   page.requests[0].reject(new Error('down'));
   await flush();
   assert.equal(page.sw.checked, false);
-  assert.equal(note(page).hidden, true);
 });
 
 test('saveAlerts and redrawAlerts are the same paths the controls use', async () => {
@@ -1505,7 +1497,7 @@ test('closing the Home area window opened from the Critical row with no area put
   assert.equal(page.doc.activeElement, page.criticalNoHome);
 });
 
-test('removing the home area keeps the Critical value, shows the no home rows and says so once', async () => {
+test('a home area that goes empty keeps the Critical value, shows the no home rows and says nothing', async () => {
   const page = loadAlerts({ home: true, critical: true, on: true });
   page.homeRow.setAttribute('data-value', '');
   await flush();
@@ -1516,18 +1508,18 @@ test('removing the home area keeps the Critical value, shows the no home rows an
   assert.equal(page.radiusRow.hidden, true);
   assert.equal(page.criticalSwitch.checked, true, 'the stored Critical value is not touched');
   assert.equal(page.sw.checked, false, 'Reliable turns off');
-  assert.equal(live(page).textContent, HOME_REMOVED);
+  assert.equal(live(page).textContent, '', 'nothing is announced: a home area is never removed in Settings');
   assert.equal(page.requests.length, 0);
 });
 
-test('removing the home area with only Critical on still says so', async () => {
+test('a home area that goes empty with only Critical on says nothing', async () => {
   const page = loadAlerts({ home: true, critical: true, on: false });
   page.homeRow.setAttribute('data-value', '');
   await flush();
-  assert.equal(live(page).textContent, HOME_REMOVED);
+  assert.equal(live(page).textContent, '', 'nothing is announced: a home area is never removed in Settings');
 });
 
-test('removing the home area with Critical and Reliable off says nothing', async () => {
+test('a home area that goes empty with Critical and Reliable off says nothing', async () => {
   const page = loadAlerts({ home: true, critical: false, on: false });
   page.homeRow.setAttribute('data-value', '');
   await flush();
@@ -1540,30 +1532,6 @@ test('the Changes switch is never hidden by the home area', async () => {
   await flush();
   assert.equal(byId(page, 'settings-changes-row').hidden, false);
   assert.equal(page.changesSwitch.checked, true);
-});
-
-test('the Home area note shows while Critical or Reliable is on and a home area exists', async () => {
-  const page = loadAlerts({ home: true, critical: false, on: false });
-  assert.equal(note(page).hidden, true);
-  page.criticalSwitch.checked = true;
-  fire(page.criticalSwitch, 'change');
-  await flush();
-  assert.equal(note(page).hidden, false);
-  answer(page.requests[0], 200, { ...ok(false, 5), critical_push: true, changes_push: false });
-  await flush();
-  assert.equal(note(page).hidden, false);
-  page.criticalSwitch.checked = false;
-  fire(page.criticalSwitch, 'change');
-  await flush();
-  assert.equal(note(page).hidden, true);
-  answer(page.requests[1], 200, { ...ok(false, 5), critical_push: false, changes_push: false });
-  await flush();
-  assert.equal(note(page).hidden, true);
-});
-
-test('the Home area note stays hidden without a home area even when Critical reads on', () => {
-  const page = loadAlerts({ home: false, critical: true });
-  assert.equal(note(page).hidden, true);
 });
 
 // ---- Plan 05-14 (D-11, UI-SPEC 6a): Severe official alerts for my area ----
@@ -1663,39 +1631,15 @@ test('closing the Home area window opened from the official row with no area put
   assert.equal(page.doc.activeElement, page.officialNoHome);
 });
 
-test('removing the home area keeps the official value, shows the no home row and says so once', async () => {
+test('a home area that goes empty keeps the official value, shows the no home row and says nothing', async () => {
   const page = loadAlerts({ home: true, official: true });
   page.homeRow.setAttribute('data-value', '');
   await flush();
   assert.equal(page.officialOn.hidden, true);
   assert.equal(page.officialNoHome.hidden, false);
   assert.equal(page.officialSwitch.checked, true, 'the stored official value is not touched');
-  assert.equal(live(page).textContent, HOME_REMOVED);
+  assert.equal(live(page).textContent, '', 'nothing is announced: a home area is never removed in Settings');
   assert.equal(page.requests.length, 0);
-});
-
-test('the Home area note shows while the official switch alone is on and a home area exists', async () => {
-  const page = loadAlerts({ home: true, official: false });
-  assert.equal(note(page).hidden, true);
-  page.officialSwitch.checked = true;
-  fire(page.officialSwitch, 'change');
-  await flush();
-  assert.equal(note(page).hidden, false);
-  answer(page.requests[0], 200, { ...ok(false, 5), critical_push: false, changes_push: false, official_push: true });
-  await flush();
-  assert.equal(note(page).hidden, false);
-  page.officialSwitch.checked = false;
-  fire(page.officialSwitch, 'change');
-  await flush();
-  assert.equal(note(page).hidden, true);
-  answer(page.requests[1], 200, { ...ok(false, 5), critical_push: false, changes_push: false, official_push: false });
-  await flush();
-  assert.equal(note(page).hidden, true);
-});
-
-test('the Home area note stays hidden without a home area even when official reads on', () => {
-  const page = loadAlerts({ home: false, official: true });
-  assert.equal(note(page).hidden, true);
 });
 
 test('every device string reaches the page as text', async () => {

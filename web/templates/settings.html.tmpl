@@ -290,7 +290,8 @@
         <button type="button" class="app-window__close" id="settings-name-close" aria-label="Close"><span class="app-icon app-icon--x" aria-hidden="true"></span></button>
       </div>
       <form class="app-window__body" id="settings-name-form" novalidate>
-        <label class="app-window__label" for="settings-name-input">Your name</label>
+        {{/* Amended 2026-10-29 by Phase 7.1 plan 15 (UI-SPEC P71-C4, sketch 010 note): the label reads Name, like step 4 and the row. */}}
+        <label class="app-window__label" for="settings-name-input">Name</label>
         <input class="app-window__field" type="text" id="settings-name-input" name="display_name" maxlength="60" autocomplete="name" placeholder="For example: Ravi Kumar">
         <p class="inline-error" id="settings-name-error" role="alert" hidden></p>
         <div class="app-window__actions">
@@ -315,10 +316,9 @@
         <p class="app-window__status" id="settings-home-status" role="status" aria-live="polite" hidden></p>
         <ul class="app-window__results" id="settings-home-results" role="listbox" aria-label="Places found" hidden></ul>
         <p class="inline-error" id="settings-home-error" role="alert" hidden></p>
-        <p class="app-window__help" id="settings-home-alerts-note"{{if not (and .HasHomeArea (or .AlertsOn .CriticalPushOn .OfficialPushOn))}} hidden{{end}}>Removing it also turns off alerts about reports and official warnings for your home area.</p>
+        {{/* Amended 2026-10-29 by Phase 7.1 plan 15 (D-15, UI-SPEC Surface 8): a home area can be changed but not removed, so the removal button and the sentence about removing it are gone, and Save home area is pressable: with nothing picked it says Choose a home area. */}}
         <div class="app-window__actions">
-          <button type="button" class="btn btn--primary" id="settings-home-save" disabled>Save home area</button>
-          <button type="button" class="app-window__quiet" id="settings-home-remove"{{if not .HomeAreaName}} hidden{{end}}>Remove home area</button>
+          <button type="button" class="btn btn--primary" id="settings-home-save">Save home area</button>
         </div>
       </div>
     </div>

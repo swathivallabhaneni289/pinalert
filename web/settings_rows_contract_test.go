@@ -457,19 +457,10 @@ func TestPhoneNotificationsRowsNeedAHomeArea(t *testing.T) {
 	if regexp.MustCompile(`(?m)^\.place-row\s*\{[^}]*display\s*:`).MatchString(css) {
 		t.Errorf("places.css declares display on a bare .place-row rule; it must be guarded with :not([hidden])")
 	}
-	// The alerts note sits in the Home area window, before its actions, and
-	// is hidden unless there is a home area and Critical or Reliable is on.
-	win := settingsWindowRegion(t, page, "settings-home-window")
-	// Amended 2026-10-29 by plan 05-14 (D-11, UI-SPEC 6a W1): the note also shows
-	// while the official switch is on, and its sentence names official warnings.
-	note := `<p class="app-window__help" id="settings-home-alerts-note"{{if not (and .HasHomeArea (or .AlertsOn .CriticalPushOn .OfficialPushOn))}} hidden{{end}}>Removing it also turns off alerts about reports and official warnings for your home area.</p>`
-	at := strings.Index(win, note)
-	if at == -1 {
-		t.Fatalf("the Home area window lacks the alerts note")
-	}
-	if at > strings.Index(win, `class="app-window__actions"`) {
-		t.Errorf("the alerts note must come before the actions of the Home area window")
-	}
+	// Amended 2026-10-29 by Phase 7.1 plan 15 (D-15, UI-SPEC Surface 8): the alerts
+	// note (Removing it also turns off alerts ...) left the Home area window with
+	// the Remove home area button, since a home area can only be changed.
+	// TestSettingsHomeAreaCannotBeRemoved pins its absence.
 }
 
 // TestSettingsAlertsSavesAtOnce pins UI-SPEC E1 and P32-C22 and C23 on
@@ -491,8 +482,8 @@ func TestSettingsAlertsSavesAtOnce(t *testing.T) {
 		// P32-C22
 		`Couldn\'t save that. Try again.`,
 		`You\'re offline, so this wasn\'t saved. Try again when you have a signal.`,
-		// W2, replacing P32-C23's second string
-		"Home area removed. Alerts near your home area are off.",
+		// Amended 2026-10-29 by Phase 7.1 plan 15 (D-15): W2's removed status sentence
+		// is gone with the Remove home area button; the absence is pinned below.
 		"navigator.onLine === false",
 		"saveAlerts: saveAlerts", "redrawAlerts: redrawAlerts",
 		"openWindow('home')",
@@ -637,12 +628,16 @@ func TestNotificationsSectionRows(t *testing.T) {
 	if strings.Count(page, `template "device_guide"`) != 1 {
 		t.Errorf("the guide partial is included %d times, want once", strings.Count(page, `template "device_guide"`))
 	}
-	// The Home area note says what removal also turns off (W1).
+	// The Home area note said what removal also turns off (W1).
 	//
-	// Amended 2026-10-29 by plan 05-14 (D-11, UI-SPEC 6a W1): the sentence names
-	// official warnings too; the old sentence must be gone.
-	if !strings.Contains(page, "Removing it also turns off alerts about reports and official warnings for your home area.") {
-		t.Errorf("the Home area window lacks the W1 note")
+	// Amended 2026-10-29 by plan 05-14 (D-11, UI-SPEC 6a W1): the sentence named
+	// official warnings too; the old sentence had to be gone.
+	//
+	// Amended 2026-10-29 by Phase 7.1 plan 15 (D-15): the note is gone altogether
+	// with the Remove home area button (TestSettingsHomeAreaCannotBeRemoved), so
+	// neither sentence may be on the page.
+	if strings.Contains(page, "Removing it also turns off alerts about reports and official warnings for your home area.") {
+		t.Errorf("the Home area window still holds the W1 note")
 	}
 	if strings.Contains(page, "Removing it also turns off alerts about reports near your home area.") {
 		t.Errorf("the Home area window still holds the 3.3 W1 sentence")
@@ -909,5 +904,50 @@ func TestSettingsUsernameScript(t *testing.T) {
 		if strings.Contains(js, banned) {
 			t.Errorf("settings.js holds %q", banned)
 		}
+	}
+}
+
+// TestSettingsHomeAreaCannotBeRemoved pins Phase 7.1 plan 15 (D-15, UI-SPEC
+// Surface 8): the Remove home area button, the sentence about removing it and
+// the removed status are gone from the template and both scripts; Save home area
+// is pressable (no disabled attribute) and the two refusal sentences live in
+// settings.js; the Name window label reads Name.
+func TestSettingsHomeAreaCannotBeRemoved(t *testing.T) {
+	page := p421ReadTemplate(t, "settings.html.tmpl")
+	settings := stripJSComments(p421ReadStatic(t, "js/settings.js"))
+	alerts := stripJSComments(p421ReadStatic(t, "js/settings-alerts.js"))
+	for _, banned := range []string{
+		"settings-home-remove", "Remove home area", "Removing it also turns off alerts", "settings-home-alerts-note",
+		">Your name<",
+	} {
+		if strings.Contains(page, banned) {
+			t.Errorf("settings.html.tmpl still holds %q", banned)
+		}
+	}
+	for _, banned := range []string{"settings-home-remove", "removeHomeArea", "home_area: null", "homeRemove"} {
+		if strings.Contains(settings, banned) {
+			t.Errorf("settings.js still holds %q", banned)
+		}
+	}
+	for _, banned := range []string{"Home area removed.", "MESSAGE_HOME_REMOVED", "settings-home-alerts-note", "syncNote"} {
+		if strings.Contains(alerts, banned) {
+			t.Errorf("settings-alerts.js still holds %q", banned)
+		}
+	}
+	save := openingTagOf(t, page, "settings-home-save")
+	if strings.Contains(save, "disabled") {
+		t.Errorf("Save home area carries the disabled attribute; it is pressable and says Choose a home area. when nothing is picked: %s", save)
+	}
+	for _, want := range []string{"\"Your name can't be empty.\"", "'Choose a home area.'"} {
+		if got := strings.Count(settings, want); got != 1 {
+			t.Errorf("settings.js holds %s %d times, want 1", want, got)
+		}
+	}
+	if !strings.Contains(page, `<label class="app-window__label" for="settings-name-input">Name</label>`) {
+		t.Errorf("the Name window label does not read Name")
+	}
+	// The Critical, official and Reliable no home rows stay as a defensive state.
+	if got := strings.Count(page, "Add a home area first"); got != 3 {
+		t.Errorf("Add a home area first appears %d times, want 3", got)
 	}
 }

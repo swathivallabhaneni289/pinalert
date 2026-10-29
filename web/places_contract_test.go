@@ -300,13 +300,15 @@ func TestSettingsWindowsCloseWithXOnly(t *testing.T) {
 		save  string
 	}{
 		{"settings-name-window", "Name", []string{
-			`for="settings-name-input">Your name</label>`, `placeholder="For example: Ravi Kumar"`,
+			// Amended 2026-10-29 by Phase 7.1 plan 15 (UI-SPEC P71-C4): the label reads Name.
+			`for="settings-name-input">Name</label>`, `placeholder="For example: Ravi Kumar"`,
 			`maxlength="60"`, `autocomplete="name"`,
 		}, "Save name"},
 		{"settings-home-window", "Home area", []string{
 			`for="settings-home-input">Home area</label>`, `placeholder="Search a place"`, `enterkeyhint="search"`,
 			"A town or area, never your street. Used for alerts.", `role="listbox"`, `role="status"`,
-			"Remove home area",
+			// Amended 2026-10-29 by Phase 7.1 plan 15 (D-15): the Remove home area button is
+			// gone; TestSettingsHomeAreaCannotBeRemoved pins its absence.
 		}, "Save home area"},
 	}
 	for _, w := range windows {
