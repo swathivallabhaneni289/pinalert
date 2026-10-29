@@ -758,7 +758,16 @@
       }
       state.resendBusy = false;
       if (!result.ok) {
-        renderResend();
+        // An early Resend refused with a wait restarts the wait from the server
+        // (review fix WR-B02), so the button says how long, even on a page that
+        // named no full wait. A wait longer than the code's lifetime (the hourly
+        // limit) is left to the server's sentence, not drawn as a countdown.
+        var wait = result.status === 429 && result.body ? result.body.retry_after_seconds : 0;
+        if (typeof wait === 'number' && wait > 0 && wait <= numberAttr('data-code-ttl-seconds')) {
+          startResendWait(Math.ceil(wait));
+        } else {
+          renderResend();
+        }
         showError(codeError, null, messageFor(result));
         return;
       }

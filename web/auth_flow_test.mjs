@@ -1102,6 +1102,42 @@ test('WR-B02: the wait after a send is the full wait, also on a page reloaded wi
   assert.equal(text(reloaded, 'code-resend'), 'Resend code');
 });
 
+// Phase 7.1 review fix (browser), WR-B02 follow-up: when the page names no full
+// wait (a server that draws data-resend-seconds as 0 on an entry panel), Resend is
+// pressable at once and the server refuses an early one with 429. The wait the
+// server names then restarts the Resend wait on the clock, so the button says how
+// long to wait. A wait longer than the code's lifetime (the hourly limit) is not
+// drawn as a countdown; the server's sentence says it.
+test('WR-B02: a refused early Resend restarts the wait from the server, up to the code lifetime', async () => {
+  const page = load({ start: 'create', resend: 0, ttl: 600 });
+  await toCodeScreen(page);
+  assert.equal(text(page, 'code-resend'), 'Resend code');
+  click(page, 'code-resend');
+  answer(page.requests[page.requests.length - 1], 429, { error: { field: 'email', message: 'Too many requests. Try again in a minute.' }, retry_after_seconds: 60 });
+  await flush();
+  assert.equal(text(page, 'code-error'), 'Too many requests. Try again in a minute.');
+  assert.equal(text(page, 'code-resend'), 'Resend in 60s');
+  assert.equal(isOff(page, 'code-resend'), true);
+  page.sleep(60000);
+  page.fireDoc('visibilitychange');
+  assert.equal(text(page, 'code-resend'), 'Resend code');
+
+  const hourly = load({ start: 'create', resend: 0, ttl: 600 });
+  await toCodeScreen(hourly);
+  click(hourly, 'code-resend');
+  answer(hourly.requests[hourly.requests.length - 1], 429, { error: { field: 'email', message: 'Too many codes for this email. Try again in an hour.' }, retry_after_seconds: 3600 });
+  await flush();
+  assert.equal(text(hourly, 'code-error'), 'Too many codes for this email. Try again in an hour.');
+  assert.equal(text(hourly, 'code-resend'), 'Resend code', 'an hour is not drawn as a countdown');
+
+  const plain = load({ start: 'create', resend: 0 });
+  await toCodeScreen(plain);
+  click(plain, 'code-resend');
+  answer(plain.requests[plain.requests.length - 1], 503, { error: { message: 'The mail service is down. Try again later.' } });
+  await flush();
+  assert.equal(text(plain, 'code-resend'), 'Resend code', 'only a 429 names a wait');
+});
+
 // Phase 7.1 review fix (browser), IN-B03: an answer belongs to the screen that
 // sent it. Once the card has moved on (another choice, Change email, a new code
 // screen), a late answer only frees its button; it never switches the card, writes
