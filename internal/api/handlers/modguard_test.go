@@ -9,10 +9,34 @@ package handlers
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"pinalert/internal/account"
 )
+
+// SK-I03 (skeptic round, 2026-10-30): the /moderate page checks the same marker
+// the moderator API handlers check, and answers what the group answers without
+// it: the plain not found, before the method is judged.
+func TestModeratePageRefusesAVerifiedAccountThatIsNotAModerator(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodDelete} {
+		t.Run(method, func(t *testing.T) {
+			req := httptest.NewRequest(method, "/moderate", nil)
+			req = req.WithContext(account.WithAccount(req.Context(), account.Account{ID: 7, Email: "someone@example.com"}))
+			rec := httptest.NewRecorder()
+			ModeratePage(nil, PageConfig{})(rec, req)
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("status = %d, want 404 (the body %q)", rec.Code, rec.Body.String())
+			}
+			if rec.Header().Get("Allow") != "" {
+				t.Errorf("Allow = %q, want none: a non moderator must not learn the method", rec.Header().Get("Allow"))
+			}
+			if strings.Contains(rec.Body.String(), "someone@example.com") {
+				t.Error("the answer names the account")
+			}
+		})
+	}
+}
 
 func TestModeratorHandlersRefuseAVerifiedAccountThatIsNotAModerator(t *testing.T) {
 	handlers := map[string]struct {
