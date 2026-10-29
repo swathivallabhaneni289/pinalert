@@ -149,6 +149,13 @@ func (f *fakeDeleteQuerier) DeleteAccountBlocks(ctx context.Context, accountID i
 	return 0, f.step("DeleteAccountBlocks")
 }
 
+// Amended 2026-10-29 by Phase 9 plan 13 (D-02, D-21, G6): the fake gained the
+// ratings delete.
+func (f *fakeDeleteQuerier) DeleteAccountRatings(ctx context.Context, accountID int64) (int64, error) {
+	f.accountIDs["DeleteAccountRatings"] = accountID
+	return 0, f.step("DeleteAccountRatings")
+}
+
 func (f *fakeDeleteQuerier) RevokeAccountSessions(ctx context.Context, arg sqlcgen.RevokeAccountSessionsParams) (int64, error) {
 	f.revokeArg = arg
 	return 2, f.step("RevokeAccountSessions")
@@ -196,6 +203,14 @@ func (f *fakeDeleteQuerier) ScrubDeletedAccount(ctx context.Context, arg sqlcgen
 // kept. The plan text said the list ends with DeleteAccountCommentFlags then the
 // two new steps; DeleteAccountCommentFlags is an early Phase 8 step with the
 // updates, cursors, mutes and push steps after it, so those are not reordered.
+//
+// Amended 2026-10-29 by Phase 9 plan 13 (D-02, D-21, G6, review M5):
+// DeleteAccountRatings now runs right after DeleteAccountBlocks and just before
+// RevokeAccountSessions, so the seventeen steps became eighteen (and eighteen
+// became nineteen in wantDeleteOrderKeyed). Every old step and its order is
+// kept. For the same reason as plan 09-02 the list does not end with
+// DeleteAccountCommentFlags: it ends with the Phase 9 steps Follows, Blocks,
+// Ratings, then RevokeAccountSessions and ScrubDeletedAccount.
 var wantDeleteOrder = []string{
 	"AccountEmailForDelete",
 	"DeleteEmailCooldownForEmail",
@@ -212,6 +227,7 @@ var wantDeleteOrder = []string{
 	"DeleteAccountPushSubscriptions",
 	"DeleteAccountFollows",
 	"DeleteAccountBlocks",
+	"DeleteAccountRatings",
 	"RevokeAccountSessions",
 	"ScrubDeletedAccount",
 }
@@ -234,6 +250,7 @@ var wantDeleteOrderKeyed = []string{
 	"DeleteAccountPushSubscriptions",
 	"DeleteAccountFollows",
 	"DeleteAccountBlocks",
+	"DeleteAccountRatings",
 	"RevokeAccountSessions",
 	"ScrubDeletedAccount",
 }
@@ -403,6 +420,11 @@ func TestDeleteAccountRunsInOneTx(t *testing.T) {
 // they delete follow and block rows that name the person in both directions, so
 // a follower's following list and a followee's follower list each lose the row.
 // They touch no vote, report, flag or moderation action.
+//
+// Amended 2026-10-29 by Phase 9 plan 13 (D-02, G6): DeleteAccountRatings is a
+// second named exception of the same kind: it deletes the rating rows that name
+// the person as rater or reporter. It touches no vote, report, flag or
+// moderation action.
 func TestDeleteAccountTouchesNoOtherPersonsData(t *testing.T) {
 	typ := reflect.TypeOf((*service.AccountDeleteQuerier)(nil)).Elem()
 	// Amended 2026-10-29 by Phase 7.1 plan 06: the interface also holds
@@ -752,6 +774,59 @@ func TestDeleteAccountEndsFollowsAndBlocks(t *testing.T) {
 	}
 	if n := count(`SELECT count(*) FROM accounts WHERE id = $1 AND NOT profile_public AND deleted_at IS NOT NULL`, a); n != 1 {
 		t.Errorf("the scrubbed row must have profile_public false and deleted_at set")
+	}
+}
+
+// TestDeleteAccountRemovesRatings (plan 09-13, research G6, Pitfall 11): deleting
+// an account hard deletes the ratings it gave and the ratings it received, and
+// leaves every other rating alone. It needs a database and skips without
+// DATABASE_URL.
+func TestDeleteAccountRemovesRatings(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+	now := time.Now().UTC()
+
+	reporterA := testutil.SeedPublicReporter(t, pool, "del-rate-a@example.com", "rated.one", "del-rate-sess-a", now)
+	reporterB := testutil.SeedPublicReporter(t, pool, "del-rate-b@example.com", "rated.two", "del-rate-sess-b", now)
+	reportA := testutil.SeedHistoryReport(t, pool, "del-rate-sess-a", "low", "flood", now.Add(time.Hour))
+	reportB := testutil.SeedHistoryReport(t, pool, "del-rate-sess-b", "low", "flood", now.Add(time.Hour))
+	ratersA := testutil.SeedRaters(t, pool, reporterA, reportA, []int{5, 4, 3})
+	testutil.SeedRaters(t, pool, reporterB, reportB, []int{2, 2})
+
+	count := func(query string, args ...any) int {
+		t.Helper()
+		var n int
+		if err := pool.QueryRow(ctx, query, args...).Scan(&n); err != nil {
+			t.Fatalf("counting: %v", err)
+		}
+		return n
+	}
+	if n := count(`SELECT count(*) FROM profile_ratings`); n != 5 {
+		t.Fatalf("seed failed: %d ratings, want 5", n)
+	}
+	// One rater of A also rated B, so a rating it gave sits on another reporter.
+	testutil.MustExec(t, pool, `INSERT INTO profile_ratings (rater_id, reporter_id, stars) VALUES ($1, $2, 1)`, ratersA[0], reporterB)
+
+	svc := service.NewAccountDeletionService(q, service.PgxAccountTx(pool))
+	if err := svc.DeleteAccount(ctx, ratersA[0]); err != nil {
+		t.Fatalf("DeleteAccount (a rater): %v", err)
+	}
+	if n := count(`SELECT count(*) FROM profile_ratings WHERE rater_id = $1`, ratersA[0]); n != 0 {
+		t.Errorf("ratings still given by the deleted rater = %d, want 0", n)
+	}
+	if n := count(`SELECT count(*) FROM profile_ratings`); n != 4 {
+		t.Errorf("after deleting one rater %d ratings remain, want 4 of the 6 (its two are gone)", n)
+	}
+
+	if err := svc.DeleteAccount(ctx, reporterB); err != nil {
+		t.Fatalf("DeleteAccount (a reporter): %v", err)
+	}
+	if n := count(`SELECT count(*) FROM profile_ratings WHERE reporter_id = $1 OR rater_id = $1`, reporterB); n != 0 {
+		t.Errorf("ratings still naming the deleted reporter = %d, want 0", n)
+	}
+	if n := count(`SELECT count(*) FROM profile_ratings WHERE reporter_id = $1`, reporterA); n != 2 {
+		t.Errorf("the other reporter's remaining ratings = %d, want the 2 of the live raters", n)
 	}
 }
 
