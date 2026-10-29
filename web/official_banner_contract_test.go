@@ -208,7 +208,7 @@ func TestBannerOneLineAndTarget(t *testing.T) {
 		})
 	p16MustDecl(t, "narrow banner event guard", p31mRule(t, bannerPhoneCSS, narrowMedia, ".pane--list > .alert-banner:not([hidden]) .alert-banner__event"),
 		map[string]string{
-			"flex":          "0 1 auto",
+			"flex":          "1 1 0",
 			"min-width":     "0",
 			"overflow":      "hidden",
 			"text-overflow": "ellipsis",

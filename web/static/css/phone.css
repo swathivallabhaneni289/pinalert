@@ -1392,8 +1392,11 @@
    the event, "+N" and the chevron; the area takes the second line, indented
    under the event, and still shortens with its own ellipsis. The dot goes,
    since the area no longer follows the event on the line. order is visual
-   only, so the accessible name is unchanged. The event may shorten here as a
-   guard only. 360px and wider keep the one line. */
+   only, so the accessible name is unchanged. The event has a zero flex basis
+   and fills what the first line leaves, so the first line itself can never
+   wrap; it shortens with an ellipsis only when the Demo tag, a long phrase
+   and "+N" meet, a pairing the Demo does not draw today. 360px and wider keep
+   the one line. */
 @media (max-width: 899.98px) and (max-width: 359.98px) {
   .pane--list > .alert-banner:not([hidden]) {
     flex-wrap: wrap;
@@ -1411,7 +1414,7 @@
   }
 
   .pane--list > .alert-banner:not([hidden]) .alert-banner__event {
-    flex: 0 1 auto;
+    flex: 1 1 0;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
