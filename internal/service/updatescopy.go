@@ -43,6 +43,10 @@ func EventLine(k UpdateKind) string {
 		return "Fades in about an hour"
 	case UpdateReliableNearby:
 		return "Reported nearby by a Reliable reporter."
+	case UpdateCommentOnYours:
+		return "New comment on your report"
+	case UpdateReplyToYours:
+		return "New reply to your comment"
 	default:
 		return ""
 	}
@@ -76,7 +80,10 @@ func UpdateTrustLine(k UpdateKind, t Trust, view FeedView, confirmedByPeople boo
 		}
 	case UpdateHidden:
 		return t.DisputedSentence
-	case UpdateReachedLive:
+	case UpdateReachedLive, UpdateCommentOnYours, UpdateReplyToYours:
+		// A comment row answers the report's trust now, the same line a
+		// reached_live row answers (Phase 8, D-16): the row never repeats the
+		// comment's words.
 		return t.ConfirmedSentence
 	case UpdateResolved, UpdateFading:
 		return leadOrConfirmed(t)

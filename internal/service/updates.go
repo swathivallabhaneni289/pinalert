@@ -10,7 +10,8 @@ package service
 import "time"
 
 // UpdateKind is the closed set of things an update can say. A later phase that
-// adds a kind (comment, Phase 8) extends this list and its test.
+// adds a kind extends this list and its test. Phase 8 added the two comment
+// kinds.
 type UpdateKind string
 
 const (
@@ -24,6 +25,12 @@ const (
 	UpdateFading UpdateKind = "fading"
 	// UpdateReliableNearby says a Reliable reporter posted nearby.
 	UpdateReliableNearby UpdateKind = "reliable_nearby"
+	// UpdateCommentOnYours says someone else commented on your report (Phase 8,
+	// D-16). The row holds the kind and the report id only.
+	UpdateCommentOnYours UpdateKind = "comment_on_yours"
+	// UpdateReplyToYours says someone replied to your comment (Phase 8, D-16).
+	// The row holds the kind and the report id only.
+	UpdateReplyToYours UpdateKind = "reply_to_yours"
 	// UpdateMore marks the rolled up row of D-16 ("And N more changes"). It is
 	// never an event: it is never stored and never decided, only built when a
 	// list is read.
@@ -43,14 +50,17 @@ const UpdateCriticalNearby UpdateKind = "critical_nearby"
 // at its six stored kinds.
 var PushOnlyUpdateKinds = []UpdateKind{UpdateCriticalNearby}
 
-// UpdateEventKinds is the five kinds that are real events, in display order.
-var UpdateEventKinds = []UpdateKind{UpdateReachedLive, UpdateHidden, UpdateResolved, UpdateFading, UpdateReliableNearby}
+// UpdateEventKinds is the seven kinds that are real events, in display order.
+// The two comment kinds (Phase 8, D-16) come after the five 3.2 events.
+var UpdateEventKinds = []UpdateKind{UpdateReachedLive, UpdateHidden, UpdateResolved, UpdateFading, UpdateReliableNearby, UpdateCommentOnYours, UpdateReplyToYours}
 
-// UpdateKinds is the six kinds a list row can carry: the five events and the
-// rolled up marker.
-var UpdateKinds = []UpdateKind{UpdateReachedLive, UpdateHidden, UpdateResolved, UpdateFading, UpdateReliableNearby, UpdateMore}
+// UpdateKinds is the eight kinds a list row can carry: the seven events and
+// the rolled up marker. Comment rows never roll up into the marker and do not
+// count toward UpdatesHourlyCeiling: the unread unique index of migration
+// 00019 is their only cap (Phase 8 plan 11).
+var UpdateKinds = []UpdateKind{UpdateReachedLive, UpdateHidden, UpdateResolved, UpdateFading, UpdateReliableNearby, UpdateCommentOnYours, UpdateReplyToYours, UpdateMore}
 
-// Valid reports whether k is one of the six kinds. Comparison is exact.
+// Valid reports whether k is one of the eight kinds. Comparison is exact.
 func (k UpdateKind) Valid() bool {
 	for _, x := range UpdateKinds {
 		if x == k {
@@ -60,7 +70,7 @@ func (k UpdateKind) Valid() bool {
 	return false
 }
 
-// IsEvent reports whether k is one of the five event kinds (never more).
+// IsEvent reports whether k is one of the seven event kinds (never more).
 func (k UpdateKind) IsEvent() bool {
 	for _, x := range UpdateEventKinds {
 		if x == k {

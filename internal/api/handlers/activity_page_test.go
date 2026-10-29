@@ -725,6 +725,29 @@ func TestFillUpdatesPart(t *testing.T) {
 		}
 	})
 
+	// Added 2026-10-29 by Phase 8 plan 11 (D-16, A-P8-3): the two comment kinds
+	// reach the Updates part like any other event row and read their own line.
+	t.Run("the two comment kinds read their own lines", func(t *testing.T) {
+		for _, c := range []struct {
+			kind service.UpdateKind
+			want string
+		}{
+			{service.UpdateCommentOnYours, "New comment on your report"},
+			{service.UpdateReplyToYours, "New reply to your comment"},
+		} {
+			view := base(t)
+			it := p32Item(6, c.kind, true, 1)
+			fillUpdatesPart(&view, service.UpdatesPage{Items: []service.UpdateItem{it}, Unread: 1, Total: 1}, false, wm5Now)
+			p := wm5Part(t, view, "updates")
+			if len(p.Updates) != 1 || !strings.Contains(p.Summary, c.want) || !strings.Contains(p.Updates[0].Label, c.want) {
+				t.Errorf("%s: summary %q rows %+v, want the line %q", c.kind, p.Summary, p.Updates, c.want)
+			}
+			if p.Updates[0].Href != "/?report=106" {
+				t.Errorf("%s: href = %q, want the report link", c.kind, p.Updates[0].Href)
+			}
+		}
+	})
+
 	t.Run("a Reliable note reads its first sentence", func(t *testing.T) {
 		view := base(t)
 		it := p32Item(5, service.UpdateReliableNearby, false, 1)

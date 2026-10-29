@@ -287,9 +287,17 @@ func TestCommentScreeningOutcomes(t *testing.T) {
 		}
 	})
 
-	t.Run("posting calls no notifier yet", func(t *testing.T) {
-		if r.note.calls != 0 {
-			t.Errorf("notifier calls = %d, want 0 (plan 08-11 wires it)", r.note.calls)
+	// Amended 2026-10-29 by Phase 8 plan 11 (D-16, A-P8-3): plan 08-11 wired the
+	// notifier. Post now pokes it once for each bell row it writes and for
+	// nothing else, so the calls must equal the comment update rows written.
+	t.Run("posting pokes the notifier once per bell row written", func(t *testing.T) {
+		var rows int
+		if err := r.pool.QueryRow(context.Background(),
+			`SELECT count(*) FROM updates WHERE kind IN ('comment_on_yours', 'reply_to_yours')`).Scan(&rows); err != nil {
+			t.Fatalf("counting comment update rows: %v", err)
+		}
+		if r.note.calls != rows {
+			t.Errorf("notifier calls = %d, want %d (one per bell row written)", r.note.calls, rows)
 		}
 	})
 }

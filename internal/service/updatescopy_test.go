@@ -25,6 +25,10 @@ func TestUpdatesCopy(t *testing.T) {
 		{UpdateResolved, "Marked resolved"},
 		{UpdateFading, "Fades in about an hour"},
 		{UpdateReliableNearby, "Reported nearby by a Reliable reporter."},
+		// Amended 2026-10-29 by Phase 8 plan 11 (D-16, A-P8-3): the two comment
+		// kinds have event lines too; every other row is unchanged.
+		{UpdateCommentOnYours, "New comment on your report"},
+		{UpdateReplyToYours, "New reply to your comment"},
 		{UpdateMore, ""},
 		{"comment", ""},
 		{"", ""},
@@ -204,6 +208,10 @@ func TestUpdateTrustLineChoices(t *testing.T) {
 		{name: "reliable no view", kind: UpdateReliableNearby, trust: noLead, view: FeedViewNone, want: "CONFIRMED"},
 		{name: "hidden", kind: UpdateHidden, trust: trust, view: FeedViewDisputed, want: "DISPUTED"},
 		{name: "reached live", kind: UpdateReachedLive, trust: trust, view: FeedViewActive, confirmed: true, want: "CONFIRMED"},
+		// Amended 2026-10-29 by Phase 8 plan 11 (D-16, A-P8-3): the two comment
+		// kinds answer the same line a reached_live row answers.
+		{name: "comment on yours", kind: UpdateCommentOnYours, trust: trust, view: FeedViewActive, confirmed: true, want: "CONFIRMED"},
+		{name: "reply to yours", kind: UpdateReplyToYours, trust: trust, view: FeedViewActive, want: "CONFIRMED"},
 		{name: "resolved with lead", kind: UpdateResolved, trust: trust, view: FeedViewResolved, want: "LEAD"},
 		{name: "resolved without lead", kind: UpdateResolved, trust: noLead, view: FeedViewResolved, want: "CONFIRMED"},
 		{name: "fading with lead", kind: UpdateFading, trust: trust, view: FeedViewActive, want: "LEAD"},

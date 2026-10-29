@@ -38,6 +38,56 @@ func (q *Queries) BlankAccountComments(ctx context.Context, arg BlankAccountComm
 	return result.RowsAffected(), nil
 }
 
+const commentForNotify = `-- name: CommentForNotify :one
+SELECT c.id, c.report_id, c.account_id, c.parent_id, c.reply_to_id,
+       c.moderation_state,
+       (c.deleted_at IS NOT NULL)::bool AS deleted,
+       rc.account_id AS reply_to_author_id,
+       rs.account_id AS reporter_account_id
+FROM comments c
+JOIN reports r ON r.id = c.report_id
+LEFT JOIN comments rc ON rc.id = c.reply_to_id
+LEFT JOIN sessions rs ON rs.session_id = r.session_id
+WHERE c.id = $1
+`
+
+type CommentForNotifyRow struct {
+	ID                int64
+	ReportID          int64
+	AccountID         int64
+	ParentID          *int64
+	ReplyToID         *int64
+	ModerationState   string
+	Deleted           bool
+	ReplyToAuthorID   *int64
+	ReporterAccountID *int64
+}
+
+// Phase 8 plan 11 (D-16): what the notification step needs to know about one
+// comment, in one read: the comment's own report, author, thread position,
+// state and deleted flag, the author of the comment it answered (NULL for a top
+// level comment) and the report's reporter account (NULL when the report was
+// filed from a session with no account). The reporter is found the way
+// ReportVoteContext finds it: reports.session_id joins sessions.session_id.
+// These ids stay inside the service; none of them reaches a response or a log.
+// No row means no such comment.
+func (q *Queries) CommentForNotify(ctx context.Context, commentID int64) (CommentForNotifyRow, error) {
+	row := q.db.QueryRow(ctx, commentForNotify, commentID)
+	var i CommentForNotifyRow
+	err := row.Scan(
+		&i.ID,
+		&i.ReportID,
+		&i.AccountID,
+		&i.ParentID,
+		&i.ReplyToID,
+		&i.ModerationState,
+		&i.Deleted,
+		&i.ReplyToAuthorID,
+		&i.ReporterAccountID,
+	)
+	return i, err
+}
+
 const commentLikeState = `-- name: CommentLikeState :one
 SELECT (SELECT count(*) FROM comment_likes k WHERE k.comment_id = $1)::int AS likes,
        EXISTS (SELECT 1 FROM comment_likes k
@@ -430,6 +480,63 @@ func (q *Queries) InsertCommentFlag(ctx context.Context, arg InsertCommentFlagPa
 	var id int64
 	err := row.Scan(&id)
 	return id, err
+}
+
+const insertCommentUpdate = `-- name: InsertCommentUpdate :execrows
+INSERT INTO updates (account_id, report_id, kind)
+SELECT a.id, $1::bigint, $2::text
+FROM accounts a
+WHERE a.id = $3::bigint
+  AND a.id <> $4::bigint
+  AND a.deleted_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1
+      FROM report_mutes m
+      WHERE m.account_id = a.id
+        AND m.report_id = $1::bigint
+  )
+ON CONFLICT (account_id, report_id, kind)
+    WHERE read_at IS NULL AND kind IN ('comment_on_yours', 'reply_to_yours')
+    DO NOTHING
+`
+
+type InsertCommentUpdateParams struct {
+	ReportID           int64
+	Kind               string
+	RecipientAccountID int64
+	CommenterAccountID int64
+}
+
+// The one place a comment notification is written (Phase 8 plan 11, D-16,
+// PAGE-02). It adds one update of kind comment_on_yours or reply_to_yours for
+// the recipient and returns how many rows it wrote (0 or 1). The row holds the
+// kind and the report id only: no comment words and no username are stored, the
+// sentence is written at read time (T-08-49).
+//
+// It writes nothing when the recipient is the commenter (nobody is told about
+// their own comment), when the recipient muted the report (D-11), or when the
+// recipient's account is deleted. A recipient that does not exist writes
+// nothing either, because the rows come from accounts. One unread row per
+// account, report and kind: a second comment while the first is still unread
+// conflicts on uq_updates_comment_unread and does nothing, so thirty comments
+// are one row; once the person has read it, the next comment writes a new row.
+// The conflict predicate repeats the index predicate exactly, which is what
+// lets Postgres pick the partial index.
+//
+// Comment rows never roll up into the "more" row and do not count toward the
+// hourly ceiling (the ceiling reads skip these kinds); the unread index is
+// their cap. Phase 9 plan 09-10 adds its block skip here.
+func (q *Queries) InsertCommentUpdate(ctx context.Context, arg InsertCommentUpdateParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertCommentUpdate,
+		arg.ReportID,
+		arg.Kind,
+		arg.RecipientAccountID,
+		arg.CommenterAccountID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const likeComment = `-- name: LikeComment :execrows
