@@ -43,6 +43,11 @@ Scope: NP-1 to NP-4 of 05-REVIEW-FIX-SKEPTIC.md. Each fix was written test first
 
 No old test case was changed or removed. The fake map of official_pins_test.mjs gained a dated "Amended 2026-10-29 ... (NP-2)" note for its new record of whether the opener is still on the map.
 
+## Recorded, not changed
+
+- **A hung automatic ask still loses focus.** `giveUpIfHung` (the WR-B01 limit on the minute tick) calls `renderError` without taking and keeping the reader's place. An automatic ask that hangs for 10 seconds or more therefore still empties the list and drops focus. This needs a request that never answers to show. A small follow-up: take the place in `giveUpIfHung` and keep it after `renderError`.
+- **An idle Demo Official alerts page ages in place.** It no longer asks again, so after a long idle the status line climbs ("Last checked 2 hours ago") under "In force now", and a sample row can pass its Until time. This is made-up data behind the Demo strip, and a press (Try again, a bar link, a reload) starts a fresh visit.
+
 ## Browser check
 
 Setup:
