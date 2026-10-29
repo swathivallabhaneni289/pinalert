@@ -152,11 +152,17 @@ window.Pinalert = (function () {
   // banner (plan 05-15) follows the same place the reader is looking at (D-09).
   var FEED_CENTRE_EVENT = 'pinalert:feed-centre';
 
-  function announceFeedCentre(lat, lon) {
+  // The detail also says what the centre is (Phase 5 review fix WR-B09): own is
+  // true for the reader's own position, place is true for a place they searched.
+  // Both false is the boot fallback centre (the home area cell or the city),
+  // which the banner follows but never keeps as "Where you are".
+  function announceFeedCentre(lat, lon, own, place) {
     if (typeof CustomEvent !== 'function' || typeof document.dispatchEvent !== 'function') {
       return;
     }
-    document.dispatchEvent(new CustomEvent(FEED_CENTRE_EVENT, { detail: { lat: lat, lon: lon } }));
+    document.dispatchEvent(new CustomEvent(FEED_CENTRE_EVENT, {
+      detail: { lat: lat, lon: lon, own: own === true, place: place === true }
+    }));
   }
 
   // REPORT_POSTED_EVENT is announced on the document once a report the server
@@ -632,6 +638,8 @@ window.Pinalert = (function () {
     var sentCategory = state.category;
     var sentLat = state.center.lat;
     var sentLon = state.center.lon;
+    var sentOwn = state.center.own === true;
+    var sentPlace = !!state.place && state.place.lat === sentLat && state.place.lon === sentLon;
     var sentFocusId = state.focusId;
     var pending;
     // A response is stale when newer data was applied after this call
@@ -772,7 +780,7 @@ window.Pinalert = (function () {
         state.lastUpdatedAt = Date.now();
         // The centre this list was loaded for is announced once the store holds
         // it, in the same step as the render below (plan 05-13, D-09).
-        announceFeedCentre(sentLat, sentLon);
+        announceFeedCentre(sentLat, sentLon, sentOwn, sentPlace);
         markListLoading(false);
         notify();
       })

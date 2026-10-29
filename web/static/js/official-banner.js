@@ -272,7 +272,7 @@
       return;
     }
     try {
-      window.sessionStorage.setItem(NEARBY_CENTRE_KEY, JSON.stringify({ account: account, lat: lat, lon: lon }));
+      window.sessionStorage.setItem(NEARBY_CENTRE_KEY, JSON.stringify({ account: account, lat: lat, lon: lon, savedAt: Date.now() }));
     } catch (err) {
       // The tab keeps no centre; Official alerts then falls back to the stored fix.
     }
@@ -306,7 +306,13 @@
       return;
     }
     wanted = { lat: detail.lat, lon: detail.lon };
-    rememberCentre(wanted.lat, wanted.lon);
+    // Only the reader's own position or a place they searched is kept for
+    // Official alerts, never the boot fallback centre (the home area cell or
+    // the city), which would be named "Where you are" (Phase 5 review fix
+    // WR-B09). The kept centre says when it was saved, so an old one is not used.
+    if (detail.own === true || detail.place === true) {
+      rememberCentre(wanted.lat, wanted.lon);
+    }
     if (refreshTimer === null) {
       refreshTimer = setInterval(refresh, REFRESH_MS);
     }

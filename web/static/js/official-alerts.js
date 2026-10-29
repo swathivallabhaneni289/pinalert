@@ -53,6 +53,8 @@
   var REQUEST_LIMIT_MS = 10000;
   var NEARBY_CENTRE_KEY = 'pinalert.nearbyCentre';
   var DEFAULT_BASE = '/api';
+  // A stored device fix or tab centre older than this is not sent (WR-B09).
+  var STORED_PLACE_MAX_MS = 30 * 60000;
 
   var pageEl = document.getElementById('official-page');
   var statusEl = document.getElementById('official-status');
@@ -236,6 +238,18 @@
     return typeof value === 'string' ? value : '';
   }
 
+  // recentEnough says whether a stored place was saved under STORED_PLACE_MAX_MS
+  // ago (Phase 5 review fix WR-B09). One with no saved time, or an older one, is
+  // not where the reader is now: the server then uses the home area alone, so
+  // "Where you are" never names a place the reader left long ago.
+  function recentEnough(savedAt) {
+    if (typeof savedAt !== 'number' || !isFinite(savedAt)) {
+      return false;
+    }
+    var age = Date.now() - savedAt;
+    return age >= -STORED_PLACE_MAX_MS && age < STORED_PLACE_MAX_MS;
+  }
+
   // areaSource answers {lat, lon} or null. The page's fixed point wins (the
   // Demo), then the tab's Nearby centre when it belongs to this page's account,
   // then the stored device fix. A value that is not a real point, or belongs to
@@ -261,7 +275,8 @@
       if (raw) {
         try {
           var centre = JSON.parse(raw);
-          if (centre && String(centre.account) === account && validPoint(centre.lat, centre.lon)) {
+          if (centre && String(centre.account) === account && validPoint(centre.lat, centre.lon) &&
+              recentEnough(centre.savedAt)) {
             return { lat: centre.lat, lon: centre.lon };
           }
         } catch (err) {
@@ -273,7 +288,7 @@
     if (position && typeof position.read === 'function') {
       try {
         var fix = position.read();
-        if (fix && validPoint(fix.lat, fix.lon)) {
+        if (fix && validPoint(fix.lat, fix.lon) && recentEnough(fix.savedAt)) {
           return { lat: fix.lat, lon: fix.lon };
         }
       } catch (err) {

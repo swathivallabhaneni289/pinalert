@@ -790,21 +790,25 @@ test('a hostile lang code is never written to the page', async () => {
   assert.equal(findAll(el(page, 'official-list'), (e) => e.hasAttribute('lang')).length, 0);
 });
 
+// Amended 2026-10-29 by the Phase 5 review fix (WR-B09): a stored fix and a tab
+// centre are used only when they say when they were saved and that is under
+// 30 minutes ago, so the stored values in these cases carry savedAt: T0 (now).
+// The bad values below still have none and are still ignored.
 test('area source: the page fixed point wins (the Demo)', async () => {
-  const page = loadPage({ fixedLat: '16.5062', fixedLon: '80.6480', position: { lat: 1, lon: 2 } });
+  const page = loadPage({ fixedLat: '16.5062', fixedLon: '80.6480', position: { lat: 1, lon: 2, savedAt: T0 } });
   await flush();
   assert.ok(page.requests[0].url.includes('lat=16.5062'), page.requests[0].url);
   assert.ok(page.requests[0].url.includes('lon=80.648'), page.requests[0].url);
 });
 
 test('area source: the tab centre of this account, then the stored fix, then none', async () => {
-  const centre = JSON.stringify({ account: '7', lat: 17.38, lon: 78.48 });
-  const a = loadPage({ position: { lat: 1, lon: 2 } });
+  const centre = JSON.stringify({ account: '7', lat: 17.38, lon: 78.48, savedAt: T0 });
+  const a = loadPage({ position: { lat: 1, lon: 2, savedAt: T0 } });
   a.sessionStorage.setItem('pinalert.nearbyCentre', centre);
   assert.deepEqual(JSON.parse(JSON.stringify(a.api.areaSource())), { lat: 17.38, lon: 78.48 });
 
-  const other = loadPage({ position: { lat: 1, lon: 2 } });
-  other.sessionStorage.setItem('pinalert.nearbyCentre', JSON.stringify({ account: '8', lat: 17.38, lon: 78.48 }));
+  const other = loadPage({ position: { lat: 1, lon: 2, savedAt: T0 } });
+  other.sessionStorage.setItem('pinalert.nearbyCentre', JSON.stringify({ account: '8', lat: 17.38, lon: 78.48, savedAt: T0 }));
   assert.deepEqual(JSON.parse(JSON.stringify(other.api.areaSource())), { lat: 1, lon: 2 });
 
   const none = loadPage();
@@ -821,13 +825,13 @@ test('area source: bad values are ignored and lat and lon go together', async ()
     'not json'
   ];
   for (const value of bad) {
-    const page = loadPage({ position: { lat: 12.5, lon: 77.5 } });
+    const page = loadPage({ position: { lat: 12.5, lon: 77.5, savedAt: T0 } });
     page.sessionStorage.setItem('pinalert.nearbyCentre', value);
     assert.deepEqual(JSON.parse(JSON.stringify(page.api.areaSource())), { lat: 12.5, lon: 77.5 }, value);
   }
   const lone = loadPage({ fixedLat: '16.5' });
   assert.equal(lone.api.areaSource(), null, 'a fixed latitude without a longitude is not a point');
-  const blocked = loadPage({ noStorage: true, position: { lat: 12.5, lon: 77.5 } });
+  const blocked = loadPage({ noStorage: true, position: { lat: 12.5, lon: 77.5, savedAt: T0 } });
   assert.deepEqual(JSON.parse(JSON.stringify(blocked.api.areaSource())), { lat: 12.5, lon: 77.5 });
 });
 
@@ -1177,4 +1181,28 @@ test('WR-T05: alerts.html.tmpl carries no live region on the stale notice', () =
   const real = fs.readFileSync(path.join(here, 'templates', 'alerts.html.tmpl'), 'utf8');
   const tag = /<div[^>]*id="official-notice"[^>]*>/.exec(real)[0];
   assert.doesNotMatch(tag, /role=|aria-live/);
+});
+
+// ---- "Where you are" is never an old or a made up place (Phase 5 review fix WR-B09) ----
+// Added 2026-10-29. A stored device fix or tab centre older than 30 minutes, or
+// with no saved time, is not sent: the server then uses the home area alone.
+
+test('WR-B09: a stored device fix older than 30 minutes, or with no time, is not sent', async () => {
+  const old = loadPage({ position: { lat: 16.5, lon: 80.6, savedAt: T0 - 31 * 60000 } });
+  assert.equal(old.api.areaSource(), null);
+  await flush();
+  assert.equal(old.requests[0].url, '/api/official/alerts', 'no lat or lon: the server uses the home area');
+  const timeless = loadPage({ position: { lat: 16.5, lon: 80.6, savedAt: null } });
+  assert.equal(timeless.api.areaSource(), null);
+  const recent = loadPage({ position: { lat: 16.5, lon: 80.6, savedAt: T0 - 29 * 60000 } });
+  assert.deepEqual(JSON.parse(JSON.stringify(recent.api.areaSource())), { lat: 16.5, lon: 80.6 });
+});
+
+test('WR-B09: a tab centre older than 30 minutes, or with no time, is not used', () => {
+  const old = loadPage({ position: { lat: 1, lon: 2, savedAt: T0 } });
+  old.sessionStorage.setItem('pinalert.nearbyCentre', JSON.stringify({ account: '7', lat: 17.38, lon: 78.48, savedAt: T0 - 31 * 60000 }));
+  assert.deepEqual(JSON.parse(JSON.stringify(old.api.areaSource())), { lat: 1, lon: 2 }, 'the fresher stored fix is used instead');
+  const timeless = loadPage();
+  timeless.sessionStorage.setItem('pinalert.nearbyCentre', JSON.stringify({ account: '7', lat: 17.38, lon: 78.48 }));
+  assert.equal(timeless.api.areaSource(), null);
 });

@@ -205,8 +205,11 @@ function loadPage(options = {}) {
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox, { filename: 'official-banner.js' });
-  const centre = (lat, lon) => {
-    (page.doc.listeners['pinalert:feed-centre'] || []).forEach((fn) => fn({ type: 'pinalert:feed-centre', detail: { lat, lon } }));
+  // Amended 2026-10-29 by the Phase 5 review fix (WR-B09): the feed-centre event
+  // now says whether the centre is the reader's own position (own) or a searched
+  // place (place). The older cases send the reader's own position, as they meant.
+  const centre = (lat, lon, kind = { own: true, place: false }) => {
+    (page.doc.listeners['pinalert:feed-centre'] || []).forEach((fn) => fn({ type: 'pinalert:feed-centre', detail: { lat, lon, ...kind } }));
   };
   return { ...page, api: sandbox.PinalertOfficialBanner, requests, advance, centre, store, timers, sandbox };
 }
@@ -537,10 +540,13 @@ test('the tab keeps the centre for this account, exactly', () => {
   const page = loadPage({ account: '7' });
   page.centre(16.5062, 80.648);
   const raw = page.store.get('pinalert.nearbyCentre');
-  assert.equal(raw, '{"account":"7","lat":16.5062,"lon":80.648}');
-  assert.deepEqual(JSON.parse(raw), { account: '7', lat: 16.5062, lon: 80.648 });
+  // Amended 2026-10-29 by the Phase 5 review fix (WR-B09): the kept centre also
+  // says when it was saved (savedAt, the clock T0), so Official alerts can tell an
+  // old one. The account, lat and lon are kept exactly as before.
+  assert.equal(raw, '{"account":"7","lat":16.5062,"lon":80.648,"savedAt":' + T0 + '}');
+  assert.deepEqual(JSON.parse(raw), { account: '7', lat: 16.5062, lon: 80.648, savedAt: T0 });
   page.centre(13.08, 80.27);
-  assert.deepEqual(JSON.parse(page.store.get('pinalert.nearbyCentre')), { account: '7', lat: 13.08, lon: 80.27 });
+  assert.deepEqual(JSON.parse(page.store.get('pinalert.nearbyCentre')), { account: '7', lat: 13.08, lon: 80.27, savedAt: T0 });
 });
 
 test('with no account (the Demo) nothing is stored', () => {
@@ -707,4 +713,23 @@ test('IN-B04: a real shell whose data-api-base fails the check asks /api', () =>
     page.advance(1000);
     assert.equal(page.requests[0].url, '/api/official/alerts?lat=16.5&lon=80.6', bad);
   }
+});
+
+// ---- The fallback centre is never "Where you are" (Phase 5 review fix WR-B09) ----
+// Added 2026-10-29. The banner follows every centre Nearby shows, but keeps one
+// for Official alerts only when it is the reader's own position or a place they
+// searched: never the boot fallback centre (the home area cell or the city).
+
+test('WR-B09: the fallback centre is followed but never kept for Official alerts', () => {
+  const page = loadPage({ account: '7' });
+  page.centre(16.5, 80.6, { own: false, place: false });
+  page.advance(1000);
+  assert.equal(page.requests.length, 1, 'the banner still follows the place on screen');
+  assert.equal(page.store.size, 0, 'a fallback centre is not kept');
+  page.centre(17.38, 78.48, { own: false, place: true });
+  assert.deepEqual(JSON.parse(page.store.get('pinalert.nearbyCentre')), { account: '7', lat: 17.38, lon: 78.48, savedAt: T0 + 1000 }, 'a searched place is kept');
+  page.centre(13.08, 80.27, { own: true, place: false });
+  assert.equal(JSON.parse(page.store.get('pinalert.nearbyCentre')).lat, 13.08, 'the reader own position is kept');
+  page.centre(12.97, 77.59, {});
+  assert.equal(JSON.parse(page.store.get('pinalert.nearbyCentre')).lat, 13.08, 'an event that does not say is not kept');
 });

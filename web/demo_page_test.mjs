@@ -176,7 +176,9 @@ test('app.js: with a Demo base the feed read goes to the Demo and the centre is 
   await settle();
   const centre = m.events.filter((e) => e.type === 'pinalert:feed-centre');
   assert.equal(centre.length, 1, 'one centre event after the load');
-  assert.deepEqual({ ...centre[0].detail }, { lat: 16.5424, lon: 80.6386 });
+  // Amended 2026-10-29 by the Phase 5 review fix (WR-B09): the detail also says
+  // the centre is the reader's own position (own) and not a searched place.
+  assert.deepEqual({ ...centre[0].detail }, { lat: 16.5424, lon: 80.6386, own: true, place: false });
 });
 
 test('app.js: a failed read announces no centre', async () => {
@@ -383,4 +385,24 @@ test('IN-B03 votes.js: on Demo My activity the position comes from the main root
   assert.equal(got.longitude, 80.6386);
   assert.equal(m.storage.reads + m.storage.writes, 0, 'the real voter cache is never read');
   assert.equal(m.geo.calls, 0);
+});
+
+// ---- The centre event says what the centre is (Phase 5 review fix WR-B09) ----
+// Added 2026-10-29.
+
+test('WR-B09 app.js: the fallback centre is announced as not own and not a place; a searched place as a place', async () => {
+  const m = load({ shellAttrs: {}, scripts: ['app.js'] });
+  m.win.Pinalert.setCenter(16.5, 80.6, false);
+  m.win.Pinalert.fetchReports();
+  m.answer(m.fetches[0], { reports: [] });
+  await settle();
+  const first = m.events.filter((e) => e.type === 'pinalert:feed-centre')[0];
+  assert.deepEqual({ ...first.detail }, { lat: 16.5, lon: 80.6, own: false, place: false }, 'the boot fallback centre');
+  m.win.Pinalert.setPlace({ name: 'Benz Circle', lat: 16.4975, lon: 80.6553 });
+  m.win.Pinalert.setCenter(16.4975, 80.6553, false);
+  m.win.Pinalert.fetchReports();
+  m.answer(m.fetches[1], { reports: [] });
+  await settle();
+  const second = m.events.filter((e) => e.type === 'pinalert:feed-centre')[1];
+  assert.deepEqual({ ...second.detail }, { lat: 16.4975, lon: 80.6553, own: false, place: true }, 'a searched place');
 });
