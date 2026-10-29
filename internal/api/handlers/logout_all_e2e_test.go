@@ -180,7 +180,9 @@ func TestLoginDoneLineIsClosedList(t *testing.T) {
 			t.Errorf("GET %s = %d, want 200", tc.path, status)
 			continue
 		}
-		want := `<p class="login-done" role="status">` + tc.line + `</p>`
+		// Amended 2026-10-29 by Phase 7.1 plan 11: the line carries the id
+		// login-done now (UI-SPEC 1b); the class, the role and the words are kept.
+		want := `<p class="login-done" id="login-done" role="status">` + tc.line + `</p>`
 		if !strings.Contains(body, want) {
 			t.Errorf("GET %s: body does not contain %q", tc.path, want)
 		}

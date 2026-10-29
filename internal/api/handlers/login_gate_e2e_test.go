@@ -40,7 +40,7 @@ func loginGatePage(t *testing.T, client *http.Client, srv *httptest.Server, quer
 }
 
 func TestLoginGateRedirectsSignedIn(t *testing.T) {
-	srv, mailer, _ := newE2EServer(t)
+	srv, mailer, pool := newE2EServer(t)
 	browser := newJarClient(t)
 	verifySession(t, browser, srv, mailer, "gate-signed-in@example.com")
 	noFollow := revNoFollow(browser)
@@ -72,6 +72,14 @@ func TestLoginGateRedirectsSignedIn(t *testing.T) {
 	resp, _ = loginGatePage(t, noFollow, srv, "?low=0")
 	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/" {
 		t.Errorf("signed in GET /login?low=0 = %d to %q, want 303 to /", resp.StatusCode, resp.Header.Get("Location"))
+	}
+
+	// A session the account's "log out of all devices" ended is not signed in:
+	// the page draws the card instead of redirecting into the gate and back.
+	revRevoke(t, pool, revAccountID(t, pool, "gate-signed-in@example.com"))
+	resp, body := loginGatePage(t, noFollow, srv, "")
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, `id="login-form-panel"`) {
+		t.Errorf("GET /login with a revoked session = %d, want 200 with the card", resp.StatusCode)
 	}
 }
 

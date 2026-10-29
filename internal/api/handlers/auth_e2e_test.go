@@ -293,8 +293,17 @@ func TestLoginGateServesInteractiveForm(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading /login body: %v", err)
 	}
-	if !bytes.Contains(body, []byte(`id="login-email"`)) {
-		t.Fatalf("GET /login response does not contain the email input")
+	// Amended 2026-10-29 by Phase 7.1 plan 11: the page opens on Create account
+	// with its email field (id create-email) in the first response, and the Sign in
+	// panel's field too; the old single login-email field is gone. The claim is
+	// unchanged: the fields are in the initial response, not added by script.
+	for _, want := range []string{`id="create-email"`, `id="signin-email"`, `id="create-password"`, `id="login-tab-create"`} {
+		if !bytes.Contains(body, []byte(want)) {
+			t.Fatalf("GET /login response does not contain %s", want)
+		}
+	}
+	if !bytes.Contains(body, []byte(`data-start-panel="create"`)) {
+		t.Fatalf("GET /login does not open on Create account")
 	}
 }
 
