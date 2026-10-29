@@ -142,7 +142,12 @@ function load({ online = true, visible = true, ignoreAbort = false } = {}) {
     activeElement: null,
     visibilityState: visible ? 'visible' : 'hidden',
     createElement(tag) { return new FakeEl(doc, tag); },
-    createTextNode(v) { return new FakeText(v); }
+    createTextNode(v) { return new FakeText(v); },
+    // The section listens for the tab coming back (review fix IN-B06, 2026-10-29).
+    listeners: {},
+    addEventListener(type, fn) { (doc.listeners[type] = doc.listeners[type] || []).push(fn); },
+    removeEventListener(type, fn) { doc.listeners[type] = (doc.listeners[type] || []).filter((f) => f !== fn); },
+    dispatch(type) { (doc.listeners[type] || []).slice().forEach((fn) => fn({ type })); }
   };
   const fetches = [];
   const timers = { now: 0, nextId: 1, list: [] };
@@ -1383,4 +1388,24 @@ test('IN-B02: a 201 whose body cannot be read asks for the list again', async ()
   await flush();
   assert.equal(lastFetch(env).opts.method, 'GET');
   assert.equal(page.error.textContent, "Couldn't post your comment. Try again.");
+});
+
+// ---- review fix IN-B06 (2026-10-29): the comments refresh when the tab comes
+// back, and the listener goes with the section's close. ----
+
+test('IN-B06: the comments refresh when the tab comes back, and not after close', async () => {
+  const env = load();
+  const page = await start(env, [cm(1)]);
+  const before = env.fetches.length;
+  env.doc.visibilityState = 'hidden';
+  env.doc.dispatch('visibilitychange');
+  assert.equal(env.fetches.length, before, 'nothing while hidden');
+  env.doc.visibilityState = 'visible';
+  env.doc.dispatch('visibilitychange');
+  assert.equal(env.fetches.length, before + 1, 'the list is asked for again');
+  page.view.close();
+  assert.equal((env.doc.listeners.visibilitychange || []).length, 0, 'the listener is removed on close');
+  page.view.open();
+  page.view.open();
+  assert.equal(env.doc.listeners.visibilitychange.length, 1, 'one listener per open section');
 });
