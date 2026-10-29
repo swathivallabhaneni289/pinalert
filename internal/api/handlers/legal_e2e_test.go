@@ -313,16 +313,21 @@ func legalAllH3s(withContact bool) []string {
 	}
 	policy := legalPolicyH3sWithoutContact
 	if withContact {
-		policy = append(append([]string{}, policy[:8]...), "Complaints and removal requests", "Terms", "Changes to this page")
+		policy = append(append([]string{}, policy[:9]...), "Complaints and removal requests", "Terms", "Changes to this page")
 	}
 	return append(out, policy...)
 }
 
+// Amended 2026-10-30 by Phase 9 plan 27 (D-17): the Policy gained the section
+// "Profiles, following and ratings" between Limits and What Pinalert keeps, so
+// the sequence holds one more heading and the contact variant above cuts the
+// list after Crimes and threats at 9 entries instead of 8.
 var legalPolicyH3sWithoutContact = []string{
 	"Rules for posting",
 	"How reports are checked",
 	"What moderators can do",
 	"Limits",
+	"Profiles, following and ratings",
 	"What Pinalert keeps",
 	"Other services Pinalert uses",
 	"Cookies and storage on your device",
