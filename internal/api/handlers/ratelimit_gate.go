@@ -90,6 +90,12 @@ type RateLimits struct {
 	// and never per network address (Phase 9 plan 14, D-02, T-09-54). Every attempt
 	// costs one token and nothing is refunded; the 24 hour change rule sits on top.
 	Rate BucketLimit
+	// Visibility is the allowance for turning the profile switch ON, keyed per
+	// account and never per network address. An off to on change may call the
+	// shared text screener twice, so it is as tight as Comment (WR-E02, review
+	// 2026-10-30). Turning the switch off costs nothing here and is never refused
+	// by this bucket.
+	Visibility BucketLimit
 }
 
 // RateLimitResponse is the one 429 body of every Phase 4 limiter. The
@@ -136,7 +142,11 @@ const (
 
 	// The rating bucket (Phase 9 plan 14). The name goes to the block log only.
 	rateBucketName = "rate"
-	rateRateField  = "rate_rating"
+
+	// The visibility switch bucket (review WR-E02). The name goes to the block log only.
+	visibilityBucketName = "visibility"
+	visibilityRateField  = "rate_visibility"
+	rateRateField        = "rate_rating"
 
 	voteRateField       = "rate_vote"
 	voteChangeRateField = "rate_vote_change"
@@ -172,6 +182,7 @@ type RateGate struct {
 	peopleRead       *ratelimit.PerKey
 	peopleAction     *ratelimit.PerKey
 	rate             *ratelimit.PerKey
+	visibility       *ratelimit.PerKey
 
 	ipBackstopComment *ratelimit.PerKey
 	ipBackstopLike    *ratelimit.PerKey
@@ -208,6 +219,7 @@ func NewRateGate(limits RateLimits, clock func() time.Time, clientIPHeader strin
 		peopleRead:       ratelimit.NewPerKey(bucketConfig(limits.PeopleRead, clock)),
 		peopleAction:     ratelimit.NewPerKey(bucketConfig(limits.PeopleAction, clock)),
 		rate:             ratelimit.NewPerKey(bucketConfig(limits.Rate, clock)),
+		visibility:       ratelimit.NewPerKey(bucketConfig(limits.Visibility, clock)),
 
 		ipBackstopComment: ratelimit.NewPerKey(bucketConfig(limits.IPBackstopComment, clock)),
 		ipBackstopLike:    ratelimit.NewPerKey(bucketConfig(limits.IPBackstopLike, clock)),
@@ -626,6 +638,23 @@ func (g *RateGate) PeopleActionMiddleware() func(http.Handler) http.Handler {
 // attempt costs one token and nothing is refunded, so a refused rating pays too.
 func (g *RateGate) RateMiddleware() func(http.Handler) http.Handler {
 	return g.peopleMiddleware(g.rate, rateBucketName, rateRateField)
+}
+
+// AdmitVisibilityOn takes one token of the per account visibility bucket for a
+// request that turns the profile switch on. It answers the 429 itself and
+// returns false when the bucket is empty. It is called by the handler only for
+// an on request, so turning the switch off is never refused by it (WR-E02).
+func (g *RateGate) AdmitVisibilityOn(w http.ResponseWriter, accountID int64) bool {
+	if g == nil {
+		return true
+	}
+	d := g.visibility.Reserve(accountKey(accountID))
+	if d.OK {
+		return true
+	}
+	logBlock(visibilityBucketName, accountID, d.RetryAfter)
+	writeRateLimited(w, visibilityRateField, service.PeopleLimitMessage(d.RetryAfter), d.RetryAfter, false, "")
+	return false
 }
 
 // peopleMiddleware is the body of the two people middlewares.

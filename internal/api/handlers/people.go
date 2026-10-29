@@ -736,7 +736,7 @@ func NotifyPerson(people *service.PeopleService) http.HandlerFunc {
 // @Header 429 {integer} Retry-After "Whole seconds to wait before trying again"
 // @Failure 500 {object} ErrorResponse
 // @Router /me/visibility [patch]
-func UpdateVisibility(people *service.PeopleService) http.HandlerFunc {
+func UpdateVisibility(people *service.PeopleService, gate *RateGate) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acc, ok := account.FromContext(r.Context())
 		if !ok {
@@ -756,6 +756,11 @@ func UpdateVisibility(people *service.PeopleService) http.HandlerFunc {
 			return
 		}
 
+		// Turning it on may call the shared text screener, so that change has a
+		// tight bucket of its own; turning it off never meets it (WR-E02).
+		if *req.ProfilePublic && !gate.AdmitVisibilityOn(w, acc.ID) {
+			return
+		}
 		if err := people.SetProfilePublic(r.Context(), acc.ID, *req.ProfilePublic); err != nil {
 			// A refused or unchecked name is the only 422.
 			var ve service.ValidationError

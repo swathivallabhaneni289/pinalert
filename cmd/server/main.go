@@ -141,6 +141,11 @@ const (
 	// more every 30 seconds is generous and still bounds rating spam. Keyed per
 	// account and never per network address, because many phones share one carrier
 	// address.
+	// Visibility (review WR-E02, 2026-10-30): turning the profile switch on may
+	// call the shared text screener, so the off to on change gets the Comment
+	// numbers, per account. Turning it off is never limited by this bucket.
+	visibilityBurst    = 6
+	visibilityEvery    = 20 * time.Second
 	rateBurst          = 10
 	rateEvery          = 30 * time.Second
 	submitAttemptBurst = 20
@@ -643,6 +648,7 @@ func main() {
 			PeopleRead:        api.BucketLimit{Every: peopleReadEvery, Burst: peopleReadBurst},
 			PeopleAction:      api.BucketLimit{Every: peopleActionEvery, Burst: peopleActionBurst},
 			Rate:              api.BucketLimit{Every: rateEvery, Burst: rateBurst},
+			Visibility:        api.BucketLimit{Every: visibilityEvery, Burst: visibilityBurst},
 		},
 	}
 	router := api.NewRouter(deps)

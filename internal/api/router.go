@@ -410,6 +410,10 @@ var RateLimitsDefault = RateLimits{
 	// Rate (Phase 9 plan 14, D-02, T-09-54): a burst of 10 then one every 30
 	// seconds, per account. The once a day change rule sits on top of it.
 	Rate: BucketLimit{Every: 30 * time.Second, Burst: 10},
+	// Visibility (review WR-E02, 2026-10-30): turning the profile switch on may
+	// call the shared text screener, so a burst of 6 then one every 20 seconds,
+	// the Comment numbers, per account.
+	Visibility: BucketLimit{Every: 20 * time.Second, Burst: 6},
 }
 
 // resolveRateLimits replaces every field equal to BucketLimit{} with the
@@ -439,6 +443,7 @@ func resolveRateLimits(l RateLimits) RateLimits {
 	fill(&l.PeopleRead, RateLimitsDefault.PeopleRead)
 	fill(&l.PeopleAction, RateLimitsDefault.PeopleAction)
 	fill(&l.Rate, RateLimitsDefault.Rate)
+	fill(&l.Visibility, RateLimitsDefault.Visibility)
 	return l
 }
 
@@ -1045,7 +1050,7 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.With(rateGate.PeopleReadMiddleware()).Get("/api/me/muted-people", handlers.MutedPeopleList(people))
 		// Plan 09-23 (D-08): the Notify me bell of one followed person.
 		r.With(rateGate.PeopleActionMiddleware()).Post("/api/people/{username}/notify", handlers.NotifyPerson(people))
-		r.With(rateGate.PeopleActionMiddleware()).Patch("/api/me/visibility", handlers.UpdateVisibility(people))
+		r.With(rateGate.PeopleActionMiddleware()).Patch("/api/me/visibility", handlers.UpdateVisibility(people, rateGate))
 		// GET /api/geocode (plan 07-03). Registered as a flat literal path,
 		// not under an r.Route mount — see this router's own doc comments
 		// above for why every /api/* path here is flat, gated or not.
