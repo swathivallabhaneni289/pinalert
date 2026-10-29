@@ -143,7 +143,10 @@
         period = parts[i].value.toLowerCase();
       }
     }
-    return hour + ':' + minute + ' ' + period;
+    // A no break space (U+00A0) joins the minute and am or pm, so the time never
+    // breaks before pm (Phase 5 review fix WR-T02). It is the plain no break
+    // space, not the narrow one Intl writes.
+    return hour + ':' + minute + '\u00a0' + period;
   }
 
   // clockWithDay is the clock time, with the short weekday in front when the day

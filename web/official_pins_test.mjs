@@ -386,7 +386,10 @@ test('the card holds the badge, the chip, the title, the lines, the honesty line
   assert.equal(byClass(card, 'official-card__title')[0].textContent, 'Earthquake in Vanuatu Islands');
   assert.match(text, /Hazard\s*Earthquake/);
   assert.match(text, /Issued 3 hours ago/);
-  assert.match(text, /Until .*\d:\d\d [ap]m/);
+  // Amended 2026-10-29 by the Phase 5 review fix (WR-T02): the clock joins the
+  // minute and am or pm with a no break space (U+00A0), never a plain space.
+  assert.match(text, /Until .*\d:\d\d\u00a0[ap]m/);
+  assert.doesNotMatch(text, /\d:\d\d [ap]m/);
   assert.match(text, /Issued by GDACS/);
   assert.match(text, /Magnitude 6\.5M, Depth 10 km/);
   assert.match(text, /Automatic estimate\. Follow your state disaster management authority\./);

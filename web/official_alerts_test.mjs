@@ -38,6 +38,12 @@
 //     another account or out of range is ignored; the API base is
 //     window.PinalertApiBase, else the page's data-api-base, else /api.
 //
+// Amended 2026-10-29 by the Phase 5 review fix (WR-T02): every expected clock
+// time joins the minute and am or pm with a no break space (U+00A0, written
+// \u00a0), so "11:20 pm" never breaks before "pm". The words are unchanged.
+// The row cases read text through textOf, which folds every space to one, and
+// keep their plain space.
+//
 // Run it with: node --test web/official_alerts_test.mjs
 // CI runs it with the other web/*.mjs files. It is not embedded in the server.
 // The fakes cover only what official-alerts.js calls: a minimal element model,
@@ -400,9 +406,9 @@ test('stale: notice, Last known alerts, As of, and never In force now', async ()
   const page = await open({}, withRows(staleAt()));
   assert.equal(status(page), 'Last checked 2 hours ago');
   assert.equal(shown(page, 'official-notice'), true);
-  assert.equal(el(page, 'official-notice-text').textContent, 'We could not check for alerts since 2:05 pm (2 hours ago).');
+  assert.equal(el(page, 'official-notice-text').textContent, 'We could not check for alerts since 2:05\u00a0pm (2 hours ago).');
   assert.equal(el(page, 'official-title').textContent, 'Last known alerts 2');
-  assert.equal(el(page, 'official-districts').textContent, 'As of 2:05 pm');
+  assert.equal(el(page, 'official-districts').textContent, 'As of 2:05\u00a0pm');
   assert.doesNotMatch(visibleText(page.doc.body), /in force now/i);
   assert.equal(shown(page, 'official-empty'), false);
   assertNoClaim(page, 'stale with rows');
@@ -414,7 +420,7 @@ test('stale with no rows keeps the notice and the heading and says nothing reass
   assert.equal(shown(page, 'official-empty'), false);
   assert.equal(shown(page, 'official-section'), true);
   assert.equal(el(page, 'official-title').textContent, 'Last known alerts');
-  assert.equal(el(page, 'official-districts').textContent, 'As of 2:05 pm');
+  assert.equal(el(page, 'official-districts').textContent, 'As of 2:05\u00a0pm');
   assert.equal(shown(page, 'official-list'), false);
   assertNoClaim(page, 'stale and empty');
 });
@@ -425,7 +431,7 @@ test('unavailable with a last good time says it could not be checked and lists n
   assert.equal(shown(page, 'official-unavailable'), true);
   assert.equal(el(page, 'official-unavailable-title').textContent, 'Official alerts could not be checked');
   assert.equal(el(page, 'official-unavailable-body').textContent,
-    'Pinalert could not reach the official feed since 9:10 am (7 hours ago). Check your state disaster management authority for warnings.');
+    'Pinalert could not reach the official feed since 9:10\u00a0am (7 hours ago). Check your state disaster management authority for warnings.');
   assert.equal(shown(page, 'official-section'), false);
   assertNoClaim(page, 'unavailable');
 });
@@ -542,7 +548,7 @@ test('the stale sentence keeps its age in step too', async () => {
     await flush();
   }
   assert.ok(page.requests.length > 1, 'the stale feed was asked about again');
-  assert.equal(el(page, 'official-notice-text').textContent, 'We could not check for alerts since 2:05 pm (3 hours ago).');
+  assert.equal(el(page, 'official-notice-text').textContent, 'We could not check for alerts since 2:05\u00a0pm (3 hours ago).');
   assert.equal(status(page), 'Last checked 3 hours ago');
 });
 
@@ -585,11 +591,11 @@ test('relative words', () => {
 
 test('until: a clock time, about when inferred, a weekday when not today', () => {
   const page = loadPage();
-  assert.equal(page.api.untilText('2026-10-29T15:05:00Z', false), 'Until 8:35 pm');
-  assert.equal(page.api.untilText('2026-10-29T15:05:00Z', true), 'Until about 8:35 pm');
-  assert.equal(page.api.untilText('2026-11-01T15:05:00Z', false), 'Until Sun 8:35 pm');
-  assert.equal(page.api.untilText('2026-10-29T18:25:00Z', false), 'Until 11:55 pm');
-  assert.equal(page.api.untilText('2026-10-29T18:35:00Z', false), 'Until Fri 12:05 am');
+  assert.equal(page.api.untilText('2026-10-29T15:05:00Z', false), 'Until 8:35\u00a0pm');
+  assert.equal(page.api.untilText('2026-10-29T15:05:00Z', true), 'Until about 8:35\u00a0pm');
+  assert.equal(page.api.untilText('2026-11-01T15:05:00Z', false), 'Until Sun 8:35\u00a0pm');
+  assert.equal(page.api.untilText('2026-10-29T18:25:00Z', false), 'Until 11:55\u00a0pm');
+  assert.equal(page.api.untilText('2026-10-29T18:35:00Z', false), 'Until Fri 12:05\u00a0am');
 });
 
 const rowsOf = (page) => byClass(el(page, 'official-list'), 'official-row');
@@ -873,7 +879,7 @@ test('hazard line: stale says they could not be checked since a time', async () 
   const page = await open({ hazardLine: true }, withHazards({
     hazards_state: 'stale', hazards_age_seconds: 7200, hazards_last_success_at: '2026-10-29T08:35:00Z'
   }));
-  assert.equal(hazardLine(page), 'Hazard events from GDACS could not be checked since 2:05 pm.');
+  assert.equal(hazardLine(page), 'Hazard events from GDACS could not be checked since 2:05\u00a0pm.');
   assert.equal(status(page), 'Last checked 4 minutes ago', 'the SACHET line is unchanged');
 });
 
@@ -881,7 +887,7 @@ test('hazard line: unavailable with a last good time says the same, with the wee
   const page = await open({ hazardLine: true }, withHazards({
     hazards_state: 'unavailable', hazards_age_seconds: 90000, hazards_last_success_at: '2026-10-28T08:35:00Z'
   }));
-  assert.equal(hazardLine(page), 'Hazard events from GDACS could not be checked since Wed 2:05 pm.');
+  assert.equal(hazardLine(page), 'Hazard events from GDACS could not be checked since Wed 2:05\u00a0pm.');
 });
 
 test('hazard line: never checked says they have not been checked yet', async () => {
@@ -1127,4 +1133,17 @@ test('IN-B04: a real page whose data-api-base fails the check asks /api', async 
     await flush();
     assert.ok(page.requests[0].url.startsWith('/api/official/alerts'), bad + ' -> ' + page.requests[0].url);
   }
+});
+
+// ---- The clock never breaks before am or pm (Phase 5 review fix WR-T02) ----
+// Added 2026-10-29.
+
+test('WR-T02: the character before pm in the stale notice and a row Until is a no break space', async () => {
+  const page = await open({}, withRows(staleAt()));
+  const notice = el(page, 'official-notice-text').textContent;
+  const at = notice.indexOf('pm');
+  assert.ok(at > 0, notice);
+  assert.equal(notice.charCodeAt(at - 1), 0xa0, 'U+00A0 before pm');
+  assert.equal(page.api.untilText('2026-10-29T15:05:00Z', false).charCodeAt('Until 8:35'.length), 0xa0);
+  assert.doesNotMatch(visibleText(page.doc.body), /\d:\d\d [ap]m/, 'no plain space before am or pm anywhere');
 });
