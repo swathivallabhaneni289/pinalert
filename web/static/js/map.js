@@ -1355,6 +1355,11 @@ window.PinalertMap = (function () {
     if (!container) {
       return;
     }
+    // A star box left in the page's own host by an earlier resolve never stays
+    // over the next card: any card opening takes it away (skeptic SK-W01).
+    if (typeof PinalertVotes !== 'undefined' && typeof PinalertVotes.dismissHostedRateBoxes === 'function') {
+      PinalertVotes.dismissHostedRateBoxes();
+    }
     var close = container.querySelector('.leaflet-popup-close-button');
     if (close && close !== container.firstChild) {
       container.insertBefore(close, container.firstChild);

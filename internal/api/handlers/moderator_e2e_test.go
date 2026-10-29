@@ -96,6 +96,10 @@ func modSameAsUnknown(t *testing.T, client *http.Client, baseURL, method, path, 
 
 // modRenderPage calls ModeratePage with the given config and request context
 // and returns the recorder.
+//
+// Amended 2026-10-30 (skeptic SK-I03): the page now checks the moderator marker
+// the requireModerator group sets, so the request carries the marker whether or
+// not it carries an account. The no marker answer is pinned in modguard_test.go.
 func modRenderPage(t *testing.T, cfg handlers.PageConfig, method string, withAccount bool) *httptest.ResponseRecorder {
 	t.Helper()
 	tmpl, err := handlers.ParsePageTemplate()
@@ -103,6 +107,7 @@ func modRenderPage(t *testing.T, cfg handlers.PageConfig, method string, withAcc
 		t.Fatalf("parsing page templates: %v", err)
 	}
 	req := httptest.NewRequest(method, "/moderate", nil)
+	req = req.WithContext(account.WithModerator(req.Context()))
 	if withAccount {
 		req = req.WithContext(account.WithAccount(req.Context(), account.Account{ID: 7, Email: "mod@example.com"}))
 	}

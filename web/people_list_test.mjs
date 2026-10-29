@@ -267,6 +267,62 @@ test('a failed Show more leaves focus on the button', async () => {
   assert.equal(h.els['people-list-action-error'].hidden, false);
 });
 
+// 2026-10-30 (skeptic SK-W02): a cursor that no longer opens (one issued before a
+// server restart) answers 400. Show more then reads the list again from the top
+// instead of sending the same dead cursor every tap, and says the server's
+// sentence once.
+test('a Show more cursor the server refuses starts the list again from the top', async () => {
+  const SENTENCE = 'That page could not be read.';
+  const fresh = { entries: [{ username: 'one_a' }, { username: 'two_b' }], others_count: 0, others_text: '', next: 'c-new' };
+  let firstReads = 0;
+  const h = load({
+    route: (method, address) => {
+      if (address.includes('after=c-old')) {
+        return { status: 400, body: { error: { field: 'after', message: SENTENCE } } };
+      }
+      firstReads += 1;
+      return { status: 200, body: firstReads === 1 ? { ...fresh, next: 'c-old' } : fresh };
+    }
+  });
+  h.api.open({ kind: 'followers', username: 'asha_k', own: false, opener: opener() });
+  await flush();
+  const more = h.els['people-list-more'];
+  more.fire('click');
+  await flush();
+  assert.equal(h.calls.length, 3, 'one refused page, then one read from the top');
+  assert.equal(h.calls[1].address, '/api/people/asha_k/followers?after=c-old');
+  assert.equal(h.calls[2].address, '/api/people/asha_k/followers', 'the new read carries no cursor');
+  assert.equal(rowsOf(h).length, 2, 'the list is drawn again, not appended to');
+  const err = h.els['people-list-action-error'];
+  assert.equal(err.hidden, false);
+  assert.equal(err.textContent, SENTENCE, 'the server sentence is shown, once');
+  assert.equal(more.hidden, false, 'Show more now carries the new cursor');
+  assert.equal(more.disabled, false);
+  more.fire('click');
+  await flush();
+  assert.equal(h.calls[3].address, '/api/people/asha_k/followers?after=c-new', 'the next tap sends the fresh cursor');
+});
+
+test('a refused cursor does not loop when the read from the top also fails', async () => {
+  const first = { entries: [{ username: 'one_a' }], others_count: 0, others_text: '', next: 'c-old' };
+  let reads = 0;
+  const h = load({
+    route: (method, address) => {
+      if (address.includes('after=')) {
+        return { status: 400, body: { error: { field: 'after', message: 'That page could not be read.' } } };
+      }
+      reads += 1;
+      return reads === 1 ? { status: 200, body: first } : { status: 500, body: {} };
+    }
+  });
+  h.api.open({ kind: 'followers', username: 'asha_k', own: false, opener: opener() });
+  await flush();
+  h.els['people-list-more'].fire('click');
+  await flush();
+  assert.equal(h.calls.length, 3, 'one refused page and one read from the top, nothing more');
+  assert.equal(h.els['people-list-error'].hidden, false, 'the whole list shows the error state with Try again');
+});
+
 test('empty states use the words of the kind and the owner', async () => {
   const empty = { entries: [], others_count: 0, others_text: '', next: '' };
   const cases = [

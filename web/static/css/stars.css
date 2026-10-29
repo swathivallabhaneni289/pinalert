@@ -166,7 +166,11 @@
  * neither can hold the box. #rate-host is the node beside the message that
  * does: fixed, centred like the message (over the list pane from 900px), above
  * the message while the message is showing and at the message's own place when
- * it is not, under the message in the stack, and never a live region. It is
+ * it is not, and never a live region. Its stack place is 1070 (skeptic SK-W01,
+ * 2026-10-30): above the page and its menus (1060) but under the phone report
+ * card (1080) and every window (1100), so it can never cover a control of a
+ * report or a sheet; the message (1200) stays above it. votes.js also takes the
+ * box away when another report or a window opens, and after a time of its own. It is
  * empty unless votes.js mounted a box in it, and an empty host takes no room.
  * The box inside keeps the look of .rate-box and drops its top margin. The same
  * rules serve a phone and a laptop; only the base line differs, the phone's
@@ -178,7 +182,7 @@
   position: fixed;
   left: 50%;
   bottom: calc(var(--rate-host-base) + var(--rate-host-lift));
-  z-index: 1190;
+  z-index: 1070;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;

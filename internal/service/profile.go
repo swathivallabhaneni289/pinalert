@@ -494,8 +494,9 @@ func (s *AccountService) MarkFirstRunDone(ctx context.Context, accountID int64) 
 }
 
 // UpdateProfile validates the update and then writes the rows it names. The
-// whole update is validated before any write, so a refusal changes nothing.
-// The name and the home area are written by one statement, so a database
+// whole update is validated before any write, so a refusal by the validation
+// changes nothing (a Name that loses the race with the profile switch is the
+// one exception, see the G1 note below). The name and the home area are written by one statement, so a database
 // failure changes neither. The answer is the profile as stored afterwards.
 func (s *AccountService) UpdateProfile(ctx context.Context, accountID int64, u ProfileUpdate) (AccountProfile, error) {
 	v, err := ValidateProfileUpdate(u)
@@ -503,8 +504,11 @@ func (s *AccountService) UpdateProfile(ctx context.Context, accountID int64, u P
 		return AccountProfile{}, err
 	}
 	// G1: a Name that changes while the public profile is on is checked before
-	// anything is written (the username write below included), so a refusal
-	// changes nothing.
+	// anything is written (the username write below included), so a refusal by
+	// the screen changes nothing. A Name that loses the race with the switch is
+	// the exception (WR-S04, skeptic SK-I01): it is not saved and the person is
+	// told to try again, but the username written first and the home area of the
+	// same statement have already landed.
 	// nameScreened is false only when the profile was off at the read, so the
 	// write below may land only while it is still off (WR-S04).
 	nameScreened := true

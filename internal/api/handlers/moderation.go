@@ -34,6 +34,13 @@ type moderatePageViewModel struct {
 // account; a miss is a routing bug and answers 500, like Page.
 func ModeratePage(tmpl *template.Template, cfg PageConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Skeptic SK-I03 (2026-10-30): the same marker the moderator API handlers
+		// check in modGuard. Without it the page answers what the group answers
+		// without it, the plain not found, judged before the method.
+		if !account.IsModerator(r.Context()) {
+			http.NotFound(w, r)
+			return
+		}
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", http.MethodGet)
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

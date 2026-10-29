@@ -12,9 +12,9 @@ package service
 
 import (
 	"context"
-	"crypto/hmac"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -680,7 +680,7 @@ func (s *PeopleService) list(ctx context.Context, viewerID int64, username, afte
 	if err != nil {
 		return PeopleList{}, err
 	}
-	afterAt, afterName, err := decodePeopleCursor(after)
+	afterAt, afterName, err := decodePeopleCursor(after, ownerID, followers)
 	if err != nil {
 		return PeopleList{}, err
 	}
@@ -735,7 +735,7 @@ func (s *PeopleService) list(ctx context.Context, viewerID int64, username, afte
 	if len(rows) > PeopleListPageSize {
 		rows = rows[:PeopleListPageSize]
 		last := rows[len(rows)-1]
-		out.Next = encodePeopleCursor(last.at, last.username)
+		out.Next = encodePeopleCursor(ownerID, followers, last.at, last.username)
 	}
 	for _, r := range rows {
 		out.Entries = append(out.Entries, PersonEntry{Username: r.username})
@@ -749,12 +749,12 @@ func (s *PeopleService) list(ctx context.Context, viewerID int64, username, afte
 	return out, nil
 }
 
-// peopleCursorKey signs the list cursors. It is random per process, made once
-// at start, so only a cursor this server issued is accepted (review IN-E02,
-// 2026-10-30): a reader can no longer send a cursor of their own making and
-// bisect when a named person followed. The price is that a cursor issued before
-// a restart reads as "That page could not be read", and the reader starts the
-// list again.
+// peopleCursorKey seals the list cursors. It is random per process, made once
+// at start, and is never logged, so only a cursor this server issued is
+// accepted (review IN-E02, 2026-10-30) and nobody can read the follow time out
+// of one (skeptic SK-W03, 2026-10-30). The price is that a cursor issued before
+// a restart reads as "That page could not be read"; the list window then starts
+// the list again from the top (SK-W02).
 var peopleCursorKey = func() []byte {
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
@@ -763,47 +763,80 @@ var peopleCursorKey = func() []byte {
 	return key
 }()
 
-// peopleCursorTag is the signature of one cursor payload.
-func peopleCursorTag(payload string) []byte {
-	mac := hmac.New(sha256.New, peopleCursorKey)
-	mac.Write([]byte(payload))
-	return mac.Sum(nil)[:16]
+// peopleCursorAAD is bound into every sealed cursor, so a sealed value made for
+// another purpose with the same key cannot be taken for a list cursor.
+var peopleCursorAAD = []byte("pinalert people list cursor v1")
+
+// peopleCursorAEAD is AES-256-GCM over peopleCursorKey.
+func peopleCursorAEAD() cipher.AEAD {
+	block, err := aes.NewCipher(peopleCursorKey)
+	if err != nil {
+		panic("service: the people cursor cipher: " + err.Error())
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		panic("service: the people cursor mode: " + err.Error())
+	}
+	return gcm
 }
 
-// encodePeopleCursor builds the opaque keyset cursor: base64url of the
-// created_at microseconds and the username, a full stop, and the base64url of a
-// signature over that payload.
-func encodePeopleCursor(at time.Time, username string) string {
-	raw := strconv.FormatInt(at.UnixMicro(), 10) + ":" + username
-	payload := base64.RawURLEncoding.EncodeToString([]byte(raw))
-	return payload + "." + base64.RawURLEncoding.EncodeToString(peopleCursorTag(payload))
+// peopleCursorDirection is the one letter that names which list a cursor
+// belongs to: f for Followers, g for Following.
+func peopleCursorDirection(followers bool) string {
+	if followers {
+		return "f"
+	}
+	return "g"
 }
 
-// decodePeopleCursor reverses encodePeopleCursor. An empty cursor is the first
-// page. Anything that does not decode to microseconds and a well formed
-// username is a ValidationError on after.
-func decodePeopleCursor(cursor string) (pgtype.Timestamptz, *string, error) {
+// encodePeopleCursor builds the opaque keyset cursor. The payload is the list
+// direction, the list owner's id, the created_at microseconds and the username;
+// it is sealed with AES-GCM under a random nonce, and the nonce plus the sealed
+// bytes are base64url. The follow time never leaves the server in clear, and
+// the cursor only opens on the list it was issued for.
+func encodePeopleCursor(ownerID int64, followers bool, at time.Time, username string) string {
+	raw := peopleCursorDirection(followers) + ":" + strconv.FormatInt(ownerID, 10) + ":" +
+		strconv.FormatInt(at.UnixMicro(), 10) + ":" + username
+	gcm := peopleCursorAEAD()
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		panic("service: no randomness for a people cursor nonce: " + err.Error())
+	}
+	sealed := gcm.Seal(nonce, nonce, []byte(raw), peopleCursorAAD)
+	return base64.RawURLEncoding.EncodeToString(sealed)
+}
+
+// decodePeopleCursor reverses encodePeopleCursor for one list. An empty cursor
+// is the first page. A cursor that does not open, that was issued for another
+// list (another owner or the other direction), or whose payload is not a time
+// and a well formed username is a ValidationError on after, the same calm
+// sentence for every case.
+func decodePeopleCursor(cursor string, ownerID int64, followers bool) (pgtype.Timestamptz, *string, error) {
 	if cursor == "" {
 		return pgtype.Timestamptz{}, nil, nil
 	}
 	bad := ValidationError{Field: "after", Message: peopleCursorMessage}
-	payload, tag, found := strings.Cut(cursor, ".")
-	if !found {
-		return pgtype.Timestamptz{}, nil, bad
-	}
-	gotTag, err := base64.RawURLEncoding.DecodeString(tag)
-	if err != nil || !hmac.Equal(gotTag, peopleCursorTag(payload)) {
-		return pgtype.Timestamptz{}, nil, bad
-	}
-	raw, err := base64.RawURLEncoding.DecodeString(payload)
+	sealed, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
 		return pgtype.Timestamptz{}, nil, bad
 	}
-	micros, name, found := strings.Cut(string(raw), ":")
-	if !found || !usernameShapeOK(name) {
+	gcm := peopleCursorAEAD()
+	if len(sealed) < gcm.NonceSize()+gcm.Overhead() {
 		return pgtype.Timestamptz{}, nil, bad
 	}
-	us, err := strconv.ParseInt(micros, 10, 64)
+	raw, err := gcm.Open(nil, sealed[:gcm.NonceSize()], sealed[gcm.NonceSize():], peopleCursorAAD)
+	if err != nil {
+		return pgtype.Timestamptz{}, nil, bad
+	}
+	parts := strings.SplitN(string(raw), ":", 4)
+	if len(parts) != 4 || parts[0] != peopleCursorDirection(followers) || parts[1] != strconv.FormatInt(ownerID, 10) {
+		return pgtype.Timestamptz{}, nil, bad
+	}
+	name := parts[3]
+	if !usernameShapeOK(name) {
+		return pgtype.Timestamptz{}, nil, bad
+	}
+	us, err := strconv.ParseInt(parts[2], 10, 64)
 	if err != nil {
 		return pgtype.Timestamptz{}, nil, bad
 	}

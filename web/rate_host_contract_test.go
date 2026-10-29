@@ -58,7 +58,10 @@ func TestRateHostStyle(t *testing.T) {
 	if rule == nil {
 		t.Fatal("stars.css has no #rate-host rule")
 	}
-	for _, want := range []string{"position: fixed;", "left: 50%;", "z-index: 1190;", "translateX(-50%)", "var(--rate-host-lift)"} {
+	// Amended 2026-10-30 (skeptic SK-W01): the z-index was 1190, above every
+	// window and the phone report card; it is now 1070 (see
+	// TestRateHostSitsUnderWindowsAndThePhoneReportCard).
+	for _, want := range []string{"position: fixed;", "left: 50%;", "z-index: 1070;", "translateX(-50%)", "var(--rate-host-lift)"} {
 		if !strings.Contains(rule[1], want) {
 			t.Errorf("#rate-host lacks %q", want)
 		}
@@ -81,6 +84,61 @@ func TestRateHostStyle(t *testing.T) {
 	}
 	if strings.Contains(rule[1], "aria-") || strings.Contains(noComments, "!important") {
 		t.Errorf("#rate-host rule holds an aria or !important")
+	}
+}
+
+// TestRateHostSitsUnderWindowsAndThePhoneReportCard pins SK-W01 (skeptic round,
+// 2026-10-30): the hosted star box sits above the page and its menus but under
+// the phone report card (1080) and every .app-window (1100), so it can never
+// cover a control of a report or a sheet. The message (#toast, 1200) stays
+// above it. The numbers are read from the shipped stylesheets.
+func TestRateHostSitsUnderWindowsAndThePhoneReportCard(t *testing.T) {
+	strip := regexp.MustCompile(`(?s)/\*.*?\*/`)
+	z := func(file, selectorPattern string) int {
+		t.Helper()
+		src := strip.ReplaceAllString(p421ReadStatic(t, file), "")
+		m := regexp.MustCompile(`(?s)` + selectorPattern + `\s*\{[^}]*?z-index:\s*(\d+);`).FindStringSubmatch(src)
+		if m == nil {
+			t.Fatalf("%s: no z-index found for %s", file, selectorPattern)
+		}
+		n := 0
+		for _, c := range m[1] {
+			n = n*10 + int(c-'0')
+		}
+		return n
+	}
+	host := z("css/stars.css", `#rate-host`)
+	phoneCard := z("css/phone.css", `\.leaflet-container \.leaflet-detail-pane`)
+	window := z("css/window.css", `\.app-window:not\(\[hidden\]\)`)
+	toast := z("css/main.css", `#toast`)
+	menu := z("css/feed.css", `\.show-menu`)
+	if host >= phoneCard || host >= window {
+		t.Errorf("#rate-host z-index %d must be under the phone report card %d and the windows %d", host, phoneCard, window)
+	}
+	if host >= toast {
+		t.Errorf("#rate-host z-index %d must stay under the message %d", host, toast)
+	}
+	if host <= menu {
+		t.Errorf("#rate-host z-index %d must stay above the page menus %d", host, menu)
+	}
+}
+
+// TestVotesScriptEndsTheHostedBox pins that the script has the three ends of a
+// hosted box (SK-W01) and that map.js calls the report-open end.
+func TestVotesScriptEndsTheHostedBox(t *testing.T) {
+	js := p421ReadStatic(t, "js/votes.js")
+	for _, want := range []string{
+		"dismissHostedRateBoxes: dismissHostedRateBoxes",
+		"var RATE_HOST_MAX_MS = 30000;",
+		"attributeFilter: ['hidden', 'open']",
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("votes.js lacks %q", want)
+		}
+	}
+	mapJS := p421ReadStatic(t, "js/map.js")
+	if !strings.Contains(mapJS, "PinalertVotes.dismissHostedRateBoxes()") {
+		t.Error("map.js does not drop the hosted box when a report opens")
 	}
 }
 
