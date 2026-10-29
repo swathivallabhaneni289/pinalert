@@ -50,6 +50,10 @@ type UpdatesQuerier interface {
 	// the note row is written, seeds the reader's cursor so the note counts toward
 	// the one update per report per hour (D-12, W3).
 	InsertReliableAlert(ctx context.Context, arg sqlcgen.InsertReliableAlertParams) (int64, error)
+	// MutedPeopleIDs is the set of people the reader muted (Phase 9 plan 18,
+	// D-12). The Reliable reporter alert skips their reports; nothing else reads
+	// it here.
+	MutedPeopleIDs(ctx context.Context, muterID int64) ([]int64, error)
 }
 
 var _ UpdatesQuerier = (*sqlcgen.Queries)(nil)

@@ -173,6 +173,13 @@ func (f *fakeUpdatesQuerier) InsertReliableAlert(_ context.Context, a sqlcgen.In
 	return 0, nil
 }
 
+// Amended 2026-10-29 by Phase 9 plan 18 (D-12): the fake gained MutedPeopleIDs.
+// It answers an empty set and records nothing, so no existing call order
+// assertion changes; a test that needs a muted set uses mutedFake.
+func (f *fakeUpdatesQuerier) MutedPeopleIDs(_ context.Context, _ int64) ([]int64, error) {
+	return nil, nil
+}
+
 // newTestUpdatesService builds a service over q with the clock pinned.
 func newTestUpdatesService(q UpdatesQuerier) *UpdatesService {
 	return NewUpdatesService(q, nil, WithUpdatesClock(func() time.Time { return updatesNow }))
