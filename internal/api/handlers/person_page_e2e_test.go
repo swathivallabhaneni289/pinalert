@@ -284,11 +284,22 @@ func TestPersonPageRecentReports(t *testing.T) {
 				if !strings.Contains(row, "Not confirmed yet") || !strings.Contains(row, "Posted ") {
 					t.Errorf("the live row lacks its status word or its time: %s", row)
 				}
+				// Review fix IN-T04, 2026-10-30: the hidden prefix names the
+				// state, so the chip is skipped by a screen reader.
+				if !strings.Contains(row, `<span class="visually-hidden">Not confirmed yet. </span>`) ||
+					!strings.Contains(row, `person-chip--neutral" aria-hidden="true">Not confirmed yet<`) {
+					t.Errorf("the not confirmed row must read its state once: hidden prefix, chip aria-hidden: %s", row)
+				}
 			}
 			if strings.Contains(row, `href="/?report=`+strconv.FormatInt(disputedID, 10)+`"`) {
 				sawDisputed = true
-				if !strings.Contains(row, "Disputed: may not be true") || !strings.Contains(row, `person-chip--grey">Disputed<`) {
-					t.Errorf("the disputed row lacks its line or its chip: %s", row)
+				// Amended 2026-10-30 by the review fix IN-T04: the chip now
+				// carries aria-hidden, and so does the visible line, because
+				// the hidden prefix already says Disputed, may not be true.
+				if !strings.Contains(row, `<span class="person-report__disputed" aria-hidden="true">Disputed: may not be true</span>`) ||
+					!strings.Contains(row, `person-chip--grey" aria-hidden="true">Disputed<`) ||
+					!strings.Contains(row, `<span class="visually-hidden">Disputed, may not be true. </span>`) {
+					t.Errorf("the disputed row must read its state once, with its line and its chip hidden from a screen reader: %s", row)
 				}
 			}
 		case strings.Contains(row, "person-report--finished"):

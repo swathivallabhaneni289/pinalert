@@ -123,8 +123,9 @@
             <li class="person-report person-report--live {{.SeverityClass}}">
               <a class="person-report__body" href="{{.Href}}">
                 <span class="icon-badge person-report__disc" aria-hidden="true"><span class="icon-glyph {{.IconGlyph}}"></span></span>
-                <span class="person-report__report">{{if .AccessiblePrefix}}<span class="visually-hidden">{{.AccessiblePrefix}} </span>{{end}}<span class="person-report__title">{{.Title}}</span><span class="person-report__label">{{.LabelLine}}</span>{{if .DisputedLine}}<span class="person-report__disputed">{{.DisputedLine}}</span>{{end}}</span>
-                <span class="person-report__status"><span class="person-chip {{.ChipClass}}">{{.StatusWord}}</span></span>
+                <span class="person-report__report">{{if .AccessiblePrefix}}<span class="visually-hidden">{{.AccessiblePrefix}} </span>{{end}}<span class="person-report__title">{{.Title}}</span><span class="person-report__label">{{.LabelLine}}</span>{{if .DisputedLine}}<span class="person-report__disputed" aria-hidden="true">{{.DisputedLine}}</span>{{end}}</span>
+                {{/* Review fix IN-T04: the hidden prefix already says Disputed or Not confirmed yet at the start of the row's name, so the visible line and the chip are skipped by a screen reader and the state is read once. */}}
+                <span class="person-report__status"><span class="person-chip {{.ChipClass}}"{{if .AccessiblePrefix}} aria-hidden="true"{{end}}>{{.StatusWord}}</span></span>
                 <span class="person-report__when">{{.WhenText}}</span>
                 <span class="person-report__foot"><span class="person-report__distance" data-lat="{{.Lat}}" data-lon="{{.Lon}}" data-approx="{{.Approx}}">Unknown</span><span class="app-icon app-icon--chevron-right person-report__chevron" aria-hidden="true"></span></span>
               </a>
