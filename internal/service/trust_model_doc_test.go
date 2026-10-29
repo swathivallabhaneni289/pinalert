@@ -73,6 +73,24 @@ var p20ConstFiles = map[string]string{
 	"MaxReporterAccountsPerRead":    "internal/service/report.go",
 	"UndoLimit":                     "internal/service/takeback.go",
 	"ApproxGeohashPrecision":        "internal/service/coarsen.go",
+	// Amended 2026-10-30 by Phase 9 plan 27: the constants of profiles, tapped
+	// ratings, follows, mute, block and follow notes. rateBurst and rateEvery
+	// are in package main and so are described in prose, not tabled.
+	"ProfileCoarsePrecision": "internal/service/coarsen.go",
+	"MinRatersForStars":      "internal/service/stars.go",
+	"RatingPointsPerStar":    "internal/service/stars.go",
+	"RatingChangeGap":        "internal/service/ratings.go",
+	"ModeratorRatingsCap":    "internal/service/ratings.go",
+	"FollowingCap":           "internal/service/people.go",
+	"PeopleListPageSize":     "internal/service/people.go",
+	"BlockedListCap":         "internal/service/people.go",
+	"MutedPeopleListCap":     "internal/service/people_mute.go",
+	"NotifyFollowsCap":       "internal/service/updates.go",
+	"FollowedPostsCap":       "internal/service/updatesfollow.go",
+	"FollowSweepInterval":    "internal/service/followsweep.go",
+	"ProfileReportsWindow":   "internal/service/profilereports.go",
+	"ProfileReportsCap":      "internal/service/profilereports.go",
+	"FollowFanoutCap":        "internal/service/pushdispatch.go",
 }
 
 // p20Identifiers lists names the document must show in backticks and that
@@ -95,6 +113,15 @@ var p20Identifiers = []struct{ name, file string }{
 	{"CoarsenFinishedRescue", "internal/service/coarsen.go"},
 	{"ErrNothingToTakeBack", "internal/service/takeback.go"},
 	{"ErrUndoLimitReached", "internal/service/takeback.go"},
+	// Amended 2026-10-30 by Phase 9 plan 27: the functions the new sections name.
+	{"CombinePoints", "internal/service/stars.go"},
+	{"TappedHalfStars", "internal/service/stars.go"},
+	{"StarsTenths", "internal/service/stars.go"},
+	{"StarsText", "internal/service/stars.go"},
+	{"NameReserved", "internal/service/publicname.go"},
+	{"LoadReporterSignals", "internal/service/reportersignals.go"},
+	{"endFollowsOf", "internal/service/followend.go"},
+	{"endFollowPair", "internal/service/followend.go"},
 }
 
 // p20MustCite is the set of tests the document has to name.
@@ -138,6 +165,21 @@ var p20MustCite = []string{
 	"TestLikesNeverFeedTrust",
 	"TestShareOpenGraph",
 	"TestSharePageSetsNoCookie",
+	// Amended 2026-10-30 by Phase 9 plan 27: the tests the new sections
+	// "Reporter profiles", "Stars and tapped ratings" and "Follows, mute, block
+	// and follow notes" cite.
+	"TestProfileNotFoundIsUniform",
+	"TestPersonPageFinishedRowsAreCoarse",
+	"TestFinishedViewsCarryNoProfilePath",
+	"TestCombinePoints",
+	"TestRatersCountedByDistinctCell",
+	"TestPrivateProfileRatingsOnlyLower",
+	"TestSwitchingOffNeverRaisesTag",
+	"TestModeratorRemovalRestoresFollows",
+	"TestRatedReporterSameEverywhere",
+	"TestMuteNeverHidesReports",
+	"TestFollowCleanupOnEveryEndPath",
+	"TestFollowPushOrderCriticalFollowReliable",
 }
 
 // p20NoSpoofClaims are phrases the document must never contain. A spoofed
@@ -240,7 +282,44 @@ func p20Constants(t *testing.T) map[string]string {
 		"MaxReporterAccountsPerRead":    fmt.Sprint(MaxReporterAccountsPerRead),
 		"UndoLimit":                     fmt.Sprint(UndoLimit),
 		"ApproxGeohashPrecision":        fmt.Sprint(ApproxGeohashPrecision),
+		// Amended 2026-10-30 by Phase 9 plan 27 (see p20ConstFiles).
+		"ProfileCoarsePrecision": fmt.Sprint(ProfileCoarsePrecision),
+		"MinRatersForStars":      fmt.Sprint(MinRatersForStars),
+		"RatingPointsPerStar":    fmt.Sprint(RatingPointsPerStar),
+		"RatingChangeGap":        p20Hours(t, RatingChangeGap),
+		"ModeratorRatingsCap":    fmt.Sprint(ModeratorRatingsCap),
+		"FollowingCap":           fmt.Sprint(FollowingCap),
+		"PeopleListPageSize":     fmt.Sprint(PeopleListPageSize),
+		"BlockedListCap":         fmt.Sprint(BlockedListCap),
+		"MutedPeopleListCap":     fmt.Sprint(MutedPeopleListCap),
+		"NotifyFollowsCap":       fmt.Sprint(NotifyFollowsCap),
+		"FollowedPostsCap":       fmt.Sprint(FollowedPostsCap),
+		"FollowSweepInterval":    p20Minutes(t, FollowSweepInterval),
+		"ProfileReportsWindow":   p20Days(t, ProfileReportsWindow),
+		"ProfileReportsCap":      fmt.Sprint(ProfileReportsCap),
+		"FollowFanoutCap":        fmt.Sprint(FollowFanoutCap),
 	}
+}
+
+// p20Hours renders a duration that is a whole number of hours as "{n} hours".
+// Added 2026-10-30 by Phase 9 plan 27, because p20Days would print the 24 hour
+// rating change gap as "1 days".
+func p20Hours(t *testing.T, d time.Duration) string {
+	t.Helper()
+	if d <= 0 || d%time.Hour != 0 {
+		t.Fatalf("duration %v is not a positive whole number of hours", d)
+	}
+	return strconv.FormatInt(int64(d/time.Hour), 10) + " hours"
+}
+
+// p20Minutes renders a duration that is a whole number of minutes as
+// "{n} minutes". Added 2026-10-30 by Phase 9 plan 27 for the follow sweep.
+func p20Minutes(t *testing.T, d time.Duration) string {
+	t.Helper()
+	if d <= 0 || d%time.Minute != 0 {
+		t.Fatalf("duration %v is not a positive whole number of minutes", d)
+	}
+	return strconv.FormatInt(int64(d/time.Minute), 10) + " minutes"
 }
 
 // p20DeclRegexp matches a line that declares name: optional indentation, an

@@ -260,6 +260,67 @@ Phase 7.1 gave every account a public username. It is screened like other short 
 
 Tests: `TestUsernameSaveScreening`, `TestUsernameSaveRules`, `TestCheckUsernameStates`.
 
+## Names on a public profile
+
+Phase 9 shows a person's Name on their profile once Let others follow me is on. The Name is screened
+when the switch goes on and on every later edit of the Name while it is on. The reserved words come
+first, with no provider call, and then `ScreenAbuse`, the abuse screen again and not the gibberish
+rule. It fails closed: a borderline, rejected or unfinished check refuses the Name, because a Name
+is shown to strangers and nothing is held for later. A pending username is screened again when the
+switch goes on. The reserved list is ASCII, so a Name in another script is screened for abuse and is
+not compared with the reserved words. Only the Name goes to the provider, never an account, an
+address or a location.
+
+Tests: `TestScreenPublicName`, `TestPublicNameEditWhilePublic`.
+
+## Ratings
+
+Phase 9 lets a reader give a reporter one to five stars. A moderator can remove abusive ratings; this
+is the only tool for it (D-14). The rules that decide what counts are in
+[docs/TRUST-MODEL.md](./TRUST-MODEL.md), under "Stars and tapped ratings".
+
+The Ratings section of the moderator screen sits below the report lists. A moderator types a
+reporter's username and reads who gave how many stars and when, newest first, at most
+`ModeratorRatingsCap` (200) rows, with removed and cleared ratings marked and only live ones given a
+Remove button. A rater is named by username on this screen and on no other. A rater
+whose username is still pending is named too, because the tool acts by name and hiding the name
+would make that rating impossible to remove (a moderator only exception, decided in plan 09-15, open
+for the owner to revisit). Three routes sit in the same plain 404 group as the other moderator
+routes, so everyone who is not a moderator gets the byte for byte 404 of an unknown address, on every
+method, and none is in the public API reference:
+
+- `GET /api/moderation/people/{username}/ratings` lists the ratings of one reporter.
+- `POST /api/moderation/people/{username}/ratings/remove` removes one rating, named by the rater in
+  the body, and answers the list as it stands now.
+- `POST /api/moderation/raters/{username}/remove-ratings` removes every rating one rater gave to
+  anyone and answers how many it removed.
+
+What each removal does.
+
+- Removing one rating. The row stays, with `removed_at` and `removed_by` set to the time and the
+  moderator's account. The audit stamp is the record: it holds no text. The rating stops counting on
+  the next read, on every surface at once, so the stars, the tag and the "Includes ratings by N
+  people." line move together (`TestRatingsIgnoreRemoved`, `TestModeratorRatings`).
+- Removing every rating by one rater. This asks first, in a box titled "Remove all ratings by
+  {username}?" with Cancel and Remove all and no close mark. It marks the rater first
+  (`rater_removed_at`, `rater_removed_by`), so their ratings stop counting even if a later step
+  fails, and then stamps each rating. The removal is permanent: that account cannot rate again
+  (`TestRemovedRaterCannotRateAgain`). It affects every reporter that rater rated.
+- Follows. When a removal brings a reporter back to Reliable reporter, the follows that were ended
+  with the reason tag_lost since the earliest removed rating was written are restored
+  (`TestModeratorRemovalRestoresFollows`). A follow comes back only if the reporter still has a
+  public profile and a clear username, neither side is deleted, no block exists in either
+  direction and the follower is under the following cap. When the reporter is not Reliable again,
+  nothing is restored, and follows lost for other reasons never come back.
+- Nobody is told. The rater is not told a rating was removed, and the reporter is not told who
+  rated them. A removal changes no report.
+
+Not covered. There is no screen for a rater with no username or a deleted account, because the tool
+acts by name, and deleting an account already removes the ratings it gave. Burst detection for a
+group of accounts rating together is not built (TRUSTX-03), so a moderator finds a burst by looking.
+
+Tests: `TestModeratorRatings`, `TestModeratorRatingsHiddenFromOthers`, `TestRatingsIgnoreRemoved`.
+
 ## Limits
 
 Every limit is a token bucket kept in the server's memory and keyed on the verified account,
@@ -278,6 +339,9 @@ side by side in `cmd/server/main.go`.
 | Comments and replies | account | 6 | 1 per 20 seconds | `commentBurst`, `commentEvery` |
 | Likes, unlikes, own comment deletes | account | 30 | 1 per 3 seconds | `likeBurst`, `likeEvery` |
 | Share link | account | 10 | 1 per 30 seconds | `shareBurst`, `shareEvery` |
+| People reads (profiles, lists) | account | 60 | 1 per second | `peopleReadBurst`, `peopleReadEvery` |
+| People actions (follow, block, mute, notify and the rest) | account | 20 | 1 per 3 seconds | `peopleActionBurst`, `peopleActionEvery` |
+| Star ratings and removing your own rating | account | 10 | 1 per 30 seconds | `rateBurst`, `rateEvery` |
 | Network backstop, reports | client address | 2000 | 1 per second | `ipBackstopReportBurst`, `ipBackstopReportEvery` |
 | Network backstop, votes | client address | 2000 | 1 per 150 milliseconds | `ipBackstopVoteBurst`, `ipBackstopVoteEvery` |
 | Network backstop, flags | client address | 1000 | 1 per 1.2 seconds | `ipBackstopFlagBurst`, `ipBackstopFlagEvery` |
@@ -289,6 +353,12 @@ The account block holds a burst and a refill for each account bucket, and the ba
 beside it does the same for each action family. Phase 8 added the comment, like and share buckets
 to both (a comment Flag spends the report Flag bucket and backstop). Amended 2026-10-29 by Phase 8
 plan 19.
+
+Phase 9 added the three people rows. They are per account only and have no network backstop,
+because many phones share one carrier address: the lists are public to every signed in account, so
+reads are bounded to slow scraping of the follow graph, and actions are bounded to slow follow
+churn. A rating also has the once in 24 hours change rule on top (`RatingChangeGap`, see
+TRUST-MODEL.md). Amended 2026-10-30 by Phase 9 plan 27.
 
 - The network backstop has one bucket per action family, so votes from a shared carrier address
   can never use up report posting from it. Each family is sized so that about 100 accounts behind
@@ -331,7 +401,12 @@ without the report text (borderline results at submit, and every result the back
 finishes, see Text check), and moderator actions without the report text. Phase 8 adds comments
 (the words, with the screen verdict and scores), the likes an account gave, comment flags with
 their notes, and comment moderator actions without the comment text. Deleting an account blanks
-its comments and removes its likes and flags. A report's share token stays with the report. An expired report only
+its comments and removes its likes and flags. Phase 9 adds the profile switch, who follows whom
+(each follow kept with an end time and a reason after it ends, until the account goes), the Notify
+me choice with the time it was switched on, blocks, mutes, and the star ratings an account gave
+(the person rated, the stars, the time, and for a removed rating the moderator who removed it and
+when). Deleting an account removes its follows, blocks, mutes, bell choices and the ratings it gave
+and received in the one transaction, and switches its profile off. A report's share token stays with the report. An expired report only
 stops showing in the lists. The Policy page says the same in general and offers removal through
 the contact line when `CONTACT_EMAIL` is set. One small gap: the Policy page lists the scores
 "for borderline reports", which understates the retry case above. If the Policy page is edited,

@@ -366,6 +366,8 @@ Weights are fresh unless a row says otherwise. Uniform ageing gives the same sco
 
 The tag appears on every report, including critical and rescue needed ones, as the same plain text. It never hides, dims, blocks, reorders or filters anything (D-14). A Hidden report in the Disputed tab shows the tag and no still current word. A later triage phase may use it as one soft input.
 
+Amended 2026-10-30 by Phase 9: the tag now also gates two opt in things for the person who chooses them. Only a Reliable reporter can be followed, and a follow note (a quiet bell and phone note when a followed person posts) is produced and sent only while the tag still reads Reliable reporter. Neither touches what anyone else sees: no report is hidden, dimmed or reordered by the tag. See "Reporter profiles" and "Follows, mute, block and follow notes". From five raters on, tapped stars also feed the points the tag is cut from, see "Stars and tapped ratings".
+
 ### How the roadmap word score is met for the reporter
 
 The roadmap asks for a slow decaying "is this source reliable" score (TRUST-07, D-08).
@@ -547,9 +549,9 @@ The kinds. Each has its own switch in Settings, under Notifications.
 - Changes and comments on reports I posted, voted on or commented on. Off by default. It needs no home area. Phase 8 widened the label, which used to read Changes to reports I posted or voted on, to cover comments (see "Comments and likes").
 - A Reliable reporter posts near me. Off by default. This is the switch and the rule of "Reliable reporter alerts" above; the bell and the phone share one row and one rule, and push never adds a second one.
 - Severe official alerts for my area. Built by Phase 5, on by default, and it needs a home area. It is not a crowd report, so it does not go through `MayNotifyAboutReport` or the report outbox. See "Official alerts on the phone" below.
-- Someone I follow posts. Reserved for Phase 9 and its Notify me bell. There is no switch and nothing is stored for it yet.
+- A person I follow posts. Built by Phase 9. It has no switch in Settings: the Notify me bell on that person's profile is the switch, one person at a time, and On this device still governs whether any phone note arrives (D-11). It goes through the same `MayNotifyAboutReport` rule as the Reliable kind, with its own rows and its own words. See "Follows, mute, block and follow notes".
 
-A fifth note, the confirmed update, is not a kind of its own to the person. It replaces a Critical or Reliable note already on the screen.
+A sixth note, the confirmed update, is not a kind of its own to the person. It replaces a Critical, Reliable or follow note already on the screen.
 
 What near means. Within the distance the person chose in Settings, 1, 2, 5 or 10 km, 5 km until they choose, measured from the middle of the stored home area cell, as for the Reliable alert. The picked point is never stored and the report's exact position is never sent to the phone.
 
@@ -571,9 +573,9 @@ What is never sent: the description, the reporter's name or email, any number or
 
 The confirmed update. It is queued once for each person who was sent the first note saying Not confirmed yet, and it is checked against the same home area and distance as the note it replaces. It goes to that person's devices except Apple ones, because iPhone and Safari do not replace a shown note by its tag and a second note would only stack. This is part of one notification per report on every device: an Apple endpoint gets only the first push about a report, so a later change note about it is not sent there either and stays in the bell, while other browsers replace the note in place by its tag. `deviceSkipsRepeatPush` is the one check, per account and report, and it only ever means fewer notes. `TestWorkerAppleFirstPushOnly` pins it.
 
-The caps, in plain words. A person gets at most 4 notes in a rolling hour from the Reliable and change kinds. A Critical alert near the home area always gets through, because it is never stored in the bell and a dropped one would show nowhere, but it counts toward the 4, so the other kinds are held back first. `heldByHourlyCap` is the one place that decides this, and `TestWorkerCriticalNeverHeldButCounted` pins it. Confirmed updates are not counted and never held. One reporter's reports reach people for at most 3 Critical and 2 Reliable reports in a rolling hour, across everyone. A report counts once across both kinds and is never sent as Reliable once it was capped as Critical. A report is pushed to at most 2000 people, nearest first. A report that reached nobody does not use up one of its reporter's slots. When a note is dropped by a cap nothing extra is shown: no summary note, no and N more. The bell still lists everything it stores, which is every kind but the Critical alert. `TestPushCaps` pins the reporter caps, and `TestPhoneAlertCapShowsNothingExtra` shows five Critical reports near one person giving five notes, then the next Reliable note held back, with nothing extra shown.
+The caps, in plain words. A person gets at most 4 notes in a rolling hour from the Reliable, follow and change kinds. A Critical alert near the home area always gets through, because it is never stored in the bell and a dropped one would show nowhere, but it counts toward the 4, so the other kinds are held back first. `heldByHourlyCap` is the one place that decides this, and `TestWorkerCriticalNeverHeldButCounted` pins it. Confirmed updates are not counted and never held. One reporter's reports reach people for at most 3 Critical and 2 Reliable reports in a rolling hour, across everyone. A report counts once across both kinds and is never sent as Reliable once it was capped as Critical. A report is pushed to at most 2000 people, nearest first. A report that reached nobody does not use up one of its reporter's slots. When a note is dropped by a cap nothing extra is shown: no summary note, no and N more. The bell still lists everything it stores, which is every kind but the Critical alert. `TestPushCaps` pins the reporter caps, and `TestPhoneAlertCapShowsNothingExtra` shows five Critical reports near one person giving five notes, then the next Reliable note held back, with nothing extra shown.
 
-The open gap. Burst detection (TRUSTX-03) is not built. This is the dependency "Reliable reporter alerts" named, and Phase 3.3 meets it by recording it, not by closing it. Several coordinated Reliable accounts can each reach the same person, and the Reliable tag is farmable at the price given in "Honest limits": extra verified accounts that confirm each other, plus a claimed location for each. The per reporter caps and the Not confirmed yet words stand in for burst detection, nothing more. Phase 9 will lower the Reliable bar to 3.5 stars, which makes the tag cheaper still, so burst detection stays a dependency before either cap is raised or any new kind is allowed to push on the strength of the tag.
+The open gap. Burst detection (TRUSTX-03) is not built. This is the dependency "Reliable reporter alerts" named, and Phase 3.3 meets it by recording it, not by closing it. Several coordinated Reliable accounts can each reach the same person, and the Reliable tag is farmable at the price given in "Honest limits": extra verified accounts that confirm each other, plus a claimed location for each. The per reporter caps and the Not confirmed yet words stand in for burst detection, nothing more. Phase 9 lowered the Reliable bar to 3.5 stars (70 points), which makes the tag cheaper still, and let tapped ratings feed the points, which makes it cheaper again. It then added the follow kind, which also pushes on the strength of the tag, with the same caps. Burst detection therefore matters more, not less, and stays a dependency before either cap is raised or any further kind is allowed to push on the strength of the tag.
 
 `TestPushDispatchResolver` pins the resolver as the only judge, `TestPushReliable` the Reliable path through 3.2's own rows, `TestPhoneAlertCriticalEndToEnd` the whole route from a post to a replaced note, with the far reader, the author and the person who muted getting none.
 
@@ -665,6 +667,88 @@ Phase 8 added a Share button and a public page for one report, `GET /r/{token}`,
 - No account, script or cookie is involved. The page sets no cookie and writes no session row, even for a first visit (`TestSharePageSetsNoCookie`), carries `noindex` and `no-store`, and sends `Referrer-Policy: no-referrer`.
 - Limits. Share spends its own per account bucket. The public page has a per address limit only when `CLIENT_IP_HEADER` is set; without it the page has no limit at all, and only the 128 bit token protects it (review B1), so the README canary check should be done before any wide sharing.
 
+## Reporter profiles
+
+Phase 9 lets a reporter be followed. A profile is a page for one person, at `/u/{username}`, and `/me` opens your own. It is opt in and it adds no number to the trust mechanic: it is a place to read the tag, the counts and the stars that every report already carries, plus a person's recent reports.
+
+Opt in. The switch is Let others follow me, in Settings, People and reports. It is off for every account until the person switches it on, and every account that existed before Phase 9 starts off. Anyone with a clear username and an accepted Name can switch it on (Q2, D-18). Only following needs the Reliable reporter tag, so a New reporter can have a profile and cannot be followed until the tag is earned. While it is on the page shows the username, the Name, the home area, the stars with both parts, the tag with its counts, Member since, the Followers and Following buttons and Recent reports. While it is off the page does not exist for anyone else.
+
+The Name is screened. When the switch goes on, and on every later edit of the Name while it is on, the Name goes through the reserved word check (`NameReserved`) and then the abuse screen, and fails closed: a Name that is borderline, rejected or could not be checked is refused. The reserved list is written in ASCII, so a Name in another script is screened for abuse by the provider and is not compared with the reserved words. That is a known limit (G1). A pending username is screened again when the switch goes on, and a username shows on a profile only while its screen word is clear.
+
+One not found. A profile that does not exist, is private, is pending, belongs to a deleted account, belongs to someone who blocked you, or is malformed answers the same bytes, so the route confirms nothing about a person (`TestProfileNotFoundIsUniform`). The one exception is a person you blocked yourself: your own profile read says Blocked by you, and their lists and reports answer the uniform not found.
+
+Public lists. Followers and Following are public to every signed in account (D-03). A person with a public profile of their own is named and links to it; everyone else is only counted, in a plain line such as "and 3 others" that is never a link. A list holds `PeopleListPageSize` named people a page. Your Blocked and Muted lists are yours alone.
+
+Recent reports (D-07, D-20). A profile lists the person's reports of the last 30 days (`ProfileReportsWindow`), newest first, at most `ProfileReportsCap`, through the same read path as the feed, so a held or removed report is never listed and every state word is the feed's own. The two kinds of row are different on purpose.
+
+- A live report (Active, or Disputed while live) is shown as on the map: its words, its exact point and a link that opens the report. A reader's distance to it is measured in the browser from the kept position, and the server learns no reader location.
+- A finished report (Resolved or Expired) is shown at a rough area only. The point is moved to the centre of a precision 5 cell (`ProfileCoarsePrecision`, about 5 km across), a finished Rescue report keeps its precision 6 blur and shows no text, and the distance is measured to the blurred point. The row carries the end date and never a time, no report id, no description and no link, and the page draws it without an `a` element at all (`TestPersonPageFinishedRowsAreCoarse`, `TestCoarsenFinishedForProfile`). The reason is linkability: a public username beside an exact finished point and a time would match the anonymous row of the Past tab at that point.
+
+The profile link in the trust panel. A live report carries `reporter_profile_path` when its reporter has a public profile with a clear username, is not the reader, and has not blocked the reader. The trust panel shows it as See this reporter, the last row. It sits beside the trust object and never inside it. A finished report never carries it, on Focus, Past, Activity or the feed, for the same linkability reason (D-20, `TestFinishedViewsCarryNoProfilePath`).
+
+Evaluate on touch. A profile whose person no longer holds the Reliable reporter tag ends the follows to that person when it is next read, before the counts are read (`TestProfileEvaluateOnTouch`). The sweep does the same for people nobody opens. See "Follows, mute, block and follow notes".
+
+Deleting an account removes its follows, blocks, ratings given and received, mutes and Notify me choices in the one transaction, and switches the profile off (`TestDeleteAccountEndsFollowsAndBlocks`, `TestDeleteAccountRemovesRatings`, `TestDeleteAccountRemovesPersonMutes`).
+
+## Stars and tapped ratings
+
+Stars are the reporter score divided by 20. `StarsTenths` and `StarsText` floor it to one decimal from integers, never a float format, so 69 reads 3.4 and 70 reads 3.5, and 34 and 35 both read 1.7 because the Mixed record floor falls between two tenths (`TestStarsTextWalkMatchesTag` walks every score and checks the number never contradicts the tag). The tag is still cut in exactly one place, `reporterTagForScore`.
+
+Two parts. Below `MinRatersForStars` counted raters, the points are the report outcome score alone, exactly as before Phase 9. From five counted raters on, the points are half the outcome score and half the tapped average, where a tapped star is worth `RatingPointsPerStar` points. In integers, with raters the counted raters and tapSum the sum of their stars:
+
+- num = outcome x raters + 20 x tapSum, and den = 2 x raters;
+- points = (2 num + den) / (2 den), which rounds half up, then clamped to 0 to 100.
+
+`CombinePoints` is the one function that does it (`TestCombinePoints`, `TestBelowFiveRatersOutcomesOnly`, `TestCombinedTagCut`). The profile shows the total with both parts beside it, such as "3.0 from reports" and "5.0 from ratings by 5 people". A reporter with no score, a New reporter, is never rated, whatever is tapped (`TestRatingsNeverRateANewReporter`).
+
+The tapped part is blurred (review W5). It is shown rounded to half stars (`TappedHalfStars`), so 22 stars from 5 raters reads 4.5 and never 4.4. The limit is honest: the blur hides one person's exact stars only roughly. The exact total, the outcome part to a tenth and the rater count are all shown, so a careful reader can estimate the tapped average closely, to about 0.15 stars at 5 raters. It is a blur and not a guarantee that one rater's stars stay hidden.
+
+Who may rate (D-02, D-23). A signed in account that has cast a confirm, dispute, resolve or reopen vote on one of that reporter's reports. An unresolve alone does not qualify, because it only undoes one's own resolve. A witness who voted at the scene, from the report's own cell, can rate (`TestWitnessAtTheSceneCanRate`). Nobody rates themselves, a rater removed by a moderator cannot rate again (`TestRemovedRaterCannotRateAgain`), and the reporter has to be a visible public profile. A reporter who blocked the rater is the uniform not found, and a reporter the rater blocked is a refusal. A block never deletes or hides a rating (`TestBlockKeepsRatings`).
+
+Raters count by distinct place (D-21). Each rating takes the place of the rater's most recent qualifying vote, and one rating is counted per place, the most recently written. This is the same rule as confirmations, with the same cell (`voterGeohashPrecision`, so places about 150 m apart). Five accounts in one cell count once (`TestRatersCountedByDistinctCell`), and so do a reporter's own second accounts, which usually sit in one place. A repeat tap of the same stars neither moves the time of the rating nor takes a place from another rater (`TestRepeatTapDoesNotStealTheCell`).
+
+Rules on changing a rating. One rating per rater and reporter, changeable no more than once in `RatingChangeGap`, 24 hours (`TestRatingUpsertAndDailyLimit`). The Rate bucket is per account and never per network address: a burst of 10, then one more every 30 seconds (`rateBurst`, `rateEvery`, `TestRatingRoutesRateLimit`). Remove my rating follows the same 24 hour rule.
+
+The private min rule (D-22, review B3). While Let others follow me is off, ratings can only lower the points: they are the smaller of the outcome points and the combined points. So going private never lifts a tag and never wipes critics (`TestPrivateProfileRatingsOnlyLower`, `TestSwitchingOffNeverRaisesTag`).
+
+What five raters can do (review B4). Five eligible raters in five different places can move a reporter's points by up to 40 either way. That is enough to drop any reporter below Reliable reporter, and to lift any outcome score of 39 or more to it. Two worked examples, from the formula above. An outcome score of 39 with five five star raters gives (39 + 100) / 2 = 69.5, which rounds half up to 70, so a reporter at Mixed record becomes Reliable reporter. An outcome score of 100 with five one star raters gives (100 + 20) / 2 = 60, so a reporter with a perfect record reads Mixed record. The move is half the gap between the tapped average, in points, and the outcome score, so a reporter below 20 points can be lifted a little further than the round figure.
+
+What answers it, and what does not:
+
+- The place rule. Raters count by distinct place, so the five have to be in five different cells, and a reporter's second accounts are held back exactly as for confirmations.
+- Soft ending. A follow that is lost because the tag fell is kept with an end time and the reason tag_lost, not deleted. When a moderator removes abusive ratings and the tag comes back, those follows are restored (`TestModeratorRemovalRestoresFollows`). The restore takes the tag_lost follows ended since the earliest removed rating was written, so it can also bring back a follow lost to ordinary decay in the same window. That is accepted, and only tag_lost rows come back, and only while the tag is Reliable.
+- Moderator removal, one rating or every rating by one rater, with an audit stamp (`removed_by`, `removed_at`). Removing a rater is permanent: their ratings stop counting and they cannot rate again. See MODERATION.md.
+- The trust panel line "Includes ratings by N people." whenever tapped ratings are part of the tag, so the tag never hides that part of it rests on ratings (`TestReporterFactSaysRatingsIncluded`).
+- What does not answer it: five accounts in five different places. Five places are enough, and nothing stops one person who controls accounts in five places, which costs what "Honest limits" already says an extra place costs (T-09-103). The lower 3.5 bar makes the tag cheaper to reach and cheaper to lose, so burst detection (TRUSTX-03) is a named dependency that matters more under the 3.5 bar (D-14). It is not built.
+
+Deleting an account removes the ratings it gave and the ratings it received (G6, `TestDeleteAccountRemovesRatings`). That can move another reporter's stars: a reporter loses a rater's stars when that rater leaves, and the points are recomputed on the next read like every other score.
+
+One loader reads the tag for the feed, Focus, Past, Activity, a vote answer, the dispatcher, the push worker and the follow sweep, each with the ratings source supplied once (`LoadReporterSignals`, `TestRatingsSourceWiredEverywhere`). So a rated tag reads the same everywhere (`TestRatedReporterSameEverywhere`).
+
+## Follows, mute, block and follow notes
+
+Following (D-01, D-12). A signed in account can follow a person whose profile is on, whose username is clear, who holds the Reliable reporter tag now, and who has not blocked them. Nobody follows themselves, and an account follows at most `FollowingCap` people. The refusal sentence is one for every reason, so it never says which rule refused. A follow is a row with an end time and a reason, never a delete: the reasons are unfollowed, removed (Remove follower), blocked, profile_off and tag_lost. Every ending goes through two helpers, `endFollowsOf` and `endFollowPair`, and no query ends a follow by another route (`TestFollowEndHelpers`).
+
+"At once" (D-24, SC5). The words in the roadmap are met by the computed tag. From the moment the tag falls away, no follow note is produced or sent and the person cannot be followed. The stored follows end at the next sweep (`FollowSweepInterval`, 5 minutes, `TestFollowSweepEndsOnDecay`) or at the next touch of the profile, whichever is first. A note already written to the bell reads as no longer available.
+
+Block (D-12). A block ends the follows in both directions, stops that person following you, hides your profile from them as a uniform not found, and hides their comments from you in Phase 8's lists and counts and never notifies you of them. It does not hide their reports anywhere, and it never touches a rating. A block is private: the other person is not told, and sees only the same not found a private profile gives.
+
+Mute (D-12). A mute is private to the person who made it and is never shown to the muted person. It stops the notes about that person's posts, both the Reliable reporter alert and the follow note, and turns their Notify me bell off. It stops nothing else. Their reports still show in every feed, map, list and profile, because hiding emergency reports is never safe (`TestMuteNeverHidesReports`), and it does not touch Critical notes, nor changes on reports you posted or voted on (`TestCriticalStillArrivesFromMutedPerson`). Unmute leaves the bell off.
+
+The Notify me bell (D-08, D-09, D-11). A follower can switch the bell on for one followed person at a time. It is off by default, off again after every ending of the follow, and off again after a mute. At most `NotifyFollowsCap` people can have the bell on. The bell replaces the general Someone I follow posts switch that Phase 3.3 had planned, so there is no such switch in Settings (D-11). The bell stores the choice and the time it was switched on, and only reports posted after that time get a note.
+
+The follow note, under the one rule. A follow note is a bell row of its own kind, written by the refresh of the follower's bell, and the phone note is queued from exactly the rows the bell step wrote, so one row feeds two channels. It is decided by `MayNotifyAboutReport`, which gives the follow kind the Reliable kind's allowance: the report may be Live or Provisional, never Hidden, Withheld, Retracted or expired. A Provisional report reads Not confirmed yet until people nearby confirm it. A follow note is written only while the follow is active, the bell is on, the person is followable, the reader has not muted them, and their tag is Reliable reporter now, from the same rated tag as everywhere else. The reader never gets a follow note about their own report.
+
+One first alert per person and report. The Reliable alert and the follow note share one unique index, so a person who follows a Reliable reporter gets the follow note and never both (`TestFirstAlertIndexSharedByBothKinds`). The follow note counts toward the ceiling of `UpdatesHourlyCeiling` updates an hour, and the bell reads at most `FollowedPostsCap` followed reports a refresh.
+
+Order, caps and words on the phone. The dispatcher runs Critical, then Follow, then Reliable, then the change notes and the confirmed update, so a follower who was already queued as a follow note is not queued again as Reliable (`TestFollowPushOrderCriticalFollowReliable`). One phone note goes to a follower per report. The pass for one report refreshes the bells of at most `FollowFanoutCap` followers. That bounds the work of one pass and is not a promise that a follower past it gets no phone note: if their own bell poll has already written the row, the phone note is still queued for it. The lock screen reads "From someone you follow." with the area, the distance if the follower has a home area, and Not confirmed yet until confirmed. It carries no username, no report words and no coordinates. See PUSH.md.
+
+Checked again at send time (D-24, T-09-89). Just before a follow note is sent the worker reads the follow, the bell, whether the person is still followable, any block or mute, and the reporter's tag with the ratings, and it stops at the first thing that no longer holds (`TestFollowPushSendTimeRecheckDecay`). A note still waiting is deleted at once whenever a follow or the bell ends, by the same two helpers, so nothing waits for a sweep (`TestFollowCleanupOnEveryEndPath`). A follow note ignores distance and home area for the decision, because the follow is the reason the person gets it (`TestFollowPushNoHomeAreaStillSent`).
+
+What pending means (Q9). "Pending notes" in the roadmap criterion means notes not yet written and phone notes still queued. A bell row that is already written stays as history and reads "This report is no longer available", with no name, report or place, as soon as the report finishes, the follow ends, or the person goes private, is deleted or blocks the reader (`TestFollowBellEndedFollowReadsUnavailable`, `TestFollowBellFinishedReportDropsName`).
+
+What this does not do. The tag is farmable at the price "Honest limits" gives, and a follow note is a way to reach a person on the strength of the tag, with the same caps as the Reliable kind. Burst detection is still the dependency.
+
 ## Where the roadmap words are met
 
 | Roadmap words | What ships | Where in code | Test |
@@ -689,8 +773,9 @@ The visible form of "confirmed by N nearby" is the counter `N confirmed`, with t
 - Phase 6 may sort on the integer scores server side. It must never use them to bury a critical or rescue needed report (D-14), and must never bake a count or a rating into a shareable card image.
 - Phase 8 is delivered: the report page, the history, comments and likes, and sharing (see "Report history", "Comments and likes" and "Sharing"). Its report page reuses the trust block unchanged and places the reporter words with the same helper as the other surfaces, `createStateLine`. It and Phase 9's followable profiles show finished reports, so they call `CoarsenFinishedRescue` through the shared read and never copy a report's coordinates or description by another route.
 - Phase 4's Low data view should read `facts` for the rows of its trust block, not the older sentence fields. The server already writes every word of a row.
-- Phase 3.3 built the phone channel on `MayNotifyAboutReport`. Phase 5 added the official alert kind and its Settings row beside that pipeline rather than on it, in an outbox and worker of its own, because an alert has no report, no vote and no resolver verdict to ask. Phase 9 adds the follow kind through `MayNotifyAboutReport`, driven by its Notify me bell; every kind except the Reliable one needs a Live report, so if a followed person's Provisional report is to be pushed the function has to give the follow kind the Reliable kind's allowance, in that one place and with its test. Each of the two added a migration of its own and a row to the closed lists, and neither writes a second visibility rule.
+- Phase 3.3 built the phone channel on `MayNotifyAboutReport`. Phase 5 added the official alert kind and its Settings row beside that pipeline rather than on it, in an outbox and worker of its own, because an alert has no report, no vote and no resolver verdict to ask. Phase 9 is delivered and added the follow kind through `MayNotifyAboutReport`, driven by its Notify me bell. The function gives the follow kind the Reliable kind's allowance (Live or Provisional) in one condition, in that one place and with its test (`TestMayNotifyFollowedPosted`), and the two kinds share one first alert index so a person and report get one first alert between them. Each of the kinds added a migration of its own and a row to the closed lists, and none writes a second visibility rule.
 - Phase 7.1 gave every account a unique, public username. Phases 8 and 9 read names through the one batched read `AccountService.UsernamesFor`, show a name only when its screen word is clear, and check for a username themselves in any route that needs one, because the gate passes every `/api/` path for every account. See "Signing in".
+- Phase 9 is delivered: opt in reporter profiles, tapped star ratings, follows, mute, block and the follow note (see "Reporter profiles", "Stars and tapped ratings" and "Follows, mute, block and follow notes"). It reads every reporter tag through the one loader `LoadReporterSignals` with the ratings source, so a rated tag reads the same on every surface, and it cuts the tag only in `reporterTagForScore`. Whatever comes next reads the tag the same way and builds no second cut. Burst detection (TRUSTX-03) is the dependency that matters most before any of it is promoted widely.
 
 ## Keeping this document true
 
@@ -716,6 +801,21 @@ The visible form of "confirmed by N nearby" is the counter `N confirmed`, with t
 | `MaxReporterAccountsPerRead` | `internal/service/report.go` | 200 |
 | `UndoLimit` | `internal/service/takeback.go` | 2 |
 | `ApproxGeohashPrecision` | `internal/service/coarsen.go` | 6 |
+| `ProfileCoarsePrecision` | `internal/service/coarsen.go` | 5 |
+| `MinRatersForStars` | `internal/service/stars.go` | 5 |
+| `RatingPointsPerStar` | `internal/service/stars.go` | 20 |
+| `RatingChangeGap` | `internal/service/ratings.go` | 24 hours |
+| `ModeratorRatingsCap` | `internal/service/ratings.go` | 200 |
+| `FollowingCap` | `internal/service/people.go` | 200 |
+| `PeopleListPageSize` | `internal/service/people.go` | 50 |
+| `BlockedListCap` | `internal/service/people.go` | 500 |
+| `MutedPeopleListCap` | `internal/service/people_mute.go` | 500 |
+| `NotifyFollowsCap` | `internal/service/updates.go` | 50 |
+| `FollowedPostsCap` | `internal/service/updatesfollow.go` | 200 |
+| `FollowSweepInterval` | `internal/service/followsweep.go` | 5 minutes |
+| `ProfileReportsWindow` | `internal/service/profilereports.go` | 30 days |
+| `ProfileReportsCap` | `internal/service/profilereports.go` | 100 |
+| `FollowFanoutCap` | `internal/service/pushdispatch.go` | 500 |
 
 When you change one of these, change the table in the same commit. The test fails with the row name when they differ.
 
@@ -724,6 +824,10 @@ Generated code: run `make sqlc` after editing a `.sql` query and `make swag` aft
 Databases: tests that need Postgres run against a database created for the run and dropped after it, never the one a dev server uses, because `testutil.NewTestDB` truncates every table.
 
 Upgrading: an existing database needs `make migrate` once after this phase merges, to add `idx_reports_session_expires` from migration 00005. Votes cast before the 1 km rule keep counting. See "Votes cast before the 1 km rule".
+
+Upgrading for Phase 9: an existing database needs `make migrate` once for migrations 00020 (profile switch, follows, blocks), 00021 (tapped ratings and the rater removal columns), 00022 (person mutes), 00023 (the Notify me flag and the follow note kind) and 00024 (the follow kind in the phone outbox). Run the migration first, then start the new server. Nothing signs anyone out, and every profile starts off.
+
+The rating bucket constants `rateBurst` (10) and `rateEvery` (30 seconds) live in `cmd/server/main.go`, in package main, so the constants table above cannot guard them. They are described under "Stars and tapped ratings".
 
 ## Honest limits
 
@@ -747,6 +851,9 @@ Upgrading: an existing database needs `make migrate` once after this phase merge
 - A host that sleeps sends nothing. The dispatcher and the worker run inside the one server process, so on a free host that spins down after a quiet spell no note leaves, the fades in about an hour change note included, until some request wakes it. After it wakes, a report older than an hour is no longer pushed as a new report, and a queued note past its expiry is dropped.
 - Delivery is at least once. A crash between a push service accepting a note and the server marking it can send the same note again; the second one replaces the first through its tag on Android and desktop and may show twice on an iPhone.
 - Parallel take backs from one account can pass the two undo limit. The undo count is read before the write and the votes log has no lock by design, so every request that is in flight while the count is still below the limit passes the check and writes its own row. The overshoot is therefore the number of extra parallel requests the caller manages to send, not just one: N parallel requests can leave N rows where two were allowed. Interleaved `resolve` and `unresolve` requests can also take a resolve back more than twice, because a resolve is never limited and a late take back that passed its checks earlier still writes. The cost stays small. No rating moves, because an `unresolve` row enters no bucket and `ClassifyOutcome` clears all four resolution fields before it classifies, and no other person's vote is touched. The effect is that one account can flip its own closed mark on and off more often than the limit says, and any later take back is refused once the count shows the limit is used. This was accepted over adding a lock to an append only log (T-31-09). If it ever matters, the fix is either a `pg_advisory_xact_lock` on the account and report before the standing resolve check, or one conditional insert that counts the spent undos inside the same statement as the write and maps zero rows to `ErrUndoLimitReached`.
+- Tapped ratings are as hard to fake as confirmations and no harder. Five accounts in five places are enough to move a reporter's points a long way, and nothing stops one person who controls accounts in five places. The full account, and what answers it, is in "Stars and tapped ratings" (T-09-103).
+- A public profile links one username to its reports. This is opt in. A finished report on a profile shows a rough area and a date and no time, and carries no link to the report or to the profile, so it cannot be matched to the anonymous Past row at its exact point (D-20). A live report is exact, as on the map. See "Reporter profiles".
+- A follow note on a phone can show a distance from the follower's home area, like the other kinds, and nobody's name. A follower with no home area gets the note without the distance words.
 
 ## Out of scope for this model
 
@@ -758,8 +865,9 @@ Upgrading: an existing database needs `make migrate` once after this phase merge
 - Re-confirmation extending a report's expiry.
 - Letting a comment or a like count toward any trust number (Phase 8 built comments and likes and keeps them out of every number, see "Comments and likes").
 - Demoting stale non critical reports to Provisional, or dropping them before they expire.
-- Phone notifications beyond the kinds "Phone alerts" lists, such as a note when a count crosses a threshold or when a confirmed report goes quiet. Marked resolved and is now disputed reach only the person who posted or voted on the report, and only with Changes on. The Notify me bell waits for Phase 9.
-- A public reporter profile page, or badge tiers beyond the four tags.
+- Phone notifications beyond the kinds "Phone alerts" lists, such as a note when a count crosses a threshold or when a confirmed report goes quiet. Marked resolved and is now disputed reach only the person who posted or voted on the report, and only with Changes on. The Notify me bell was built by Phase 9, one person at a time, and has no general switch in Settings.
+- Profile pictures, a profile for someone who has not switched Let others follow me on, or badge tiers beyond the four tags. The opt in reporter profile page is built (see "Reporter profiles").
+- Burst and brigading detection for tapped ratings. It is the named dependency of the rating section, and it is not built.
 - A stored or materialised reliability score refreshed by a job. Both scores are recomputed on every read.
 - Triage ordering by these signals (Phase 6).
 - A Demo that bends a rule to look better. The Demo keeps every rule and has no exemption (Phase 5).
