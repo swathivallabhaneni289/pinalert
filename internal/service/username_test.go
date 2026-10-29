@@ -86,6 +86,10 @@ func TestReservedUsernames(t *testing.T) {
 		"admin", "adm1n", "help", "support", "1md", "sdma_ap", "100", "112",
 		"sdrf", "firefly", "po1ice", "po11ce", "p01ice", "ambu1ance", "3mergency",
 		"adm.in", "the_admin", "ad_min",
+		// Review WR-S03: the long official words anywhere in the name, the
+		// shape most official handles take (a place before the word).
+		"hydcitypolice", "cyberabadpolice", "vijayawadapolice", "apsdma", "tnsdma",
+		"indiandrf", "apgovt", "realpinalert", "theofficial", "vijayawada_p0lice",
 	}
 	for _, n := range reserved {
 		if !UsernameReserved(n) {
@@ -95,6 +99,9 @@ func TestReservedUsernames(t *testing.T) {
 	free := []string{
 		"imdone", "modest", "helpful", "supporter", "governor", "admiral", "asha",
 		"ravi.k", "asha_123", "mohan", "gover", "firm", "officer", "ndm", "pina",
+		// The short words that sit inside ordinary words keep their start or
+		// token rule (review WR-S03).
+		"wildfire", "megahelp", "lakeside_imd2",
 	}
 	for _, n := range free {
 		if UsernameReserved(n) {

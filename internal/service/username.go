@@ -122,6 +122,17 @@ var (
 		"police", "ndma", "ndrf", "sdma", "sdrf", "govt", "government", "official",
 		"pinalert", "moderator", "administrator", "emergency", "fire", "ambulance",
 	}
+	// reservedAnywhereWords match anywhere in the whole name without
+	// separators (Phase 7.1 review WR-S03), because the usual shape of an
+	// official handle is a place before the word: hydcitypolice, apsdma,
+	// vijayawadapolice. They are the long, unambiguous blocked words; fire,
+	// emergency and ambulance keep the start or token rule because they sit
+	// inside ordinary words. The few false positives (policeman, unofficial)
+	// are accepted; the owner can widen or narrow the list at the viewing.
+	reservedAnywhereWords = []string{
+		"police", "ndma", "ndrf", "sdma", "sdrf", "govt", "government", "official",
+		"pinalert", "moderator", "administrator",
+	}
 )
 
 // maxOneVariants caps the mixed i and l spellings of the digit 1: with more
@@ -191,8 +202,10 @@ func inList(list []string, w string) bool {
 // UsernameReserved reports whether a name looks official. A name is refused
 // when, in any digit folding, the whole name without separators or any token
 // between separators equals an exact word, or the whole name starts with a
-// blocked word, or any token equals a blocked word. So p0lice, police_hyd,
-// ndma.india and adm1n are refused while imdone is kept (D-07, T-07.1-16).
+// blocked word, or any token equals a blocked word, or the whole name contains
+// one of the long official words anywhere (review WR-S03). So p0lice,
+// police_hyd, ndma.india, hydcitypolice, apsdma and adm1n are refused while
+// imdone is kept (D-07, T-07.1-16).
 // Phases 8 and 9 call it too.
 func UsernameReserved(name string) bool {
 	name = asciiLower(name)
@@ -209,6 +222,11 @@ func UsernameReserved(name string) bool {
 		}
 		for _, w := range reservedBlockedWords {
 			if strings.HasPrefix(whole, w) {
+				return true
+			}
+		}
+		for _, w := range reservedAnywhereWords {
+			if strings.Contains(whole, w) {
 				return true
 			}
 		}
