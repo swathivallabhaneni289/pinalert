@@ -122,3 +122,27 @@ func (q *Queries) GetAuthEmailSendWindow(ctx context.Context, email string) (Get
 	err := row.Scan(&i.LastRequestedAt, &i.WindowStartedAt, &i.WindowSends)
 	return i, err
 }
+
+const refundAuthEmailSend = `-- name: RefundAuthEmailSend :exec
+UPDATE email_cooldowns
+SET last_requested_at = $1::timestamptz,
+    window_sends = GREATEST(window_sends - 1, 0)
+WHERE email = $2
+  AND last_requested_at = $3::timestamptz
+`
+
+type RefundAuthEmailSendParams struct {
+	Released  time.Time
+	Email     string
+	ClaimedAt time.Time
+}
+
+// Gives back a claim whose email was never attempted because the password
+// hasher was busy (Phase 7.1 review IN-S01), so the person's retry is not
+// refused by the cooldown and the hourly count is not spent. It changes the
+// row only while its last claim is still the one being refunded, so it can
+// never undo a later claim; released is the claim time minus the cooldown.
+func (q *Queries) RefundAuthEmailSend(ctx context.Context, arg RefundAuthEmailSendParams) error {
+	_, err := q.db.Exec(ctx, refundAuthEmailSend, arg.Released, arg.Email, arg.ClaimedAt)
+	return err
+}

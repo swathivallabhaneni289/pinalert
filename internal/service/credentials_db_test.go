@@ -445,6 +445,48 @@ func TestConfirmSignUpEndsLegacySessions(t *testing.T) {
 	}
 }
 
+// busyOnceHasher answers ErrHasherBusy to its first Hash and then hashes.
+type busyOnceHasher struct {
+	*auth.Hasher
+	busy atomic.Bool
+}
+
+func (h *busyOnceHasher) Hash(ctx context.Context, password string) (string, error) {
+	if h.busy.CompareAndSwap(true, false) {
+		return "", auth.ErrHasherBusy
+	}
+	return h.Hasher.Hash(ctx, password)
+}
+
+// TestSignUpBusyRefundsClaimOnDatabase is IN-S01 on the real queries, with the
+// 45 second cooldown in force: a busy hasher gives the claim back, so the
+// person's immediate retry is sent and the hourly count holds one send.
+func TestSignUpBusyRefundsClaimOnDatabase(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	h := &busyOnceHasher{Hasher: auth.NewHasher(auth.TestParams())}
+	h.busy.Store(true)
+	mail := &credMailer{}
+	svc := service.NewCredentialService(sqlcgen.New(pool), mail,
+		service.WithHasher(h),
+		service.WithCodeKey(credCodeKey),
+		service.WithThrottleKey(credThrottleKey),
+	)
+	if err := svc.SignUp(ctx, "sess-a", credEmail, credPassword); !errors.Is(err, service.ErrBusy) {
+		t.Fatalf("first SignUp: %v, want ErrBusy", err)
+	}
+	if err := svc.SignUp(ctx, "sess-a", credEmail, credPassword); err != nil {
+		t.Fatalf("the retry right after a busy hasher: %v", err)
+	}
+	var sends int
+	if err := pool.QueryRow(ctx, `SELECT window_sends FROM email_cooldowns WHERE email = $1`, credEmail).Scan(&sends); err != nil || sends != 1 {
+		t.Errorf("hourly sends = %d err=%v, want 1", sends, err)
+	}
+	if err := svc.SignUp(ctx, "sess-a", credEmail, credPassword); !errors.Is(err, service.ErrRateLimited) {
+		t.Errorf("a third request inside the cooldown: %v, want ErrRateLimited", err)
+	}
+}
+
 // TestConfirmSignUpKeepsCodeOnFailure is IN-S07: a database error after the
 // code is proved must not spend it, so the person can type it again.
 func TestConfirmSignUpKeepsCodeOnFailure(t *testing.T) {

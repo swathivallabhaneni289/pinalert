@@ -166,6 +166,19 @@ func (f *credFakeQuerier) ClaimAuthEmailSend(_ context.Context, arg sqlcgen.Clai
 	return sqlcgen.ClaimAuthEmailSendRow{LastRequestedAt: c.last, WindowSends: c.sends}, nil
 }
 
+func (f *credFakeQuerier) RefundAuthEmailSend(_ context.Context, arg sqlcgen.RefundAuthEmailSendParams) error {
+	f.log("RefundAuthEmailSend")
+	c, ok := f.claims[arg.Email]
+	if !ok || !c.last.Equal(arg.ClaimedAt) {
+		return nil
+	}
+	c.last = arg.Released
+	if c.sends > 0 {
+		c.sends--
+	}
+	return nil
+}
+
 func (f *credFakeQuerier) GetAuthEmailSendWindow(_ context.Context, email string) (sqlcgen.GetAuthEmailSendWindowRow, error) {
 	f.log("GetAuthEmailSendWindow")
 	c, ok := f.claims[email]
@@ -196,6 +209,17 @@ func (f *credFakeQuerier) IssueAuthCode(_ context.Context, arg sqlcgen.IssueAuth
 		created: now, expires: arg.ExpiresAt,
 	})
 	return f.nextCode, nil
+}
+
+func (f *credFakeQuerier) RetireAuthCode(_ context.Context, id int64) error {
+	f.log("RetireAuthCode")
+	for i := range f.codes {
+		if f.codes[i].id == id && f.codes[i].used == nil {
+			u := f.clk.Now()
+			f.codes[i].used = &u
+		}
+	}
+	return nil
 }
 
 func (f *credFakeQuerier) BumpAuthCodeAttempt(_ context.Context, arg sqlcgen.BumpAuthCodeAttemptParams) (sqlcgen.BumpAuthCodeAttemptRow, error) {
@@ -839,6 +863,63 @@ func TestSignUpHashBusy(t *testing.T) {
 	}
 	if len(r.q.codes) != 0 || len(r.mail.sent) != 0 {
 		t.Error("a busy hasher must not write a row or send")
+	}
+}
+
+// TestSignUpBusyKeepsClaim is IN-S01 of the review: when the hasher is busy,
+// the per address claim is given back, so a busy hasher spends neither the 45
+// second cooldown nor an hourly send, and the person's immediate retry goes
+// through. A refused claim still costs no hash (TestSignUpSendLimits).
+func TestSignUpBusyKeepsClaim(t *testing.T) {
+	r := newCredRig(t)
+	ctx := context.Background()
+	r.hasher.hashErr = auth.ErrHasherBusy
+	if err := r.svc.SignUp(ctx, "sess-a", credEmail, credPassword); !errors.Is(err, service.ErrBusy) {
+		t.Fatalf("err = %v, want ErrBusy", err)
+	}
+	r.hasher.hashErr = nil
+	if err := r.svc.SignUp(ctx, "sess-a", credEmail, credPassword); err != nil {
+		t.Fatalf("the retry right after a busy hasher: %v", err)
+	}
+	if c := r.q.claims[credEmail]; c == nil || c.sends != 1 {
+		t.Errorf("hourly sends after a busy try and a good one = %+v, want 1", c)
+	}
+}
+
+// TestFailedSendRetiresRow is the other half of IN-S01: when the email does
+// not go out (the ceiling refused it or the provider failed), the row is marked
+// used, so a reload of /login does not show a code screen for an email that
+// was never sent. The same holds for every branch of Create account and Forgot
+// password.
+func TestFailedSendRetiresRow(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name string
+		run  func(r *credRig) error
+	}{
+		{"sign up, new address", func(r *credRig) error { return r.svc.SignUp(ctx, "sess-a", credEmail, credPassword) }},
+		{"sign up, account exists", func(r *credRig) error {
+			r.addPasswordAccount(t, credEmail, credPassword)
+			return r.svc.SignUp(ctx, "sess-a", credEmail, credPassword)
+		}},
+		{"reset, known", func(r *credRig) error {
+			r.addPasswordAccount(t, credEmail, credPassword)
+			return r.svc.RequestReset(ctx, "sess-a", credEmail)
+		}},
+		{"reset, unknown", func(r *credRig) error { return r.svc.RequestReset(ctx, "sess-a", "ghost@example.com") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, sendErr := range []error{mailer.ErrDailyCeiling, errors.New("provider said no")} {
+				r := newCredRig(t)
+				r.mail.err = sendErr
+				if err := tc.run(r); err == nil {
+					t.Fatalf("a failed send answered nil")
+				}
+				if _, ok, err := r.svc.LiveCode(ctx, "sess-a"); err != nil || ok {
+					t.Errorf("after a failed send (%v) the code screen would show again: ok=%v err=%v", sendErr, ok, err)
+				}
+			}
+		})
 	}
 }
 

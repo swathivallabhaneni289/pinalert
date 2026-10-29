@@ -26,11 +26,15 @@ type CredentialQuerier interface {
 	// as pgx.ErrNoRows.
 	ClaimAuthEmailSend(ctx context.Context, arg sqlcgen.ClaimAuthEmailSendParams) (sqlcgen.ClaimAuthEmailSendRow, error)
 	GetAuthEmailSendWindow(ctx context.Context, email string) (sqlcgen.GetAuthEmailSendWindowRow, error)
+	// RefundAuthEmailSend gives back a claim whose email was never attempted
+	// (a busy hasher, review IN-S01).
+	RefundAuthEmailSend(ctx context.Context, arg sqlcgen.RefundAuthEmailSendParams) error
 
 	// The typed code rows.
 	IssueAuthCode(ctx context.Context, arg sqlcgen.IssueAuthCodeParams) (int64, error)
 	BumpAuthCodeAttempt(ctx context.Context, arg sqlcgen.BumpAuthCodeAttemptParams) (sqlcgen.BumpAuthCodeAttemptRow, error)
 	ConsumeAuthCode(ctx context.Context, id int64) (int64, error)
+	RetireAuthCode(ctx context.Context, id int64) error
 	GetLatestAuthCode(ctx context.Context, arg sqlcgen.GetLatestAuthCodeParams) (sqlcgen.GetLatestAuthCodeRow, error)
 	DeleteAuthCodesForEmail(ctx context.Context, email string) error
 	PruneAuthCodes(ctx context.Context, before time.Time) (int64, error)
@@ -308,11 +312,14 @@ func (s *CredentialService) ResendCooldown() time.Duration { return s.limits.Sen
 //     password hash and a code that is never emailed, and the "you already have
 //     an account" email.
 //
-// Every branch returns nil, does the same claim and the same hash, and leaves
+// Every branch returns nil, does the same hash and the same claim, and leaves
 // one row, so the answer, the work, a later Resend and a reload of the code
 // screen look the same (research Pitfall 7). The address lives in the row,
-// never in a URL (D-05). The claim commits before the row and the email, so a
-// failed send still consumes it, as the link flow's cooldown does.
+// never in a URL (D-05). The claim commits before the hash, so a refused claim
+// costs no hash; when the hasher is busy the claim is given back (review
+// IN-S01), on every branch alike, so the person's retry is not refused by the
+// cooldown. The claim commits before the row and the email, so a failed send
+// still consumes it, as the link flow's cooldown does.
 func (s *CredentialService) SignUp(ctx context.Context, sessionID, rawEmail, password string) error {
 	email, err := normalizeEmail(rawEmail)
 	if err != nil {
@@ -321,11 +328,19 @@ func (s *CredentialService) SignUp(ctx context.Context, sessionID, rawEmail, pas
 	if err := checkPassword(password, email); err != nil {
 		return err
 	}
-	if err := s.claimSend(ctx, email); err != nil {
+	claimedAt, err := s.claimSendAt(ctx, email)
+	if err != nil {
 		return err
 	}
 	hash, err := s.hasher.Hash(ctx, auth.NormalizePassword(password))
 	if err != nil {
+		// Best effort: the refund only ever loosens the per address limit
+		// by the one send this request took and never sent.
+		_ = s.q.RefundAuthEmailSend(ctx, sqlcgen.RefundAuthEmailSendParams{
+			Email:     email,
+			ClaimedAt: claimedAt,
+			Released:  claimedAt.Add(-s.limits.SendCooldown),
+		})
 		return s.hashError(err)
 	}
 	account, found, err := s.lookupAccount(ctx, email)
@@ -338,7 +353,7 @@ func (s *CredentialService) SignUp(ctx context.Context, sessionID, rawEmail, pas
 		delivery = DeliveryAccountExists
 		stored = nil
 	}
-	return s.issueAndSend(ctx, sessionID, PurposeSignUp, delivery, email, stored)
+	return s.issueAndSend(ctx, sessionID, PurposeSignUp, delivery, email, stored, true)
 }
 
 // RequestReset is Forgot password. A known address (with or without a
@@ -361,7 +376,7 @@ func (s *CredentialService) RequestReset(ctx context.Context, sessionID, rawEmai
 	if found {
 		delivery = DeliveryCode
 	}
-	return s.issueAndSend(ctx, sessionID, PurposeReset, delivery, email, nil)
+	return s.issueAndSend(ctx, sessionID, PurposeReset, delivery, email, nil, true)
 }
 
 // ResendCode reissues the newest code row of this browser with the same
@@ -414,7 +429,7 @@ func (s *CredentialService) ResendCode(ctx context.Context, sessionID string) er
 	if err := s.claimSend(ctx, row.Email); err != nil {
 		return err
 	}
-	return s.issueAndSend(ctx, sessionID, row.Purpose, delivery, row.Email, stored)
+	return s.issueAndSend(ctx, sessionID, row.Purpose, delivery, row.Email, stored, false)
 }
 
 // checkPassword maps auth.CheckPassword to the field "password" sentences.
@@ -438,8 +453,15 @@ func checkPassword(password, email string) error {
 // claimSend takes the per address send claim. A refused claim is
 // ErrTooManyCodes when the hourly count is spent and ErrRateLimited otherwise.
 func (s *CredentialService) claimSend(ctx context.Context, email string) error {
+	_, err := s.claimSendAt(ctx, email)
+	return err
+}
+
+// claimSendAt is claimSend that also returns the stored time of the claim,
+// which RefundAuthEmailSend needs to give it back.
+func (s *CredentialService) claimSendAt(ctx context.Context, email string) (time.Time, error) {
 	now := s.now()
-	_, err := s.q.ClaimAuthEmailSend(ctx, sqlcgen.ClaimAuthEmailSendParams{
+	row, err := s.q.ClaimAuthEmailSend(ctx, sqlcgen.ClaimAuthEmailSendParams{
 		Email:          email,
 		Now:            now,
 		WindowCutoff:   now.Add(-s.limits.SendWindow),
@@ -447,8 +469,13 @@ func (s *CredentialService) claimSend(ctx context.Context, email string) error {
 		MaxSends:       int32(s.limits.SendsPerHour),
 	})
 	if err == nil {
-		return nil
+		return row.LastRequestedAt, nil
 	}
+	return time.Time{}, s.claimRefused(ctx, email, now, err)
+}
+
+// claimRefused maps a refused or failed claim to its error.
+func (s *CredentialService) claimRefused(ctx context.Context, email string, now time.Time, err error) error {
 	if !errors.Is(err, pgx.ErrNoRows) {
 		// No address in the message: the handler logs this error (WR-S03).
 		return fmt.Errorf("service: claiming email send: %w", err)
@@ -490,8 +517,13 @@ func (s *CredentialService) hashError(err error) error {
 }
 
 // issueAndSend writes the one code row of the request, prunes stale rows (W7)
-// and sends the one email the row stands for. Persist before send.
-func (s *CredentialService) issueAndSend(ctx context.Context, sessionID, purpose, delivery, email string, passwordHash *string) error {
+// and sends the one email the row stands for. Persist before send. When the
+// email does not go out and retireOnFailure is set (Create account and Forgot
+// password, every branch alike), the row is marked used, so a reload of the
+// sign in page never shows a code screen for an email that was never sent
+// (review IN-S01). Resend leaves its row, so a person already on the code
+// screen can press Resend again a few minutes later.
+func (s *CredentialService) issueAndSend(ctx context.Context, sessionID, purpose, delivery, email string, passwordHash *string, retireOnFailure bool) error {
 	// Every branch draws and hashes a code so the work is the same; only a
 	// delivery of code ever emails it.
 	code, err := auth.NewCode()
@@ -499,7 +531,7 @@ func (s *CredentialService) issueAndSend(ctx context.Context, sessionID, purpose
 		return fmt.Errorf("service: drawing code: %w", err)
 	}
 	now := s.now()
-	if _, err := s.q.IssueAuthCode(ctx, sqlcgen.IssueAuthCodeParams{
+	rowID, err := s.q.IssueAuthCode(ctx, sqlcgen.IssueAuthCodeParams{
 		SessionID:    sessionID,
 		Purpose:      purpose,
 		Delivery:     delivery,
@@ -507,7 +539,8 @@ func (s *CredentialService) issueAndSend(ctx context.Context, sessionID, purpose
 		CodeHash:     auth.CodeHash(s.codeKey, purpose, email, code),
 		PasswordHash: passwordHash,
 		ExpiresAt:    now.Add(s.limits.CodeTTL),
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("service: issuing code: %w", err)
 	}
 	// Housekeeping: a failure here never fails a request.
@@ -530,6 +563,10 @@ func (s *CredentialService) issueAndSend(ctx context.Context, sessionID, purpose
 		msg.MinutesValid = minutesValid(s.limits.CodeTTL)
 	}
 	if err := s.mailer.SendAuthEmail(ctx, email, msg); err != nil {
+		if retireOnFailure {
+			// Best effort: the send already failed, and its answer stands.
+			_ = s.q.RetireAuthCode(ctx, rowID)
+		}
 		if errors.Is(err, mailer.ErrDailyCeiling) {
 			return ErrMailUnavailable
 		}

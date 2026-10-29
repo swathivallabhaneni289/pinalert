@@ -49,6 +49,15 @@ WHERE id = sqlc.arg(id)
   AND used_at IS NULL
   AND expires_at > now();
 
+-- name: RetireAuthCode :exec
+-- Marks a row used when its email did not go out (the ceiling refused it or
+-- the provider failed), so a reload of the sign in page does not show a code
+-- screen for an email that was never sent (Phase 7.1 review IN-S01).
+UPDATE auth_codes
+SET used_at = now()
+WHERE id = sqlc.arg(id)
+  AND used_at IS NULL;
+
 -- name: GetLatestAuthCode :one
 -- The newest row of this session, whatever its purpose, created after since.
 -- Read by Resend and by the sign in page to show the code screen again after a

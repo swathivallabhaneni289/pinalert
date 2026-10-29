@@ -46,6 +46,18 @@ WHERE email_cooldowns.last_requested_at <= sqlc.arg(cooldown_cutoff)::timestampt
        OR email_cooldowns.window_sends < sqlc.arg(max_sends)::int)
 RETURNING last_requested_at, window_sends;
 
+-- name: RefundAuthEmailSend :exec
+-- Gives back a claim whose email was never attempted because the password
+-- hasher was busy (Phase 7.1 review IN-S01), so the person's retry is not
+-- refused by the cooldown and the hourly count is not spent. It changes the
+-- row only while its last claim is still the one being refunded, so it can
+-- never undo a later claim; released is the claim time minus the cooldown.
+UPDATE email_cooldowns
+SET last_requested_at = sqlc.arg(released)::timestamptz,
+    window_sends = GREATEST(window_sends - 1, 0)
+WHERE email = sqlc.arg(email)
+  AND last_requested_at = sqlc.arg(claimed_at)::timestamptz;
+
 -- name: GetAuthEmailSendWindow :one
 -- Read only after a refused ClaimAuthEmailSend, to choose between the minute
 -- sentence (still inside the cooldown) and the hour sentence (the hourly count

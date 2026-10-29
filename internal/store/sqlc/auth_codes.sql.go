@@ -197,3 +197,18 @@ func (q *Queries) PruneAuthCodes(ctx context.Context, before time.Time) (int64, 
 	}
 	return result.RowsAffected(), nil
 }
+
+const retireAuthCode = `-- name: RetireAuthCode :exec
+UPDATE auth_codes
+SET used_at = now()
+WHERE id = $1
+  AND used_at IS NULL
+`
+
+// Marks a row used when its email did not go out (the ceiling refused it or
+// the provider failed), so a reload of the sign in page does not show a code
+// screen for an email that was never sent (Phase 7.1 review IN-S01).
+func (q *Queries) RetireAuthCode(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, retireAuthCode, id)
+	return err
+}
