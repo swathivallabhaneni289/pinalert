@@ -37,6 +37,9 @@ type CredentialQuerier interface {
 	RetireAuthCode(ctx context.Context, id int64) error
 	GetLatestAuthCode(ctx context.Context, arg sqlcgen.GetLatestAuthCodeParams) (sqlcgen.GetLatestAuthCodeRow, error)
 	DeleteAuthCodesForEmail(ctx context.Context, email string) error
+	// DeleteOtherAuthCodesForEmail is the confirm's delete: every row of the
+	// address but the one just spent (review fix round 3, skeptic SK2-01).
+	DeleteOtherAuthCodesForEmail(ctx context.Context, arg sqlcgen.DeleteOtherAuthCodesForEmailParams) error
 	PruneAuthCodes(ctx context.Context, before time.Time) (int64, error)
 	// LockCredentialAddress is the first statement of both confirm
 	// transactions: one advisory lock per address, so they never deadlock

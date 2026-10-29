@@ -255,6 +255,10 @@ func (f *credFakeQuerier) ConsumeAuthCode(_ context.Context, id int64) (int64, e
 		if r.id == id && r.used == nil && r.expires.After(f.clk.Now()) {
 			u := f.clk.Now()
 			r.used = &u
+			// Review fix round 3 (SK2-01): the life ends at the spend and the
+			// password hash is cleared, as the real query does.
+			r.expires = u
+			r.passwordHash = nil
 			return 1, nil
 		}
 	}
@@ -284,6 +288,20 @@ func (f *credFakeQuerier) DeleteAuthCodesForEmail(_ context.Context, email strin
 	kept := f.codes[:0]
 	for _, r := range f.codes {
 		if r.email != email {
+			kept = append(kept, r)
+		}
+	}
+	f.codes = kept
+	return nil
+}
+
+// DeleteOtherAuthCodesForEmail is the confirm's delete: every row of the
+// address but the spent one (review fix round 3, skeptic SK2-01).
+func (f *credFakeQuerier) DeleteOtherAuthCodesForEmail(_ context.Context, arg sqlcgen.DeleteOtherAuthCodesForEmailParams) error {
+	f.log("DeleteOtherAuthCodesForEmail")
+	kept := f.codes[:0]
+	for _, r := range f.codes {
+		if r.email != arg.Email || r.id == arg.KeepID {
 			kept = append(kept, r)
 		}
 	}
@@ -1261,10 +1279,14 @@ func TestConfirmSignUpCreatesAccountAndRotates(t *testing.T) {
 	if len(r.q.throttles) != 0 {
 		t.Error("the throttle was not cleared")
 	}
-	if len(r.q.codes) != 0 {
-		t.Errorf("every code row of the address must be deleted, %d left", len(r.q.codes))
+	// Amended 2026-10-29 by the Phase 7.1 review fix round 3 (skeptic SK2-01):
+	// every other code row of the address is deleted and the spent row is kept,
+	// used and with no password hash, so the browser can be told after a lost
+	// answer that its code was confirmed.
+	if len(r.q.codes) != 1 || r.q.codes[0].used == nil || r.q.codes[0].passwordHash != nil {
+		t.Errorf("only the spent row of the address may be kept, used and with no hash: %+v", r.q.codes)
 	}
-	if consume, del := r.callIndex("ConsumeAuthCode"), r.callIndex("DeleteAuthCodesForEmail"); consume < 0 || del < consume {
+	if consume, del := r.callIndex("ConsumeAuthCode"), r.callIndex("DeleteOtherAuthCodesForEmail"); consume < 0 || del < consume {
 		t.Errorf("delete (%d) must follow consume (%d)", del, consume)
 	}
 	if got := r.q.count("BindSessionAccount"); got != 1 {
@@ -1737,8 +1759,12 @@ func TestConfirmResetSetsPasswordAndEndsSessions(t *testing.T) {
 	if r.q.count("BindSessionAccount") != 0 {
 		t.Error("a reset never signs the browser in")
 	}
-	if len(r.q.codes) != 0 {
-		t.Error("every code row of the address is deleted")
+	// Amended 2026-10-29 by the Phase 7.1 review fix round 3 (skeptic SK2-01):
+	// every other code row of the address is deleted and the spent row is kept,
+	// used, so the browser can be told after a lost answer that its password
+	// was set.
+	if len(r.q.codes) != 1 || r.q.codes[0].used == nil {
+		t.Errorf("only the spent row of the address may be kept, used: %+v", r.q.codes)
 	}
 
 	t.Run("a no account row can never be confirmed", func(t *testing.T) {

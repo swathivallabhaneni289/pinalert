@@ -898,5 +898,15 @@
     }
   } else {
     state.panel = start === 'signin' ? 'signin' : 'create';
+    // A code this browser spent while its answer was lost (review fix round 3,
+    // SK2-01): the server opens Sign in with its line in signin-status and the
+    // address as the page text of the code screen. It is copied into the field
+    // as a value, the way finishReset keeps it, and the password takes focus.
+    var kept = codeEmail.textContent.trim();
+    if (state.panel === 'signin' && kept) {
+      state.email = kept;
+      signinEmail.value = kept;
+      signinPassword.focus();
+    }
   }
 }());
