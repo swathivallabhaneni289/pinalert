@@ -56,7 +56,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"strings"
 	"sync"
 	"time"
 
@@ -677,24 +676,10 @@ func (d *PushDispatcher) ensureAreaName(ctx context.Context, run *evalRun) {
 	if d.area == nil || run.areaDone || run.facts.AreaName != "" {
 		return
 	}
-	if err := d.q.MarkAreaLookupTried(ctx, sqlcgen.MarkAreaLookupTriedParams{ReportID: run.facts.ID, Now: run.now}); err != nil {
-		log.Printf("push dispatch: marking the area lookup of report %d: %v", run.facts.ID, err)
-		return
+	// The bounded lookup is shared with Share (areaname.go): the attempt is
+	// recorded first, the call is bounded and trimmed, and the error text is
+	// not logged.
+	if name := LookUpReportAreaName(ctx, d.q, d.area, run.facts.ID, run.facts.Lat, run.facts.Lon, run.now); name != "" {
+		run.facts.AreaName = name
 	}
-	callCtx, cancel := context.WithTimeout(ctx, PushAreaLookupTimeout)
-	name, err := d.area.ReverseArea(callCtx, run.facts.Lat, run.facts.Lon)
-	cancel()
-	if err != nil {
-		log.Printf("push dispatch: no area name for report %d", run.facts.ID)
-		return
-	}
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return
-	}
-	if err := d.q.SetReportAreaName(ctx, sqlcgen.SetReportAreaNameParams{AreaName: name, ReportID: run.facts.ID}); err != nil {
-		log.Printf("push dispatch: storing the area name of report %d: %v", run.facts.ID, err)
-		return
-	}
-	run.facts.AreaName = name
 }

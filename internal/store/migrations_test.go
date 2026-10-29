@@ -1841,3 +1841,166 @@ func TestMigration00015(t *testing.T) {
 		t.Errorf("after Up again: table %d, columns %d, index %d still present, want none", tbl, cols, idx)
 	}
 }
+
+// TestMigration00017 covers the Phase 8 plan 02 migration: the file carries
+// both goose markers, builds nothing concurrently and uses no ON DELETE; on a
+// database the share token column exists and is nullable, the shape check
+// refuses a short value and a value with a character outside base64url, two
+// reports cannot hold one token, any number of reports may hold none, and Down
+// then Up leaves the table as it was.
+func TestMigration00017(t *testing.T) {
+	const file = "migrations/00017_add_report_share_token.sql"
+	contents, err := MigrationsFS.ReadFile(file)
+	if err != nil {
+		t.Fatalf("reading embedded %s: %v", file, err)
+	}
+	text := string(contents)
+	up := strings.Index(text, "+goose Up")
+	down := strings.Index(text, "+goose Down")
+	if up < 0 || down < 0 || down < up {
+		t.Fatalf("%s must carry +goose Up then +goose Down", file)
+	}
+	var code []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		code = append(code, line)
+	}
+	joined := strings.ToUpper(strings.Join(code, "\n"))
+	if strings.Contains(joined, "CONCURRENTLY") {
+		t.Error("migration 00017 must not use CONCURRENTLY: goose runs it inside a transaction")
+	}
+	if strings.Contains(joined, "ON DELETE") {
+		t.Error("migration 00017 must not use ON DELETE")
+	}
+	for _, name := range []string{"reports_share_token_shape", "uq_reports_share_token"} {
+		if !strings.Contains(text[up:down], name) {
+			t.Errorf("migration 00017 Up must add %s", name)
+		}
+	}
+	if !strings.Contains(text[down:], "DROP INDEX uq_reports_share_token") ||
+		!strings.Contains(text[down:], "DROP COLUMN share_token") {
+		t.Error("migration 00017 Down must drop the index and the column")
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping the database part of the 00017 migration test")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("opening database: %v", err)
+	}
+	defer db.Close()
+
+	goose.SetBaseFS(MigrationsFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up: %v", err)
+	}
+
+	const sessionID = "migration-00017-session"
+	var reportA, reportB, reportC int64
+	t.Cleanup(func() {
+		_ = goose.Up(db, "migrations")
+		for _, id := range []int64{reportA, reportB, reportC} {
+			if id != 0 {
+				_, _ = db.Exec("DELETE FROM reports WHERE id = $1", id)
+			}
+		}
+		_, _ = db.Exec("DELETE FROM sessions WHERE session_id = $1", sessionID)
+	})
+
+	columnState := func() (present int, nullable string) {
+		t.Helper()
+		err := db.QueryRow(`SELECT count(*), coalesce(max(is_nullable), '') FROM information_schema.columns
+			WHERE table_schema = 'public' AND table_name = 'reports' AND column_name = 'share_token'`).Scan(&present, &nullable)
+		if err != nil {
+			t.Fatalf("reading the column: %v", err)
+		}
+		return present, nullable
+	}
+	indexCount := func() int {
+		t.Helper()
+		var n int
+		if err := db.QueryRow(`SELECT count(*) FROM pg_indexes WHERE indexname = 'uq_reports_share_token'`).Scan(&n); err != nil {
+			t.Fatalf("counting the index: %v", err)
+		}
+		return n
+	}
+	if present, nullable := columnState(); present != 1 || nullable != "YES" {
+		t.Errorf("after Up: column count %d nullable %q, want 1 and YES", present, nullable)
+	}
+	if got := indexCount(); got != 1 {
+		t.Errorf("after Up: index count %d, want 1", got)
+	}
+
+	if _, err := db.Exec(`INSERT INTO sessions (session_id) VALUES ($1)`, sessionID); err != nil {
+		t.Fatalf("inserting session: %v", err)
+	}
+	insertReport := func(label string) int64 {
+		t.Helper()
+		var id int64
+		if err := db.QueryRow(`INSERT INTO reports (session_id, category, severity, description, latitude, longitude, geohash, expires_at)
+			VALUES ($1, 'road', 'info', $2, 12.97, 77.59, 'tdr1w', now() + interval '1 hour')
+			RETURNING id`, sessionID, "for the 00017 test "+label).Scan(&id); err != nil {
+			t.Fatalf("inserting report %s: %v", label, err)
+		}
+		return id
+	}
+	reportA = insertReport("a")
+	reportB = insertReport("b")
+	reportC = insertReport("c")
+
+	wantCode := func(label, code, query string, args ...any) {
+		t.Helper()
+		_, err := db.Exec(query, args...)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != code {
+			t.Errorf("%s: want SQLSTATE %s, got %v", label, code, err)
+		}
+	}
+	wantCode("a short token", "23514", `UPDATE reports SET share_token = 'abc' WHERE id = $1`, reportA)
+	wantCode("a 22 character token holding a plus", "23514",
+		`UPDATE reports SET share_token = 'abcdefghijklmnopqrst+u' WHERE id = $1`, reportA)
+	wantCode("a 23 character token", "23514",
+		`UPDATE reports SET share_token = 'abcdefghijklmnopqrstuvw' WHERE id = $1`, reportA)
+
+	// Two NULLs coexist: B and C still hold none.
+	const token = "AbCdEfGhIjKlMnOpQr_-12"
+	if _, err := db.Exec(`UPDATE reports SET share_token = $1 WHERE id = $2`, token, reportA); err != nil {
+		t.Fatalf("setting a valid token: %v", err)
+	}
+	wantCode("the same token on a second report", "23505",
+		`UPDATE reports SET share_token = $1 WHERE id = $2`, token, reportB)
+	var nulls int
+	if err := db.QueryRow(`SELECT count(*) FROM reports WHERE id IN ($1, $2) AND share_token IS NULL`, reportB, reportC).Scan(&nulls); err != nil || nulls != 2 {
+		t.Errorf("reports with no token = %d (%v), want 2", nulls, err)
+	}
+
+	version, err := goose.NumericComponent("00017_add_report_share_token.sql")
+	if err != nil {
+		t.Fatalf("parsing version: %v", err)
+	}
+	if err := goose.DownTo(db, "migrations", version-1); err != nil {
+		t.Fatalf("goose down to %d: %v", version-1, err)
+	}
+	if present, _ := columnState(); present != 0 {
+		t.Errorf("after Down: column count %d, want 0", present)
+	}
+	if got := indexCount(); got != 0 {
+		t.Errorf("after Down: index count %d, want 0", got)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up again: %v", err)
+	}
+	if present, nullable := columnState(); present != 1 || nullable != "YES" {
+		t.Errorf("after Up again: column count %d nullable %q, want 1 and YES", present, nullable)
+	}
+	if got := indexCount(); got != 1 {
+		t.Errorf("after Up again: index count %d, want 1", got)
+	}
+}
