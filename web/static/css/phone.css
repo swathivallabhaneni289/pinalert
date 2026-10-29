@@ -1385,6 +1385,39 @@
   }
 }
 
+/* The Nearby banner on the narrowest phones (Phase 5 review fix WR-T01, UI-SPEC
+   2a amended 2026-10-29). Under 360px the one line leaves the area about one
+   letter ("Thunderstorm warning · N +2"), and the area is why the banner
+   exists. Here the row may wrap: the first line keeps the icon, the Demo tag,
+   the event, "+N" and the chevron; the area takes the second line, indented
+   under the event, and still shortens with its own ellipsis. The dot goes,
+   since the area no longer follows the event on the line. order is visual
+   only, so the accessible name is unchanged. The event may shorten here as a
+   guard only. 360px and wider keep the one line. */
+@media (max-width: 899.98px) and (max-width: 359.98px) {
+  .pane--list > .alert-banner:not([hidden]) {
+    flex-wrap: wrap;
+    align-content: center;
+  }
+
+  .pane--list > .alert-banner:not([hidden]) .alert-banner__sep {
+    display: none;
+  }
+
+  .pane--list > .alert-banner:not([hidden]) .alert-banner__area {
+    order: 1;
+    flex: 1 0 100%;
+    padding-left: calc(20px + var(--space-sm));
+  }
+
+  .pane--list > .alert-banner:not([hidden]) .alert-banner__event {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
 /* The short bar above the current item is a background, which a forced colours
    theme replaces, so it takes the system text colour. */
 @media (max-width: 899.98px) and (forced-colors: active) {

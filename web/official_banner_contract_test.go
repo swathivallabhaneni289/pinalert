@@ -184,6 +184,46 @@ func TestBannerOneLineAndTarget(t *testing.T) {
 		"border-radius": "0",
 		"border-width":  "1px 0",
 	})
+
+	// Amended 2026-10-29 by the Phase 5 review fix (WR-T01): below 360px the
+	// area is clipped to about one letter on one line, so there, and only
+	// there, the row may wrap and put the area on a second line (UI-SPEC 2a,
+	// amended). Every case above still holds; 360px and wider stay one line.
+	narrowMedia := bannerPhoneMedia + " and (max-width: 359.98px)"
+	narrow := p31mRule(t, bannerPhoneCSS, narrowMedia, ".pane--list > .alert-banner:not([hidden])")
+	p16MustDecl(t, "narrow banner row", narrow, map[string]string{
+		"flex-wrap":     "wrap",
+		"align-content": "center",
+	})
+	if v, ok := narrow.Decls["height"]; ok {
+		t.Errorf("the narrow banner row sets a fixed height %q; it is min-height only", v)
+	}
+	p16MustDecl(t, "narrow banner dot", p31mRule(t, bannerPhoneCSS, narrowMedia, ".pane--list > .alert-banner:not([hidden]) .alert-banner__sep"),
+		map[string]string{"display": "none"})
+	p16MustDecl(t, "narrow banner area", p31mRule(t, bannerPhoneCSS, narrowMedia, ".pane--list > .alert-banner:not([hidden]) .alert-banner__area"),
+		map[string]string{
+			"order":        "1",
+			"flex":         "1 0 100%",
+			"padding-left": "calc(20px + var(--space-sm))",
+		})
+	p16MustDecl(t, "narrow banner event guard", p31mRule(t, bannerPhoneCSS, narrowMedia, ".pane--list > .alert-banner:not([hidden]) .alert-banner__event"),
+		map[string]string{
+			"flex":          "0 1 auto",
+			"min-width":     "0",
+			"overflow":      "hidden",
+			"text-overflow": "ellipsis",
+		})
+	// The wrap lives in that one narrow block and nowhere else.
+	for _, file := range []string{bannerFeedCSS, bannerPhoneCSS} {
+		for _, r := range p16ParseCSS(file, p421ReadStatic(t, strings.TrimPrefix(file, "static/"))) {
+			if !strings.Contains(r.Head, "alert-banner") {
+				continue
+			}
+			if v, ok := r.Decls["flex-wrap"]; ok && v != "nowrap" && r.Media != narrowMedia {
+				t.Errorf("%s rule %q in media %q wraps the banner (flex-wrap %q); only %s may", file, r.Head, r.Media, v, narrowMedia)
+			}
+		}
+	}
 }
 
 // TestBannerLevelIconAndTint pins the one level mapping (UI-SPEC Color): the
