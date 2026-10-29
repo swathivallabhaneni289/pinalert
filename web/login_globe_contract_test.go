@@ -727,4 +727,47 @@ func TestLoginGlassTextContrast(t *testing.T) {
 	if !found {
 		t.Errorf("no %s rule gives the error line a solid surface backing", p47jErrorHead)
 	}
+
+	// Amended 2026-10-29 by the Phase 5 review fix (WR-T04): the red on surface
+	// pair above is kept, but it is not what the page paints. #auth-error and
+	// #link-expiry-notice are p elements inside .login-card and #check-inbox,
+	// so ".login-card p, #check-inbox p" (0,1,1 and 1,0,1) beats ".auth-error"
+	// (0,1,0) and draws the line in the normal text colour, at 16px; colour is
+	// reserved for severity, so that stays. This pins the winning rule and the
+	// painted pair, and that the losing rule no longer claims a colour or size.
+	gate := p421ReadTemplate(t, "login_gate.html.tmpl")
+	card := strings.Index(gate, `<div class="login-card" id="login-form-panel"`)
+	errAt := strings.Index(gate, `<p id="auth-error" class="auth-error"`)
+	if card == -1 || errAt == -1 || errAt < card || strings.Contains(gate[card:errAt], "</div>\n    </div>") {
+		t.Errorf("#auth-error is no longer a p inside .login-card; the painted colour pinned here would change")
+	}
+	inbox := p421ReadTemplate(t, "check_inbox.html.tmpl")
+	if !strings.HasPrefix(inbox, `<div id="check-inbox"`) || !strings.Contains(inbox, `<p id="link-expiry-notice" class="auth-error"`) {
+		t.Errorf("#link-expiry-notice is no longer a p inside #check-inbox")
+	}
+	authCSS := "static/css/auth.css"
+	winner := p31mRule(t, authCSS, "", ".login-card p")
+	if winner.Decls["color"] != "var(--color-text)" {
+		t.Errorf(".login-card p colour = %q, want var(--color-text), the colour the error line is painted in", winner.Decls["color"])
+	}
+	if p31mRule(t, authCSS, "", "#check-inbox p").Decls["color"] != "var(--color-text)" {
+		t.Errorf("#check-inbox p no longer paints the normal text colour")
+	}
+	loser := p31mRule(t, authCSS, "", ".auth-error")
+	for _, prop := range []string{"color", "font-size", "line-height"} {
+		if v, ok := loser.Decls[prop]; ok {
+			t.Errorf(".auth-error sets %s %q, which .login-card p and #check-inbox p always override; drop the dead declaration", prop, v)
+		}
+	}
+	for name, tok := range themes {
+		got := wcagContrastRatio(t, tok["--color-text"], tok["--color-surface"], name+" painted error line")
+		t.Logf("%s: the painted error line (text on the solid surface) is %.2f to 1", name, got)
+		if got < 4.5 {
+			t.Errorf("%s: the painted error line on the solid surface is %.2f, want at least 4.5", name, got)
+		}
+	}
+	rawGlobe := p421ReadStatic(t, "css/login-globe.css")
+	if strings.Contains(rawGlobe, "4.87 light and 5.46 dark") || strings.Contains(rawGlobe, "The red error line") {
+		t.Errorf("login-globe.css still describes the error line as red at 4.87 and 5.46; it is painted in --color-text")
+	}
 }

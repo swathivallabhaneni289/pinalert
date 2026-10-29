@@ -246,3 +246,49 @@ func TestOfficialPinsAreLinked(t *testing.T) {
 	demo := p421ReadTemplate(t, "demo.html.tmpl")
 	p13MustNotContain(t, "demo.html.tmpl", demo, "official-pins")
 }
+
+// TestOfficialCardSpacingBeatsPopupReset pins the Phase 5 review fix WR-T03
+// (added 2026-10-29): the GDACS card is Leaflet popup content on the phone and
+// the laptop, where trust.css's ".leaflet-container .leaflet-popup-content p"
+// (two classes and an element) and Leaflet's own ".leaflet-popup-content p"
+// zero every paragraph margin. The card's spacing rules carry three classes, as
+// trust.css asks of every popup spacing rule, so the 4px under each line and
+// the 12px above the honesty line survive. The honesty override comes after
+// the shared rule.
+func TestOfficialCardSpacingBeatsPopupReset(t *testing.T) {
+	const prefix = ".leaflet-container .official-card "
+	for _, part := range []string{"line", "detail", "honesty", "credit"} {
+		head := prefix + ".official-card__" + part
+		if got := strings.Count(head, "."); got < 3 {
+			t.Fatalf("%s carries %d classes, want at least 3", head, got)
+		}
+		r := officialPinRule(t, head)
+		if r.Decls["margin"] != "0 0 var(--space-xs)" {
+			t.Errorf("%s margin = %q, want 0 0 var(--space-xs)", head, r.Decls["margin"])
+		}
+	}
+	honesty := officialPinRule(t, prefix+".official-card__honesty")
+	if honesty.Decls["margin-top"] != "var(--space-12)" {
+		t.Errorf("the honesty line margin-top = %q, want var(--space-12)", honesty.Decls["margin-top"])
+	}
+	var sharedIndex, honestyIndex = -1, -1
+	for _, r := range p16ParseCSS(officialPinsCSS, p16ReadStatic(t, officialPinsCSS)) {
+		if r.Media != "" {
+			continue
+		}
+		for _, part := range p16HeadParts(r.Head) {
+			if part != prefix+".official-card__honesty" {
+				continue
+			}
+			if _, ok := r.Decls["margin"]; ok {
+				sharedIndex = r.Index
+			}
+			if _, ok := r.Decls["margin-top"]; ok {
+				honestyIndex = r.Index
+			}
+		}
+	}
+	if sharedIndex == -1 || honestyIndex == -1 || honestyIndex < sharedIndex {
+		t.Errorf("the honesty margin-top rule (%d) must come after the shared margin rule (%d)", honestyIndex, sharedIndex)
+	}
+}

@@ -50,8 +50,10 @@
   border-radius: 8px;
   background: var(--color-bg);
   color: var(--color-text);
-  font-size: var(--font-size-label);
-  line-height: var(--line-height-label);
+  /* Body 16px, as the UI-SPEC Typography table sets the Demo buttons
+     (Phase 5 review fix IN-T02, 2026-10-29). */
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
   font-weight: var(--font-weight-semibold);
   text-decoration: none;
   white-space: nowrap;
@@ -114,9 +116,11 @@
 
 /* ---- The Demo tag ----------------------------------------------------------- */
 
-/* The same neutral tag as the Demo tag of the Official alerts page (official.css
-   draws it there): word and shape carry the meaning, so it never competes with
-   the severity colour. First item of a row's state position, and in the badge
+/* The one definition of the Demo tag (Phase 5 review fix IN-T09, 2026-10-29:
+   official.css no longer draws its own copy; the Demo alerts page loads this
+   file after it). The same neutral look as the authority badge: word and shape
+   carry the meaning, so it never competes with the severity colour. First item
+   of a row's state position, on a Demo alert row, and in the badge
    row of a popup. */
 .demo-tag {
   display: inline-flex;

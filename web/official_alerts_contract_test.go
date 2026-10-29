@@ -230,10 +230,33 @@ func TestOfficialAlertsLaptopGridAndPhoneCard(t *testing.T) {
 	p16MustDecl(t, "reduced motion chevron", officialRule(t, "@media (prefers-reduced-motion: reduce)", ".official-row__chevron"), map[string]string{
 		"transition": "none",
 	})
-	for _, head := range []string{".official-badge", ".demo-tag"} {
-		p16MustDecl(t, head, officialRule(t, "", head), map[string]string{
+	// Amended 2026-10-29 by the Phase 5 review fix (IN-T09): the Demo tag has
+	// one definition, in demo.css, which every page that can show it loads
+	// after official.css. The same declarations are checked there, and no other
+	// stylesheet may define .demo-tag, forced colours included.
+	tagRules := map[string]p16CSSRule{
+		".official-badge": officialRule(t, "", ".official-badge"),
+		".demo-tag":       p31mRule(t, "static/css/demo.css", "", ".demo-tag"),
+	}
+	for head, rule := range tagRules {
+		p16MustDecl(t, head, rule, map[string]string{
 			"min-height": "24px", "border-radius": "4px", "border": "1px solid var(--color-text)", "background": "var(--color-bg)",
 		})
+	}
+	for _, r := range p16AllCSS(t) {
+		if r.File == "static/css/demo.css" {
+			continue
+		}
+		for _, part := range p16HeadParts(r.Head) {
+			if part == ".demo-tag" {
+				t.Errorf("%s defines .demo-tag in %q (media %q); the one definition is in demo.css", r.File, r.Head, r.Media)
+			}
+		}
+	}
+	for _, page := range []string{"demo.html.tmpl", "demo_alerts.html.tmpl", "demo_activity.html.tmpl"} {
+		if !strings.Contains(p421ReadTemplate(t, page), "/static/css/demo.css") {
+			t.Errorf("%s shows the Demo tag but does not load demo.css", page)
+		}
 	}
 
 	// Rows are 44px or taller on both sizes.
@@ -368,4 +391,44 @@ func TestOfficialAlertsCopy(t *testing.T) {
 			t.Errorf("%s first line %q differs from search.svg's licence line %q", name, first, refFirst)
 		}
 	}
+}
+
+// TestOfficialRowHoverKeepsMutedTextReadable pins the Phase 5 review fix
+// WR-T06 (added 2026-10-29): a hovered laptop row fills with --color-surface,
+// where the muted grey is 4.34 to 1 in the light theme, under 4.5. The area and
+// "N alerts like this" lines take the normal text colour while the row is
+// hovered, so they clear 4.5 to 1 in light and dark.
+func TestOfficialRowHoverKeepsMutedTextReadable(t *testing.T) {
+	const hover = "@media (hover: hover)"
+	p16MustDecl(t, "hovered row", officialRule(t, hover, ".official-row:hover"), map[string]string{
+		"background": "var(--color-surface)",
+	})
+	for _, head := range []string{".official-row:hover .official-row__area", ".official-row:hover .official-row__grouped"} {
+		p16MustDecl(t, head, officialRule(t, hover, head), map[string]string{"color": "var(--color-text)"})
+	}
+	sheet := p16ParseCSS("static/css/main.css", p16ReadStatic(t, "static/css/main.css"))
+	themes := map[string]map[string]string{
+		"light": p16Rule(t, sheet, "", ":root").Decls,
+		"dark":  p16Rule(t, sheet, "", `:root[data-theme="dark"]`).Decls,
+	}
+	for name, tok := range themes {
+		if got := wcagContrastRatio(t, tok["--color-text"], tok["--color-surface"], name+" hovered row"); got < 4.5 {
+			t.Errorf("%s: the hovered row's area text is %.2f to 1, want at least 4.5", name, got)
+		}
+	}
+}
+
+// TestOfficialHazardLineSitsCloseOnBothSizes pins the Phase 5 review fix IN-T05
+// (added 2026-10-29): the GDACS hazard status line sits 4px under the first
+// status line on the phone and on the laptop. On the laptop the first line's
+// 8px bottom padding is dropped when the hazard line follows, so the gap is the
+// hazard line's own 4px there too, not 12px.
+func TestOfficialHazardLineSitsCloseOnBothSizes(t *testing.T) {
+	p16MustDecl(t, "hazard line", officialRule(t, "", ".official-status.official-status--hazards:not([hidden])"),
+		map[string]string{"padding-top": "var(--space-xs)"})
+	p16MustDecl(t, "phone first status line", officialRule(t, "", ".official-status"),
+		map[string]string{"padding": "var(--space-12) var(--space-md) 0"})
+	p16MustDecl(t, "laptop first status line before the hazard line",
+		officialRule(t, "@media (min-width: 900px)", ".official-status:has(+ .official-status--hazards:not([hidden]))"),
+		map[string]string{"padding-bottom": "0"})
 }

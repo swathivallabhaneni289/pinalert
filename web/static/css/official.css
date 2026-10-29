@@ -230,6 +230,14 @@
   .official-row:hover {
     background: var(--color-surface);
   }
+
+  /* Muted grey on the surface fill is 4.34 to 1 in the light theme, under 4.5,
+     so the area and "N alerts like this" lines take the normal text colour
+     while the row is hovered (Phase 5 review fix WR-T06, 2026-10-29). */
+  .official-row:hover .official-row__area,
+  .official-row:hover .official-row__grouped {
+    color: var(--color-text);
+  }
 }
 
 /* ---- Level chip, authority badge, tags ------------------------------------- */
@@ -301,11 +309,12 @@
   mask-image: url("/static/icons/shield-check.svg");
 }
 
-/* The authority badge, the Demo tag and the Original language tag are neutral:
-   they carry meaning by word and shape, so they never compete with the severity
-   colour (UI-SPEC Color). */
+/* The authority badge and the Original language tag are neutral: they carry
+   meaning by word and shape, so they never compete with the severity colour
+   (UI-SPEC Color). The Demo tag looks the same and has its one definition in
+   demo.css, which every Demo page loads after this file (Phase 5 review fix
+   IN-T09, 2026-10-29). */
 .official-badge,
-.demo-tag,
 .official-tag {
   box-sizing: border-box;
   min-height: 24px;
@@ -321,7 +330,6 @@
 }
 
 .official-badge,
-.demo-tag,
 .official-tag {
   display: inline-flex;
   align-items: center;
@@ -483,6 +491,13 @@
     padding: 0 var(--space-lg) var(--space-sm);
   }
 
+  /* When the hazard line follows, the first line drops its bottom padding, so
+     the hazard line sits 4px under it as on the phone, not 12px (Phase 5
+     review fix IN-T05, 2026-10-29). */
+  .official-status:has(+ .official-status--hazards:not([hidden])) {
+    padding-bottom: 0;
+  }
+
   .official-notice:not([hidden]) {
     margin: var(--space-12) var(--space-lg) 0;
   }
@@ -530,7 +545,6 @@
 @media (forced-colors: active) {
   .official-chip,
   .official-badge,
-  .demo-tag,
   .official-tag,
   .official-notice,
   .official-item {

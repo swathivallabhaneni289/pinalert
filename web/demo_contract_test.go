@@ -217,6 +217,11 @@ func TestDemoStripCopyAndExit(t *testing.T) {
 
 	exit := dm13Rule(t, css, ".demo-strip__exit {")
 	p13MustContain(t, ".demo-strip__exit", exit, "min-height: 44px", "text-decoration: none")
+	// Amended 2026-10-29 by the Phase 5 review fix (IN-T02): the UI-SPEC
+	// Typography table sets buttons (Exit demo, Try the demo) at Body 16px, so
+	// the label is 16px with the body line height, never the 14px label size.
+	p13MustContain(t, ".demo-strip__exit", exit, "font-size: var(--font-size-body)", "line-height: var(--line-height-body)")
+	p13MustNotContain(t, ".demo-strip__exit", exit, "--font-size-label", "--line-height-label")
 	p13MustNotContain(t, "demo.css", css, "border-radius: 999", "border-radius: 50%", "border-radius: 9999", "opacity:")
 }
 

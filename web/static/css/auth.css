@@ -160,11 +160,14 @@
   text-decoration: none;
 }
 
+/* The sign in error line and the link expiry notice are p elements inside
+   .login-card and #check-inbox, so ".login-card p, #check-inbox p" above sets
+   their colour, size and line height: the normal text colour at 16px. Colour
+   is reserved for severity, so the line is never red; its words and the alert
+   role carry it. The red, 14px declarations that sat here never painted and
+   are gone (Phase 5 review fix WR-T04, 2026-10-29). */
 .auth-error {
   min-height: var(--font-size-label);
-  color: var(--color-severity-critical);
-  font-size: var(--font-size-label);
-  line-height: var(--line-height-label);
   margin: 0 0 var(--space-md) 0;
 }
 
