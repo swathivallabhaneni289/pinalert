@@ -85,6 +85,7 @@ type PeopleService struct {
 	now      func() time.Time
 	screener TextScreener
 	signals  SignalSource
+	ratings  RatingReader
 }
 
 // PeopleOption configures a PeopleService.

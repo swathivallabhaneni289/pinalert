@@ -75,9 +75,42 @@ func StarsTotalText(points int) string {
 }
 
 // StarsGroupLabel is the first sentence of the stars group's accessible name,
-// "Stars: 3.6 out of 5." The parts sentences are added by plan 09-13.
+// "Stars: 3.6 out of 5." The two parts are added by StarsGroupLabelParts once
+// five raters count.
 func StarsGroupLabel(points int) string {
 	return "Stars: " + StarsText(points) + " out of 5."
+}
+
+// StarsFromReportsText is the part of the stars the report outcomes gave, for
+// example "3.6 from reports" (D-02, UI-SPEC 1c). points is the outcome score, 0
+// to 100, floored to one decimal through StarsText like the total.
+func StarsFromReportsText(points int) string {
+	return StarsText(points) + " from reports"
+}
+
+// StarsFromRatingsText is the part of the stars that tapped ratings gave, for
+// example "4.0 from ratings by 12 people" (D-02, UI-SPEC 1c). tappedHalves is the
+// tapped average in half stars (TappedHalfStars), so the shown average is rounded
+// to half stars and never exact (review W5). raters is the number of counted
+// raters (distinct voter cells, D-21).
+func StarsFromRatingsText(tappedHalves, raters int) string {
+	word := "people"
+	if raters == 1 {
+		word = "person"
+	}
+	return HalfStarsText(tappedHalves) + " from ratings by " + strconv.Itoa(raters) + " " + word
+}
+
+// StarsGroupLabelParts is the whole accessible name of the stars group when the
+// two parts are shown: "Stars: 3.6 out of 5. 3.6 from reports. 4.0 from ratings
+// by 12 people." With an empty part it is the first sentence alone, so a profile
+// below five raters reads exactly as StarsGroupLabel does.
+func StarsGroupLabelParts(points int, fromReports, fromRatings string) string {
+	label := StarsGroupLabel(points)
+	if fromReports == "" || fromRatings == "" {
+		return label
+	}
+	return label + " " + fromReports + ". " + fromRatings + "."
 }
 
 // OwnStateLine is the line under the buttons on your own page (UI-SPEC 1g):

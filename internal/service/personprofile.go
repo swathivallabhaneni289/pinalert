@@ -16,6 +16,24 @@ import (
 	sqlcgen "pinalert/internal/store/sqlc"
 )
 
+// RatingReader is the part of the ratings service the profile read needs: whether
+// the viewer may rate the person, and the viewer's own current rating (plan
+// 09-14, D-02, D-23). *RatingService satisfies it.
+type RatingReader interface {
+	MayRate(ctx context.Context, raterID, reporterID int64) (bool, error)
+	YourRating(ctx context.Context, raterID, reporterID int64) (int, bool, error)
+}
+
+var _ RatingReader = (*RatingService)(nil)
+
+// WithPeopleRatings sets the rating reader the profile read fills may_rate and
+// your_rating from. Without one both stay false and 0.
+func WithPeopleRatings(r RatingReader) PeopleOption {
+	return func(s *PeopleService) {
+		s.ratings = r
+	}
+}
+
 // PersonProfile is everything the profile header shows, built on the server
 // (D-13): the order of the fields is the order of the header, then the home
 // area (D-15). The browser draws these strings as they are and never formats a
@@ -40,9 +58,16 @@ type PersonProfile struct {
 
 	StarsNumber string
 	StarsLabel  string
-	TagWord     string
-	TagSentence string
-	MemberSince string
+	// StarsFromReports and StarsFromRatings are the two parts of the stars total,
+	// shown only from MinRatersForStars counted raters on (D-02, UI-SPEC 1c), for
+	// example "3.6 from reports" and "4.0 from ratings by 12 people". Both are empty
+	// below that, so a profile with fewer raters shows the total alone. The tapped
+	// part is rounded to half stars and never exact (review W5).
+	StarsFromReports string
+	StarsFromRatings string
+	TagWord          string
+	TagSentence      string
+	MemberSince      string
 
 	FollowersWord  string
 	FollowingWord  string
@@ -62,6 +87,13 @@ type PersonProfile struct {
 	Following     bool
 	FollowsYou    bool
 	BlockedByYou  bool
+
+	// MayRate says the viewer may rate this person now, and YourRating is the
+	// viewer's own current rating, 1 to 5, or 0 for none (plan 09-14, D-02, D-23).
+	// Both are false and 0 on your own page, when the viewer blocked the person,
+	// and when no rating reader is configured.
+	MayRate    bool
+	YourRating int
 
 	accountID int64
 }
@@ -183,11 +215,31 @@ func (s *PeopleService) Profile(ctx context.Context, viewerID int64, username st
 	if sig.Score != nil {
 		p.StarsNumber = StarsText(*sig.Score)
 		p.StarsLabel = StarsGroupLabel(*sig.Score)
+		// The two parts only when the tapped ratings applied to this signal: at
+		// least MinRatersForStars counted raters (cells), so Raters is never
+		// below five here (D-02, D-21).
+		if sig.OutcomeScore != nil && sig.TappedHalves != nil && sig.Raters >= MinRatersForStars {
+			p.StarsFromReports = StarsFromReportsText(*sig.OutcomeScore)
+			p.StarsFromRatings = StarsFromRatingsText(*sig.TappedHalves, sig.Raters)
+			p.StarsLabel = StarsGroupLabelParts(*sig.Score, p.StarsFromReports, p.StarsFromRatings)
+		}
 	}
 	if self {
 		p.StateLine = OwnStateLine(person.ProfilePublic, reliable)
 	} else {
 		p.CanFollow = reliable && !following
+		if s.ratings != nil {
+			may, err := s.ratings.MayRate(ctx, viewerID, person.ID)
+			if err != nil {
+				return PersonProfile{}, fmt.Errorf("service: Profile: reading whether the viewer may rate: %w", err)
+			}
+			stars, _, err := s.ratings.YourRating(ctx, viewerID, person.ID)
+			if err != nil {
+				return PersonProfile{}, fmt.Errorf("service: Profile: reading the viewer's rating: %w", err)
+			}
+			p.MayRate = may
+			p.YourRating = stars
+		}
 	}
 	return p, nil
 }

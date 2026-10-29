@@ -746,10 +746,13 @@ func NewRouter(deps Deps) *chi.Mux {
 		peopleOpts = append(peopleOpts, service.WithPeopleScreener(deps.Reports.Screener()))
 	}
 	// Plan 14: the same ratings source every other tag reader uses, so the
-	// profile reads the tag every other surface reads. A nil Ratings adds no
-	// option (a typed nil pointer in the interface would not be a nil interface).
+	// profile reads the tag every other surface reads and fills may_rate and
+	// your_rating for the reader. A nil Ratings adds no option (a typed nil pointer in the interface would not be a nil interface).
 	if deps.Ratings != nil {
-		peopleOpts = append(peopleOpts, service.WithPeopleSignals(deps.Ratings))
+		peopleOpts = append(peopleOpts,
+			service.WithPeopleSignals(deps.Ratings),
+			service.WithPeopleRatings(deps.Ratings),
+		)
 	}
 	people := service.NewPeopleService(deps.Sessions, peopleOpts...)
 	// Delete my account (plan 03.2-09): built from the sessions store and the

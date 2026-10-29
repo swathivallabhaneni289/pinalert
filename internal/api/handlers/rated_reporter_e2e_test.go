@@ -216,11 +216,13 @@ func p914AssertAll(t *testing.T, label string, got map[string]p14ReporterWire, w
 
 // p914AssertProfile reads GET /api/people/{username} and requires the tag word
 // and the stars number to match the signal on every other surface.
-func p914AssertProfile(t *testing.T, label string, reader *http.Client, base string, username string, want p14ReporterWire) {
+func p914AssertProfile(t *testing.T, label string, reader *http.Client, base, username string, want p14ReporterWire, fromReports, fromRatings string) {
 	t.Helper()
 	var p struct {
-		TagWord     string `json:"tag_word"`
-		StarsNumber string `json:"stars_number"`
+		TagWord          string `json:"tag_word"`
+		StarsNumber      string `json:"stars_number"`
+		StarsFromReports string `json:"stars_from_reports"`
+		StarsFromRatings string `json:"stars_from_ratings"`
 	}
 	raw := p914Get(t, reader, base+"/api/people/"+username)
 	if err := json.Unmarshal(raw, &p); err != nil {
@@ -231,6 +233,9 @@ func p914AssertProfile(t *testing.T, label string, reader *http.Client, base str
 	}
 	if p.TagWord != want.Label || p.StarsNumber != service.StarsText(*want.Score) {
 		t.Errorf("%s: profile reads %q with %q stars, want %q with %q", label, p.TagWord, p.StarsNumber, want.Label, service.StarsText(*want.Score))
+	}
+	if p.StarsFromReports != fromReports || p.StarsFromRatings != fromRatings {
+		t.Errorf("%s: profile parts read %q and %q, want %q and %q", label, p.StarsFromReports, p.StarsFromRatings, fromReports, fromRatings)
 	}
 }
 
@@ -271,7 +276,7 @@ func TestRatedReporterSameEverywhere(t *testing.T) {
 	got := p914Surfaces(t, srv, pool, one, reader, rater, newVerifiedClient(t, srv, mailer, "p914-voter-1@example.com"), true)
 	reliable.Sentence = got["feed"].Sentence
 	p914AssertAll(t, "rated five stars", got, reliable)
-	p914AssertProfile(t, "rated five stars", reader, srv.URL, one.username, reliable)
+	p914AssertProfile(t, "rated five stars", reader, srv.URL, one.username, reliable, "3.0 from reports", "5.0 from ratings by 5 people")
 
 	// A moderator removes one rating: four counted raters is below the five that
 	// make ratings count, so every surface falls back to the outcome only signal.
@@ -287,7 +292,7 @@ func TestRatedReporterSameEverywhere(t *testing.T) {
 	got = p914Surfaces(t, srv, pool, one, reader, rater, newVerifiedClient(t, srv, mailer, "p914-voter-2@example.com"), true)
 	mixed.Sentence = got["feed"].Sentence
 	p914AssertAll(t, "after the removal", got, mixed)
-	p914AssertProfile(t, "after the removal", reader, srv.URL, one.username, mixed)
+	p914AssertProfile(t, "after the removal", reader, srv.URL, one.username, mixed, "", "")
 
 	// Leg two (D-22): a private profile cannot lift the tag, and the ratings
 	// still lower it.
@@ -305,5 +310,5 @@ func TestRatedReporterSameEverywhere(t *testing.T) {
 	testutil.MustExec(t, pool, `UPDATE accounts SET profile_public = true, profile_public_at = now() WHERE id = $1`, two.id)
 	got = p914Surfaces(t, srv, pool, two, reader, rater2, newVerifiedClient(t, srv, mailer, "p914-voter-4@example.com"), false)
 	p914AssertAll(t, "profile switched on", got, low)
-	p914AssertProfile(t, "profile switched on", reader, srv.URL, two.username, low)
+	p914AssertProfile(t, "profile switched on", reader, srv.URL, two.username, low, "4.3 from reports", "1.0 from ratings by 5 people")
 }

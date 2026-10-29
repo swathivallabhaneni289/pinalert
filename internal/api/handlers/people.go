@@ -32,21 +32,25 @@ import (
 // server (D-13). The account id is never part of it. For a person you blocked
 // only username and blocked_by_you are filled.
 type PersonProfileResponse struct {
-	Username       string `json:"username" example:"asha_k"`
-	Name           string `json:"name" example:"Asha"`
-	HomeAreaName   string `json:"home_area_name" example:"Indiranagar, Bengaluru"`
-	Initial        string `json:"initial" example:"A"`
-	StarsNumber    string `json:"stars_number" example:"3.6"`
-	StarsLabel     string `json:"stars_label" example:"3.6 stars"`
-	TagWord        string `json:"tag_word" example:"Reliable reporter"`
-	TagSentence    string `json:"tag_sentence" example:"7 of their last 9 reports were confirmed."`
-	MemberSince    string `json:"member_since" example:"Member since October 2026"`
-	FollowersCount int    `json:"followers_count" example:"12"`
-	FollowingCount int    `json:"following_count" example:"3"`
-	FollowersWord  string `json:"followers_word" example:"Followers"`
-	FollowingWord  string `json:"following_word" example:"Following"`
-	FollowersText  string `json:"followers_text" example:"12 Followers"`
-	FollowingText  string `json:"following_text" example:"3 Following"`
+	Username     string `json:"username" example:"asha_k"`
+	Name         string `json:"name" example:"Asha"`
+	HomeAreaName string `json:"home_area_name" example:"Indiranagar, Bengaluru"`
+	Initial      string `json:"initial" example:"A"`
+	StarsNumber  string `json:"stars_number" example:"3.6"`
+	StarsLabel   string `json:"stars_label" example:"3.6 stars"`
+	// StarsFromReports and StarsFromRatings are the two parts of the stars total.
+	// Both are empty until five people have rated (a different place each).
+	StarsFromReports string `json:"stars_from_reports" example:"3.6 from reports"`
+	StarsFromRatings string `json:"stars_from_ratings" example:"4.0 from ratings by 12 people"`
+	TagWord          string `json:"tag_word" example:"Reliable reporter"`
+	TagSentence      string `json:"tag_sentence" example:"7 of their last 9 reports were confirmed."`
+	MemberSince      string `json:"member_since" example:"Member since October 2026"`
+	FollowersCount   int    `json:"followers_count" example:"12"`
+	FollowingCount   int    `json:"following_count" example:"3"`
+	FollowersWord    string `json:"followers_word" example:"Followers"`
+	FollowingWord    string `json:"following_word" example:"Following"`
+	FollowersText    string `json:"followers_text" example:"12 Followers"`
+	FollowingText    string `json:"following_text" example:"3 Following"`
 	// StateLine is the line under the buttons on your own page and empty on
 	// anyone else's.
 	StateLine     string `json:"state_line" example:""`
@@ -57,6 +61,10 @@ type PersonProfileResponse struct {
 	Following     bool   `json:"following" example:"false"`
 	FollowsYou    bool   `json:"follows_you" example:"false"`
 	BlockedByYou  bool   `json:"blocked_by_you" example:"false"`
+	// MayRate says the caller may rate this person now. YourRating is the caller's
+	// own current rating, 1 to 5, or 0 for none.
+	MayRate    bool `json:"may_rate" example:"true"`
+	YourRating int  `json:"your_rating" example:"4"`
 }
 
 // PersonEntryResponse is one named person of a list. It holds the username and
@@ -157,29 +165,33 @@ func peopleFailure(w http.ResponseWriter, name string, err error) {
 // profileResponse copies a service profile onto the wire shape.
 func profileResponse(p service.PersonProfile) PersonProfileResponse {
 	return PersonProfileResponse{
-		Username:       p.Username,
-		Name:           p.Name,
-		HomeAreaName:   p.HomeAreaName,
-		Initial:        p.Initial,
-		StarsNumber:    p.StarsNumber,
-		StarsLabel:     p.StarsLabel,
-		TagWord:        p.TagWord,
-		TagSentence:    p.TagSentence,
-		MemberSince:    p.MemberSince,
-		FollowersCount: p.FollowersCount,
-		FollowingCount: p.FollowingCount,
-		FollowersWord:  p.FollowersWord,
-		FollowingWord:  p.FollowingWord,
-		FollowersText:  p.FollowersText,
-		FollowingText:  p.FollowingText,
-		StateLine:      p.StateLine,
-		IsSelf:         p.IsSelf,
-		ProfilePublic:  p.ProfilePublic,
-		Reliable:       p.Reliable,
-		CanFollow:      p.CanFollow,
-		Following:      p.Following,
-		FollowsYou:     p.FollowsYou,
-		BlockedByYou:   p.BlockedByYou,
+		Username:         p.Username,
+		Name:             p.Name,
+		HomeAreaName:     p.HomeAreaName,
+		Initial:          p.Initial,
+		StarsNumber:      p.StarsNumber,
+		StarsLabel:       p.StarsLabel,
+		StarsFromReports: p.StarsFromReports,
+		StarsFromRatings: p.StarsFromRatings,
+		TagWord:          p.TagWord,
+		TagSentence:      p.TagSentence,
+		MemberSince:      p.MemberSince,
+		FollowersCount:   p.FollowersCount,
+		FollowingCount:   p.FollowingCount,
+		FollowersWord:    p.FollowersWord,
+		FollowingWord:    p.FollowingWord,
+		FollowersText:    p.FollowersText,
+		FollowingText:    p.FollowingText,
+		StateLine:        p.StateLine,
+		IsSelf:           p.IsSelf,
+		ProfilePublic:    p.ProfilePublic,
+		Reliable:         p.Reliable,
+		CanFollow:        p.CanFollow,
+		Following:        p.Following,
+		FollowsYou:       p.FollowsYou,
+		BlockedByYou:     p.BlockedByYou,
+		MayRate:          p.MayRate,
+		YourRating:       p.YourRating,
 	}
 }
 
