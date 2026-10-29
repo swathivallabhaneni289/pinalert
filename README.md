@@ -145,9 +145,12 @@ sender is the first):
 Resend's free tier is also quota-limited (roughly 100 sends/day at the time this was written;
 re-check the current figure in your own Resend dashboard rather than trusting this document). The
 server holds a daily ceiling of **90 sends a day** (UTC days, all four emails together) so the
-free 100 is never used up, and keeps 20 of those 90 for Forgot password emails so an attacker
-spending the rest on Create account cannot stop a real person getting back in. A person is also
-limited to one code email every 45 seconds and 5 an hour for each address. A send past the
+free 100 is never used up, and keeps 20 of those 90 for Forgot password emails. Sends are also
+paced at 15 in any 10 minutes (5 kept for Forgot password), and once the other emails are spent one
+sender (a client network with `CLIENT_IP_HEADER`, or every request without a valid cookie) may take
+only 3 of the kept slots a day, so one network cannot spend the reserve. Several networks working
+together still can; see "Signing in" in [docs/TRUST-MODEL.md](./docs/TRUST-MODEL.md). A person is
+also limited to one code email every 45 seconds and 5 an hour for each address. A send past the
 ceiling shows the person "Something went wrong. Try again." and says nothing about why.
 
 ### Signing in: client address header and hashing speed
