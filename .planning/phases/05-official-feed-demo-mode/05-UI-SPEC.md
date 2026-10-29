@@ -571,6 +571,8 @@ None blocks the build. Each stands unless the owner says otherwise when looking 
 15. **Withdrawn 2026-10-27:** the step 5 second card and its icon are gone with step 5 (see 6b).
 16. **The globe credit link style** matches the plan 42 links (semibold grey, underline on hover and focus only).
 
+**Amended 2026-10-29 by the Phase 5 review fix (follow-up, WR-B03, WR-S04, IN-S05): new words on screen.** The fixes added four words or phrases not listed above. (a) The heading of a GDACS card on the map is **"Hazard"** (map.js, in the place where a report card shows "Report"). (b) The Official alerts page group title **"Recently ended"**, shown when the only rows are GDACS events whose end date has passed (nothing is claimed to be in force). (c) The group title **"Hazard events from GDACS"**, shown over fresh GDACS rows when the SACHET feed is unavailable (never "In force now", which is the SACHET claim). (d) The row tag **"Ended"** on a GDACS row that has ended. All four are plain words, drawn with existing styles, and none carries a new colour, icon or control.
+
 ---
 
 ## Registry Safety
