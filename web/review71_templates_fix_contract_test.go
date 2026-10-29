@@ -229,6 +229,48 @@ func TestInstallAskNotNowStaysInView(t *testing.T) {
 	}
 }
 
+// r71tPolicySection returns the Policy's section that starts with the heading
+// and runs to the next heading.
+func r71tPolicySection(t *testing.T, heading string) string {
+	t.Helper()
+	body := stripReadTemplate(t, "legal_body.html.tmpl")
+	_, policy, found := strings.Cut(body, `{{define "legal_policy_body"}}`)
+	if !found {
+		t.Fatalf("legal_body.html.tmpl has no policy part")
+	}
+	start := strings.Index(policy, "<h3>"+heading+"</h3>")
+	if start < 0 {
+		t.Fatalf("the Policy lost its %q section", heading)
+	}
+	rest := policy[start+len(heading)+9:]
+	if end := strings.Index(rest, "<h3>"); end >= 0 {
+		rest = rest[:end]
+	}
+	return rest
+}
+
+// TestPolicyNamesAskedLists (WR-T03): Phase 7.1 added two browser keys that keep
+// lists of account ids, pinalert.installAsked (plan 13b) and
+// pinalert.alertsAsked (plan 13c), so a phone is not asked twice. The Policy's
+// storage list reads as complete, so it names them in plain words. The older
+// keys the list does not name (pinalert.pushIntent, pinalert.changesAsked and
+// the per account pinalert.locationAsked. marker) predate this phase and are
+// recorded in 07.1-REVIEW-FIX-templates.md, not changed here.
+func TestPolicyNamesAskedLists(t *testing.T) {
+	const line = "<li>Which accounts on this device were already asked about alerts and about adding Pinalert to the Home Screen, kept as a list of account numbers, so this device does not ask again.</li>"
+	storage := r71tPolicySection(t, "Cookies and storage on your device")
+	if !strings.Contains(storage, line) {
+		t.Errorf("the Policy's storage list does not name the asked lists:\n%s", line)
+	}
+	// The line stays true: the sign up flow still keeps both lists.
+	js := stripJSComments(p421ReadStatic(t, "js/welcome.js"))
+	for _, key := range []string{"'pinalert.installAsked'", "'pinalert.alertsAsked'"} {
+		if !strings.Contains(js, key) {
+			t.Errorf("welcome.js no longer uses %s; the Policy line about it may be stale", key)
+		}
+	}
+}
+
 // TestLoginGlobeBoxFrom360 (IN-T01): from 360px wide the gate and the card pad
 // 24px instead of 16px, so the card sits 16px lower and the 404px term of --g,
 // set for 320, left Email me a code 5 or 6px under the first screen at 360x640,
