@@ -318,8 +318,10 @@ func UpdateAlertSettings(accounts *service.AccountService) http.HandlerFunc {
 //
 // @Summary Mark the first-time flow as finished
 // @Description Records that the signed in account finished the first-time flow. It needs the current
-// @Description terms to be agreed first: without that it answers 409 with the field terms. Send no
-// @Description body or an empty object. A repeat call keeps the first time.
+// @Description terms to be agreed first: without that it answers 409 with the field terms. It also
+// @Description needs the username, the name and the home area to be saved (step 4 of the flow is
+// @Description required): without them it answers 409 with the field profile. Send no body or an
+// @Description empty object. A repeat call keeps the first time.
 // @Description Requires a session verified by email; an unverified caller receives 401.
 // @Tags me
 // @Accept json
@@ -343,6 +345,10 @@ func FirstRunDone(svc *service.AccountService) http.HandlerFunc {
 		if err := svc.MarkFirstRunDone(r.Context(), acc.ID); err != nil {
 			if errors.Is(err, service.ErrTermsNotAgreed) {
 				writeFieldError(w, http.StatusConflict, "terms", service.TermsNotAgreedMessage)
+				return
+			}
+			if errors.Is(err, service.ErrProfileIncomplete) {
+				writeFieldError(w, http.StatusConflict, "profile", service.ProfileIncompleteMessage)
 				return
 			}
 			log.Printf("handlers: FirstRunDone: %v", err)

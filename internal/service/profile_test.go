@@ -198,13 +198,34 @@ func TestAccountServiceProfileRoundTrip(t *testing.T) {
 		t.Fatalf("a new version must be restamped: %v %v", restamped, err)
 	}
 
-	// Done succeeds after consent and keeps the first time.
+	// Amended 2026-10-29 by Phase 7.1 plan 10 (D-06): consent alone no longer
+	// lets the flow finish. Done is refused with ErrProfileIncomplete until the
+	// username, the name and the home area are all saved; then it succeeds and
+	// keeps the first time. The name and the home area are put back to empty
+	// straight after, so the checks that follow run on the same blank profile
+	// as before. Every other assertion is unchanged.
+	if err := svc.MarkFirstRunDone(ctx, id); !errors.Is(err, service.ErrProfileIncomplete) {
+		t.Fatalf("MarkFirstRunDone after consent without a profile: want ErrProfileIncomplete, got %v", err)
+	}
+	if p, _ = svc.Profile(ctx, id); p.FirstRunDone {
+		t.Fatalf("a refused Done must not mark the flow finished: %+v", p)
+	}
+	if _, err := svc.UpdateProfile(ctx, id, service.ProfileUpdate{
+		Username:    strPtr("profile.rt"),
+		DisplayName: strPtr("Asha"),
+		HomeArea:    service.HomeAreaChange{Action: service.HomeAreaSet, Input: service.HomeAreaInput{Name: "Indiranagar", Lat: 12.9784, Lon: 77.6408}},
+	}); err != nil {
+		t.Fatalf("UpdateProfile username, name and home area: %v", err)
+	}
 	if err := svc.MarkFirstRunDone(ctx, id); err != nil {
-		t.Fatalf("MarkFirstRunDone after consent: %v", err)
+		t.Fatalf("MarkFirstRunDone after consent and a full profile: %v", err)
 	}
 	p, _ = svc.Profile(ctx, id)
 	if !p.FirstRunDone {
 		t.Fatalf("FirstRunDone must be true: %+v", p)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE accounts SET display_name = NULL, home_area_name = NULL, home_area_cell = NULL WHERE id = $1`, id); err != nil {
+		t.Fatalf("emptying the name and home area for the checks below: %v", err)
 	}
 
 	// A name alone leaves the home area alone, and the other way round.

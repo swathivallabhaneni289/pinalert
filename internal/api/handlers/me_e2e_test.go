@@ -236,11 +236,72 @@ func TestMeFirstRunDone(t *testing.T) {
 
 	resp = meSend(t, client, http.MethodPost, srv.URL+"/api/me/consent", "")
 	meWant(t, "consent", resp, http.StatusNoContent)
+	// Amended 2026-10-29 by Phase 7.1 plan 10 (D-06): done after consent alone is
+	// now refused with 409 field profile (TestFirstRunDoneNeedsProfile covers the
+	// refusal); the profile is filled first. Every other assertion is unchanged.
+	fillProfile(t, client, srv, "done.user")
 	resp = meSend(t, client, http.MethodPost, url, "")
 	meWant(t, "done after consent", resp, http.StatusNoContent)
 	resp = meSend(t, client, http.MethodPost, url, "{}")
 	meWant(t, "done again", resp, http.StatusNoContent)
 	if r := meRead(t, pool, "done@example.com"); !r.done {
 		t.Fatal("first run was not marked done")
+	}
+}
+
+// TestFirstRunDoneNeedsProfile pins D-06 and SC4: the end of the flow cannot be
+// reached without a username, a name and a home area. With the terms agreed but
+// no profile, first-run-done answers 409 with the field profile and the plan 04
+// sentence, and stores nothing. A partly filled profile is refused the same
+// way, whichever of the three is missing. Once all three are saved it succeeds.
+func TestFirstRunDoneNeedsProfile(t *testing.T) {
+	srv, mailer, pool := newE2EServer(t)
+	url := srv.URL + "/api/me/first-run-done"
+	client := newJarClient(t)
+	const email = "done-needs-profile@example.com"
+	verifySession(t, client, srv, mailer, email)
+	meWant(t, "consent", meSend(t, client, http.MethodPost, srv.URL+"/api/me/consent", ""), http.StatusNoContent)
+
+	refused := func(label string) {
+		t.Helper()
+		resp := meSend(t, client, http.MethodPost, url, "")
+		if resp.StatusCode != http.StatusConflict {
+			t.Fatalf("%s: status = %d, want 409", label, resp.StatusCode)
+		}
+		field, message := decodeErrorResponse(t, resp)
+		if field != "profile" || message != "Add your username, name and home area." {
+			t.Fatalf("%s: 409 error = (%q, %q), want field profile and the plan 04 sentence", label, field, message)
+		}
+		if r := meRead(t, pool, email); r.done {
+			t.Fatalf("%s: first run was marked done", label)
+		}
+	}
+
+	refused("nothing saved")
+
+	meWant(t, "username only", meSend(t, client, http.MethodPatch, srv.URL+"/api/me/profile", `{"username":"needs.profile"}`), http.StatusOK)
+	refused("username only")
+
+	meWant(t, "name added", meSend(t, client, http.MethodPatch, srv.URL+"/api/me/profile", `{"display_name":"Asha"}`), http.StatusOK)
+	refused("username and name")
+
+	meWant(t, "home area added", meSend(t, client, http.MethodPatch, srv.URL+"/api/me/profile",
+		`{"home_area":{"name":"Indiranagar, Bengaluru","lat":12.9784,"lon":77.6408}}`), http.StatusOK)
+	meWant(t, "done with all three", meSend(t, client, http.MethodPost, url, ""), http.StatusNoContent)
+	if r := meRead(t, pool, email); !r.done {
+		t.Fatal("first run was not marked done with all three saved")
+	}
+
+	// The terms refusal still comes first: an account that agreed to nothing is
+	// told to agree, not to fill in a profile.
+	other := newJarClient(t)
+	verifySession(t, other, srv, mailer, "done-needs-terms@example.com")
+	fillProfile(t, other, srv, "needs.terms")
+	resp := meSend(t, other, http.MethodPost, url, "")
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("a full profile without consent: status = %d, want 409", resp.StatusCode)
+	}
+	if field, _ := decodeErrorResponse(t, resp); field != "terms" {
+		t.Fatalf("a full profile without consent: field = %q, want terms", field)
 	}
 }

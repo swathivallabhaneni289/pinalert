@@ -736,7 +736,7 @@
         },
         "/me/first-run-done": {
             "post": {
-                "description": "Records that the signed in account finished the first-time flow. It needs the current\nterms to be agreed first: without that it answers 409 with the field terms. Send no\nbody or an empty object. A repeat call keeps the first time.\nRequires a session verified by email; an unverified caller receives 401.",
+                "description": "Records that the signed in account finished the first-time flow. It needs the current\nterms to be agreed first: without that it answers 409 with the field terms. It also\nneeds the username, the name and the home area to be saved (step 4 of the flow is\nrequired): without them it answers 409 with the field profile. Send no body or an\nempty object. A repeat call keeps the first time.\nRequires a session verified by email; an unverified caller receives 401.",
                 "consumes": [
                     "application/json"
                 ],

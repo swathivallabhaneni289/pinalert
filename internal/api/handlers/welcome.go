@@ -41,15 +41,29 @@ type welcomeViewModel struct {
 	Chrome       Chrome
 	// Legal is the same text the reader shows (the shared body partials).
 	Legal LegalText
-	// StartStep is 1, or 3 when the current terms are already agreed, so a
-	// person who left after Agree does not read and agree twice.
+	// StartStep is the first step that still has something to do (see
+	// welcomeStartStep): 1 for a new account, 3 when the current terms are
+	// agreed but the flow is not finished (so a person who left after Agree does
+	// not read and agree twice), 2 for a finished account whose terms are out of
+	// date, and 4 for a finished account on the current terms that lacks a
+	// username, a name or a home area (the one time fill in, Phase 7.1 D-08).
 	StartStep int
+	// AfterTermsStep is the step after Agree: 4 for an account that finished the
+	// flow before (it already knows steps 1 and 3 and goes straight on to the
+	// missing About you fields), else 3. Rendered by plan 13 as a data attribute.
+	AfterTermsStep int
+	// FillingIn is true for an account that finished the flow before (FirstRunDone)
+	// and is back only to add what is missing. It switches the step 4 lead to
+	// the fill in sentence (UI-SPEC Surface 7).
+	FillingIn bool
 	Steps     []welcomeStepView
-	// DisplayName and HomeAreaName are what a returning account already has
-	// stored; step 4 shows them and html/template escapes both. The home area's
-	// coarse cell is never read into the page.
+	// DisplayName, HomeAreaName and Username are what a returning account
+	// already has stored; step 4 shows them and html/template escapes all three.
+	// The home area's coarse cell is never read into the page. Username prefills
+	// the Username box (Phase 7.1 plan 10).
 	DisplayName  string
 	HomeAreaName string
+	Username     string
 	// AccountID is the signed in account's numeric id, rendered as
 	// data-account-id on the flow root so the position saved in step 3 has an
 	// owner (skeptic S-2). It is a number, never the address.
@@ -61,13 +75,50 @@ type welcomeViewModel struct {
 	PushPublicKey string
 }
 
-// welcomeStartStep is the step a person lands on. Agreement is to a text, so
-// only the current terms version skips step 2.
+// welcomeStartStep is the step a person lands on: the first missing step among
+// steps 1 to 4. Agreement is to a text, so only the current terms version skips
+// step 2.
+//
+// Amended 2026-10-29 by Phase 7.1 plan 10 (D-08, SC5). Four cases:
+//   - current terms and the flow finished before: 4. Only the About you fields
+//     are missing (the account would have been sent away otherwise), so this is
+//     the one time fill in.
+//   - current terms and the flow not finished: 3, as before.
+//   - older terms and the flow finished before: 2. The person agrees to the
+//     new text and then goes straight on to step 4 (AfterTermsStep).
+//   - anything else (older or no terms and the flow not finished): 1.
 func welcomeStartStep(acc account.Account) int {
-	if acc.TermsVersion == service.CurrentTermsVersion {
+	current := acc.TermsVersion == service.CurrentTermsVersion
+	switch {
+	case current && acc.FirstRunDone:
+		return 4
+	case current:
 		return 3
+	case acc.FirstRunDone:
+		return 2
 	}
 	return 1
+}
+
+// welcomeAfterTermsStep is the step after Agree: 4 for an account that finished
+// the flow before, else 3.
+func welcomeAfterTermsStep(acc account.Account) int {
+	if acc.FirstRunDone {
+		return 4
+	}
+	return 3
+}
+
+// welcomeOnboardingState reads the account the gate resolved into the one
+// predicate's input. It is the same mapping api.onboarded uses.
+func welcomeOnboardingState(acc account.Account) service.OnboardingState {
+	return service.OnboardingState{
+		TermsVersion: acc.TermsVersion,
+		FirstRunDone: acc.FirstRunDone,
+		HasUsername:  acc.HasUsername,
+		HasName:      acc.HasName,
+		HasHomeArea:  acc.HasHomeArea,
+	}
 }
 
 // WelcomePage handles GET /welcome. An account that agreed to the current terms
@@ -90,7 +141,12 @@ func WelcomePage(tmpl *template.Template, accounts *service.AccountService, cfg 
 			return
 		}
 
-		if acc.TermsVersion == service.CurrentTermsVersion && acc.FirstRunDone {
+		// The one predicate (Phase 7.1 plan 10): current terms, the flow
+		// finished, and a username, a name and a home area. The gate and
+		// first-run-done read the same function, so an account that is not done
+		// here is never let through there, and the two pages cannot send an
+		// account back and forth.
+		if service.OnboardingDone(welcomeOnboardingState(acc)) {
 			w.Header().Set("Cache-Control", "no-store")
 			http.Redirect(w, r, welcomeRedirectTarget, http.StatusSeeOther)
 			return
@@ -111,6 +167,9 @@ func WelcomePage(tmpl *template.Template, accounts *service.AccountService, cfg 
 			StartStep:    welcomeStartStep(acc),
 			AccountID:    acc.ID,
 
+			AfterTermsStep: welcomeAfterTermsStep(acc),
+			FillingIn:      acc.FirstRunDone,
+
 			PushPublicKey: cfg.PushPublicKey,
 		}
 		for i, name := range welcomeSteps {
@@ -121,6 +180,9 @@ func WelcomePage(tmpl *template.Template, accounts *service.AccountService, cfg 
 		}
 		if profile.HomeAreaName != nil {
 			vm.HomeAreaName = *profile.HomeAreaName
+		}
+		if profile.Username != nil {
+			vm.Username = *profile.Username
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

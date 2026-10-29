@@ -43,8 +43,12 @@ func AccountFromContext(ctx context.Context) (Account, bool) {
 // unverified session — the same ErrorResponse envelope every other error
 // this API returns uses, so a browser's fetch layer never has to special-case
 // the access gate's refusal.
+//
+// Amended 2026-10-29 by Phase 7.1 plan 10 (UI-SPEC P71-C21): the sentence was
+// "Verify your email to continue." and is now "Sign in to continue.", because
+// the way in is a password and a typed code, not a link. The field stays auth.
 var unverifiedErrorResponse = handlers.ErrorResponse{
-	Error: handlers.ErrorDetail{Field: "auth", Message: "Verify your email to continue."},
+	Error: handlers.ErrorDetail{Field: "auth", Message: "Sign in to continue."},
 }
 
 // loginLowDataTarget is where a logged out request for the Low data view goes.
@@ -84,7 +88,12 @@ func requireVerifiedAccount(q *sqlcgen.Queries) func(http.Handler) http.Handler 
 				row, err := q.GetAccountBySessionID(r.Context(), sessionID)
 				switch {
 				case err == nil:
-					acc := account.Account{ID: row.ID, Email: row.Email, FirstRunDone: row.FirstRunDoneAt.Valid}
+					acc := account.Account{
+						ID: row.ID, Email: row.Email, FirstRunDone: row.FirstRunDoneAt.Valid,
+						// Phase 7.1 plan 10 (D-06, D-08): the three presence facts the
+						// one onboarding predicate reads.
+						HasUsername: row.HasUsername, HasName: row.HasName, HasHomeArea: row.HasHomeArea,
+					}
 					if row.TermsVersion != nil {
 						acc.TermsVersion = *row.TermsVersion
 					}
