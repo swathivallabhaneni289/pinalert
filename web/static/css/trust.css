@@ -1589,6 +1589,93 @@
   margin-top: var(--space-xs);
 }
 
+/* The Open report row (Phase 8 plan 07, D-18 default A, UI-SPEC Surface 8): the
+   laptop bubble's one new row, last in the card. It bleeds to the card edges
+   (the body pads one medium space) under a 1px border hairline and is a button
+   with no underline. map.js hides it whenever the card is in the detail pane,
+   so every display rule here keeps :not([hidden]). The count is the server's
+   comment_count in words, never a made up number. No class name here contains
+   the word footer. */
+.leaflet-container .popup-card__open-report:not([hidden]) {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  box-sizing: border-box;
+  width: calc(100% + var(--space-md) + var(--space-md));
+  min-height: var(--touch-target-min);
+  margin: var(--space-md) calc(var(--space-md) * -1) calc(var(--space-md) * -1);
+  padding: var(--space-sm) var(--space-md);
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  border-radius: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.leaflet-container .popup-card__open-report:not([hidden]):hover,
+.leaflet-container .popup-card__open-report:not([hidden]):focus-visible {
+  background: var(--color-surface);
+}
+
+.leaflet-container .popup-card__open-report:focus-visible {
+  outline-offset: -2px;
+}
+
+.leaflet-container .popup-card__open-report .popup-card__open-icon:not([hidden]),
+.leaflet-container .popup-card__open-report .popup-card__open-chevron:not([hidden]) {
+  display: block;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background-color: var(--color-text-muted);
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.leaflet-container .popup-card__open-report .popup-card__open-icon:not([hidden]) {
+  -webkit-mask-image: url("/static/icons/message-square.svg");
+  mask-image: url("/static/icons/message-square.svg");
+}
+
+.leaflet-container .popup-card__open-report .popup-card__open-chevron:not([hidden]) {
+  -webkit-mask-image: url("/static/icons/chevron-right.svg");
+  mask-image: url("/static/icons/chevron-right.svg");
+}
+
+.leaflet-container .popup-card__open-report .popup-card__open-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.leaflet-container .popup-card__open-report .popup-card__open-count:not([hidden]) {
+  flex: none;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (forced-colors: active) {
+  .leaflet-container .popup-card__open-report .popup-card__open-icon:not([hidden]),
+  .leaflet-container .popup-card__open-report .popup-card__open-chevron:not([hidden]) {
+    forced-color-adjust: none;
+    background-color: ButtonText;
+  }
+}
+
 /* An inset ring, because the wrapper clips an outset one (A62). */
 .leaflet-container .popup-card:focus-visible {
   outline-offset: -2px;
