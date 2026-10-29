@@ -95,3 +95,58 @@
     border: 1px solid Highlight;
   }
 }
+
+/*
+ * The star box after "Yes, mark resolved" (Phase 9 plan 17, UI-SPEC 3b).
+ *
+ * One block inside the opened report's actions group, right after the vote
+ * block: a 1px --color-border border, radius 12px, padding 16px, --color-bg and
+ * an 8px gap. It holds the shared control (its legend is the title, Rate
+ * {username}), an outlined Skip at 44px, and a status line that is empty until a
+ * tap saves, when the box collapses to that one line. The empty line is taken
+ * out of the flow so it adds no gap. :not([hidden]) keeps the hidden attribute
+ * working, and there is no !important.
+ */
+.rate-box:not([hidden]) {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  box-sizing: border-box;
+  margin: var(--space-sm) 0 0;
+  padding: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.rate-box .stars-control {
+  align-self: stretch;
+}
+
+.rate-box .inline-error:not([hidden]) {
+  align-self: stretch;
+  margin: 0;
+}
+
+.rate-box__skip {
+  min-height: var(--touch-target-min);
+}
+
+.rate-box__status {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+}
+
+.rate-box__status:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
