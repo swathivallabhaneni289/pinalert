@@ -156,6 +156,12 @@ type FeedReportResponse struct {
 	// server looks up and never serialises: this response carries a
 	// boolean, never an account id or an email (T-01-02).
 	IsOwnReport bool `json:"is_own_report" example:"false"`
+	// ReporterProfilePath is the path of the reporter's public profile. It is
+	// present only for an opted in reporter who has not blocked you, never for
+	// your own report, and only while the report is active or disputed. It sits
+	// on the row beside is_own_report and never inside trust, so the feed and the
+	// vote response still build equal trust objects. Omitted when absent.
+	ReporterProfilePath string `json:"reporter_profile_path,omitempty" example:"/u/ravi.k"`
 	// Trust is the server built trust object the vote response also carries
 	// for this report (D-21). It is always present, the same for every
 	// viewer, and never contains an identifier.
@@ -369,6 +375,7 @@ func reportViewToResponse(v service.ReportView) FeedReportResponse {
 		VisibilityReason:      string(v.VisibilityReason),
 		YourVote:              yourVote,
 		IsOwnReport:           v.IsOwnReport,
+		ReporterProfilePath:   v.ReporterProfilePath,
 		Trust:                 trustToResponse(v.Trust),
 		View:                  string(v.View),
 		History:               historyToResponse(v.History),

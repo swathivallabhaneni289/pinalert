@@ -53,6 +53,12 @@ type AuthQuerier interface {
 	// ActivityForAccount wraps) the moderation state and the display only
 	// written time of the page's reports, in one batched read (R-01).
 	ReportExtrasForReports(ctx context.Context, arg sqlcgen.ReportExtrasForReportsParams) ([]sqlcgen.ReportExtrasForReportsRow, error)
+	// PublicProfilePathsForViewer gives the voted rows of the Activity page the
+	// profile path of an opted in reporter who has not blocked this account
+	// (plan 09-09, D-04). One batched read, skipped when no voted report has a
+	// reporter. A consumer defined interface naming the generated method
+	// ReportQuerier names.
+	PublicProfilePathsForViewer(ctx context.Context, arg sqlcgen.PublicProfilePathsForViewerParams) ([]sqlcgen.PublicProfilePathsForViewerRow, error)
 }
 
 // ErrRateLimited is returned by CredentialService when a second email request
@@ -165,6 +171,12 @@ type ActivityReport struct {
 	// the upload came more than WrittenLabelThreshold after it, else nil. It is
 	// display only (R-05).
 	WrittenAt *time.Time
+	// ReporterProfilePath is the "/u/username" path of the reporter of a voted
+	// report, set only while the report is live (Active or Disputed) and only
+	// for an opted in reporter with a clear username who has not blocked this
+	// account (D-04, D-12, D-20). Empty on own posts and on every finished row.
+	// It sits beside Trust, never inside it.
+	ReporterProfilePath string
 }
 
 // VotedReport is one report the account currently confirms or disputes: the
@@ -342,6 +354,13 @@ func (s *AuthService) ActivityPageForAccount(ctx context.Context, accountID int6
 		extrasByReport[ex.ReportID] = ex
 	}
 
+	// Which reporters of the voted reports have a profile this account may open
+	// (D-04): one batched read. Own posts need none.
+	profilePaths, err := loadProfilePaths(ctx, s.q, accountID, reporterByReport)
+	if err != nil {
+		return ActivityPage{}, fmt.Errorf("service: reading profile paths for account %d's page: %w", accountID, err)
+	}
+
 	posts := make([]ActivityReport, 0, len(rows))
 	// closedOwn holds the ids of own posts that are closed and not yet faded:
 	// the only posts whose Reopen the page can offer, so the only ones whose
@@ -461,18 +480,25 @@ func (s *AuthService) ActivityPageForAccount(ctx context.Context, accountID int6
 				approximate = true
 			}
 		}
+		// The profile link only while the report is live (D-20): a finished row
+		// tied to a username could be matched to its exact point.
+		profilePath := ""
+		if view := ViewOf(vis, v.ExpiresAt, now); (view == FeedViewActive || view == FeedViewDisputed) && reporterID != nil {
+			profilePath = profilePaths[*reporterID]
+		}
 
 		votes = append(votes, VotedReport{
 			ActivityReport: ActivityReport{
-				Row:         row,
-				Approximate: approximate,
-				UndosLeft:   UndoLimit,
-				Category:    category,
-				Severity:    severity,
-				Visibility:  vis,
-				Reason:      reason,
-				Moderation:  meta.Moderation,
-				WrittenAt:   WrittenAtForDisplay(v.CreatedAt, writtenAtPtr(ex.ClientWrittenAt)),
+				Row:                 row,
+				Approximate:         approximate,
+				UndosLeft:           UndoLimit,
+				Category:            category,
+				Severity:            severity,
+				Visibility:          vis,
+				Reason:              reason,
+				Moderation:          meta.Moderation,
+				WrittenAt:           WrittenAtForDisplay(v.CreatedAt, writtenAtPtr(ex.ClientWrittenAt)),
+				ReporterProfilePath: profilePath,
 				Trust: BuildTrust(TrustInput{
 					Rows:              reportVotes,
 					ReportID:          v.ID,

@@ -171,6 +171,11 @@ func TestTrustBlockMountedOnBothSurfaces(t *testing.T) {
 		"PinalertTrust.updateTrustLine(row.trust, report.trust)")
 
 	for label, text := range map[string]string{"feed.js": feed, "map.js": mapJS} {
+		// Plan 09-09: the popup passes the report's own reporter_profile_path to
+		// the trust card's profile row. That field is the server's path and not
+		// the reporter signal this check keeps out of the browser, so the one
+		// exact reference is set aside before the ".reporter" check.
+		text = strings.ReplaceAll(text, "report.reporter_profile_path", "report.PROFILE_PATH")
 		p13MustNotContain(t, label, text,
 			"'trust-", "\"trust-",
 			"trust-block", "trust-num", "trust-signal", "trust-icon",

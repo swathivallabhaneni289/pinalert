@@ -940,6 +940,54 @@
   color: var(--color-text);
 }
 
+/* The profile row (plan 09-09, UI-SPEC 7d, P9-C19): the last line of the panel
+   and of the popup card, drawn by PinalertTrust.setProfileLink only when the
+   server sent a profile path. A full width row with a top hairline and a 44px
+   target. No underline at rest, existing tokens only. The selectors carry two
+   classes so Leaflet's own link colour in a popup never wins. */
+.trust-block__panel a.trust-panel__profile:not([hidden]),
+.trust-card a.trust-panel__profile:not([hidden]) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  min-height: var(--touch-target-min);
+  margin: 0;
+  padding: var(--space-sm) var(--space-xs);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-body);
+  text-decoration: none;
+}
+
+.trust-block__panel a.trust-panel__profile:hover,
+.trust-card a.trust-panel__profile:hover {
+  background: var(--color-surface);
+  text-decoration: none;
+}
+
+.trust-block__panel a.trust-panel__profile:focus-visible,
+.trust-card a.trust-panel__profile:focus-visible {
+  outline-offset: -2px;
+}
+
+.trust-panel__profile-chevron {
+  flex: none;
+  width: var(--space-md);
+  height: var(--space-md);
+  background-color: currentColor;
+  -webkit-mask-image: url("/static/icons/chevron-right.svg");
+  mask-image: url("/static/icons/chevron-right.svg");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
 /* The facts list (A89, A93): one list for the popup card and the row panel.
    A row is a tone glyph beside a bold title, a muted detail line and, on the
    card only, a muted score line. A divider sits between visible rows. */
@@ -1130,6 +1178,11 @@
   }
 
   .trust-block__chevron:not([hidden]) {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+
+  .trust-panel__profile-chevron {
     forced-color-adjust: none;
     background-color: CanvasText;
   }
