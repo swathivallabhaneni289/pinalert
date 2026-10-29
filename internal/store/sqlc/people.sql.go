@@ -51,11 +51,56 @@ type BlockAccountParams struct {
 // Block a person (D-12). It writes the block row only; a repeat is a no op.
 // Ending the follows between the two is the service's job, through endFollowPair
 // with reason blocked, so every follow end passes through the two helpers
-// (review W1). That is safe in either order because FollowAccount refuses once
-// the block row exists. A block of yourself fails with SQLSTATE 23514.
+// (review W1). The order is safe in nearly every interleaving because
+// FollowAccount refuses once the block row exists. It is not safe when a Follow
+// statement starts before the block commits and its insert lands after the end:
+// each statement judges its own snapshot, so an active follow can sit beside a
+// block. The follow sweep finds such pairs with BlockedActiveFollowPairs and ends
+// them (review IN-S01 and IN-E01, 2026-10-30). A block of yourself fails with
+// SQLSTATE 23514.
 func (q *Queries) BlockAccount(ctx context.Context, arg BlockAccountParams) error {
 	_, err := q.db.Exec(ctx, blockAccount, arg.BlockerID, arg.BlockedID, arg.Now)
 	return err
+}
+
+const blockedActiveFollowPairs = `-- name: BlockedActiveFollowPairs :many
+SELECT f.follower_id, f.followee_id
+FROM account_follows f
+WHERE f.ended_at IS NULL
+  AND EXISTS (
+      SELECT 1 FROM person_blocks b
+      WHERE (b.blocker_id = f.follower_id AND b.blocked_id = f.followee_id)
+         OR (b.blocker_id = f.followee_id AND b.blocked_id = f.follower_id))
+ORDER BY f.follower_id, f.followee_id
+LIMIT $1::int
+`
+
+type BlockedActiveFollowPairsRow struct {
+	FollowerID int64
+	FolloweeID int64
+}
+
+// Active follows with a block between the two people in either direction. A
+// Follow that raced a Block can leave one (review IN-S01 and IN-E01); the follow
+// sweep ends each with reason blocked. Oldest first, at most row_limit a call.
+func (q *Queries) BlockedActiveFollowPairs(ctx context.Context, rowLimit int32) ([]BlockedActiveFollowPairsRow, error) {
+	rows, err := q.db.Query(ctx, blockedActiveFollowPairs, rowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BlockedActiveFollowPairsRow
+	for rows.Next() {
+		var i BlockedActiveFollowPairsRow
+		if err := rows.Scan(&i.FollowerID, &i.FolloweeID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const blockedPeople = `-- name: BlockedPeople :many

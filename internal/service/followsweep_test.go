@@ -194,6 +194,12 @@ func (f *fakeSweepQuerier) FolloweeStanding(_ context.Context, ids []int64) ([]s
 	return rows, nil
 }
 
+// Amended 2026-10-30 by review IN-S01 and IN-E01: the sweep also reads active
+// follows that sit beside a block; the fake has none.
+func (f *fakeSweepQuerier) BlockedActiveFollowPairs(_ context.Context, _ int32) ([]sqlcgen.BlockedActiveFollowPairsRow, error) {
+	return nil, nil
+}
+
 func (f *fakeSweepQuerier) EndFollowPair(_ context.Context, _ sqlcgen.EndFollowPairParams) (int64, error) {
 	return 0, nil
 }

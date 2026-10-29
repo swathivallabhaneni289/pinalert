@@ -31,6 +31,9 @@ type FollowSweepQuerier interface {
 	ReporterTagQuerier
 	FolloweeIDsPage(ctx context.Context, arg sqlcgen.FolloweeIDsPageParams) ([]int64, error)
 	FolloweeStanding(ctx context.Context, accountIds []int64) ([]sqlcgen.FolloweeStandingRow, error)
+	// BlockedActiveFollowPairs finds an active follow beside a block, which a
+	// Follow racing a Block can leave (review IN-S01 and IN-E01).
+	BlockedActiveFollowPairs(ctx context.Context, rowLimit int32) ([]sqlcgen.BlockedActiveFollowPairsRow, error)
 	followEnder
 }
 
@@ -108,6 +111,15 @@ func (s *FollowSweep) sweepAndLog(ctx context.Context) {
 // bounds and the sweep moves on to the next page; only a failure to read the
 // next page of followees stops it. Logs carry ids and counts only.
 func (s *FollowSweep) SweepOnce(ctx context.Context) (ended int64, err error) {
+	// First the follows that sit beside a block (review IN-S01 and IN-E01,
+	// 2026-10-30). A failure is logged and the sweep goes on to the tag pages.
+	if n, blockErr := s.endBlockedPairs(ctx); blockErr != nil {
+		if ctx.Err() == nil {
+			log.Printf("follow sweep: blocked pairs: %v", blockErr)
+		}
+	} else {
+		ended += n
+	}
 	var afterID int64
 	for {
 		if err := ctx.Err(); err != nil {
@@ -130,6 +142,44 @@ func (s *FollowSweep) SweepOnce(ctx context.Context) (ended int64, err error) {
 		}
 		afterID = ids[len(ids)-1]
 		if len(ids) < MaxReporterAccountsPerRead {
+			return ended, nil
+		}
+	}
+}
+
+// followSweepBlockedBatch is how many blocked pairs one read of
+// BlockedActiveFollowPairs returns. The loop reads again until none is left.
+const followSweepBlockedBatch = 200
+
+// endBlockedPairs ends every active follow that has a block between the two
+// people, in either direction, with reason blocked, through endFollowPair like
+// every other end. It returns how many rows it ended. Each pass removes the pairs
+// it read from the active set, so the loop stops by itself; a pass that ends
+// nothing stops it too, so a pair that cannot be ended cannot spin it.
+func (s *FollowSweep) endBlockedPairs(ctx context.Context) (int64, error) {
+	var ended int64
+	for {
+		if err := ctx.Err(); err != nil {
+			return ended, err
+		}
+		pairs, err := s.q.BlockedActiveFollowPairs(ctx, followSweepBlockedBatch)
+		if err != nil {
+			return ended, err
+		}
+		if len(pairs) == 0 {
+			return ended, nil
+		}
+		var pass int64
+		now := s.now()
+		for _, p := range pairs {
+			n, err := endFollowPair(ctx, s.q, p.FollowerID, p.FolloweeID, FollowEndBlocked, now)
+			pass += n
+			if err != nil {
+				return ended + pass, err
+			}
+		}
+		ended += pass
+		if pass == 0 || len(pairs) < followSweepBlockedBatch {
 			return ended, nil
 		}
 	}

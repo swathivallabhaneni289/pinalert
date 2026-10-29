@@ -305,8 +305,13 @@ WHERE f.follower_id = sqlc.arg(account_id)::bigint
 -- Block a person (D-12). It writes the block row only; a repeat is a no op.
 -- Ending the follows between the two is the service's job, through endFollowPair
 -- with reason blocked, so every follow end passes through the two helpers
--- (review W1). That is safe in either order because FollowAccount refuses once
--- the block row exists. A block of yourself fails with SQLSTATE 23514.
+-- (review W1). The order is safe in nearly every interleaving because
+-- FollowAccount refuses once the block row exists. It is not safe when a Follow
+-- statement starts before the block commits and its insert lands after the end:
+-- each statement judges its own snapshot, so an active follow can sit beside a
+-- block. The follow sweep finds such pairs with BlockedActiveFollowPairs and ends
+-- them (review IN-S01 and IN-E01, 2026-10-30). A block of yourself fails with
+-- SQLSTATE 23514.
 INSERT INTO person_blocks (blocker_id, blocked_id, created_at)
 VALUES (sqlc.arg(blocker_id)::bigint, sqlc.arg(blocked_id)::bigint, sqlc.arg(now)::timestamptz)
 ON CONFLICT (blocker_id, blocked_id) DO NOTHING;
@@ -363,6 +368,20 @@ FROM account_follows
 WHERE ended_at IS NULL
   AND followee_id > sqlc.arg(after_id)::bigint
 ORDER BY followee_id
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: BlockedActiveFollowPairs :many
+-- Active follows with a block between the two people in either direction. A
+-- Follow that raced a Block can leave one (review IN-S01 and IN-E01); the follow
+-- sweep ends each with reason blocked. Oldest first, at most row_limit a call.
+SELECT f.follower_id, f.followee_id
+FROM account_follows f
+WHERE f.ended_at IS NULL
+  AND EXISTS (
+      SELECT 1 FROM person_blocks b
+      WHERE (b.blocker_id = f.follower_id AND b.blocked_id = f.followee_id)
+         OR (b.blocker_id = f.followee_id AND b.blocked_id = f.follower_id))
+ORDER BY f.follower_id, f.followee_id
 LIMIT sqlc.arg(row_limit)::int;
 
 -- name: FolloweeStanding :many
