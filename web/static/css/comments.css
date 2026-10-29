@@ -54,6 +54,12 @@
   color: var(--color-text);
 }
 
+/* Focus lands on the heading after a Delete (tabindex -1, never a Tab stop),
+   and it draws no ring (UI-SPEC 7d). */
+.leaflet-container .report-page .comments .comments__heading:focus {
+  outline: none;
+}
+
 .leaflet-container .report-page .comments .comments__count {
   margin-left: var(--space-xs);
   font-weight: var(--font-weight-regular);

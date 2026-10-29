@@ -198,8 +198,9 @@ comment, a reply or a like never changes any trust number: only people at differ
 1 km still confirm or dispute. Comments close when the report is resolved or has faded.
 
 Share on a report gives a link such as `https://your-site/r/<random token>`. Anyone can open it
-without an account. The public page shows only the category, a rough area, whether it is still
-active, disputed, resolved or ended, and when. It never shows the report's own words, an exact
+without an account. The public page shows only the category and severity, a rough area, what is
+happening for a Critical report, whether it is still active, disputed, resolved or ended with how
+many people confirmed it, and when. It never shows the report's own words, an exact
 spot, a name or a comment, and the link preview says "Open to see if this is still true right now"
 with no count, so a forward cannot go stale. The link is built from `BASE_URL`, which must be an
 https address outside `ENV=development`.

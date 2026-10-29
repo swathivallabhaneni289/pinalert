@@ -37,8 +37,12 @@
 
   /* The panel: fixed at the left edge under the top bar, the full height of
      the content region, the page colour, a hairline on its right edge. The
-     top and the height are stated so Leaflet's inline bottom is ignored. */
+     top and the height are stated so Leaflet's inline bottom is ignored.
+     --panel-composer-height is the pinned comments box at rest: its 1px
+     hairline, 12px top padding, the field (a 1px border on each side, 12px
+     above and below one line of body text) and 16px bottom padding. */
   html[data-report-panel] .leaflet-container .leaflet-detail-pane .leaflet-popup {
+    --panel-composer-height: calc(1px + var(--space-12) + 2px + 2 * var(--space-12) + var(--line-height-body) * var(--font-size-body) + var(--space-md));
     position: fixed;
     top: calc(var(--disclaimer-bar-height) + var(--app-topbar-height));
     left: 0;
@@ -173,20 +177,36 @@
     margin-top: var(--space-lg);
   }
 
-  /* The comments box (Phase 8 plan 16, UI-SPEC 7c): pinned to the bottom of the
-     panel, the full panel width, on the page colour with a hairline above it.
-     The wrapper above is the only scroll box, so sticky sits against it. The
-     negative left and right margins undo the wrapper's 24px side padding, the
-     card's 4px severity bar and the body's 16px left padding, so the box spans
-     the whole panel; the padding then puts the field 24px from the edge. The
-     16px of air above it after the last comment is the base margin. */
+  /* The comments box (Phase 8 plan 16, UI-SPEC 7c; review fix WR-T01): pinned
+     to the bottom of the panel whatever the scroll, the full panel width, on
+     the page colour with a hairline above it. The box is a child of .comments,
+     and sticky only holds while its parent is on screen, so it is fixed to the
+     panel's own left edge, width, right hairline and bottom instead. The panel
+     popup is fixed with no transform (map.js clears Leaflet's), so nothing
+     traps the box. The padding puts the field 24px from the edge. */
   html[data-report-panel] .leaflet-container .leaflet-detail-pane .report-page .comments .composer:not([hidden]) {
-    position: sticky;
+    position: fixed;
+    left: 0;
     bottom: 0;
     z-index: 1;
-    margin: var(--space-md) calc(-1 * var(--space-lg)) 0 calc(-1 * (var(--space-lg) + var(--space-xs) + var(--space-md)));
+    box-sizing: border-box;
+    width: 520px;
+    margin: 0;
     padding: var(--space-12) var(--space-lg) var(--space-md);
+    border-right: 1px solid var(--color-border);
     background: var(--color-bg);
+  }
+
+  /* The box is out of the flow, so the content keeps its resting height free
+     at the end of the scroll: the last comment stays reachable, with the
+     body's 24px of air above the box. One row more while Replying to shows. A
+     taller field or an error line while typing can cover the last lines. */
+  html[data-report-panel] .leaflet-container .leaflet-detail-pane .leaflet-popup-content:has(.composer:not([hidden])) {
+    padding-bottom: var(--panel-composer-height);
+  }
+
+  html[data-report-panel] .leaflet-container .leaflet-detail-pane .leaflet-popup-content:has(.composer__replying:not([hidden])) {
+    padding-bottom: calc(var(--panel-composer-height) + var(--touch-target-min));
   }
 
   html[data-report-panel] .leaflet-container .leaflet-detail-pane .report-page .comments .composer:not([hidden]):focus-within {

@@ -345,8 +345,13 @@ func TestPolicyNamesHomeSquareScreeningAndMail(t *testing.T) {
 		t.Errorf("the Policy's keeps list does not name the home area square:\n%s", home)
 	}
 	others := r71tPolicySection(t, "Other services Pinalert uses")
+	// Amended 2026-10-29 by the Phase 8 review fix (IN-T02): comments go to
+	// the same OpenAI check, so the services line names them too.
+	if strings.Contains(others, "<li>Report and username checks: OpenAI, as described above.</li>") {
+		t.Errorf("the other services list names OpenAI for report and username checks only; comments are checked too")
+	}
 	for _, line := range []string{
-		"<li>Report and username checks: OpenAI, as described above.</li>",
+		"<li>Report, comment and username checks: OpenAI, as described above.</li>",
 		"<li>Sign in emails: Resend sends them, so it sees your email address and the email, including any code.</li>",
 	} {
 		if !strings.Contains(others, line) {
