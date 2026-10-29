@@ -1043,6 +1043,8 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.With(rateGate.PeopleActionMiddleware()).Post("/api/people/{username}/mute", handlers.MutePerson(people))
 		r.With(rateGate.PeopleActionMiddleware()).Post("/api/people/{username}/unmute", handlers.UnmutePerson(people))
 		r.With(rateGate.PeopleReadMiddleware()).Get("/api/me/muted-people", handlers.MutedPeopleList(people))
+		// Plan 09-23 (D-08): the Notify me bell of one followed person.
+		r.With(rateGate.PeopleActionMiddleware()).Post("/api/people/{username}/notify", handlers.NotifyPerson(people))
 		r.With(rateGate.PeopleActionMiddleware()).Patch("/api/me/visibility", handlers.UpdateVisibility(people))
 		// GET /api/geocode (plan 07-03). Registered as a flat literal path,
 		// not under an r.Route mount — see this router's own doc comments

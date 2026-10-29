@@ -64,6 +64,9 @@ type PersonProfileResponse struct {
 	// Muted says the caller muted this person (D-12). It is the caller's own
 	// state: false on your own page and never revealed to the muted person.
 	Muted bool `json:"muted" example:"false"`
+	// Notify says the caller has the Notify me bell on for this person. It is true
+	// only while the caller follows the person and has not muted them.
+	Notify bool `json:"notify" example:"false"`
 	// MayRate says the caller may rate this person now. YourRating is the caller's
 	// own current rating, 1 to 5, or 0 for none.
 	MayRate    bool `json:"may_rate" example:"true"`
@@ -135,6 +138,16 @@ type VisibilityResponse struct {
 	ProfilePublic bool `json:"profile_public" example:"true"`
 }
 
+// NotifyRequest is the body of POST /people/{username}/notify. On is required.
+type NotifyRequest struct {
+	On *bool `json:"on" example:"true"`
+}
+
+// NotifyResponse is the saved state of the Notify me bell for one person.
+type NotifyResponse struct {
+	Notify bool `json:"notify" example:"true"`
+}
+
 // writePersonNotFound writes the one 404 of every people route that reads a
 // person. Its body is the same for every cause, byte for byte.
 func writePersonNotFound(w http.ResponseWriter) {
@@ -154,6 +167,12 @@ func peopleFailure(w http.ResponseWriter, name string, err error) {
 		return
 	case errors.Is(err, service.ErrFollowingCap):
 		writeFieldError(w, http.StatusConflict, "follow", service.FollowingCapMessage)
+		return
+	case errors.Is(err, service.ErrNotifyUnavailable):
+		writeFieldError(w, http.StatusConflict, "notify", service.NotifyUnavailableMessage)
+		return
+	case errors.Is(err, service.ErrNotifyCap):
+		writeFieldError(w, http.StatusConflict, "notify", service.NotifyCapMessage)
 		return
 	}
 	var ve service.ValidationError
@@ -194,6 +213,7 @@ func profileResponse(p service.PersonProfile) PersonProfileResponse {
 		FollowsYou:       p.FollowsYou,
 		BlockedByYou:     p.BlockedByYou,
 		Muted:            p.Muted,
+		Notify:           p.Notify,
 		MayRate:          p.MayRate,
 		YourRating:       p.YourRating,
 	}
@@ -641,6 +661,56 @@ func BlockedPeopleList(people *service.PeopleService) http.HandlerFunc {
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, http.StatusOK, out)
+	}
+}
+
+// NotifyPerson produces the handler of POST /people/{username}/notify.
+//
+// @Summary Turn Notify me on or off for a person
+// @Description Switches Notify me for one person the caller follows. It is off by default and exists only
+// @Description while the caller follows the person and has not muted them. Turning it on records the time,
+// @Description so only reports posted later raise a note; turning it off clears it. Send a body with on
+// @Description set to true or false; a repeat changes nothing. The answer is the saved state. A person the
+// @Description caller does not follow, has muted or has blocked, and the caller's own username, answer 409
+// @Description with the field notify and the sentence "Couldn't change this. Try again."; so does turning on
+// @Description a bell when 50 are already on, with the sentence for that limit. A person you may not see
+// @Description answers the same 404 as the profile.
+// @Description Requires a session verified by email; an unverified caller receives 401.
+// @Tags people
+// @Accept json
+// @Produce json
+// @Param username path string true "Username"
+// @Param body body NotifyRequest true "The switch"
+// @Success 200 {object} NotifyResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse
+// @Failure 429 {object} RateLimitResponse "Blocked by a limit, see Retry-After"
+// @Header 429 {integer} Retry-After "Whole seconds to wait before trying again"
+// @Failure 500 {object} ErrorResponse
+// @Router /people/{username}/notify [post]
+func NotifyPerson(people *service.PeopleService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		acc, ok := account.FromContext(r.Context())
+		if !ok {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxMeBodyBytes)
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		var req NotifyRequest
+		if err := dec.Decode(&req); err != nil || req.On == nil {
+			writeFieldError(w, http.StatusBadRequest, "on", "Send on as true or false.")
+			return
+		}
+		if err := people.SetNotify(r.Context(), acc.ID, chi.URLParam(r, "username"), *req.On); err != nil {
+			peopleFailure(w, "NotifyPerson", err)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, http.StatusOK, NotifyResponse{Notify: *req.On})
 	}
 }
 

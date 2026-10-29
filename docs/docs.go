@@ -2095,6 +2095,89 @@ const docTemplate = `{
                 }
             }
         },
+        "/people/{username}/notify": {
+            "post": {
+                "description": "Switches Notify me for one person the caller follows. It is off by default and exists only\nwhile the caller follows the person and has not muted them. Turning it on records the time,\nso only reports posted later raise a note; turning it off clears it. Send a body with on\nset to true or false; a repeat changes nothing. The answer is the saved state. A person the\ncaller does not follow, has muted or has blocked, and the caller's own username, answer 409\nwith the field notify and the sentence \"Couldn't change this. Try again.\"; so does turning on\na bell when 50 are already on, with the sentence for that limit. A person you may not see\nanswers the same 404 as the profile.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "people"
+                ],
+                "summary": "Turn Notify me on or off for a person",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Username",
+                        "name": "username",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The switch",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.NotifyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.NotifyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/people/{username}/rating": {
             "post": {
                 "description": "Saves the caller's rating of a person, 1 to 5 stars. Only someone who confirmed, disputed,\nresolved or reopened one of that person's reports may rate them, and never yourself. The\nfirst rating is free; a different rating can be given again after a day. The same stars\nagain change nothing and answer 204. Every reason a rating is not allowed answers 409 with\nthe field stars and the same sentence, and a change inside the day answers 409 with the\nfield stars and its own sentence, so the route does not tell who voted on whose report.\nStars outside 1 to 5, or a body that is not {\"stars\": n}, answers 400 with the field stars.\nA person the caller may not see answers the same 404 as the profile.\nRequires a session verified by email; an unverified caller receives 401.",
@@ -4709,6 +4792,24 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.NotifyRequest": {
+            "type": "object",
+            "properties": {
+                "on": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "handlers.NotifyResponse": {
+            "type": "object",
+            "properties": {
+                "notify": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
         "handlers.OfficialAlertsResponse": {
             "type": "object",
             "properties": {
@@ -5176,6 +5277,11 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "Asha"
+                },
+                "notify": {
+                    "description": "Notify says the caller has the Notify me bell on for this person. It is true\nonly while the caller follows the person and has not muted them.",
+                    "type": "boolean",
+                    "example": false
                 },
                 "profile_public": {
                     "type": "boolean",

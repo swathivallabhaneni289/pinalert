@@ -37,6 +37,8 @@ func TestAccessGateBlocksPeopleRoutes(t *testing.T) {
 		{http.MethodPost, "/api/people/asha_k/mute"},
 		{http.MethodPost, "/api/people/asha_k/unmute"},
 		{http.MethodGet, "/api/me/muted-people"},
+		// Plan 09-23 (D-08): the Notify me route is gated too.
+		{http.MethodPost, "/api/people/asha_k/notify"},
 		{http.MethodPatch, "/api/me/visibility"},
 	}
 	// Plan 09-08: the two HTML routes are gated like every page, so an
