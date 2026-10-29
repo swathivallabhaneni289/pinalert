@@ -193,10 +193,31 @@ func reporterFact(r ReporterSignal) (TrustFact, bool) {
 	default:
 		return TrustFact{}, false
 	}
-	return TrustFact{
+	f := TrustFact{
 		Kind: FactReporter, Tone: tone, Title: reporterLabel(r.Tag),
 		Detail: r.Sentence, ScoreDetail: r.ScoreSentence,
-	}, true
+	}
+	// When tapped ratings are part of the tag, the row says so (review W6,
+	// P9-C29). TappedHalves is set only when the ratings applied, which
+	// includes a private profile whose ratings only lowered the points (D-22),
+	// and it is nil below MinRatersForStars counted raters, for a New
+	// reporter and when the ratings did not apply, so those rows read exactly
+	// as before. The line is written here on the server and is part of the
+	// one trust object, so every surface and the parity tests see the same
+	// words and the browser computes nothing (TRUST-02).
+	if r.TappedHalves != nil && r.Raters >= MinRatersForStars {
+		f.Detail = joinSentences(f.Detail, RatingsIncludedSentence(r.Raters))
+	}
+	return f, true
+}
+
+// joinSentences puts the second sentence after the first with one space. An
+// empty first sentence leaves only the second, so no row starts with a space.
+func joinSentences(first, second string) string {
+	if first == "" {
+		return second
+	}
+	return first + " " + second
 }
 
 // buildTrustFacts is the one builder of the list. Retracted wins over expired,

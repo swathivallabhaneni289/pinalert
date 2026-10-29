@@ -229,3 +229,12 @@ func reporterSentence(t ReporterTag, judged, corroborated int) string {
 func reporterScoreSentence(score int) string {
 	return "Score " + strconv.Itoa(score) + " out of 100."
 }
+
+// RatingsIncludedSentence is the line that ends a reporter row's detail when
+// tapped ratings are part of the reporter's tag (review W6, UI-SPEC P9-C29):
+// Includes ratings by 12 people. The count is the number of counted raters,
+// which is at least MinRatersForStars whenever a caller asks for the line, so
+// the plural form is the normal one.
+func RatingsIncludedSentence(raters int) string {
+	return "Includes ratings by " + peoplePhrase(raters) + "."
+}
