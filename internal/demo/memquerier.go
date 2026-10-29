@@ -404,6 +404,12 @@ func (m *memQuerier) ReporterAccountsForReports(_ context.Context, reportIDs []i
 	return out, nil
 }
 
+// PublicProfilePathsForViewer answers nothing: the Demo has no people profiles,
+// so no report links to one (plan 09-09).
+func (m *memQuerier) PublicProfilePathsForViewer(_ context.Context, _ sqlcgen.PublicProfilePathsForViewerParams) ([]sqlcgen.PublicProfilePathsForViewerRow, error) {
+	return nil, nil
+}
+
 // ReportExtrasForReports mirrors reports.sql ReportExtrasForReports: one row
 // per existing requested report with its moderation state and display only
 // written time. The Demo has no flags and no mutes, so both viewer booleans

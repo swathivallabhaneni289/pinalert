@@ -8,6 +8,7 @@
 package service
 
 import (
+	"context"
 	"time"
 
 	sqlcgen "pinalert/internal/store/sqlc"
@@ -97,6 +98,65 @@ type ReportView struct {
 	// and like: true for an active or disputed report, false for a resolved, faded
 	// or withheld one (CommentsOpen in comments.go). The page never decides it (D-15).
 	CommentsOpen bool
+	// ReporterProfilePath is "/u/" plus the reporter's username, set only when the
+	// reporter is opted in, has a clear username, is not deleted, is not the
+	// reader and has not blocked the reader, and only on a live view (Active or
+	// Disputed). It is viewer dependent, so it sits on the row beside
+	// IsOwnReport and must never move into Trust, which is built once and
+	// compared byte for byte across the feed and the vote response (D-04, D-12).
+	// Every finished view leaves it empty: report ids are sequential, so a
+	// finished row tied to a username could be matched to its exact point
+	// (D-20, review B1).
+	ReporterProfilePath string
+	// reporterAccountID is the reporter's account, kept for service code that
+	// needs it later (mute and follow notes). It is unexported and never
+	// serialised, so no account id reaches the wire (T-09-34).
+	reporterAccountID int64
+}
+
+// ReporterAccount is the reporter's account id, or 0 when the report has no
+// account. It is for service code only; handlers must not put it on the wire.
+func (v ReportView) ReporterAccount() int64 { return v.reporterAccountID }
+
+// profilePathMap turns the profile path rows into account id to "/u/name".
+func profilePathMap(rows []sqlcgen.PublicProfilePathsForViewerRow) map[int64]string {
+	out := make(map[int64]string, len(rows))
+	for _, r := range rows {
+		out[r.ID] = "/u/" + r.Username
+	}
+	return out
+}
+
+// loadProfilePaths reads, in one batched query, which of the page's reporters
+// have a profile the viewer may open. A viewer of 0 (nobody identified) reads
+// nothing, and the viewer's own account is never asked for, because your own
+// report links nowhere. It returns an empty map when there is nothing to ask.
+func loadProfilePaths(ctx context.Context, q interface {
+	PublicProfilePathsForViewer(ctx context.Context, arg sqlcgen.PublicProfilePathsForViewerParams) ([]sqlcgen.PublicProfilePathsForViewerRow, error)
+}, viewerAccountID int64, reporterByReport map[int64]*int64) (map[int64]string, error) {
+	if viewerAccountID == 0 {
+		return nil, nil
+	}
+	seen := make(map[int64]struct{}, len(reporterByReport))
+	accounts := make([]int64, 0, len(reporterByReport))
+	for _, id := range reporterByReport {
+		if id == nil || *id == viewerAccountID {
+			continue
+		}
+		if _, ok := seen[*id]; ok {
+			continue
+		}
+		seen[*id] = struct{}{}
+		accounts = append(accounts, *id)
+	}
+	if len(accounts) == 0 {
+		return nil, nil
+	}
+	rows, err := q.PublicProfilePathsForViewer(ctx, sqlcgen.PublicProfilePathsForViewerParams{AccountIds: accounts, ViewerID: viewerAccountID})
+	if err != nil {
+		return nil, err
+	}
+	return profilePathMap(rows), nil
 }
 
 // ListableInAll reports whether a report with visibility v belongs in the Show

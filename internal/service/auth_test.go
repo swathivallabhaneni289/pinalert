@@ -68,6 +68,29 @@ type fakeAuthQuerier struct {
 	extrasRows []sqlcgen.ReportExtrasForReportsRow
 	extrasErr  error
 	extrasArgs []sqlcgen.ReportExtrasForReportsParams
+
+	// profileRows/profileErr/profileArgs drive PublicProfilePathsForViewer (plan
+	// 09-09). Not written to the shared call log, so the pinned Activity read
+	// order keeps its result.
+	profileRows []sqlcgen.PublicProfilePathsForViewerRow
+	profileErr  error
+	profileArgs []sqlcgen.PublicProfilePathsForViewerParams
+}
+
+// PublicProfilePathsForViewer returns the configured rows of the requested
+// accounts, like the query's own filter.
+func (f *fakeAuthQuerier) PublicProfilePathsForViewer(_ context.Context, arg sqlcgen.PublicProfilePathsForViewerParams) ([]sqlcgen.PublicProfilePathsForViewerRow, error) {
+	f.profileArgs = append(f.profileArgs, arg)
+	if f.profileErr != nil {
+		return nil, f.profileErr
+	}
+	var out []sqlcgen.PublicProfilePathsForViewerRow
+	for _, row := range f.profileRows {
+		if slices.Contains(arg.AccountIds, row.ID) {
+			out = append(out, row)
+		}
+	}
+	return out, nil
 }
 
 // ReportExtrasForReports records the call. Configured, it returns only the

@@ -482,6 +482,9 @@ type Querier interface {
 	// the display only written time and the viewer's flag for a page of
 	// reports. It is held off NearbyReports so that query stays as shipped.
 	ReportExtrasForReports(ctx context.Context, arg sqlcgen.ReportExtrasForReportsParams) ([]sqlcgen.ReportExtrasForReportsRow, error)
+	// PublicProfilePathsForViewer is the one batched read of which reporters of a
+	// page have a profile the viewer may open (D-04, D-12). Skipped for viewer 0.
+	PublicProfilePathsForViewer(ctx context.Context, arg sqlcgen.PublicProfilePathsForViewerParams) ([]sqlcgen.PublicProfilePathsForViewerRow, error)
 }
 
 // ReportService validates, computes derived fields, and persists reports.
@@ -1044,6 +1047,13 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 		extrasByReport[ex.ReportID] = ex
 	}
 
+	// Which reporters of the page have a profile this reader may open: one
+	// batched read, none for an unidentified reader (D-04, D-12).
+	profilePaths, err := loadProfilePaths(ctx, s.q, q.ViewerAccountID, reporterByReport)
+	if err != nil {
+		return nil, err
+	}
+
 	views := make([]ReportView, 0, len(rows))
 	for _, row := range rows {
 		r := reportFromNearbyRow(row)
@@ -1122,6 +1132,15 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 			CommentCount: int(ex.CommentCount),
 			CommentsOpen: CommentsOpen(vis, r.ExpiresAt, now),
 		})
+		// Beside IsOwnReport and never inside Trust (D-04). Only a live view
+		// reaches here, and your own report links nowhere.
+		last := &views[len(views)-1]
+		if reporterID != nil {
+			last.reporterAccountID = *reporterID
+			if !isOwn {
+				last.ReporterProfilePath = profilePaths[*reporterID]
+			}
+		}
 	}
 	if err := s.attachUndos(ctx, q.ViewerAccountID, views, now); err != nil {
 		return nil, err

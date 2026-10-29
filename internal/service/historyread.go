@@ -59,6 +59,10 @@ type readContext struct {
 	// extrasByReport holds the stored moderation state of each candidate, from
 	// the one ReportExtrasForReports read (R-01).
 	extrasByReport map[int64]sqlcgen.ReportExtrasForReportsRow
+	// profilePaths maps a reporter account to "/u/username" for the reporters the
+	// viewer may open. Only Focus fills it (the one read that shows a live report
+	// to an identified reader); every other read leaves it nil (D-04, D-20).
+	profilePaths map[int64]string
 }
 
 // The three candidate row types are the same twelve columns as NearbyReports,
@@ -290,6 +294,9 @@ type viewInput struct {
 	// from ProfileCentre, which is nil when the reader gave no centre.
 	ProfileCoarse bool
 	ProfileCentre *GeoPoint
+	// ProfilePaths maps a reporter account to the path of the profile the viewer
+	// may open (D-04). Nil on every read that does not link a name.
+	ProfilePaths map[int64]string
 }
 
 // baseView builds the fields every read path fills, the same way Nearby does:
@@ -312,14 +319,24 @@ func baseView(in viewInput) ReportView {
 		Now:               in.Now,
 		Reporter:          reporterSignalRef(in.Signals, c.reporterID),
 	})
+	var reporterAccount int64
+	var profilePath string
+	if c.reporterID != nil {
+		reporterAccount = *c.reporterID
+		if !isOwn {
+			profilePath = in.ProfilePaths[reporterAccount]
+		}
+	}
 	return ReportView{
-		Report:           r,
-		Visibility:       c.visibility,
-		VisibilityReason: c.reason,
-		View:             c.view,
-		ViewerVote:       ViewerContentVote(c.votes, r.ID, in.ViewerAccountID),
-		ViewerResolution: ViewerResolution(c.votes, r.ID, in.ViewerAccountID),
-		IsOwnReport:      isOwn,
+		ReporterProfilePath: profilePath,
+		reporterAccountID:   reporterAccount,
+		Report:              r,
+		Visibility:          c.visibility,
+		VisibilityReason:    c.reason,
+		View:                c.view,
+		ViewerVote:          ViewerContentVote(c.votes, r.ID, in.ViewerAccountID),
+		ViewerResolution:    ViewerResolution(c.votes, r.ID, in.ViewerAccountID),
+		IsOwnReport:         isOwn,
 		// The reader's follow state from the vote rows already held (D-09, D-10).
 		// ViewerMuted is set by Focus from its extras read; History leaves both
 		// false.
@@ -346,6 +363,10 @@ func baseView(in viewInput) ReportView {
 // the profile coarsener (every category blurred) instead of the Rescue one.
 func buildFinishedView(in viewInput) ReportView {
 	v := baseView(in)
+	// No finished view links a username (D-20, review B1): report ids are
+	// sequential, so a finished row tied to a name could be matched to its exact
+	// point. Every finished view leaves the service through here.
+	v.ReporterProfilePath = ""
 	c := in.Class
 	outcome := OutcomeNeutral
 	if c.view == FeedViewPast {
@@ -510,6 +531,14 @@ func (s *ReportService) Focus(ctx context.Context, q FocusQuery) (FocusResult, e
 	}
 	cand := historyCandidate{report: r, expired: !r.ExpiresAt.After(now)}
 	cl := classify(cand, rc, now)
+	// The profile link of a live report (D-04). A finished view clears it in
+	// buildFinishedView, so the read is skipped when the view is not live.
+	if cl.view == FeedViewActive || cl.view == FeedViewDisputed {
+		rc.profilePaths, err = loadProfilePaths(ctx, s.q, q.ViewerAccountID, rc.reporterByReport)
+		if err != nil {
+			return FocusResult{}, err
+		}
+	}
 	in := viewInput{
 		Report:          r,
 		Class:           cl,
@@ -517,6 +546,7 @@ func (s *ReportService) Focus(ctx context.Context, q FocusQuery) (FocusResult, e
 		ViewerAccountID: q.ViewerAccountID,
 		Centre:          GeoPoint{Lat: q.Latitude, Lon: q.Longitude},
 		Now:             now,
+		ProfilePaths:    rc.profilePaths,
 	}
 
 	var view ReportView
