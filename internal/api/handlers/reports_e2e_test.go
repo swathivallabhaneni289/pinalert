@@ -117,18 +117,48 @@ func newE2EServerWith(t *testing.T, tweak func(d *api.Deps, q *sqlcgen.Queries))
 	return srv, fm, pool
 }
 
-// verifySession drives the real request-link-then-verify flow for client
-// against srv (reusing requestLink/getVerify from auth_e2e_test.go), so the
-// session it represents is bound to a verified account before the caller
-// drives /api/reports — the access gate added in 01.1-04 refuses an
-// unverified session with 401, not report data.
+// verifySession signs client in as email against srv, so the session it
+// represents is bound to a verified account before the caller drives
+// /api/reports: the access gate added in 01.1-04 refuses an unverified session
+// with 401, not report data.
+//
+// Amended 2026-10-29 by Phase 7.1 plan 08: the body used to request a login
+// link and open it. It now uses the password flow, with the signature
+// unchanged so the roughly 280 newVerifiedClient call sites did not move. It
+// tries POST /api/auth/sign-in with e2eTestPassword first: a 200 means the
+// account already has that password (a second browser for the same address, so
+// no second code email and no 45 second cooldown). A 400 on the field
+// credentials means no such account or no password yet, and the helper then
+// creates the account with POST /api/auth/sign-up and the code the recording
+// mailer captured. Any other status fails the test. Step 4 of onboarding (the
+// profile) is not filled here: the gate lets /api/ through for every account,
+// and only tests with OnboardingGate true need a full profile.
 func verifySession(t *testing.T, client *http.Client, srv *httptest.Server, mailer *recordingMailer, email string) {
 	t.Helper()
-	token := requestLink(t, client, srv, mailer, email)
-	status, body := getVerify(t, client, srv, token)
-	if status != http.StatusOK || !strings.Contains(body, "Email verified") {
-		t.Fatalf("verifying session for %s: status=%d body=%s", email, status, body)
+	status, body, _ := signInOrSignUp(t, client, srv, mailer, email)
+	if status != http.StatusOK || !strings.Contains(body, `"next"`) {
+		t.Fatalf("signing in %s: status=%d body=%s", email, status, body)
 	}
+}
+
+// signInOrSignUp is the rule behind verifySession. It returns the status, the
+// body and the cookies of the answer that signed the client in (or of the
+// failing answer, which the caller reports).
+func signInOrSignUp(t *testing.T, client *http.Client, srv *httptest.Server, mailer *recordingMailer, email string) (int, string, []*http.Cookie) {
+	t.Helper()
+	status, raw, resp := postAuthJSON(t, client, srv, "/api/auth/sign-in", map[string]string{"email": email, "password": e2eTestPassword})
+	if status == http.StatusOK {
+		return status, string(raw), resp.Cookies()
+	}
+	var failure handlers.ErrorResponse
+	if status != http.StatusBadRequest || json.Unmarshal(raw, &failure) != nil || failure.Error.Field != "credentials" {
+		t.Fatalf("POST /api/auth/sign-in for %s: status=%d body=%s", email, status, raw)
+	}
+	if got := signUpRequest(t, client, srv, email, e2eTestPassword); got != http.StatusOK {
+		t.Fatalf("POST /api/auth/sign-up for %s: status=%d", email, got)
+	}
+	status, raw, resp = postAuthJSON(t, client, srv, "/api/auth/sign-up/code", map[string]string{"code": mailer.codeFor(t, email)})
+	return status, string(raw), resp.Cookies()
 }
 
 func postReport(t *testing.T, client *http.Client, baseURL string, body map[string]any) *http.Response {

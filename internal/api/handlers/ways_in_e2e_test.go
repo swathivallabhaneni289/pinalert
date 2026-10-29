@@ -285,11 +285,12 @@ func TestLoginLowParamSetsCookie(t *testing.T) {
 		t.Errorf("panel text = %q, want %q", got, p421OnText)
 	}
 
-	token := requestLink(t, client, srv, mailer, "waysin-p421-reader@example.com")
-	status, vbody := getVerify(t, client, srv, token)
-	if status != http.StatusOK || !strings.Contains(vbody, "Email verified") || !strings.Contains(vbody, `href="/"`) {
-		t.Fatalf("verify = %d, want 200 with Email verified and a Continue link to /: %s", status, vbody)
-	}
+	// Amended 2026-10-29 by Phase 7.1 plan 08: the reader used to open the
+	// mailed link by hand and check the verify page. It now signs in with the
+	// password (creating the account with a typed code the first time), and
+	// the assertion is that the client reaches the pages read below: the
+	// remembered Low data choice still sends / to /low and /low answers 200.
+	verifySession(t, client, srv, mailer, "waysin-p421-reader@example.com")
 
 	resp, _ = p421Get(t, client, srv.URL+"/")
 	if resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "/low" {

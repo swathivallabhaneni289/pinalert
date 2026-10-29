@@ -81,7 +81,7 @@ func TestLogoutAllEndsASecondSignIn(t *testing.T) {
 	srv, mailer, pool := newRevServer(t)
 	first := newVerifiedClient(t, srv, mailer, "lo-two-a@example.com")
 	second := newJarClient(t)
-	if status, body, _ := revSignIn(t, second, srv, mailer, pool, "lo-two-a@example.com"); status != http.StatusOK || !strings.Contains(body, "Email verified") {
+	if status, body, _ := revSignIn(t, second, srv, mailer, pool, "lo-two-a@example.com"); status != http.StatusOK || !strings.Contains(body, revSignedInMarker) {
 		t.Fatalf("second browser sign in: status %d: %s", status, body)
 	}
 	revExpect(t, "second before", second, srv, http.StatusOK, http.StatusOK)
