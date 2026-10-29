@@ -93,6 +93,10 @@ function load({ wide = true } = {}) {
     applyPanPadding() {},
     applyPopupPlacement(popup, card) { log.push('place ' + (ctx.panelOpen ? 'panel' : 'bubble')); },
     returnFocusToOpener(opener) { log.push('focus ' + opener.kind + ' ' + opener.id); },
+    // exitPanel asks whether a GDACS card is the open popup (Phase 8 review fix
+    // WR-B02, 2026-10-29); no card is open in these tests.
+    activePopup: null,
+    isOfficialPopup() { return false; },
     isFinite
   };
   ctx.markers[7].getPopup = () => ({});

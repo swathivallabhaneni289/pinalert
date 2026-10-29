@@ -430,6 +430,11 @@ window.PinalertMap = (function () {
     panelOpener = null;
     var active = document.activeElement;
     var host = document.querySelector('.report-view-host');
+    // A GDACS card that replaced the report keeps its focus (review fix
+    // WR-B02): the old report's opener is not where the reader is now.
+    if (isOfficialPopup(activePopup)) {
+      return;
+    }
     if (opener && (!active || active === document.body || (host && host.contains(active)))) {
       returnFocusToOpener(opener);
     }
@@ -2630,6 +2635,13 @@ window.PinalertMap = (function () {
       offset: [0, -22]
     });
     applyPopupPlacement(popup, null);
+    // The card's place comes from the phone test alone (Phase 8 review fix
+    // WR-B02): a card opened while the laptop report panel is open closes that
+    // report, and the panel exits a turn later, so the card is the laptop
+    // bubble, never the detail pane the panel is about to leave.
+    var phoneCard = phoneDetail();
+    popup.options.pane = phoneCard ? 'detailPane' : 'popupPane';
+    popup.options.autoPan = !reducedMotion && !phoneCard;
     popup.setLatLng(latlng);
     popup.setContent(node);
     officialPopup = popup;

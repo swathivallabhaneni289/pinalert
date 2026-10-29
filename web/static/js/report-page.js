@@ -383,9 +383,19 @@ window.PinalertReportPage = (function () {
       load();
     }
 
+    // onVisible asks for the history again when the tab comes back, so a
+    // reader back from another app does not wait for the next tick (review fix
+    // IN-B06). It is listened for only while the poll runs.
+    function onVisible() {
+      tick();
+    }
+
     function startPolling() {
       if (pollTimer === null) {
         pollTimer = window.setInterval(tick, TIMELINE_POLL_MS);
+        if (typeof document.addEventListener === 'function') {
+          document.addEventListener('visibilitychange', onVisible);
+        }
       }
     }
 
@@ -393,6 +403,9 @@ window.PinalertReportPage = (function () {
       if (pollTimer !== null) {
         window.clearInterval(pollTimer);
         pollTimer = null;
+        if (typeof document.removeEventListener === 'function') {
+          document.removeEventListener('visibilitychange', onVisible);
+        }
       }
     }
 

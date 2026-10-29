@@ -113,7 +113,12 @@ function load({ online = true, visible = true, share = false, comments = false }
     activeElement: null,
     visibilityState: visible ? 'visible' : 'hidden',
     all: [],
-    createElement(tag) { const el = new FakeEl(doc, tag); doc.all.push(el); return el; }
+    createElement(tag) { const el = new FakeEl(doc, tag); doc.all.push(el); return el; },
+    // The page listens for the tab coming back (review fix IN-B06, 2026-10-29).
+    listeners: {},
+    addEventListener(type, fn) { (doc.listeners[type] = doc.listeners[type] || []).push(fn); },
+    removeEventListener(type, fn) { doc.listeners[type] = (doc.listeners[type] || []).filter((f) => f !== fn); },
+    dispatch(type) { (doc.listeners[type] || []).slice().forEach((fn) => fn({ type })); }
   };
   const fetches = [];
   const timers = { now: 0, nextId: 1, list: [] };
@@ -563,4 +568,19 @@ test('the comments section is built into the mount and follows the page', () => 
   page.setHosted(true);
   page.close();
   assert.equal(views[0].calls[views[0].calls.length - 1], 'close');
+});
+
+// ---- review fix IN-B06 (2026-10-29): the history refreshes when the tab comes
+// back, and the listener goes with the page's close. ----
+
+test('IN-B06: the history refreshes when the tab comes back, and not after close', () => {
+  const env = load();
+  const page = openHosted(env);
+  env.fetches.forEach((c) => { if (!c.settled) { c.reply(200, { events: [] }); } });
+  const before = env.fetches.length;
+  env.doc.visibilityState = 'visible';
+  env.doc.dispatch('visibilitychange');
+  assert.equal(env.fetches.length, before + 1, 'the history is asked for again');
+  page.close();
+  assert.equal((env.doc.listeners.visibilitychange || []).length, 0, 'the listener is removed on close');
 });

@@ -33,6 +33,13 @@ import vm from 'node:vm';
 
 const here = path.dirname(url.fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.join(here, 'static', 'js', 'comments.js'), 'utf8');
+// The real shared time limit of app.js (Pinalert.requestTimeout), cut out of
+// the file so the sandbox runs the page's own limit on its fake timers (review
+// fix WR-B01, 2026-10-29).
+const appSource = fs.readFileSync(path.join(here, 'static', 'js', 'app.js'), 'utf8');
+const limitAt = appSource.indexOf('  function requestTimeout(ms, what) {');
+assert.notEqual(limitAt, -1, 'app.js defines requestTimeout');
+const limitSource = appSource.slice(limitAt, appSource.indexOf('\n  }\n', limitAt) + 4);
 
 class FakeText {
   constructor(value) {
@@ -130,12 +137,17 @@ function find(el, cls) { return findAll(el, cls)[0] || null; }
 
 const flush = async () => { for (let i = 0; i < 30; i += 1) { await Promise.resolve(); } };
 
-function load({ online = true, visible = true } = {}) {
+function load({ online = true, visible = true, ignoreAbort = false } = {}) {
   const doc = {
     activeElement: null,
     visibilityState: visible ? 'visible' : 'hidden',
     createElement(tag) { return new FakeEl(doc, tag); },
-    createTextNode(v) { return new FakeText(v); }
+    createTextNode(v) { return new FakeText(v); },
+    // The section listens for the tab coming back (review fix IN-B06, 2026-10-29).
+    listeners: {},
+    addEventListener(type, fn) { (doc.listeners[type] = doc.listeners[type] || []).push(fn); },
+    removeEventListener(type, fn) { doc.listeners[type] = (doc.listeners[type] || []).filter((f) => f !== fn); },
+    dispatch(type) { (doc.listeners[type] || []).slice().forEach((fn) => fn({ type })); }
   };
   const fetches = [];
   const timers = { now: 0, nextId: 1, list: [] };
@@ -166,11 +178,20 @@ function load({ online = true, visible = true } = {}) {
             call.settled = true;
             resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) });
           },
-          fail(err) { call.settled = true; reject(err || new Error('network')); }
+          fail(err) { call.settled = true; reject(err || new Error('network')); },
+          // stall answers with the headers and a body read that never ends.
+          stall(status) {
+            call.settled = true;
+            resolve({ ok: status >= 200 && status < 300, status, json: () => new Promise(() => {}) });
+          }
         };
-        opts.signal.addEventListener('abort', () => {
-          if (!call.settled) { call.settled = true; reject(new Error('aborted')); }
-        });
+        // ignoreAbort is the WebKit case: an aborted request whose promise
+        // never settles (app.js requestTimeout).
+        if (!ignoreAbort && opts.signal) {
+          opts.signal.addEventListener('abort', () => {
+            if (!call.settled) { call.settled = true; reject(new Error('aborted')); }
+          });
+        }
         fetches.push(call);
       });
     },
@@ -182,6 +203,8 @@ function load({ online = true, visible = true } = {}) {
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
+  vm.runInContext(limitSource, sandbox);
+  sandbox.Pinalert.requestTimeout = sandbox.requestTimeout;
   vm.runInContext(source, sandbox, { filename: 'comments.js' });
   return {
     doc, fetches, sandbox, timers,
@@ -1079,4 +1102,310 @@ test('offline like says so', async () => {
   likeButton(li).fire('click');
   assert.equal(env.fetches.length, before, 'nothing is sent');
   assert.equal(actionError(li).textContent, "You're offline, so this wasn't saved. Try again when you have a signal.");
+});
+
+// ---- review fix WR-B01 (2026-10-29): every comment request ends at the page's
+// own 10 s limit (Pinalert.requestTimeout), even when the aborted request never
+// settles (WebKit) or the body read stalls after the headers. ----
+
+test('WR-B01: a post whose aborted request never settles gives Post back at 10 s', async () => {
+  const env = load({ ignoreAbort: true });
+  const page = await start(env, [cm(1)]);
+  type(page, 'Water at knee height near the bus stand');
+  page.post.fire('click');
+  assert.equal(page.post.textContent, 'Posting…');
+  env.advance(10000);
+  await flush();
+  assert.equal(page.post.textContent, 'Post', 'Post is back');
+  assert.equal(page.post.getAttribute('aria-disabled'), 'false');
+  assert.equal(page.error.hidden, false);
+  assert.equal(page.error.textContent, "Couldn't post your comment. Try again.");
+  assert.equal(page.input.value, 'Water at knee height near the bus stand', 'the words stay');
+  const before = posts(env).length;
+  page.post.fire('click');
+  assert.equal(posts(env).length, before + 1, 'a second press sends a second POST');
+});
+
+test('WR-B01: a like whose aborted request never settles gives Like back at 10 s', async () => {
+  const env = load({ ignoreAbort: true });
+  const page = await start(env, [cm(1)]);
+  const li = page.items()[0];
+  likeButton(li).fire('click');
+  assert.equal(likeButton(li).getAttribute('aria-disabled'), 'true');
+  env.advance(10000);
+  await flush();
+  assert.equal(likeButton(li).getAttribute('aria-disabled'), null, 'Like is back on');
+  assert.equal(actionError(li).hidden, false);
+  const before = posts(env).length;
+  likeButton(li).fire('click');
+  assert.equal(posts(env).length, before + 1, 'a second tap sends a second POST');
+});
+
+test('WR-B01: a like answered with a body that never ends gives Like back at 10 s', async () => {
+  const env = load();
+  const page = await start(env, [cm(1)]);
+  const li = page.items()[0];
+  likeButton(li).fire('click');
+  lastFetch(env).stall(200);
+  await flush();
+  env.advance(10000);
+  await flush();
+  assert.equal(likeButton(li).getAttribute('aria-disabled'), null, 'Like is back on');
+  const before = posts(env).length;
+  likeButton(li).fire('click');
+  assert.equal(posts(env).length, before + 1);
+});
+
+test('WR-B01: Show more whose body never ends can be pressed again at 10 s', async () => {
+  const env = load();
+  const page = await start(env, [cm(1)], { more: true, next_after: 1 });
+  const more = find(page.view.el, 'comments__more');
+  more.fire('click');
+  lastFetch(env).stall(200);
+  await flush();
+  env.advance(10000);
+  await flush();
+  assert.equal(more.getAttribute('aria-disabled'), null);
+  assert.equal(find(page.view.el, 'comments__more-error').hidden, false);
+  const before = env.fetches.length;
+  more.fire('click');
+  assert.equal(env.fetches.length, before + 1, 'Show more asks again');
+});
+
+// ---- review fix WR-B03 (2026-10-29): a post that succeeds keeps the words
+// typed while it was in flight, and a reply target chosen meanwhile. ----
+
+test('WR-B03: words typed while the post was out stay in the box', async () => {
+  const env = load();
+  const page = await start(env, [cm(1)]);
+  type(page, 'Road closed at the flyover');
+  page.post.fire('click');
+  const sent = lastFetch(env);
+  type(page, 'Road closed at the flyover Use the service road instead');
+  sent.reply(201, cm(2, { is_own: true, can_delete: true, author: 'me.k', words: 'Road closed at the flyover' }));
+  await flush();
+  assert.equal(page.input.value, 'Use the service road instead', 'only the sent words go');
+});
+
+test('WR-B03: a box rewritten while the post was out is left alone', async () => {
+  const env = load();
+  const page = await start(env, [cm(1)]);
+  type(page, 'Road closed');
+  page.post.fire('click');
+  const sent = lastFetch(env);
+  type(page, 'Something else');
+  sent.reply(201, cm(2, { is_own: true, author: 'me.k', words: 'Road closed' }));
+  await flush();
+  assert.equal(page.input.value, 'Something else');
+});
+
+test('WR-B03: a reply target chosen while the post was out survives', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { author: 'ravi.k' }), cm(3, { author: 'asha.m' })]);
+  type(page, 'Road closed');
+  page.post.fire('click');
+  const sent = lastFetch(env);
+  replyButton(page.items()[1]).fire('click');
+  assert.equal(page.input.value, '@asha.m Road closed');
+  sent.reply(201, cm(4, { is_own: true, author: 'me.k', words: 'Road closed' }));
+  await flush();
+  assert.equal(page.replying.hidden, false, 'the new reply target stays');
+  assert.equal(page.input.getAttribute('aria-label'), 'Reply to asha.m');
+});
+
+test('WR-B03: the sent reply clears its own target and the box', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { author: 'ravi.k' })]);
+  replyButton(page.items()[0]).fire('click');
+  type(page, '@ravi.k thanks');
+  page.post.fire('click');
+  lastFetch(env).reply(201, cm(5, { is_own: true, author: 'me.k', words: '@ravi.k thanks', reply_to_author: 'ravi.k' }));
+  await flush();
+  assert.equal(page.input.value, '');
+  assert.equal(page.replying.hidden, true);
+});
+
+// ---- review fix WR-B04 (2026-10-29): after Show more the poll also reads the
+// last page, so new comments keep appearing on a report with more than 50, and
+// every top level comment sits in id order, your own post too. ----
+
+function roots(from, to) {
+  const out = [];
+  for (let id = from; id <= to; id += 1) { out.push(cm(id, { words: 'c' + id })); }
+  return out;
+}
+function shownIds(page) { return page.items().map((li) => wordsOf(li).textContent); }
+
+test('WR-B04: after Show more, a new comment on the last page appears at the next poll', async () => {
+  const env = load();
+  const page = await start(env, roots(1, 50), { more: true, next_after: 50, comment_count: 70 });
+  find(page.view.el, 'comments__more').fire('click');
+  assert.ok(lastFetch(env).address.endsWith('?after=50'));
+  lastFetch(env).reply(200, body(roots(51, 70), { more: false, next_after: 0 }));
+  await flush();
+  assert.equal(page.items().length, 70);
+  env.advance(30000);
+  lastFetch(env).reply(200, body(roots(1, 50), { more: true, next_after: 50, comment_count: 71 }));
+  await flush();
+  const tail = lastFetch(env);
+  assert.ok(tail.address.endsWith('?after=50'), 'the poll reads the last page too, it asked ' + tail.address);
+  tail.reply(200, body(roots(51, 71), { more: false, next_after: 0, comment_count: 71 }));
+  await flush();
+  const ids = shownIds(page);
+  assert.equal(ids.length, 71);
+  assert.equal(ids[70], 'c71', 'the new comment is last');
+  assert.equal(ids[0], 'c1', 'the first page stays first');
+});
+
+test('WR-B04: a last page that grew past 50 brings Show more back', async () => {
+  const env = load();
+  const page = await start(env, roots(1, 50), { more: true, next_after: 50 });
+  const more = find(page.view.el, 'comments__more');
+  more.fire('click');
+  lastFetch(env).reply(200, body(roots(51, 60), { more: false, next_after: 0 }));
+  await flush();
+  assert.equal(more.hidden, true);
+  env.advance(30000);
+  lastFetch(env).reply(200, body(roots(1, 50), { more: true, next_after: 50 }));
+  await flush();
+  lastFetch(env).reply(200, body(roots(51, 100), { more: true, next_after: 100 }));
+  await flush();
+  assert.equal(more.hidden, false, 'Show more is back for the comments past the last page');
+  more.fire('click');
+  assert.ok(lastFetch(env).address.endsWith('?after=100'));
+});
+
+test('WR-B04: your own post on a long report lands after the older pages', async () => {
+  const env = load();
+  const page = await start(env, roots(1, 50), { more: true, next_after: 50, comment_count: 70 });
+  type(page, 'Shelter is full');
+  page.post.fire('click');
+  lastFetch(env).reply(201, cm(100, { is_own: true, can_delete: true, author: 'me.k', words: 'c100' }));
+  await flush();
+  lastFetch(env).reply(200, body(roots(1, 50), { more: true, next_after: 50, comment_count: 71 }));
+  await flush();
+  find(page.view.el, 'comments__more').fire('click');
+  lastFetch(env).reply(200, body(roots(51, 70).concat([cm(100, { is_own: true, author: 'me.k', words: 'c100' })]), { more: false, next_after: 0 }));
+  await flush();
+  const ids = shownIds(page);
+  assert.equal(ids.length, 71);
+  assert.equal(ids[50], 'c51', 'page 2 follows page 1');
+  assert.equal(ids[70], 'c100', 'your own post is last, in order');
+});
+
+// ---- review fix WR-B05 (2026-10-29): a list answer whose request left before
+// a Like answered never writes the older like state over the newer one. ----
+
+test('WR-B05: a poll sent before the like and answered after it keeps the like', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { likes: 3 })]);
+  const li = page.items()[0];
+  env.advance(30000);
+  const poll = lastFetch(env);
+  assert.equal(poll.opts.method, 'GET');
+  likeButton(li).fire('click');
+  lastFetch(env).reply(200, { likes: 4, viewer_liked: true });
+  await flush();
+  poll.reply(200, body([cm(1, { likes: 3, viewer_liked: false })]));
+  await flush();
+  assert.equal(likeButton(li).getAttribute('aria-pressed'), 'true');
+  assert.equal(find(li, 'comment__like-count').textContent, '4');
+});
+
+test('WR-B05: a poll sent while the like was out keeps the like too', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { likes: 3 })]);
+  const li = page.items()[0];
+  // The like leaves at 25 s and the poll at 30 s, inside the like's 10 s limit.
+  env.advance(25000);
+  likeButton(li).fire('click');
+  const like = lastFetch(env);
+  env.advance(5000);
+  const poll = lastFetch(env);
+  assert.equal(poll.opts.method, 'GET');
+  like.reply(200, { likes: 4, viewer_liked: true });
+  await flush();
+  poll.reply(200, body([cm(1, { likes: 3, viewer_liked: false })]));
+  await flush();
+  assert.equal(likeButton(li).getAttribute('aria-pressed'), 'true');
+  assert.equal(find(li, 'comment__like-count').textContent, '4');
+});
+
+test('WR-B05: a poll sent after the like answered is written as it comes', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { likes: 3 })]);
+  const li = page.items()[0];
+  likeButton(li).fire('click');
+  lastFetch(env).reply(200, { likes: 4, viewer_liked: true });
+  await flush();
+  env.advance(30000);
+  lastFetch(env).reply(200, body([cm(1, { likes: 2, viewer_liked: false })]));
+  await flush();
+  assert.equal(likeButton(li).getAttribute('aria-pressed'), 'false', 'a newer answer wins');
+  assert.equal(find(li, 'comment__like-count').textContent, '2');
+});
+
+// ---- review fix IN-B07 (2026-10-29): the Enter that ends a composition in
+// Safari (keyCode 229, isComposing false) never posts. ----
+
+test('IN-B07: an Enter with keyCode 229 ends the composition and does not post', async () => {
+  const env = load();
+  const page = await start(env, [cm(1)]);
+  type(page, 'నీరు');
+  const before = posts(env).length;
+  page.input.fire('keydown', { key: 'Enter', keyCode: 229, isComposing: false });
+  assert.equal(posts(env).length, before, 'nothing is posted');
+  page.input.fire('keydown', { key: 'Enter', keyCode: 13 });
+  assert.equal(posts(env).length, before + 1, 'a plain Enter posts');
+});
+
+// ---- review fix IN-B02 (2026-10-29): a post with no readable answer asks for
+// the list again, so a comment the server did store shows before a second press. ----
+
+test('IN-B02: a post that timed out asks for the list again', async () => {
+  const env = load();
+  const page = await start(env, [cm(1)]);
+  type(page, 'Shelter is open');
+  page.post.fire('click');
+  env.advance(10000);
+  await flush();
+  const last = lastFetch(env);
+  assert.equal(last.opts.method, 'GET', 'the list is asked for after the unknown outcome');
+  last.reply(200, body([cm(1), cm(2, { is_own: true, author: 'me.k', words: 'Shelter is open' })]));
+  await flush();
+  assert.equal(page.items().length, 2, 'the stored comment shows');
+  assert.equal(page.input.value, 'Shelter is open', 'the words stay');
+});
+
+test('IN-B02: a 201 whose body cannot be read asks for the list again', async () => {
+  const env = load();
+  const page = await start(env, [cm(1)]);
+  type(page, 'Shelter is open');
+  page.post.fire('click');
+  lastFetch(env).stall(201);
+  await flush();
+  env.advance(10000);
+  await flush();
+  assert.equal(lastFetch(env).opts.method, 'GET');
+  assert.equal(page.error.textContent, "Couldn't post your comment. Try again.");
+});
+
+// ---- review fix IN-B06 (2026-10-29): the comments refresh when the tab comes
+// back, and the listener goes with the section's close. ----
+
+test('IN-B06: the comments refresh when the tab comes back, and not after close', async () => {
+  const env = load();
+  const page = await start(env, [cm(1)]);
+  const before = env.fetches.length;
+  env.doc.visibilityState = 'hidden';
+  env.doc.dispatch('visibilitychange');
+  assert.equal(env.fetches.length, before, 'nothing while hidden');
+  env.doc.visibilityState = 'visible';
+  env.doc.dispatch('visibilitychange');
+  assert.equal(env.fetches.length, before + 1, 'the list is asked for again');
+  page.view.close();
+  assert.equal((env.doc.listeners.visibilitychange || []).length, 0, 'the listener is removed on close');
+  page.view.open();
+  page.view.open();
+  assert.equal(env.doc.listeners.visibilitychange.length, 1, 'one listener per open section');
 });

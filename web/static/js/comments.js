@@ -195,6 +195,12 @@ window.PinalertComments = (function () {
     var more = false;
     var nextAfter = 0;
     var loadedMore = false;
+    // The after cursor of the last page Show more read, which the poll reads
+    // too once Show more has been used (review fix WR-B04).
+    var lastPageAfter = 0;
+    // Counts the Like answers. A list answer asked for before the latest Like
+    // answer of a comment keeps that comment's like state (review fix WR-B05).
+    var answerStamp = 0;
     var loadSeq = 0;
     var inflight = null;
     var pollTimer = null;
@@ -653,6 +659,8 @@ window.PinalertComments = (function () {
         if (res.status === STATUS_OK && res.body && typeof res.body.likes === 'number') {
           rec.data.likes = res.body.likes;
           rec.data.viewer_liked = res.body.viewer_liked === true;
+          answerStamp += 1;
+          rec.likeStamp = answerStamp;
           writeActions(rec);
           return;
         }
@@ -784,15 +792,32 @@ window.PinalertComments = (function () {
       writeText(t.toggle, open ? HIDE_REPLIES : viewReplies(count));
     }
 
+    // freshData keeps the like state a Like answer wrote when the list answer
+    // carrying data was asked for before that Like answered (review fix
+    // WR-B05): an older server answer never overwrites a newer one. sentStamp
+    // is answerStamp at the moment the list request left.
+    function freshData(rec, data, sentStamp) {
+      if (!rec || !(rec.likeStamp > sentStamp)) {
+        return data;
+      }
+      var kept = {};
+      Object.keys(data).forEach(function (key) {
+        kept[key] = data[key];
+      });
+      kept.likes = rec.data.likes;
+      kept.viewer_liked = rec.data.viewer_liked;
+      return kept;
+    }
+
     // placeReplies makes the thread hold exactly the replies of data, in order,
     // writing the nodes it already has and adding or dropping the rest.
-    function placeReplies(rec, replies) {
+    function placeReplies(rec, replies, sentStamp) {
       var t = rec.thread;
       var seen = {};
       var prev = null;
       for (var i = 0; i < replies.length; i++) {
-        var data = replies[i];
-        var id = String(data.id);
+        var id = String(replies[i].id);
+        var data = freshData(nodes[id], replies[i], sentStamp);
         seen[id] = true;
         var child = nodes[id];
         if (!child) {
@@ -846,37 +871,52 @@ window.PinalertComments = (function () {
       rootIds.splice(rootIds.indexOf(id), 1);
     }
 
-    // mergeRoots writes one answer into the list: known comments are updated,
-    // new ones inserted in order, and comments that the answer should have held
-    // but did not (a held comment that failed its check, a deleted one) are
-    // dropped, only inside the range the answer covers.
-    function mergeRoots(comments, covered) {
+    // insertRoot puts a new top level comment into the list by its id. The
+    // server sends top level comments oldest first and pages them by id, so id
+    // order is the list's order: a later page, or your own post on a report
+    // with pages still unread, lands in its place (review fix WR-B04).
+    function insertRoot(rec) {
+      var n = Number(rec.id);
+      var at = rootIds.length;
+      for (var i = 0; i < rootIds.length; i++) {
+        if (Number(rootIds[i]) > n) {
+          at = i;
+          break;
+        }
+      }
+      var next = at < rootIds.length && nodes[rootIds[at]] ? nodes[rootIds[at]].li : null;
+      rootIds.splice(at, 0, rec.id);
+      list.insertBefore(rec.li, next);
+    }
+
+    // mergeRoots writes one page into the list: known comments are updated,
+    // new ones inserted in id order, and comments that the answer should have
+    // held but did not (a held comment that failed its check, a deleted one)
+    // are dropped, only inside the range the answer covers: after the page's
+    // cursor (after, 0 for the first page) up to its last comment, or to the
+    // end when no page follows.
+    function mergeRoots(comments, covered, after, sentStamp) {
+      var from = typeof after === 'number' ? after : 0;
       var seen = {};
-      var prev = null;
-      var lastId = 0;
+      var lastId = from;
       for (var i = 0; i < comments.length; i++) {
-        var data = comments[i];
-        var id = String(data.id);
+        var id = String(comments[i].id);
+        var data = freshData(nodes[id], comments[i], sentStamp);
         seen[id] = true;
         lastId = Math.max(lastId, Number(data.id));
         var rec = nodes[id];
         if (!rec) {
           rec = makeRecord(data, false, id);
           nodes[id] = rec;
-          rootIds.push(id);
+          insertRoot(rec);
         }
         writeComment(rec, data);
         var replies = Array.isArray(data.replies) ? data.replies : [];
-        placeReplies(rec, replies);
-        var at = prev === null ? list.firstChild : prev.li.nextSibling;
-        if (rec.li.parentNode !== list || at !== rec.li) {
-          list.insertBefore(rec.li, at);
-        }
-        prev = rec;
+        placeReplies(rec, replies, sentStamp);
       }
       var limit = covered === 'all' ? Infinity : lastId;
       var stale = rootIds.filter(function (id) {
-        return !seen[id] && Number(id) <= limit;
+        return !seen[id] && Number(id) > from && Number(id) <= limit;
       });
       for (var j = 0; j < stale.length; j++) {
         removeRoot(stale[j]);
@@ -888,6 +928,9 @@ window.PinalertComments = (function () {
     function clearList() {
       nodes = {};
       rootIds = [];
+      // A cleared list starts again from the first page.
+      loadedMore = false;
+      lastPageAfter = 0;
       while (list.firstChild) {
         list.removeChild(list.firstChild);
       }
@@ -958,7 +1001,7 @@ window.PinalertComments = (function () {
       syncParts();
     }
 
-    function render(body) {
+    function render(body, sentStamp) {
       var comments = body && Array.isArray(body.comments) ? body.comments : null;
       if (comments === null) {
         throw new Error('the comments answer has no comments');
@@ -971,7 +1014,7 @@ window.PinalertComments = (function () {
         total = body.comment_count;
       }
       applyOpenState(body.comments_open !== false);
-      mergeRoots(comments, body.more === true ? 'range' : 'all');
+      mergeRoots(comments, body.more === true ? 'range' : 'all', 0, sentStamp);
       if (!loadedMore) {
         more = body.more === true;
         nextAfter = typeof body.next_after === 'number' ? body.next_after : 0;
@@ -980,35 +1023,58 @@ window.PinalertComments = (function () {
       writeOwnDisc();
     }
 
+    // renderTail writes the last page read so far, from Show more or from the
+    // poll once Show more has been used (review fix WR-B04). That page is the
+    // list's end, so its answer says whether Show more is needed again.
+    function renderTail(body, after, sentStamp) {
+      if (typeof body.comment_count === 'number') {
+        total = body.comment_count;
+      }
+      mergeRoots(body.comments, body.more === true ? 'range' : 'all', after, sentStamp);
+      more = body.more === true;
+      nextAfter = typeof body.next_after === 'number' ? body.next_after : 0;
+      syncParts();
+      writeOwnDisc();
+    }
+
     // ---- requests ----
 
+    // request makes one comments request under the shared time limit of app.js
+    // (Pinalert.requestTimeout, review fix WR-B01): the page's own timer is
+    // raced against the request and against its body read, so a request whose
+    // aborted promise never settles (WebKit) or whose body stalls after the
+    // headers still ends at COMMENTS_TIMEOUT_MS, and Post, Like, Delete and
+    // Show more come back. The limit is cleared only once the body has come.
     function request(method, path, payload) {
-      var controller = new AbortController();
-      var timer = window.setTimeout(function () {
-        controller.abort();
-      }, COMMENTS_TIMEOUT_MS);
+      var limit = Pinalert.requestTimeout(COMMENTS_TIMEOUT_MS, 'comments');
       var opts = {
         method: method,
         credentials: 'same-origin',
         headers: { Accept: 'application/json' },
-        signal: controller.signal
+        signal: limit.signal
       };
       if (payload) {
         opts.headers['Content-Type'] = 'application/json';
         opts.body = JSON.stringify(payload);
       }
-      var promise = fetch(path, opts).then(function (res) {
-        window.clearTimeout(timer);
-        return res.json().then(function (body) {
+      var promise = Promise.race([fetch(path, opts), limit.expired]).then(function (res) {
+        return Promise.race([res.json(), limit.expired]).then(function (body) {
+          limit.clear();
           return { status: res.status, ok: res.ok, body: body };
         }, function () {
+          limit.clear();
           return { status: res.status, ok: res.ok, body: null };
         });
       }, function (err) {
-        window.clearTimeout(timer);
+        limit.clear();
         throw err;
       });
-      return { promise: promise, abort: function () { controller.abort(); } };
+      return { promise: promise, abort: function () {
+        limit.clear();
+        if (limit.controller) {
+          limit.controller.abort();
+        }
+      } };
     }
 
     function listPath(after) {
@@ -1042,6 +1108,7 @@ window.PinalertComments = (function () {
       if (mode !== 'rows') {
         showSkeleton();
       }
+      var sentStamp = answerStamp;
       inflight = request('GET', listPath(0));
       inflight.promise.then(function (res) {
         if (mine !== loadSeq) {
@@ -1056,7 +1123,8 @@ window.PinalertComments = (function () {
           throw new Error('the comments answered with an error');
         }
         root.hidden = false;
-        render(res.body);
+        render(res.body, sentStamp);
+        loadTail(mine);
       }).catch(function () {
         if (mine !== loadSeq) {
           return;
@@ -1064,6 +1132,33 @@ window.PinalertComments = (function () {
         inflight = null;
         if (mode !== 'rows') {
           showError(navigator.onLine === false ? OFFLINE_LINE : ERROR_LINE);
+        }
+      });
+    }
+
+    // loadTail is the second read of a poll once Show more has been used: the
+    // last page read so far, where every new top level comment lands (review
+    // fix WR-B04). It takes the poll's place in inflight, so stopLoad ends it,
+    // and a failed read leaves the nodes alone.
+    function loadTail(mine) {
+      if (!loadedMore || lastPageAfter <= 0 || mine !== loadSeq || !active) {
+        return;
+      }
+      var after = lastPageAfter;
+      var sentStamp = answerStamp;
+      inflight = request('GET', listPath(after));
+      inflight.promise.then(function (res) {
+        if (mine !== loadSeq) {
+          return;
+        }
+        inflight = null;
+        if (!res.ok || !res.body || !Array.isArray(res.body.comments) || after !== lastPageAfter) {
+          return;
+        }
+        renderTail(res.body, after, sentStamp);
+      }).catch(function () {
+        if (mine === loadSeq) {
+          inflight = null;
         }
       });
     }
@@ -1076,7 +1171,9 @@ window.PinalertComments = (function () {
       moreBusy = true;
       moreError.hidden = true;
       moreButton.setAttribute('aria-disabled', 'true');
-      var call = request('GET', listPath(nextAfter));
+      var after = nextAfter;
+      var sentStamp = answerStamp;
+      var call = request('GET', listPath(after));
       call.promise.then(function (res) {
         moreBusy = false;
         moreButton.removeAttribute('aria-disabled');
@@ -1084,26 +1181,8 @@ window.PinalertComments = (function () {
           throw new Error('more comments failed');
         }
         loadedMore = true;
-        var comments = res.body.comments;
-        for (var i = 0; i < comments.length; i++) {
-          var data = comments[i];
-          var id = String(data.id);
-          var rec = nodes[id];
-          if (!rec) {
-            rec = makeRecord(data, false, id);
-            nodes[id] = rec;
-            rootIds.push(id);
-            list.appendChild(rec.li);
-          }
-          writeComment(rec, data);
-          placeReplies(rec, Array.isArray(data.replies) ? data.replies : []);
-        }
-        more = res.body.more === true;
-        nextAfter = typeof res.body.next_after === 'number' ? res.body.next_after : 0;
-        if (typeof res.body.comment_count === 'number') {
-          total = res.body.comment_count;
-        }
-        syncParts();
+        lastPageAfter = after;
+        renderTail(res.body, after, sentStamp);
       }).catch(function () {
         moreBusy = false;
         moreButton.removeAttribute('aria-disabled');
@@ -1118,9 +1197,19 @@ window.PinalertComments = (function () {
       load();
     }
 
+    // onVisible asks for the list again when the tab comes back, so a reader
+    // back from another app does not wait for the next tick (review fix
+    // IN-B06). It is listened for only while the poll runs.
+    function onVisible() {
+      tick();
+    }
+
     function startPolling() {
       if (pollTimer === null) {
         pollTimer = window.setInterval(tick, COMMENTS_POLL_MS);
+        if (typeof document.addEventListener === 'function') {
+          document.addEventListener('visibilitychange', onVisible);
+        }
       }
     }
 
@@ -1128,6 +1217,9 @@ window.PinalertComments = (function () {
       if (pollTimer !== null) {
         window.clearInterval(pollTimer);
         pollTimer = null;
+        if (typeof document.removeEventListener === 'function') {
+          document.removeEventListener('visibilitychange', onVisible);
+        }
       }
     }
 
@@ -1262,8 +1354,7 @@ window.PinalertComments = (function () {
         if (!nodes[id]) {
           var rec = makeRecord(data, false, id);
           nodes[id] = rec;
-          rootIds.push(id);
-          list.appendChild(rec.li);
+          insertRoot(rec);
           writeComment(rec, data);
         }
       }
@@ -1273,12 +1364,26 @@ window.PinalertComments = (function () {
       writeOwnDisc();
     }
 
-    function onPostAnswer(res, target) {
+    // clearSent takes the posted words out of the box. Words typed while the
+    // post was in flight stay (review fix WR-B03): only the sent words at the
+    // start go, and a box that no longer starts with them is left alone. The
+    // reply target goes only when it is still the one the post was sent to.
+    function clearSent(sent, target) {
+      if (input.value === sent) {
+        input.value = '';
+      } else if (sent !== '' && input.value.indexOf(sent) === 0) {
+        input.value = input.value.slice(sent.length).replace(/^\s+/, '');
+      }
+      if (replyTarget === target) {
+        clearReplyTarget(false);
+      }
+    }
+
+    function onPostAnswer(res, target, sent) {
       var message = res.body && res.body.error && typeof res.body.error.message === 'string' ? res.body.error.message : '';
       var field = res.body && res.body.error && typeof res.body.error.field === 'string' ? res.body.error.field : '';
       if (res.status === STATUS_CREATED && res.body && typeof res.body === 'object') {
-        input.value = '';
-        clearReplyTarget(false);
+        clearSent(sent, target);
         clearComposerError();
         addPosted(res.body, target);
         onInput();
@@ -1303,6 +1408,10 @@ window.PinalertComments = (function () {
         return;
       }
       showComposerError(POST_ERROR);
+      // The outcome is unknown (an unreadable answer, a 201 whose body never
+      // came): the list is asked for again, so a comment the server did store
+      // shows before a second press posts it twice (review fix IN-B02).
+      load();
     }
 
     function submit() {
@@ -1316,7 +1425,8 @@ window.PinalertComments = (function () {
       }
       posting = true;
       writePostState();
-      var payload = { words: input.value };
+      var sent = input.value;
+      var payload = { words: sent };
       var target = replyTarget;
       if (target) {
         payload.reply_to = Number(target.replyToId);
@@ -1324,11 +1434,12 @@ window.PinalertComments = (function () {
       request('POST', listPath(0), payload).promise.then(function (res) {
         posting = false;
         writePostState();
-        onPostAnswer(res, target);
+        onPostAnswer(res, target, sent);
       }).catch(function () {
         posting = false;
         writePostState();
         showComposerError(navigator.onLine === false ? OFFLINE_POST : POST_ERROR);
+        load();
       });
     }
 
@@ -1343,7 +1454,10 @@ window.PinalertComments = (function () {
     });
     input.addEventListener('keydown', function (evt) {
       evt.stopPropagation();
-      if (evt.key === 'Enter' && evt.shiftKey !== true && evt.isComposing !== true) {
+      // Safari sends the Enter that ends a composition with isComposing false
+      // and keyCode 229 for some input methods; that Enter never posts (review
+      // fix IN-B07).
+      if (evt.key === 'Enter' && evt.shiftKey !== true && evt.isComposing !== true && evt.keyCode !== 229) {
         evt.preventDefault();
         submit();
         return;
