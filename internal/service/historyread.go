@@ -284,6 +284,12 @@ type viewInput struct {
 	ViewerAccountID int64
 	Centre          GeoPoint
 	Now             time.Time
+	// ProfileCoarse is set only by the profile read (plan 09-05, D-07): the
+	// finished view is then blurred with CoarsenFinishedForProfile, at precision 5
+	// for every category and precision 6 for Rescue, and its distance is measured
+	// from ProfileCentre, which is nil when the reader gave no centre.
+	ProfileCoarse bool
+	ProfileCentre *GeoPoint
 }
 
 // baseView builds the fields every read path fills, the same way Nearby does:
@@ -336,7 +342,8 @@ func baseView(in viewInput) ReportView {
 // fields, the history facts and then the one coarsening of a finished Rescue
 // report. Every finished view leaves the service through here, so no read path
 // can forget the blur (T-31-25, D-23). The distance is measured from the query
-// centre to the coarse point.
+// centre to the coarse point. The profile read sets ProfileCoarse, which picks
+// the profile coarsener (every category blurred) instead of the Rescue one.
 func buildFinishedView(in viewInput) ReportView {
 	v := baseView(in)
 	c := in.Class
@@ -347,8 +354,13 @@ func buildFinishedView(in viewInput) ReportView {
 	}
 	viewerIsReporter := in.ViewerAccountID != 0 && c.reporterID != nil && *c.reporterID == in.ViewerAccountID
 	v.History = BuildHistoryFacts(c.view, c.closure, viewerIsReporter, outcome, c.tally.ConfirmCells, in.Report.CreatedAt, in.Report.ExpiresAt)
-	centre := in.Centre
-	v.Report, v.Approximate = CoarsenFinishedRescue(v.Report, true, &centre)
+	if in.ProfileCoarse {
+		v.Report = CoarsenFinishedForProfile(v.Report, in.ProfileCentre)
+		v.Approximate = true
+	} else {
+		centre := in.Centre
+		v.Report, v.Approximate = CoarsenFinishedRescue(v.Report, true, &centre)
+	}
 	// A blurred report lists no comments (CommentService.List, 03.1 D-23), so
 	// its views say 0 as well: the count matches the list, and it tells no
 	// stranger how much a rescue was discussed (review WR-S03).
