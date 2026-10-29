@@ -56,6 +56,10 @@ var noiseCheckedFiles = []string{
 	// Phase 9 plan 08: the profile page and its script are scanned too.
 	"templates/person.html.tmpl",
 	"static/js/person.js",
+	// Phase 9 plan 11: the list window, its script and the distance script.
+	"templates/people_list_window.html.tmpl",
+	"static/js/people-list.js",
+	"static/js/person-reports.js",
 }
 
 var (

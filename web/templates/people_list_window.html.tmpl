@@ -1,0 +1,54 @@
+{{define "people_list_window"}}
+{{/* Phase 9 plan 11 (UI-SPEC Surface 4): the one list window of Followers, Following and Blocked people. The profile opens it from its two count buttons and Settings opens it from its rows (plan 09-12). It is built like the Muted reports window: closed only by its X and Escape, the page behind it inert, focus on the title. The script fills the title, the subtitle and every row with textContent, so nothing here holds a person. The confirm box is its own native dialog, a direct child of the body, built like the Log out box. */}}
+<div class="app-window app-window--edit people-list-window" id="people-list-window" hidden>
+  <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="people-list-title">
+    <div class="app-window__head">
+      <h2 class="app-window__title" id="people-list-title" tabindex="-1"></h2>
+      <button type="button" class="app-window__close" id="people-list-close" aria-label="Close"><span class="app-icon app-icon--x" aria-hidden="true"></span></button>
+    </div>
+    <div class="app-window__body">
+      <p class="people-list__subtitle" id="people-list-subtitle" hidden></p>
+      <p class="inline-error" id="people-list-action-error" role="alert" hidden></p>
+      <div id="people-list-loading" aria-hidden="true" hidden>
+        <div class="skeleton-row"></div>
+        <div class="skeleton-row"></div>
+        <div class="skeleton-row"></div>
+        <div class="skeleton-row"></div>
+      </div>
+      <ul class="people-list" id="people-list-rows" hidden></ul>
+      <p class="people-list__others" id="people-list-others" hidden></p>
+      <div class="people-list__actions">
+        <button type="button" class="btn" id="people-list-more" hidden>Show more</button>
+        <button type="button" class="btn" id="people-list-remove-all" hidden>Remove all followers</button>
+      </div>
+      <div id="people-list-empty" hidden>
+        <div class="empty-state">
+          <h3 id="people-list-empty-title" tabindex="-1"></h3>
+          <p id="people-list-empty-line"></p>
+        </div>
+      </div>
+      <div id="people-list-error" hidden>
+        <div class="error-state">
+          <h3>Couldn't load this list</h3>
+          <p>Check your connection and try again.</p>
+          <button type="button" class="btn" id="people-list-retry">Try again</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<dialog id="people-list-confirm" class="logout-confirm" aria-labelledby="people-list-confirm-title" aria-describedby="people-list-confirm-text">
+  <div class="logout-confirm__body">
+    <h2 class="logout-confirm__title" id="people-list-confirm-title" tabindex="-1">Remove all followers?</h2>
+    <div class="logout-confirm__text" id="people-list-confirm-text">
+      <p>Everyone who follows you stops following. Your profile stays on.</p>
+    </div>
+    <p class="inline-error" id="people-list-confirm-error" role="alert" hidden></p>
+    <div class="logout-confirm__actions">
+      <button type="button" class="btn" id="people-list-confirm-cancel">Cancel</button>
+      <button type="button" class="btn btn--destructive" id="people-list-confirm-go">Remove all</button>
+    </div>
+  </div>
+</dialog>
+{{end}}

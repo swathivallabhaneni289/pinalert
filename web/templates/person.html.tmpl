@@ -25,7 +25,7 @@
 
   <div class="app-content">
   {{/* Phase 9 plan 08 (D-04, UI-SPEC Surface 1): one page for your own profile and for anyone else's. data-username and data-self are written only when there is a profile, so the not found page carries nothing from the request and is the same bytes for every cause (T-09-30). Every value below goes through html/template escaping. */}}
-  <main id="person-page" class="person-page"{{if not .NotFound}} data-username="{{.Profile.Username}}" data-self="{{if .Profile.IsSelf}}true{{else}}false{{end}}"{{end}}>
+  <main id="person-page" class="person-page"{{if not .NotFound}} data-username="{{.Profile.Username}}" data-account-id="{{.AccountID}}" data-self="{{if .Profile.IsSelf}}true{{else}}false{{end}}"{{end}}>
     {{if .NotFound}}
     <section id="person-not-found" class="person-state" aria-labelledby="person-not-found-title">
       <h2 class="person-state__title" id="person-not-found-title" tabindex="-1">Profile not found</h2>
@@ -83,8 +83,57 @@
     <section id="person-reports-section" class="person-reports" aria-labelledby="person-reports-title">
       <h2 id="person-reports-title" class="person-reports__title">Recent reports</h2>
       <p class="person-reports__line">Reports from the last 30 days, newest first.</p>
-      <div id="person-reports" class="person-reports__list"></div>
-    </section>
+      {{/* Plan 09-11 (D-06, D-07, UI-SPEC Surface 5): the rows are drawn here, on the server, as My activity draws its rows. person-reports.js only fills each Distance cell from the position Nearby kept. A live row is a link to the Phase 8 report link; a finished row is plain content with no link, no tabindex and no chevron, and its coordinates are the coarse cell centre. */}}
+      <div id="person-reports" class="person-reports__list">
+        {{if .ReportsFailed}}
+        <div class="error-state person-reports__state" id="person-reports-error">
+          <h3>Couldn't load reports</h3>
+          <p>Check your connection and try again.</p>
+          <a class="btn" href="/u/{{.Profile.Username}}">Try again</a>
+        </div>
+        {{else if not .Reports}}
+        <div class="empty-state person-reports__state" id="person-reports-empty">
+          <h3>No reports in the last 30 days</h3>
+          <p>{{if .Profile.IsSelf}}Reports you post will show here.{{else}}Nothing from {{.Profile.Username}} in the last 30 days.{{end}}</p>
+        </div>
+        {{else}}
+        <div class="person-report-box">
+          <div class="person-report-cols" aria-hidden="true">
+            <span class="person-report-cols__disc"></span>
+            <span>Report</span>
+            <span>Status</span>
+            <span>When</span>
+            <span>Distance</span>
+          </div>
+          <ol class="person-report-list">
+            {{range .Reports}}
+            {{if .Href}}
+            <li class="person-report person-report--live {{.SeverityClass}}">
+              <a class="person-report__body" href="{{.Href}}">
+                <span class="icon-badge person-report__disc" aria-hidden="true"><span class="icon-glyph {{.IconGlyph}}"></span></span>
+                <span class="person-report__report">{{if .AccessiblePrefix}}<span class="visually-hidden">{{.AccessiblePrefix}} </span>{{end}}<span class="person-report__title">{{.Title}}</span><span class="person-report__label">{{.LabelLine}}</span>{{if .DisputedLine}}<span class="person-report__disputed">{{.DisputedLine}}</span>{{end}}</span>
+                <span class="person-report__status"><span class="person-chip {{.ChipClass}}">{{.StatusWord}}</span></span>
+                <span class="person-report__when">{{.WhenText}}</span>
+                <span class="person-report__foot"><span class="person-report__distance" data-lat="{{.Lat}}" data-lon="{{.Lon}}" data-approx="{{.Approx}}">Unknown</span><span class="app-icon app-icon--chevron-right person-report__chevron" aria-hidden="true"></span></span>
+              </a>
+            </li>
+            {{else}}
+            <li class="person-report person-report--finished">
+              <div class="person-report__body">
+                <span class="icon-badge person-report__disc" aria-hidden="true"><span class="icon-glyph {{.IconGlyph}}"></span></span>
+                <span class="person-report__report"><span class="visually-hidden">{{.AccessiblePrefix}} </span><span class="person-report__title">{{.Title}}</span>{{if .AreaLine}}<span class="person-report__label">{{.AreaLine}}</span>{{end}}</span>
+                <span class="person-report__status"><span class="person-chip {{.ChipClass}}">{{.StatusWord}}</span></span>
+                <span class="person-report__when">{{.WhenText}}</span>
+                <span class="person-report__foot"><span class="person-report__distance" data-lat="{{.Lat}}" data-lon="{{.Lon}}" data-approx="{{.Approx}}">Unknown</span></span>
+              </div>
+            </li>
+            {{end}}
+            {{end}}
+          </ol>
+        </div>
+        {{if .ReportsCut}}<p class="person-reports__cut">{{.ReportsCutText}}</p>{{end}}
+        {{end}}
+      </div>
     {{end}}
 
     {{if not .Profile.IsSelf}}
@@ -115,11 +164,19 @@
   </dialog>
   {{end}}
 
+  {{if and (not .NotFound) (not .BlockedByYou)}}
+  {{/* The Followers and Following list window (plan 09-11, UI-SPEC Surface 4), opened by the two count buttons. */}}
+  {{template "people_list_window" .}}
+  {{end}}
+
   {{template "app_bottombar" .}}
 
   <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/app-bar.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/updates.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/position.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/person-reports.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/people-list.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/person.js?v={{.AssetVersion}}" defer></script>
 </body>
 </html>
