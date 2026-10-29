@@ -45,7 +45,8 @@ type PostCommentRequest struct {
 // CommentResponse is one comment as the reader sees it. It holds no account id,
 // email, session or cell. A deleted or removed comment that still holds visible
 // replies is a placeholder: deleted or removed is true and words, author and
-// likes are empty.
+// likes are empty. hidden is the same placeholder for a comment of someone the
+// caller blocked (Phase 9 plan 09-10).
 type CommentResponse struct {
 	ID            int64             `json:"id" example:"41"`
 	Author        string            `json:"author" example:"asha_k"`
@@ -61,7 +62,8 @@ type CommentResponse struct {
 	At            string            `json:"at" example:"2026-10-29T10:15:00Z"`
 	Deleted       bool              `json:"deleted" example:"false"`
 	Removed       bool              `json:"removed" example:"false"`
-	Held          bool              `json:"held" example:"false"`
+	Hidden        bool              `json:"hidden" example:"false"` // true when you blocked the author and others replied
+	Held         bool              `json:"held" example:"false"`
 	Words         string            `json:"words" example:"The road is open again from the north side."`
 	Replies       []CommentResponse `json:"replies"`
 }
@@ -105,6 +107,7 @@ func commentResponse(v service.CommentView) CommentResponse {
 		At:            v.At.UTC().Format(time.RFC3339),
 		Deleted:       v.Deleted,
 		Removed:       v.Removed,
+		Hidden:        v.Hidden,
 		Held:          v.Held,
 		Words:         v.Words,
 		Replies:       make([]CommentResponse, 0, len(v.Replies)),
@@ -186,7 +189,9 @@ func writeCommentError(w http.ResponseWriter, err error) bool {
 // @Description is written for the caller (is_own, is_reporter, can_delete, viewer_liked,
 // @Description viewer_flagged), and comments_open says whether people may still post and like.
 // @Description A comment that was deleted or removed but still has visible replies appears as a
-// @Description placeholder with no words. No account id, email or session is ever sent. A report
+// @Description placeholder with no words, and so does a comment of someone you blocked that
+// @Description others answered (hidden is true). Comments of someone you blocked are otherwise
+// @Description left out of the list and of comment_count. No account id, email or session is ever sent. A report
 // @Description that does not exist, is not available or ended too long ago gets 404.
 // @Description Each thread lists at most 100 replies and reply_count is its real number. To read
 // @Description the rest, pass replies_of with the top level comment's id and reply_after with the

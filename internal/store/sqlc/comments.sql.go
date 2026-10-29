@@ -245,28 +245,35 @@ const commentsForReport = `-- name: CommentsForReport :many
 WITH visible AS (
     SELECT c.id, c.parent_id, c.reply_to_id, c.account_id, c.body, c.created_at,
            c.deleted_at, c.moderation_state,
+           EXISTS (SELECT 1 FROM person_blocks pb
+                    WHERE pb.blocker_id = $1::bigint
+                      AND pb.blocked_id = c.account_id) AS blocked,
            (c.deleted_at IS NULL
             AND (c.moderation_state = 'clear'
-                 OR (c.moderation_state = 'pending' AND c.account_id = $1::bigint))) AS shown
+                 OR (c.moderation_state = 'pending' AND c.account_id = $1::bigint))
+            AND NOT EXISTS (SELECT 1 FROM person_blocks pb
+                             WHERE pb.blocker_id = $1::bigint
+                               AND pb.blocked_id = c.account_id)) AS shown
     FROM comments c
     WHERE c.report_id = $2
 ),
 roots AS (
-    SELECT v.id, v.parent_id, v.reply_to_id, v.account_id, v.body, v.created_at, v.deleted_at, v.moderation_state, v.shown
+    SELECT v.id, v.parent_id, v.reply_to_id, v.account_id, v.body, v.created_at, v.deleted_at, v.moderation_state, v.blocked, v.shown
     FROM visible v
     WHERE v.parent_id IS NULL
       AND v.id > $3::bigint
       AND (v.shown
-           OR ((v.deleted_at IS NOT NULL OR v.moderation_state = 'removed')
+           OR ((v.deleted_at IS NOT NULL OR v.moderation_state = 'removed'
+                OR (v.blocked AND v.moderation_state = 'clear'))
                AND EXISTS (SELECT 1 FROM visible r WHERE r.parent_id = v.id AND r.shown)))
     ORDER BY v.id
     LIMIT $4::int
 ),
 replies AS (
     SELECT x.id, x.parent_id, x.reply_to_id, x.account_id, x.body, x.created_at,
-           x.deleted_at, x.moderation_state, x.shown
+           x.deleted_at, x.moderation_state, x.blocked, x.shown
     FROM (
-        SELECT v.id, v.parent_id, v.reply_to_id, v.account_id, v.body, v.created_at, v.deleted_at, v.moderation_state, v.shown, ROW_NUMBER() OVER (PARTITION BY v.parent_id ORDER BY v.id) AS rn
+        SELECT v.id, v.parent_id, v.reply_to_id, v.account_id, v.body, v.created_at, v.deleted_at, v.moderation_state, v.blocked, v.shown, ROW_NUMBER() OVER (PARTITION BY v.parent_id ORDER BY v.id) AS rn
         FROM visible v
         JOIN roots ON v.parent_id = roots.id
         WHERE v.shown
@@ -275,9 +282,9 @@ replies AS (
     WHERE x.rn <= $6::int
 ),
 listed AS (
-    SELECT id, parent_id, reply_to_id, account_id, body, created_at, deleted_at, moderation_state, shown FROM roots
+    SELECT id, parent_id, reply_to_id, account_id, body, created_at, deleted_at, moderation_state, blocked, shown FROM roots
     UNION ALL
-    SELECT id, parent_id, reply_to_id, account_id, body, created_at, deleted_at, moderation_state, shown FROM replies
+    SELECT id, parent_id, reply_to_id, account_id, body, created_at, deleted_at, moderation_state, blocked, shown FROM replies
 )
 SELECT l.id,
        l.parent_id,
@@ -287,7 +294,8 @@ SELECT l.id,
        l.created_at,
        (CASE WHEN l.shown THEN ''
              WHEN l.deleted_at IS NOT NULL THEN 'deleted'
-             ELSE 'removed' END)::text AS gone,
+             WHEN l.moderation_state = 'removed' THEN 'removed'
+             ELSE 'hidden' END)::text AS gone,
        (l.shown AND l.moderation_state = 'pending')::bool AS held,
        au.username AS author_username,
        (CASE WHEN NOT l.shown THEN ''
@@ -318,6 +326,9 @@ LEFT JOIN accounts rn ON rn.id = rt.account_id
     AND l.shown AND l.parent_id IS NOT NULL
     AND rt.deleted_at IS NULL AND rt.moderation_state = 'clear'
     AND rn.deleted_at IS NULL AND rn.username_screen = 'clear'
+    AND NOT EXISTS (SELECT 1 FROM person_blocks pb
+                     WHERE pb.blocker_id = $1::bigint
+                       AND pb.blocked_id = rn.id)
 ORDER BY COALESCE(l.parent_id, l.id), (l.parent_id IS NOT NULL), l.id
 `
 
@@ -351,21 +362,23 @@ type CommentsForReportRow struct {
 
 // The one place that decides, for one viewer, which comments of a report are
 // listed and what is shown about them (A-P8-2, D-12, D-14). Phase 9 plan 09-10
-// adds its block filter to this query and to comment_count in
-// ReportExtrasForReports; that filter must also null reply_to_author when the
-// answered author is blocked, so the name then shows only as plain typed text,
-// never as a bold name.
+// (D-12) added the block here and to comment_count in ReportExtrasForReports:
+// a comment written by someone the viewer blocked is never shown, a reply by
+// them drops out through the reply rule, and reply_to_author is NULL when the
+// answered author is blocked, so a blocked name never shows as a mention.
 //
 // Visibility, written once in the CTE below:
 //
 //	shown       a comment is shown to the viewer when it is not deleted and it
 //	            is clear, or it is pending and the viewer wrote it (a held
-//	            comment is visible to its author only, T-08-33).
+//	            comment is visible to its author only, T-08-33), and its author
+//	            is not someone the viewer blocked (person_blocks, D-12).
 //	root        a thread root is listed when it is shown, or when it is deleted
-//	            or removed and at least one reply of it is shown. Such a row is
-//	            a placeholder: it carries no words, no name, no likes and no
-//	            viewer flags, so nothing tells who wrote it or what it said
-//	            (D-14, review W4).
+//	            or removed, or is a clear comment of a blocked author, and at
+//	            least one reply of it is shown. Such a row is a placeholder: it
+//	            carries no words, no name, no likes and no viewer flags, so
+//	            nothing tells who wrote it or what it said (D-14, review W4).
+//	            A blocked author's root with no shown reply is not listed.
 //	reply       a reply is listed when it is shown and its root is listed.
 //	            Threads are one level deep, so a deleted reply is not listed.
 //
@@ -388,8 +401,9 @@ type CommentsForReportRow struct {
 //	                             response.
 //	body                         empty on a placeholder.
 //	created_at                   when it was written.
-//	gone                         '' for a shown comment, 'deleted' or 'removed'
-//	                             for a placeholder.
+//	gone                         '' for a shown comment, 'deleted', 'removed' or
+//	                             'hidden' (a clear comment of someone the viewer
+//	                             blocked) for a placeholder.
 //	held                         true on the viewer's own pending comment.
 //	author_username              NULL unless the author is the viewer, or the
 //	                             username screen is clear and the account is
@@ -400,7 +414,8 @@ type CommentsForReportRow struct {
 //	                             the comment it answered, and only when that
 //	                             comment is clear and not deleted, and its
 //	                             author's screen is clear and the account not
-//	                             deleted; NULL otherwise (review W3).
+//	                             deleted, and the viewer has not blocked that
+//	                             author; NULL otherwise (review W3, M3).
 //	is_reporter                  the comment's account is the report's reporter
 //	                             account (reports.session_id joins
 //	                             sessions.session_id, as ReportVoteContext
@@ -422,7 +437,7 @@ type CommentsForReportRow struct {
 // account is not deleted and whose screen is clear, or the viewer's own. rn is
 // the author of the answered comment under the review W3 rule: a reply only,
 // the answered comment clear and not deleted, its author's screen clear and the
-// account not deleted.
+// account not deleted, and not someone the viewer blocked (D-12, review M3).
 func (q *Queries) CommentsForReport(ctx context.Context, arg CommentsForReportParams) ([]CommentsForReportRow, error) {
 	rows, err := q.db.Query(ctx, commentsForReport,
 		arg.ViewerAccountID,
@@ -644,6 +659,12 @@ WHERE a.id = $3::bigint
       WHERE m.account_id = a.id
         AND m.report_id = $1::bigint
   )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM person_blocks pb
+      WHERE pb.blocker_id = a.id
+        AND pb.blocked_id = $4::bigint
+  )
 ON CONFLICT (account_id, report_id, kind)
     WHERE read_at IS NULL AND kind IN ('comment_on_yours', 'reply_to_yours')
     DO NOTHING
@@ -674,7 +695,12 @@ type InsertCommentUpdateParams struct {
 //
 // Comment rows never roll up into the "more" row and do not count toward the
 // hourly ceiling (the ceiling reads skip these kinds); the unread index is
-// their cap. Phase 9 plan 09-10 adds its block skip here.
+// their cap.
+//
+// Phase 9 plan 09-10 (D-12, review M1) adds one more skip: a person_blocks row
+// from the recipient to the commenter writes nothing, so a blocked person's
+// comment or reply never reaches the blocker's bell and, because the phone note
+// is queued only from a row this insert wrote, never their phone either.
 func (q *Queries) InsertCommentUpdate(ctx context.Context, arg InsertCommentUpdateParams) (int64, error) {
 	result, err := q.db.Exec(ctx, insertCommentUpdate,
 		arg.ReportID,

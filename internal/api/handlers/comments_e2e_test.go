@@ -443,8 +443,10 @@ func TestCommentResponseOmitsIdentifiers(t *testing.T) {
 	if err := json.Unmarshal(l["comments"], &comments); err != nil || len(comments) == 0 {
 		t.Fatalf("decoding comments: %v (%d)", err, len(comments))
 	}
+	// Amended 2026-10-29 by Phase 9 plan 10 (D-12): "hidden" joins the member set,
+	// the flag of the Comment hidden placeholder; every other assertion stays.
 	wantComment := []string{"id", "author", "author_kind", "is_own", "is_reporter", "can_delete", "viewer_liked", "viewer_flagged",
-		"likes", "reply_count", "at", "deleted", "removed", "held", "words", "replies"}
+		"likes", "reply_count", "at", "deleted", "removed", "hidden", "held", "words", "replies"}
 	for _, k := range wantComment {
 		if _, ok := comments[0][k]; !ok {
 			t.Errorf("a comment lacks %q", k)

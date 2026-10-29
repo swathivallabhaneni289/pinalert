@@ -2441,7 +2441,7 @@ const docTemplate = `{
         },
         "/reports/{id}/comments": {
             "get": {
-                "description": "Returns one page of the report's comments, top level comments oldest first, each\nfollowed by its replies, oldest first. The page holds at most 50 top level\ncomments; when more is true pass next_after as the after query value to read the\nnext page. comment_count is the number everyone can see. Every flag in the answer\nis written for the caller (is_own, is_reporter, can_delete, viewer_liked,\nviewer_flagged), and comments_open says whether people may still post and like.\nA comment that was deleted or removed but still has visible replies appears as a\nplaceholder with no words. No account id, email or session is ever sent. A report\nthat does not exist, is not available or ended too long ago gets 404.\nEach thread lists at most 100 replies and reply_count is its real number. To read\nthe rest, pass replies_of with the top level comment's id and reply_after with the\nlast reply read: the answer is that comment alone with its next replies, at most\n100, oldest first; more and next_after then page through its replies. An id that is\nnot a top level comment shown on this report answers an empty list.\nRequires a session verified by email; an unverified caller receives 401.",
+                "description": "Returns one page of the report's comments, top level comments oldest first, each\nfollowed by its replies, oldest first. The page holds at most 50 top level\ncomments; when more is true pass next_after as the after query value to read the\nnext page. comment_count is the number everyone can see. Every flag in the answer\nis written for the caller (is_own, is_reporter, can_delete, viewer_liked,\nviewer_flagged), and comments_open says whether people may still post and like.\nA comment that was deleted or removed but still has visible replies appears as a\nplaceholder with no words, and so does a comment of someone you blocked that\nothers answered (hidden is true). Comments of someone you blocked are otherwise\nleft out of the list and of comment_count. No account id, email or session is ever sent. A report\nthat does not exist, is not available or ended too long ago gets 404.\nEach thread lists at most 100 replies and reply_count is its real number. To read\nthe rest, pass replies_of with the top level comment's id and reply_after with the\nlast reply read: the answer is that comment alone with its next replies, at most\n100, oldest first; more and next_after then page through its replies. An id that is\nnot a top level comment shown on this report answers an empty list.\nRequires a session verified by email; an unverified caller receives 401.",
                 "produces": [
                     "application/json"
                 ],
@@ -3684,6 +3684,11 @@ const docTemplate = `{
                     "example": false
                 },
                 "held": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "hidden": {
+                    "description": "true when you blocked the author and others replied",
                     "type": "boolean",
                     "example": false
                 },

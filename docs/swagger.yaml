@@ -149,6 +149,10 @@ definitions:
       held:
         example: false
         type: boolean
+      hidden:
+        description: true when you blocked the author and others replied
+        example: false
+        type: boolean
       id:
         example: 41
         type: integer
@@ -3820,7 +3824,9 @@ paths:
         is written for the caller (is_own, is_reporter, can_delete, viewer_liked,
         viewer_flagged), and comments_open says whether people may still post and like.
         A comment that was deleted or removed but still has visible replies appears as a
-        placeholder with no words. No account id, email or session is ever sent. A report
+        placeholder with no words, and so does a comment of someone you blocked that
+        others answered (hidden is true). Comments of someone you blocked are otherwise
+        left out of the list and of comment_count. No account id, email or session is ever sent. A report
         that does not exist, is not available or ended too long ago gets 404.
         Each thread lists at most 100 replies and reply_count is its real number. To read
         the rest, pass replies_of with the top level comment's id and reply_after with the
