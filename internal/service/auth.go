@@ -73,10 +73,22 @@ type AuthService struct {
 	mailer  mailer.Mailer
 	baseURL string
 	now     func() time.Time
+
+	// signals supplies extra reporter tag inputs (plan 09-13). Nil reads outcomes only.
+	signals SignalSource
 }
 
 // AuthOption configures an AuthService at construction time.
 type AuthOption func(*AuthService)
+
+// WithAuthSignals hands the service the source of extra reporter tag inputs
+// (plan 09-13 is the first real one), so Activity shows the same tag as the
+// feed. With none it reads outcomes only.
+func WithAuthSignals(src SignalSource) AuthOption {
+	return func(s *AuthService) {
+		s.signals = src
+	}
+}
 
 // WithClock overrides the AuthService's clock. Tests use this to advance
 // time without real sleeps; production code never needs to call it. The
@@ -312,7 +324,10 @@ func (s *AuthService) ActivityPageForAccount(ctx context.Context, accountID int6
 	if err != nil {
 		return ActivityPage{}, fmt.Errorf("service: reading current votes for account %d's page: %w", accountID, err)
 	}
-	signals := ReporterSignals(accounts, history, voteRows, now)
+	signals, err := reporterSignalsWith(ctx, s.signals, accounts, history, voteRows, now)
+	if err != nil {
+		return ActivityPage{}, fmt.Errorf("service: reading reporter signals for account %d: %w", accountID, err)
+	}
 	votesByReport := voteRowsByReport(voteRows)
 
 	// One batched read of the moderation state and the display only written

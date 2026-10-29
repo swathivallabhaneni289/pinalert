@@ -151,6 +151,9 @@ type PushDispatcher struct {
 	sweepEvery time.Duration
 	pokes      chan pushPoke
 
+	// signals supplies extra reporter tag inputs (plan 09-13). Nil reads outcomes only.
+	signals SignalSource
+
 	// changesMu guards changesAfter, the last account id the changes sweep
 	// served when its page was full. The next sweep starts after it, and a short
 	// page wraps it back to 0, so every account is reached in turn (review S-04).
@@ -160,6 +163,15 @@ type PushDispatcher struct {
 
 // DispatchOption adjusts a PushDispatcher at construction.
 type DispatchOption func(*PushDispatcher)
+
+// WithDispatchSignals hands the dispatcher the source of extra reporter tag
+// inputs (plan 09-13 is the first real one), so the Reliable check reads the
+// same tag as the feed. With none it reads outcomes only.
+func WithDispatchSignals(src SignalSource) DispatchOption {
+	return func(d *PushDispatcher) {
+		d.signals = src
+	}
+}
 
 // WithDispatchClock replaces the clock. The database clock still decides what
 // the queries compare against inside the outbox itself.
@@ -646,20 +658,14 @@ func (d *PushDispatcher) confirmedBranch(ctx context.Context, run *evalRun) erro
 
 // reporterIsReliable reads the one reporter's history and returns whether the
 // feed would tag them Reliable reporter: the same history read, the same votes
-// and the same ReporterSignals as the feed.
+// and the same signals loader as the feed (LoadReporterSignals), so a source
+// of extra inputs changes this check with every other surface. A reporter with
+// no history reads as the none tag, which is not Reliable.
 func (d *PushDispatcher) reporterIsReliable(ctx context.Context, accountID int64, now time.Time) (bool, error) {
-	history, err := d.q.ReporterHistoryReports(ctx, reporterHistoryParams([]int64{accountID}, now))
+	signals, err := LoadReporterSignals(ctx, d.q, d.signals, []int64{accountID}, now)
 	if err != nil {
 		return false, err
 	}
-	if len(history) == 0 {
-		return false, nil
-	}
-	votes, err := d.q.CurrentVotesForReports(ctx, voteReadIDs(nil, history))
-	if err != nil {
-		return false, err
-	}
-	signals := ReporterSignals([]int64{accountID}, history, votes, now)
 	return signals[accountID].Tag == ReporterReliable, nil
 }
 

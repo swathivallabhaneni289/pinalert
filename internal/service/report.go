@@ -490,10 +490,22 @@ type ReportService struct {
 	now      func() time.Time
 	screener TextScreener
 	notifier ReportChangeNotifier
+
+	// signals supplies extra reporter tag inputs (plan 09-13). Nil reads outcomes
+	// only, which is what every surface read before ratings existed.
+	signals SignalSource
 }
 
 // ReportOption configures a ReportService at construction time.
 type ReportOption func(*ReportService)
+
+// WithReportSignals hands the service the source of extra reporter tag inputs
+// (plan 09-13 is the first real one). With none the feed reads outcomes only.
+func WithReportSignals(src SignalSource) ReportOption {
+	return func(s *ReportService) {
+		s.signals = src
+	}
+}
 
 // WithReportClock overrides the clock the read path uses. It is named apart
 // from WithClock, which already returns AuthOption (Pitfall 6). It governs
@@ -1015,7 +1027,10 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 	if err != nil {
 		return nil, err
 	}
-	signals := ReporterSignals(accounts, history, voteRows, now)
+	signals, err := reporterSignalsWith(ctx, s.signals, accounts, history, voteRows, now)
+	if err != nil {
+		return nil, err
+	}
 	votesByReport := voteRowsByReport(voteRows)
 
 	// The moderation state, the display only written time and the viewer's flag
