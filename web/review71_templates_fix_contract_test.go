@@ -180,6 +180,55 @@ func TestReliableTickBoxSharedLook(t *testing.T) {
 		`<label class="welcome-ask__check"><input type="checkbox" id="welcome-alerts-reliable"><span>A Reliable reporter posts near me</span></label>`)
 }
 
+// TestInstallAskNotNowStaysInView (WR-T05): on a short or zoomed iPhone (320x568,
+// or an iPhone SE tab at 115 percent, 326x476) the install box is taller than
+// the screen, and its only way out, Not now, sat under the box's visible bottom.
+// The box keeps the Log out box look and scrolls inside itself as before, and
+// its row of buttons sticks to the box's bottom edge on the page colour, so the
+// steps scroll under Not now and Not now never leaves the screen. The row's
+// negative margins give back exactly the space its own padding adds, so a box
+// that fits looks as it did: 24px from the steps to the button and 24px under
+// it. Measured in Chromium and WebKit at 320x568, 326x476, 375x548 and 390x664.
+func TestInstallAskNotNowStaysInView(t *testing.T) {
+	guide := r71tRules(t, "static/css/device-guide.css")
+	const head = "#welcome-install-ask .logout-confirm__actions"
+	r, ok := r71tFind(guide, "", head)
+	if !ok {
+		t.Fatalf("device-guide.css has no %s rule, so Not now can sit under the box's bottom on a short iPhone", head)
+	}
+	p16MustDecl(t, head, r, map[string]string{
+		"position":   "sticky",
+		"bottom":     "0",
+		"margin":     "calc(-1 * var(--space-sm)) 0 calc(-1 * var(--space-lg))",
+		"padding":    "var(--space-sm) 0 var(--space-lg)",
+		"background": "var(--color-bg)",
+	})
+	// The row never takes a display of its own here, so the hidden guard of
+	// .logout-confirm__actions:not([hidden]) stays the only display rule.
+	if _, has := r.Decls["display"]; has {
+		t.Errorf("%s declares a display; it must leave that to the guarded rule in auth.css", head)
+	}
+	// The steps keep their 24px under them, and the box keeps its cap and its own
+	// scroll, with the page colour the sticky row paints.
+	p16MustDecl(t, ".logout-confirm__body > .device-guide__steps",
+		p16Rule(t, guide, "", ".logout-confirm__body > .device-guide__steps"), map[string]string{"margin": "0 0 var(--space-lg)"})
+	box := p16Rule(t, r71tRules(t, "static/css/auth.css"), "", ".logout-confirm")
+	p16MustDecl(t, ".logout-confirm", box, map[string]string{
+		"max-height": "calc(100% - 2 * var(--space-md))",
+		"overflow-y": "auto",
+		"background": "var(--color-bg)",
+	})
+	p16MustDecl(t, ".logout-confirm__body", p16Rule(t, r71tRules(t, "static/css/auth.css"), "", ".logout-confirm__body"),
+		map[string]string{"padding": "var(--space-lg)"})
+	// The row is the last thing in the box body, after the guide.
+	ask := stripReadTemplate(t, "welcome.html.tmpl")
+	if i := strings.Index(ask, `<dialog id="welcome-install-ask"`); i < 0 {
+		t.Fatalf("welcome.html.tmpl lost the install box")
+	} else {
+		p13MustMatch(t, "install box", ask[i:], `(?s)^<dialog id="welcome-install-ask"[^>]*>\s*<div class="logout-confirm__body">.*\{\{template "device_guide"\}\}\s*<div class="logout-confirm__actions">\s*<button type="button" class="btn" id="welcome-install-later">Not now</button>\s*</div>\s*</div>\s*</dialog>`)
+	}
+}
+
 // TestLoginGlobeBoxFrom360 (IN-T01): from 360px wide the gate and the card pad
 // 24px instead of 16px, so the card sits 16px lower and the 404px term of --g,
 // set for 320, left Email me a code 5 or 6px under the first screen at 360x640,

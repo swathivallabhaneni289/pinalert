@@ -36,6 +36,22 @@
   margin: 0 0 var(--space-lg);
 }
 
+/* On a short or zoomed iPhone (320x568, or an iPhone SE tab at 115 percent) the
+   box is taller than the screen and scrolls inside itself, and Not now, its only
+   way out, sat under the box's visible bottom (Phase 7.1 review fix WR-T05). The
+   row of buttons sticks to the box's bottom edge on the page colour, so the
+   steps scroll under it and Not now stays in view. The negative margins give
+   back exactly what the padding adds, so a box that fits looks as before: 24px
+   from the steps to the button and 24px under it. No display here: the guarded
+   rule in auth.css keeps that. */
+#welcome-install-ask .logout-confirm__actions {
+  position: sticky;
+  bottom: 0;
+  margin: calc(-1 * var(--space-sm)) 0 calc(-1 * var(--space-lg));
+  padding: var(--space-sm) 0 var(--space-lg);
+  background: var(--color-bg);
+}
+
 /* One box, a hairline between the rows, none above the first. */
 .device-guide__steps {
   margin: 0;
