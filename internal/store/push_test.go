@@ -1168,3 +1168,283 @@ func TestPushAccountHomeSwitchesAndMute(t *testing.T) {
 		t.Errorf("another report = %+v (%v), want not muted", other, err)
 	}
 }
+
+// followNote writes the bell row the follow push follows: one followed_posted
+// updates row for the account and report.
+func followNote(t *testing.T, pool *pgxpool.Pool, accountID, reportID int64) {
+	t.Helper()
+	testutil.MustExec(t, pool,
+		`INSERT INTO updates (account_id, report_id, kind, created_at) VALUES ($1, $2, 'followed_posted', $3)`,
+		accountID, reportID, pushNow)
+}
+
+// TestFirstPushIndexIncludesFollow (Phase 9 plan 25, D-09, research 5.2 item 1):
+// the first alert index and every ON CONFLICT clause that writes a first alert
+// cover critical, reliable and follow, so a person gets one first alert per
+// report whichever kind is queued first.
+func TestFirstPushIndexIncludesFollow(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	q := sqlcgen.New(pool)
+	ctx := context.Background()
+
+	author := pushPerson(t, pool, "fidx-author@example.com", "fidx-sess-author")
+	followFirst := pushPerson(t, pool, "fidx-follow@example.com", "fidx-sess-follow")
+	criticalFirst := pushPerson(t, pool, "fidx-critical@example.com", "fidx-sess-critical")
+	reliableFirst := pushPerson(t, pool, "fidx-reliable@example.com", "fidx-sess-reliable")
+	report := pushReport(t, pool, "fidx-sess-author", pushFar)
+	_ = author
+
+	rowKinds := func(account int64) []string {
+		t.Helper()
+		rows, err := pool.Query(ctx, `SELECT kind FROM push_outbox WHERE account_id = $1 AND report_id = $2 ORDER BY id`, account, report)
+		if err != nil {
+			t.Fatalf("reading rows: %v", err)
+		}
+		defer rows.Close()
+		var kinds []string
+		for rows.Next() {
+			var k string
+			if err := rows.Scan(&k); err != nil {
+				t.Fatalf("scan: %v", err)
+			}
+			kinds = append(kinds, k)
+		}
+		return kinds
+	}
+	enqueueFollow := func() int64 {
+		t.Helper()
+		n, err := q.EnqueueFollowFromUpdates(ctx, sqlcgen.EnqueueFollowFromUpdatesParams{ReportID: report, ExpiresAt: pushFar, Now: pushNow})
+		if err != nil {
+			t.Fatalf("enqueue follow: %v", err)
+		}
+		return n
+	}
+	enqueueReliable := func() int64 {
+		t.Helper()
+		n, err := q.EnqueueReliableFromUpdates(ctx, sqlcgen.EnqueueReliableFromUpdatesParams{ReportID: report, ExpiresAt: pushFar, Now: pushNow})
+		if err != nil {
+			t.Fatalf("enqueue reliable: %v", err)
+		}
+		return n
+	}
+
+	// A follow row first, then a reliable row through its own enqueue query: one row.
+	followNote(t, pool, followFirst, report)
+	testutil.MustExec(t, pool, `INSERT INTO updates (account_id, report_id, kind, created_at) VALUES ($1, $2, 'reliable_nearby', $3)`,
+		reliableFirst, report, pushNow)
+	if n := enqueueFollow(); n != 1 {
+		t.Fatalf("enqueue follow = %d, want 1", n)
+	}
+	// The same pair through the reliable query: the follow row wins, no second row.
+	testutil.MustExec(t, pool, `DELETE FROM updates WHERE account_id = $1`, followFirst)
+	testutil.MustExec(t, pool, `INSERT INTO updates (account_id, report_id, kind, created_at) VALUES ($1, $2, 'reliable_nearby', $3)`,
+		followFirst, report, pushNow)
+	if n := enqueueReliable(); n != 1 {
+		t.Errorf("enqueue reliable = %d, want 1 (only the account with no first row yet)", n)
+	}
+	if got := rowKinds(followFirst); !reflect.DeepEqual(got, []string{"follow"}) {
+		t.Errorf("follow first: rows %v, want just follow", got)
+	}
+	if got := rowKinds(reliableFirst); !reflect.DeepEqual(got, []string{"reliable"}) {
+		t.Errorf("reliable first: rows %v, want just reliable", got)
+	}
+	// A repeat of the follow enqueue is a no op.
+	if n := enqueueFollow(); n != 0 {
+		t.Errorf("a repeat of the follow enqueue = %d, want 0", n)
+	}
+	// And the other order: a follow note for an account that already holds a
+	// reliable outbox row (queued by another path) makes no second row.
+	reliableThenFollow := pushPerson(t, pool, "fidx-rthenf@example.com", "fidx-sess-rthenf")
+	pushEnqueue(t, q, reliableThenFollow, report, "reliable")
+	followNote(t, pool, reliableThenFollow, report)
+	if n := enqueueFollow(); n != 0 {
+		t.Errorf("a follow enqueue beside a reliable row = %d, want 0", n)
+	}
+	if got := rowKinds(reliableThenFollow); !reflect.DeepEqual(got, []string{"reliable"}) {
+		t.Errorf("reliable first then follow: rows %v, want just reliable", got)
+	}
+
+	// A critical row first leaves the follow and reliable enqueues as no ops.
+	pushEnqueue(t, q, criticalFirst, report, "critical")
+	followNote(t, pool, criticalFirst, report)
+	if n := enqueueFollow(); n != 0 {
+		t.Errorf("a follow enqueue beside a critical row = %d, want 0", n)
+	}
+	if n := enqueueReliable(); n != 0 {
+		t.Errorf("a reliable enqueue beside a critical row = %d, want 0", n)
+	}
+	if got := rowKinds(criticalFirst); !reflect.DeepEqual(got, []string{"critical"}) {
+		t.Errorf("critical first: rows %v, want just critical", got)
+	}
+
+	// EnqueueInitialPush with kind follow (and the other two) shares the slot.
+	other := pushPerson(t, pool, "fidx-initial@example.com", "fidx-sess-initial")
+	pushEnqueue(t, q, other, report, "follow")
+	for _, kind := range []string{"critical", "reliable", "follow"} {
+		_, err := q.EnqueueInitialPush(ctx, sqlcgen.EnqueueInitialPushParams{AccountID: other, ReportID: report, Kind: kind, ExpiresAt: pushFar, Now: pushNow})
+		if !errors.Is(err, pgx.ErrNoRows) {
+			t.Errorf("a second first alert of kind %s = %v, want no row", kind, err)
+		}
+	}
+}
+
+// TestEnqueueFollowFromUpdates: only the account with a followed_posted row, a
+// live subscription and a live account gets a follow push, with the expiry the
+// caller passed.
+func TestEnqueueFollowFromUpdates(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	q := sqlcgen.New(pool)
+	ctx := context.Background()
+
+	_ = pushPerson(t, pool, "fup-author@example.com", "fup-sess-author")
+	withDevice := pushPerson(t, pool, "fup-device@example.com", "fup-sess-device")
+	noDevice := testutil.SeedReporterAccount(t, pool, "fup-nodevice@example.com", "fup-sess-nodevice")
+	reliableRow := pushPerson(t, pool, "fup-reliable@example.com", "fup-sess-reliable")
+	report := pushReport(t, pool, "fup-sess-author", pushFar)
+	for _, id := range []int64{withDevice, noDevice} {
+		followNote(t, pool, id, report)
+	}
+	testutil.MustExec(t, pool, `INSERT INTO updates (account_id, report_id, kind, created_at) VALUES ($1, $2, 'reliable_nearby', $3)`,
+		reliableRow, report, pushNow)
+
+	expires := pushNow.Add(30 * time.Minute)
+	n, err := q.EnqueueFollowFromUpdates(ctx, sqlcgen.EnqueueFollowFromUpdatesParams{ReportID: report, ExpiresAt: expires, Now: pushNow})
+	if err != nil || n != 1 {
+		t.Fatalf("enqueue follow = %d (%v), want 1 (the account with a device; a reliable_nearby row makes no follow push)", n, err)
+	}
+	var kind string
+	var gotExpires time.Time
+	if err := pool.QueryRow(ctx, `SELECT kind, expires_at FROM push_outbox WHERE account_id = $1`, withDevice).Scan(&kind, &gotExpires); err != nil ||
+		kind != "follow" || !gotExpires.Equal(expires) {
+		t.Errorf("row = %q expiring %v (%v), want follow expiring %v", kind, gotExpires, err, expires)
+	}
+	if n := pushCount(t, pool, `SELECT count(*) FROM push_outbox WHERE account_id IN ($1, $2)`, noDevice, reliableRow); n != 0 {
+		t.Errorf("%d rows for the account without a device or without a follow note, want 0", n)
+	}
+	if again, err := q.EnqueueFollowFromUpdates(ctx, sqlcgen.EnqueueFollowFromUpdatesParams{ReportID: report, ExpiresAt: expires, Now: pushNow}); err != nil || again != 0 {
+		t.Errorf("a second call = %d (%v), want 0", again, err)
+	}
+}
+
+// TestMarkFollowFanoutIsSticky: the follow pass is recorded once and a later
+// write never changes it; GetPushReportProgress returns it.
+func TestMarkFollowFanoutIsSticky(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	q := sqlcgen.New(pool)
+	ctx := context.Background()
+
+	_ = pushPerson(t, pool, "mff-author@example.com", "mff-sess-author")
+	report := pushReport(t, pool, "mff-sess-author", pushFar)
+	if err := q.MarkFollowFanout(ctx, sqlcgen.MarkFollowFanoutParams{ReportID: report, State: "fanned", Now: pushNow}); err != nil {
+		t.Fatalf("mark: %v", err)
+	}
+	if err := q.MarkFollowFanout(ctx, sqlcgen.MarkFollowFanoutParams{ReportID: report, State: "capped", Now: pushNow.Add(time.Minute)}); err != nil {
+		t.Fatalf("second mark: %v", err)
+	}
+	got, err := q.GetPushReportProgress(ctx, report)
+	if err != nil || got.FollowState == nil || *got.FollowState != "fanned" || !got.FollowAt.Valid || !got.FollowAt.Time.Equal(pushNow) {
+		t.Errorf("progress = %+v (%v), want follow fanned at the first time", got, err)
+	}
+	if got.CriticalState != nil || got.ReliableState != nil {
+		t.Errorf("progress = %+v, want no critical or reliable state", got)
+	}
+}
+
+// TestFollowRowsInEveryClosedList: a sent follow row counts toward the hourly
+// cap, a follow row is the first_kind of its confirmed update, the confirmed
+// update is queued for a follow row sent saying Not confirmed yet, and a
+// reached_live change is skipped beside a follow row.
+func TestFollowRowsInEveryClosedList(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	q := sqlcgen.New(pool)
+	ctx := context.Background()
+
+	_ = pushPerson(t, pool, "frl-author@example.com", "frl-sess-author")
+	a := pushPerson(t, pool, "frl-a@example.com", "frl-sess-a")
+	report := pushReport(t, pool, "frl-sess-author", pushFar)
+	pushEnqueue(t, q, a, report, "follow")
+	testutil.MustExec(t, pool,
+		`INSERT INTO updates (account_id, report_id, kind, created_at) VALUES ($1, $2, 'reached_live', $3)`, a, report, pushNow.Add(-time.Minute))
+
+	// A reached_live change beside a follow row is skipped (the confirmed update carries it).
+	n, err := q.EnqueueChangedFromUpdates(ctx, sqlcgen.EnqueueChangedFromUpdatesParams{AccountID: a, Since: pushNow.Add(-time.Hour), Now: pushNow})
+	if err != nil || n != 0 {
+		t.Errorf("changed beside a follow row = %d (%v), want 0", n, err)
+	}
+
+	rows := pushClaim(t, q, 10)
+	if len(rows) != 1 || rows[0].Kind != "follow" {
+		t.Fatalf("claimed %+v, want the one follow row", rows)
+	}
+	if got, err := q.MarkPushSent(ctx, sqlcgen.MarkPushSentParams{ID: rows[0].ID, HeldLease: rows[0].LeaseUntil, Now: pushNow.Add(-5 * time.Minute), SentUnconfirmed: true}); err != nil || got != 1 {
+		t.Fatalf("mark sent = %d (%v)", got, err)
+	}
+	c, err := q.CountAccountPushesInWindow(ctx, sqlcgen.CountAccountPushesInWindowParams{AccountID: a, Since: pushNow.Add(-time.Hour)})
+	if err != nil || c != 1 {
+		t.Errorf("pushes in the window = %d (%v), want 1 (a follow push counts)", c, err)
+	}
+	if got, err := q.EnqueueConfirmedUpdates(ctx, sqlcgen.EnqueueConfirmedUpdatesParams{ReportID: report, ExpiresAt: pushFar, Now: pushNow}); err != nil || got != 1 {
+		t.Fatalf("confirmed update = %d (%v), want 1", got, err)
+	}
+	var first *string
+	for _, row := range pushClaim(t, q, 10) {
+		if row.Kind == "confirmed_update" {
+			first = row.FirstKind
+		}
+	}
+	if first == nil || *first != "follow" {
+		t.Errorf("first_kind of the confirmed update = %v, want follow", first)
+	}
+}
+
+// TestDeleteQueuedFollowPushes: the two delete queries remove only queued,
+// unheld follow rows about the followee's reports, never a sent row, a row of
+// another kind or a row about someone else's report.
+func TestDeleteQueuedFollowPushes(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	q := sqlcgen.New(pool)
+	ctx := context.Background()
+
+	followee := pushPerson(t, pool, "dqf-followee@example.com", "dqf-sess-followee")
+	other := pushPerson(t, pool, "dqf-other@example.com", "dqf-sess-other")
+	f1 := pushPerson(t, pool, "dqf-f1@example.com", "dqf-sess-f1")
+	f2 := pushPerson(t, pool, "dqf-f2@example.com", "dqf-sess-f2")
+	_, _ = followee, other
+	r1 := pushReport(t, pool, "dqf-sess-followee", pushFar)
+	r2 := pushReport(t, pool, "dqf-sess-followee", pushFar)
+	rOther := pushReport(t, pool, "dqf-sess-other", pushFar)
+
+	pushEnqueue(t, q, f1, r1, "follow")
+	pushEnqueue(t, q, f2, r1, "follow")
+	pushEnqueue(t, q, f1, r2, "follow")
+	pushEnqueue(t, q, f1, rOther, "follow")
+	pushEnqueue(t, q, f2, r2, "reliable")
+	// f2's follow row about r2 was sent: history, never deleted.
+	testutil.MustExec(t, pool,
+		`INSERT INTO push_outbox (account_id, report_id, kind, expires_at, state, sent_at) VALUES ($1, $2, 'follow', $3, 'sent', $4)`,
+		f1, pushReport(t, pool, "dqf-sess-followee", pushFar), pushFar, pushNow)
+
+	n, err := q.DeleteQueuedFollowPush(ctx, sqlcgen.DeleteQueuedFollowPushParams{FollowerID: f1, FolloweeID: followee})
+	if err != nil || n != 2 {
+		t.Fatalf("delete for the pair = %d (%v), want 2 (f1's queued follow rows about the followee)", n, err)
+	}
+	if c := pushCount(t, pool, `SELECT count(*) FROM push_outbox WHERE account_id = $1 AND kind = 'follow'`, f1); c != 2 {
+		t.Errorf("f1 keeps %d follow rows, want 2 (the sent one and the one about another person)", c)
+	}
+	// A row held by a worker (a lease in the future) is left alone.
+	testutil.MustExec(t, pool, `UPDATE push_outbox SET lease_until = now() + interval '1 hour' WHERE account_id = $1 AND report_id = $2`, f2, r1)
+	if n, err := q.DeleteQueuedFollowPushesForFollowee(ctx, followee); err != nil || n != 0 {
+		t.Errorf("delete for the followee with the only queued row held = %d (%v), want 0", n, err)
+	}
+	testutil.MustExec(t, pool, `UPDATE push_outbox SET lease_until = NULL WHERE account_id = $1 AND report_id = $2`, f2, r1)
+	n, err = q.DeleteQueuedFollowPushesForFollowee(ctx, followee)
+	if err != nil || n != 1 {
+		t.Fatalf("delete for the followee = %d (%v), want 1", n, err)
+	}
+	if c := pushCount(t, pool, `SELECT count(*) FROM push_outbox WHERE kind = 'reliable'`); c != 1 {
+		t.Errorf("%d reliable rows, want the 1 untouched", c)
+	}
+	if c := pushCount(t, pool, `SELECT count(*) FROM push_outbox WHERE kind = 'follow' AND state = 'queued'`); c != 1 {
+		t.Errorf("%d queued follow rows left, want only the one about the other person's report", c)
+	}
+}

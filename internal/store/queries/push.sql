@@ -302,8 +302,9 @@ SET area_lookup_at = EXCLUDED.area_lookup_at;
 
 -- name: GetPushReportProgress :one
 -- Where a report stands in the fan out. No row means it was never looked at.
+-- follow_state and follow_at are the follow pass (Phase 9 plan 25).
 SELECT report_id, critical_state, critical_at, reliable_state, reliable_at,
-       area_lookup_at, evaluated_at
+       area_lookup_at, evaluated_at, follow_state, follow_at
 FROM push_report_progress
 WHERE report_id = sqlc.arg(report_id)::bigint;
 
@@ -326,6 +327,17 @@ ON CONFLICT (report_id) DO UPDATE
 SET reliable_state = EXCLUDED.reliable_state,
     reliable_at = EXCLUDED.reliable_at
 WHERE push_report_progress.reliable_state IS NULL;
+
+-- name: MarkFollowFanout :exec
+-- Records the follow pass of a report once (Phase 9 plan 25, review W2): written
+-- only while the stored state is NULL, so a pass that found nobody is not
+-- repeated on every later evaluation and a fanned report is never overwritten.
+INSERT INTO push_report_progress (report_id, follow_state, follow_at)
+VALUES (sqlc.arg(report_id)::bigint, sqlc.arg(state)::text, sqlc.arg(now)::timestamptz)
+ON CONFLICT (report_id) DO UPDATE
+SET follow_state = EXCLUDED.follow_state,
+    follow_at = EXCLUDED.follow_at
+WHERE push_report_progress.follow_state IS NULL;
 
 -- name: MarkReportEvaluated :exec
 -- Records that the sweep looked at the report.
@@ -361,8 +373,10 @@ WHERE ss.account_id = sqlc.arg(reporter_account_id)::bigint
 
 -- name: EnqueueInitialPush :one
 -- Queues the first alert of an account for a report. One initial alert per
--- account and report whatever the kind: the dispatcher enqueues critical before
--- reliable, so critical wins (UI-SPEC 3c). A repeat returns no row.
+-- account and report whatever the kind: the dispatcher enqueues critical, then
+-- follow, then reliable, so critical wins (UI-SPEC 3c) and follow beats reliable
+-- (Phase 9 plan 25). A repeat returns no row. The ON CONFLICT predicate is the
+-- one of uq_push_outbox_first, word for word.
 INSERT INTO push_outbox (account_id, report_id, kind, expires_at, created_at, next_attempt_at)
 VALUES (
     sqlc.arg(account_id)::bigint,
@@ -372,7 +386,7 @@ VALUES (
     sqlc.arg(now)::timestamptz,
     sqlc.arg(now)::timestamptz
 )
-ON CONFLICT (account_id, report_id) WHERE kind IN ('critical', 'reliable') DO NOTHING
+ON CONFLICT (account_id, report_id) WHERE kind IN ('critical', 'reliable', 'follow') DO NOTHING
 RETURNING id;
 
 -- name: EnqueueReliableFromUpdates :execrows
@@ -397,15 +411,76 @@ WHERE u.report_id = sqlc.arg(report_id)::bigint
       WHERE p.account_id = u.account_id
         AND ps.revoked_at IS NULL
   )
-ON CONFLICT (account_id, report_id) WHERE kind IN ('critical', 'reliable') DO NOTHING;
+ON CONFLICT (account_id, report_id) WHERE kind IN ('critical', 'reliable', 'follow') DO NOTHING;
+
+-- name: EnqueueFollowFromUpdates :execrows
+-- One bell row, two channels, for the follow note (Phase 9 plan 25, D-09,
+-- research 5.2): for every followed_posted updates row of the report whose
+-- account has a live subscription, queue a follow push. The bell step
+-- (refreshFollowedPosts) wrote the row under the one notify predicate and every
+-- send time recheck; push only follows it. A critical or follow row already
+-- queued for the pair wins through the shared unique index, and a reliable row
+-- queued first for the pair makes this a no op, so a person gets one first alert
+-- per report. A sibling of EnqueueReliableFromUpdates, with the same expiry
+-- argument and the same ON CONFLICT clause.
+INSERT INTO push_outbox (account_id, report_id, kind, expires_at, created_at, next_attempt_at)
+SELECT u.account_id, u.report_id, 'follow',
+       sqlc.arg(expires_at)::timestamptz,
+       sqlc.arg(now)::timestamptz,
+       sqlc.arg(now)::timestamptz
+FROM updates u
+JOIN accounts a ON a.id = u.account_id
+WHERE u.report_id = sqlc.arg(report_id)::bigint
+  AND u.kind = 'followed_posted'
+  AND a.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1
+      FROM push_subscriptions p
+      JOIN sessions ps ON ps.session_id = p.session_id
+      WHERE p.account_id = u.account_id
+        AND ps.revoked_at IS NULL
+  )
+ON CONFLICT (account_id, report_id) WHERE kind IN ('critical', 'reliable', 'follow') DO NOTHING;
+
+-- name: DeleteQueuedFollowPushesForFollowee :execrows
+-- Plan 09-26 (SC5, D-24): when a person's followers are ended (the profile went
+-- private or was deleted, Remove all followers, a rating or a removal dropped the
+-- Reliable tag), every follow push still waiting about a report this person
+-- posted is deleted, for all their followers. Only rows not yet sent and not held
+-- by a worker are touched: a sent row is history, and a held row is checked by
+-- its worker at send time. The reporter is read from the report's session, the
+-- same join PushReportFacts uses.
+DELETE FROM push_outbox o
+USING reports r, sessions s
+WHERE o.kind = 'follow'
+  AND o.state = 'queued'
+  AND (o.lease_until IS NULL OR o.lease_until <= now())
+  AND r.id = o.report_id
+  AND s.session_id = r.session_id
+  AND s.account_id = sqlc.arg(followee_id)::bigint;
+
+-- name: DeleteQueuedFollowPush :execrows
+-- Plan 09-26: the same for one follower and one followee (Unfollow, Remove
+-- follower, Block, Mute, the bell turned off). Only rows not yet sent and not
+-- held by a worker are deleted.
+DELETE FROM push_outbox o
+USING reports r, sessions s
+WHERE o.kind = 'follow'
+  AND o.state = 'queued'
+  AND (o.lease_until IS NULL OR o.lease_until <= now())
+  AND o.account_id = sqlc.arg(follower_id)::bigint
+  AND r.id = o.report_id
+  AND s.session_id = r.session_id
+  AND s.account_id = sqlc.arg(followee_id)::bigint;
 
 -- name: EnqueueChangedFromUpdates :execrows
 -- Queues a changed push for each of the account's 3.2 event rows after since:
 -- reached_live, hidden, resolved, fading and (Phase 8 plan 15, D-16)
 -- comment_on_yours and reply_to_yours. Rows of kind more and reliable_nearby
 -- are never pushed as changes. A reached_live row is skipped
--- when the account already has a critical or reliable row for that report: the
--- in place confirmed update carries that news, so the person never gets both
+-- when the account already has a critical, reliable or follow row for that
+-- report: the in place confirmed update carries that news, so the person never
+-- gets both
 -- (UI-SPEC 3c). expires_at comes from the report. Once per update row.
 INSERT INTO push_outbox (account_id, report_id, kind, update_id, expires_at, created_at, next_attempt_at)
 SELECT u.account_id, u.report_id, 'changed', u.id, r.expires_at,
@@ -424,14 +499,14 @@ WHERE u.account_id = sqlc.arg(account_id)::bigint
           FROM push_outbox o
           WHERE o.account_id = u.account_id
             AND o.report_id = u.report_id
-            AND o.kind IN ('critical', 'reliable')
+            AND o.kind IN ('critical', 'reliable', 'follow')
       )
   )
 ON CONFLICT (account_id, update_id) WHERE kind = 'changed' DO NOTHING;
 
 -- name: EnqueueConfirmedUpdates :execrows
--- The in place confirmed update: for each critical or reliable row of the
--- report that was sent with the words Not confirmed yet, queue one
+-- The in place confirmed update: for each critical, reliable or follow row of
+-- the report that was sent with the words Not confirmed yet, queue one
 -- confirmed_update row. A sent row whose words did not say that, and a row
 -- still queued, get none. Once per account and report.
 INSERT INTO push_outbox (account_id, report_id, kind, expires_at, created_at, next_attempt_at)
@@ -441,7 +516,7 @@ SELECT o.account_id, o.report_id, 'confirmed_update',
        sqlc.arg(now)::timestamptz
 FROM push_outbox o
 WHERE o.report_id = sqlc.arg(report_id)::bigint
-  AND o.kind IN ('critical', 'reliable')
+  AND o.kind IN ('critical', 'reliable', 'follow')
   AND o.state = 'sent'
   AND o.sent_unconfirmed
 ON CONFLICT (account_id, report_id) WHERE kind = 'confirmed_update' DO NOTHING;
@@ -457,7 +532,7 @@ ON CONFLICT (account_id, report_id) WHERE kind = 'confirmed_update' DO NOTHING;
 -- write must present. update_kind is the kind of the 3.2 row a changed push
 -- carries (NULL once 3.2 pruned it). first_kind is, for a confirmed_update row
 -- only, the kind of the same account's critical or reliable row for the same
--- report (at most one, by uq_push_outbox_first; NULL for every other kind and
+-- report (critical, reliable or follow; at most one, by uq_push_outbox_first; NULL for every other kind and
 -- once the first row was pruned); the worker uses it as the base kind of a
 -- confirmed update. The joins run after the update because an UPDATE cannot
 -- join to the table it updates in its own FROM clause.
@@ -498,7 +573,7 @@ LEFT JOIN push_outbox f
        ON cl.kind = 'confirmed_update'
       AND f.account_id = cl.account_id
       AND f.report_id = cl.report_id
-      AND f.kind IN ('critical', 'reliable')
+      AND f.kind IN ('critical', 'reliable', 'follow')
 ORDER BY CASE cl.kind
              WHEN 'critical' THEN 0
              WHEN 'confirmed_update' THEN 1
@@ -565,13 +640,14 @@ WHERE id = sqlc.arg(id)::bigint
   AND lease_until = sqlc.arg(held_lease)::timestamptz;
 
 -- name: CountAccountPushesInWindow :one
--- The per account hourly cap: sent rows of kinds critical, reliable and changed
--- after since. Confirmed updates do not count.
+-- The per account hourly cap: sent rows of kinds critical, reliable, follow and
+-- changed after since (a follow push counts, D-25 of Phase 9). Confirmed updates
+-- do not count.
 SELECT COUNT(*)::bigint
 FROM push_outbox
 WHERE account_id = sqlc.arg(account_id)::bigint
   AND state = 'sent'
-  AND kind IN ('critical', 'reliable', 'changed')
+  AND kind IN ('critical', 'reliable', 'follow', 'changed')
   AND sent_at > sqlc.arg(since)::timestamptz;
 
 -- name: AccountPushSentAboutReport :one
