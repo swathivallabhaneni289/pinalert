@@ -198,6 +198,9 @@ window.PinalertComments = (function () {
     // The after cursor of the last page Show more read, which the poll reads
     // too once Show more has been used (review fix WR-B04).
     var lastPageAfter = 0;
+    // Counts the Like answers. A list answer asked for before the latest Like
+    // answer of a comment keeps that comment's like state (review fix WR-B05).
+    var answerStamp = 0;
     var loadSeq = 0;
     var inflight = null;
     var pollTimer = null;
@@ -656,6 +659,8 @@ window.PinalertComments = (function () {
         if (res.status === STATUS_OK && res.body && typeof res.body.likes === 'number') {
           rec.data.likes = res.body.likes;
           rec.data.viewer_liked = res.body.viewer_liked === true;
+          answerStamp += 1;
+          rec.likeStamp = answerStamp;
           writeActions(rec);
           return;
         }
@@ -787,15 +792,32 @@ window.PinalertComments = (function () {
       writeText(t.toggle, open ? HIDE_REPLIES : viewReplies(count));
     }
 
+    // freshData keeps the like state a Like answer wrote when the list answer
+    // carrying data was asked for before that Like answered (review fix
+    // WR-B05): an older server answer never overwrites a newer one. sentStamp
+    // is answerStamp at the moment the list request left.
+    function freshData(rec, data, sentStamp) {
+      if (!rec || !(rec.likeStamp > sentStamp)) {
+        return data;
+      }
+      var kept = {};
+      Object.keys(data).forEach(function (key) {
+        kept[key] = data[key];
+      });
+      kept.likes = rec.data.likes;
+      kept.viewer_liked = rec.data.viewer_liked;
+      return kept;
+    }
+
     // placeReplies makes the thread hold exactly the replies of data, in order,
     // writing the nodes it already has and adding or dropping the rest.
-    function placeReplies(rec, replies) {
+    function placeReplies(rec, replies, sentStamp) {
       var t = rec.thread;
       var seen = {};
       var prev = null;
       for (var i = 0; i < replies.length; i++) {
-        var data = replies[i];
-        var id = String(data.id);
+        var id = String(replies[i].id);
+        var data = freshData(nodes[id], replies[i], sentStamp);
         seen[id] = true;
         var child = nodes[id];
         if (!child) {
@@ -873,13 +895,13 @@ window.PinalertComments = (function () {
     // are dropped, only inside the range the answer covers: after the page's
     // cursor (after, 0 for the first page) up to its last comment, or to the
     // end when no page follows.
-    function mergeRoots(comments, covered, after) {
+    function mergeRoots(comments, covered, after, sentStamp) {
       var from = typeof after === 'number' ? after : 0;
       var seen = {};
       var lastId = from;
       for (var i = 0; i < comments.length; i++) {
-        var data = comments[i];
-        var id = String(data.id);
+        var id = String(comments[i].id);
+        var data = freshData(nodes[id], comments[i], sentStamp);
         seen[id] = true;
         lastId = Math.max(lastId, Number(data.id));
         var rec = nodes[id];
@@ -890,7 +912,7 @@ window.PinalertComments = (function () {
         }
         writeComment(rec, data);
         var replies = Array.isArray(data.replies) ? data.replies : [];
-        placeReplies(rec, replies);
+        placeReplies(rec, replies, sentStamp);
       }
       var limit = covered === 'all' ? Infinity : lastId;
       var stale = rootIds.filter(function (id) {
@@ -979,7 +1001,7 @@ window.PinalertComments = (function () {
       syncParts();
     }
 
-    function render(body) {
+    function render(body, sentStamp) {
       var comments = body && Array.isArray(body.comments) ? body.comments : null;
       if (comments === null) {
         throw new Error('the comments answer has no comments');
@@ -992,7 +1014,7 @@ window.PinalertComments = (function () {
         total = body.comment_count;
       }
       applyOpenState(body.comments_open !== false);
-      mergeRoots(comments, body.more === true ? 'range' : 'all', 0);
+      mergeRoots(comments, body.more === true ? 'range' : 'all', 0, sentStamp);
       if (!loadedMore) {
         more = body.more === true;
         nextAfter = typeof body.next_after === 'number' ? body.next_after : 0;
@@ -1004,11 +1026,11 @@ window.PinalertComments = (function () {
     // renderTail writes the last page read so far, from Show more or from the
     // poll once Show more has been used (review fix WR-B04). That page is the
     // list's end, so its answer says whether Show more is needed again.
-    function renderTail(body, after) {
+    function renderTail(body, after, sentStamp) {
       if (typeof body.comment_count === 'number') {
         total = body.comment_count;
       }
-      mergeRoots(body.comments, body.more === true ? 'range' : 'all', after);
+      mergeRoots(body.comments, body.more === true ? 'range' : 'all', after, sentStamp);
       more = body.more === true;
       nextAfter = typeof body.next_after === 'number' ? body.next_after : 0;
       syncParts();
@@ -1086,6 +1108,7 @@ window.PinalertComments = (function () {
       if (mode !== 'rows') {
         showSkeleton();
       }
+      var sentStamp = answerStamp;
       inflight = request('GET', listPath(0));
       inflight.promise.then(function (res) {
         if (mine !== loadSeq) {
@@ -1100,7 +1123,7 @@ window.PinalertComments = (function () {
           throw new Error('the comments answered with an error');
         }
         root.hidden = false;
-        render(res.body);
+        render(res.body, sentStamp);
         loadTail(mine);
       }).catch(function () {
         if (mine !== loadSeq) {
@@ -1122,6 +1145,7 @@ window.PinalertComments = (function () {
         return;
       }
       var after = lastPageAfter;
+      var sentStamp = answerStamp;
       inflight = request('GET', listPath(after));
       inflight.promise.then(function (res) {
         if (mine !== loadSeq) {
@@ -1131,7 +1155,7 @@ window.PinalertComments = (function () {
         if (!res.ok || !res.body || !Array.isArray(res.body.comments) || after !== lastPageAfter) {
           return;
         }
-        renderTail(res.body, after);
+        renderTail(res.body, after, sentStamp);
       }).catch(function () {
         if (mine === loadSeq) {
           inflight = null;
@@ -1148,6 +1172,7 @@ window.PinalertComments = (function () {
       moreError.hidden = true;
       moreButton.setAttribute('aria-disabled', 'true');
       var after = nextAfter;
+      var sentStamp = answerStamp;
       var call = request('GET', listPath(after));
       call.promise.then(function (res) {
         moreBusy = false;
@@ -1157,7 +1182,7 @@ window.PinalertComments = (function () {
         }
         loadedMore = true;
         lastPageAfter = after;
-        renderTail(res.body, after);
+        renderTail(res.body, after, sentStamp);
       }).catch(function () {
         moreBusy = false;
         moreButton.removeAttribute('aria-disabled');

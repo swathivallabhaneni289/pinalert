@@ -1287,3 +1287,55 @@ test('WR-B04: your own post on a long report lands after the older pages', async
   assert.equal(ids[50], 'c51', 'page 2 follows page 1');
   assert.equal(ids[70], 'c100', 'your own post is last, in order');
 });
+
+// ---- review fix WR-B05 (2026-10-29): a list answer whose request left before
+// a Like answered never writes the older like state over the newer one. ----
+
+test('WR-B05: a poll sent before the like and answered after it keeps the like', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { likes: 3 })]);
+  const li = page.items()[0];
+  env.advance(30000);
+  const poll = lastFetch(env);
+  assert.equal(poll.opts.method, 'GET');
+  likeButton(li).fire('click');
+  lastFetch(env).reply(200, { likes: 4, viewer_liked: true });
+  await flush();
+  poll.reply(200, body([cm(1, { likes: 3, viewer_liked: false })]));
+  await flush();
+  assert.equal(likeButton(li).getAttribute('aria-pressed'), 'true');
+  assert.equal(find(li, 'comment__like-count').textContent, '4');
+});
+
+test('WR-B05: a poll sent while the like was out keeps the like too', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { likes: 3 })]);
+  const li = page.items()[0];
+  // The like leaves at 25 s and the poll at 30 s, inside the like's 10 s limit.
+  env.advance(25000);
+  likeButton(li).fire('click');
+  const like = lastFetch(env);
+  env.advance(5000);
+  const poll = lastFetch(env);
+  assert.equal(poll.opts.method, 'GET');
+  like.reply(200, { likes: 4, viewer_liked: true });
+  await flush();
+  poll.reply(200, body([cm(1, { likes: 3, viewer_liked: false })]));
+  await flush();
+  assert.equal(likeButton(li).getAttribute('aria-pressed'), 'true');
+  assert.equal(find(li, 'comment__like-count').textContent, '4');
+});
+
+test('WR-B05: a poll sent after the like answered is written as it comes', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { likes: 3 })]);
+  const li = page.items()[0];
+  likeButton(li).fire('click');
+  lastFetch(env).reply(200, { likes: 4, viewer_liked: true });
+  await flush();
+  env.advance(30000);
+  lastFetch(env).reply(200, body([cm(1, { likes: 2, viewer_liked: false })]));
+  await flush();
+  assert.equal(likeButton(li).getAttribute('aria-pressed'), 'false', 'a newer answer wins');
+  assert.equal(find(li, 'comment__like-count').textContent, '2');
+});
