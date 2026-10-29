@@ -248,8 +248,11 @@ func TestSettingsShowsOnlyExistingRows(t *testing.T) {
 	//
 	// Amended 2026-10-29 by plan 05-14 (D-11): Phase 5 draws the official row, whose
 	// no home variant "Add a home area first" opens the Home area window, so twelve.
-	if got := strings.Count(page, "app-icon--chevron-right"); got != 12 {
-		t.Errorf("settings.html.tmpl draws %d chevrons, want one on each of the twelve rows that open something", got)
+	//
+	// Amended 2026-10-29 by Phase 7.1 plan 15 (D-07, UI-SPEC Surface 8): the
+	// Username row opens a window too, so thirteen.
+	if got := strings.Count(page, "app-icon--chevron-right"); got != 13 {
+		t.Errorf("settings.html.tmpl draws %d chevrons, want one on each of the thirteen rows that open something", got)
 	}
 	header := p421ReadTemplate(t, "account_header.html.tmpl")
 	for _, label := range waitingSettingsLabels {
@@ -297,13 +300,15 @@ func TestSettingsWindowsCloseWithXOnly(t *testing.T) {
 		save  string
 	}{
 		{"settings-name-window", "Name", []string{
-			`for="settings-name-input">Your name</label>`, `placeholder="For example: Ravi Kumar"`,
+			// Amended 2026-10-29 by Phase 7.1 plan 15 (UI-SPEC P71-C4): the label reads Name.
+			`for="settings-name-input">Name</label>`, `placeholder="For example: Ravi Kumar"`,
 			`maxlength="60"`, `autocomplete="name"`,
 		}, "Save name"},
 		{"settings-home-window", "Home area", []string{
 			`for="settings-home-input">Home area</label>`, `placeholder="Search a place"`, `enterkeyhint="search"`,
 			"A town or area, never your street. Used for alerts.", `role="listbox"`, `role="status"`,
-			"Remove home area",
+			// Amended 2026-10-29 by Phase 7.1 plan 15 (D-15): the Remove home area button is
+			// gone; TestSettingsHomeAreaCannotBeRemoved pins its absence.
 		}, "Save home area"},
 	}
 	for _, w := range windows {
@@ -482,7 +487,9 @@ func TestSettingsIsAGroupedList(t *testing.T) {
 	// left column, "stuff like this should also be included": each section
 	// has its line, shown on the laptop only.
 	for _, line := range []string{
-		`<p class="place-section__line">Your name and home area.</p>`,
+		// Amended 2026-10-29 by Phase 7.1 plan 15 (D-07, UI-SPEC Surface 8): the
+		// About you line also names the username.
+		`<p class="place-section__line">Your username, name and home area.</p>`,
 		`<p class="place-section__line">The rules, how your data is used, and a lighter version for weak networks.</p>`,
 		`<p class="place-section__line">Sign out, or remove your account and its data.</p>`,
 	} {

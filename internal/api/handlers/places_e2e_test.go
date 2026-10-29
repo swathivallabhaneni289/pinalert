@@ -164,8 +164,11 @@ func TestSettingsRows(t *testing.T) {
 	//
 	// Amended 2026-10-29 by plan 05-14 (D-11): Phase 5 draws the official row, whose
 	// no home variant is a button too, so it sits between Critical and Reliable.
-	if strings.Join(buttonIDs, ",") != "settings-name-row,settings-home-row,settings-device-install,settings-critical-nohome,settings-official-nohome,settings-reliable-nohome,settings-muted-row,settings-logout-all-row,settings-delete-row" {
-		t.Errorf("Settings button rows are %v, want Name, Home area, the On this device install row, the three Add a home area first rows, Muted reports, Log out of all devices, Delete my account", buttonIDs)
+	//
+	// Amended 2026-10-29 by Phase 7.1 plan 15 (D-07, UI-SPEC Surface 8): the
+	// Username row is the first of About you, a button that opens its window.
+	if strings.Join(buttonIDs, ",") != "settings-username-row,settings-name-row,settings-home-row,settings-device-install,settings-critical-nohome,settings-official-nohome,settings-reliable-nohome,settings-muted-row,settings-logout-all-row,settings-delete-row" {
+		t.Errorf("Settings button rows are %v, want Username, Name, Home area, the On this device install row, the three Add a home area first rows, Muted reports, Log out of all devices, Delete my account", buttonIDs)
 	}
 	for _, want := range []string{
 		// Amended 2026-10-22 (owner: "too much details under the heading for
@@ -249,7 +252,9 @@ func TestSettingsBackAndNoGear(t *testing.T) {
 // section of /settings, it shows Not set for a person with no name and no home
 // area, and after the person saves both through the route of plan 01 it shows
 // the stored text, escaped, in the rows, in the data-value attributes the
-// windows prefill from, and with the Remove home area button visible.
+// windows prefill from. Amended 2026-10-29 by Phase 7.1 plan 15 (D-07, D-15):
+// the Username row is the first of About you, and there is no Remove home area
+// button, stored or not.
 func TestSettingsAboutYouValues(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
 	client := newVerifiedClient(t, srv, mailer, "places-about-you@example.com")
@@ -262,11 +267,16 @@ func TestSettingsAboutYouValues(t *testing.T) {
 		`id="settings-name-row" aria-haspopup="dialog" data-value=""`,
 		`id="settings-home-row" aria-haspopup="dialog" data-value=""`,
 		`id="settings-name-window"`, `id="settings-home-window"`,
-		`id="settings-home-remove" hidden>Remove home area</button>`,
+		`id="settings-username-window"`,
+		`id="settings-username-row" aria-haspopup="dialog" data-value=""`,
+		`id="settings-username-value">Not set</span>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("/settings (nothing stored) lacks %q", want)
 		}
+	}
+	if strings.Contains(body, "settings-home-remove") || strings.Contains(body, "Remove home area") {
+		t.Errorf("/settings (nothing stored) draws a Remove home area button")
 	}
 	if you, about := strings.Index(body, "settings-you-title"), strings.Index(body, "settings-about-title"); you == -1 || about == -1 || you > about {
 		t.Errorf("About you must come before About Pinalert (you at %d, about at %d)", you, about)
@@ -278,6 +288,8 @@ func TestSettingsAboutYouValues(t *testing.T) {
 	// Save a name and a home area with markup in them, the way the windows do.
 	meWant(t, "PATCH name", meSend(t, client, http.MethodPatch, srv.URL+"/api/me/profile",
 		`{"display_name":"<b>Ravi</b> & \"Co\""}`), http.StatusOK)
+	meWant(t, "PATCH username", meSend(t, client, http.MethodPatch, srv.URL+"/api/me/profile",
+		`{"username":"about_you"}`), http.StatusOK)
 	meWant(t, "PATCH home area", meSend(t, client, http.MethodPatch, srv.URL+"/api/me/profile",
 		`{"home_area":{"name":"Indiranagar <i>x</i>, Bengaluru","lat":12.9784,"lon":77.6408}}`), http.StatusOK)
 
@@ -287,7 +299,8 @@ func TestSettingsAboutYouValues(t *testing.T) {
 		`id="settings-home-value">Indiranagar &lt;i&gt;x&lt;/i&gt;, Bengaluru</span>`,
 		`data-value="&lt;b&gt;Ravi&lt;/b&gt; &amp; &#34;Co&#34;"`,
 		`data-value="Indiranagar &lt;i&gt;x&lt;/i&gt;, Bengaluru"`,
-		`id="settings-home-remove">Remove home area</button>`,
+		`id="settings-username-value">about_you</span>`,
+		`id="settings-username-row" aria-haspopup="dialog" data-value="about_you"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("/settings (stored values) lacks %q", want)

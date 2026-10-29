@@ -4,13 +4,14 @@
 //
 //   - a window opens with the stored value, moves focus inside, keeps Tab
 //     inside, and closes with the X or Escape only, returning focus to its row;
-//   - Save name sends PATCH /api/me/profile with only display_name; an emptied
-//     name is sent as an empty string; a 400 keeps the window open with the
-//     server's sentence;
+//   - Save name sends PATCH /api/me/profile with only display_name; an empty
+//     name sends nothing and says Your name can't be empty. (amended 2026-10-29,
+//     Phase 7.1 plan 15); a 400 keeps the window open with the server's sentence;
 //   - the Home area window offers only places from the place search (one GET,
 //     no map centre, no device position), Save home area sends only the picked
-//     place, Remove home area sends null, and a failed or slow search never
-//     blocks the window;
+//     place, Save home area with nothing picked sends nothing and says Choose a
+//     home area. (there is no Remove home area since 2026-10-29, Phase 7.1 plan
+//     15), and a failed or slow search never blocks the window;
 //   - every string reaches the page through textContent.
 //
 // Run it with: node --test web/settings_window_test.mjs
@@ -137,10 +138,8 @@ function buildPage({ name = '', home = '' } = {}) {
   make('p', 'settings-home-status', homePanel).hidden = true;
   make('ul', 'settings-home-results', homePanel).hidden = true;
   make('p', 'settings-home-error', homePanel).hidden = true;
-  const homeSave = make('button', 'settings-home-save', homePanel);
-  homeSave.disabled = true;
-  const remove = make('button', 'settings-home-remove', homePanel);
-  remove.hidden = !home;
+  // Amended 2026-10-29 by Phase 7.1 plan 15: Save home area is pressable and there is no Remove home area button.
+  make('button', 'settings-home-save', homePanel);
 
   return { doc, bar, main, bottom, nameWin, homeWin };
 }
@@ -258,7 +257,7 @@ test('Escape closes a window, Tab stays inside, and a click on the backdrop does
   assert.equal(page.doc.activeElement, byId(page, 'settings-name-row'));
 });
 
-test('Save name sends only display_name, trimmed, and an emptied name is an empty string', async () => {
+test('Save name sends only display_name, trimmed', async () => {
   const page = loadSettings({ name: 'Old' });
   fire(byId(page, 'settings-name-row'), 'click');
   byId(page, 'settings-name-input').value = '  Ravi Kumar  ';
@@ -277,15 +276,26 @@ test('Save name sends only display_name, trimmed, and an emptied name is an empt
   assert.equal(byId(page, 'settings-name-row').getAttribute('data-value'), 'Ravi Kumar');
   assert.equal(page.nameWin.hidden, true);
   assert.equal(byId(page, 'settings-name-save').disabled, false);
+});
 
+// Amended 2026-10-29 by Phase 7.1 plan 15 (D-15, UI-SPEC Surface 8): an emptied name is no longer sent as an
+// empty string (which removed the stored name). Nothing is sent, the line says
+// Your name can't be empty., and the stored name stays.
+test('an empty name sends nothing, says Your name can\'t be empty. and keeps the stored name', async () => {
+  const page = loadSettings({ name: 'Ravi Kumar' });
   fire(byId(page, 'settings-name-row'), 'click');
-  byId(page, 'settings-name-input').value = '   ';
-  fire(byId(page, 'settings-name-form'), 'submit');
-  assert.deepEqual(JSON.parse(page.requests[1].init.body), { display_name: '' });
-  answer(page.requests[1], 200, { display_name: null, home_area_name: null });
-  await flush();
-  assert.equal(byId(page, 'settings-name-value').textContent, 'Not set');
-  assert.equal(byId(page, 'settings-name-row').getAttribute('data-value'), '');
+  for (const empty of ['', '   ']) {
+    byId(page, 'settings-name-input').value = empty;
+    fire(byId(page, 'settings-name-form'), 'submit');
+    assert.equal(page.requests.length, 0, 'nothing is sent for an empty name');
+    const error = byId(page, 'settings-name-error');
+    assert.equal(error.hidden, false);
+    assert.equal(error.textContent, "Your name can't be empty.");
+    assert.equal(page.nameWin.hidden, false, 'the window stays open');
+    assert.equal(byId(page, 'settings-name-save').disabled, false);
+  }
+  assert.equal(byId(page, 'settings-name-value').textContent, 'Ravi Kumar');
+  assert.equal(byId(page, 'settings-name-row').getAttribute('data-value'), 'Ravi Kumar');
 });
 
 test('a refused name keeps the window open with the server sentence, and a network failure says so plainly', async () => {
@@ -310,13 +320,13 @@ test('a refused name keeps the window open with the server sentence, and a netwo
   assert.equal(byId(page, 'settings-name-save').disabled, false);
 });
 
-test('the Home area search sends only q, shows up to 5 places, and a pick enables Save home area', async () => {
+test('the Home area search sends only q, shows up to 5 places, and a pick fills the field', async () => {
   const page = loadSettings();
   fire(byId(page, 'settings-home-row'), 'click');
   const input = byId(page, 'settings-home-input');
   const save = byId(page, 'settings-home-save');
-  assert.equal(save.disabled, true);
-  assert.equal(byId(page, 'settings-home-remove').hidden, true);
+  // ${note} (D-15): Save home area is always pressable.
+  assert.equal(save.disabled, false);
 
   input.value = 'Indira';
   fire(byId(page, 'settings-home-form'), 'submit');
@@ -335,7 +345,7 @@ test('the Home area search sends only q, shows up to 5 places, and a pick enable
   assert.equal(list.hidden, false);
   assert.equal(list.children.length, 5);
   assert.equal(list.children[0].children[0].textContent.startsWith('Place 0'), true);
-  assert.equal(save.disabled, true, 'nothing is picked yet');
+  assert.equal(save.disabled, false, 'Save home area stays pressable; a press with nothing picked sends nothing');
 
   pick(page, 2);
   assert.equal(save.disabled, false);
@@ -345,7 +355,7 @@ test('the Home area search sends only q, shows up to 5 places, and a pick enable
   assert.equal(page.doc.activeElement, input, 'focus goes back to the field');
 });
 
-test('Save home area sends only the picked place, the row takes the stored name, and Remove appears', async () => {
+test('Save home area sends only the picked place, the row takes the stored name', async () => {
   const page = loadSettings();
   fire(byId(page, 'settings-home-row'), 'click');
   byId(page, 'settings-home-input').value = 'Indira';
@@ -364,11 +374,10 @@ test('Save home area sends only the picked place, the row takes the stored name,
 
   assert.equal(byId(page, 'settings-home-value').textContent, 'Indiranagar');
   assert.equal(byId(page, 'settings-home-row').getAttribute('data-value'), 'Indiranagar');
-  assert.equal(byId(page, 'settings-home-remove').hidden, false);
   assert.equal(page.homeWin.hidden, true);
 });
 
-test('typing after a pick clears the pick and disables Save home area again', async () => {
+test('typing after a pick clears the pick, so a press sends nothing and says Choose a home area.', async () => {
   const page = loadSettings();
   fire(byId(page, 'settings-home-row'), 'click');
   const input = byId(page, 'settings-home-input');
@@ -381,9 +390,11 @@ test('typing after a pick clears the pick and disables Save home area again', as
 
   input.value = 'Indiranagar 2';
   fire(input, 'input');
-  assert.equal(byId(page, 'settings-home-save').disabled, true);
+  assert.equal(byId(page, 'settings-home-save').disabled, false, '${note}: Save home area stays pressable');
   fire(byId(page, 'settings-home-save'), 'click');
   assert.equal(page.requests.length, 1, 'no save may go out without a picked place');
+  assert.equal(byId(page, 'settings-home-error').hidden, false);
+  assert.equal(byId(page, 'settings-home-error').textContent, 'Choose a home area.');
 });
 
 test('a failed, refused or slow search shows a plain line and never blocks the window', async () => {
@@ -448,24 +459,44 @@ test('an older search answer that arrives late is dropped', async () => {
   assert.equal(list.children[0].children[0].textContent.startsWith('Pune'), true);
 });
 
-test('Remove home area sends home_area null, the row reads Not set and the button goes away', async () => {
+// Amended 2026-10-29 by Phase 7.1 plan 15 (D-15, UI-SPEC Surface 8): a home area can be changed but not removed.
+// The Remove home area button is gone; Save home area with nothing picked sends
+// nothing and says Choose a home area., and the stored area stays.
+test('Save home area with nothing picked sends nothing, says Choose a home area. and keeps the stored area', async () => {
   const page = loadSettings({ home: 'Indiranagar' });
   fire(byId(page, 'settings-home-row'), 'click');
-  assert.equal(byId(page, 'settings-home-remove').hidden, false);
+  assert.equal(page.doc.byId['settings-home-remove'], undefined, 'there is no Remove home area button');
   assert.equal(byId(page, 'settings-home-input').value, 'Indiranagar');
-  assert.equal(byId(page, 'settings-home-save').disabled, true, 'a stored name is not a picked place');
+  assert.equal(byId(page, 'settings-home-save').disabled, false, 'a stored name is not a picked place, but Save is pressable');
 
-  fire(byId(page, 'settings-home-remove'), 'click');
-  assert.equal(page.requests.length, 1);
-  assert.equal(page.requests[0].init.method, 'PATCH');
-  assert.deepEqual(JSON.parse(page.requests[0].init.body), { home_area: null });
-  answer(page.requests[0], 200, { display_name: null, home_area_name: null });
+  fire(byId(page, 'settings-home-save'), 'click');
   await flush();
+  assert.equal(page.requests.length, 0, 'nothing is sent');
+  assert.equal(byId(page, 'settings-home-error').hidden, false);
+  assert.equal(byId(page, 'settings-home-error').textContent, 'Choose a home area.');
+  assert.equal(page.homeWin.hidden, false, 'the window stays open');
+  assert.equal(byId(page, 'settings-home-value').textContent, 'Indiranagar');
+  assert.equal(byId(page, 'settings-home-row').getAttribute('data-value'), 'Indiranagar');
+});
 
-  assert.equal(byId(page, 'settings-home-value').textContent, 'Not set');
-  assert.equal(byId(page, 'settings-home-row').getAttribute('data-value'), '');
-  assert.equal(byId(page, 'settings-home-remove').hidden, true);
-  assert.equal(byId(page, 'settings-home-input').value, '');
+test('the Choose a home area. line goes when a place is picked and when the window is opened again', async () => {
+  const page = loadSettings();
+  fire(byId(page, 'settings-home-row'), 'click');
+  fire(byId(page, 'settings-home-save'), 'click');
+  assert.equal(byId(page, 'settings-home-error').textContent, 'Choose a home area.');
+  byId(page, 'settings-home-input').value = 'Indira';
+  fire(byId(page, 'settings-home-form'), 'submit');
+  answer(page.requests[0], 200, { results: [{ name: 'Indiranagar', display_name: 'Indiranagar, Bengaluru', lat: 12.9, lon: 77.6 }] });
+  await flush();
+  pick(page, 0);
+  assert.equal(byId(page, 'settings-home-error').hidden, true, 'a pick clears the line');
+
+  fire(page.homeWin, 'keydown', { key: 'Escape' });
+  fire(byId(page, 'settings-home-row'), 'click');
+  fire(byId(page, 'settings-home-save'), 'click');
+  fire(page.homeWin, 'keydown', { key: 'Escape' });
+  fire(byId(page, 'settings-home-row'), 'click');
+  assert.equal(byId(page, 'settings-home-error').hidden, true, 'a new opening starts without the line');
 });
 
 test('place names and server sentences reach the page as text only', async () => {
@@ -576,8 +607,7 @@ test('WR-03: a home save that answers after its window was reopened does not clo
   assert.equal(page.homeWin.hidden, false, 'the reopened window stays open');
   assert.equal(byId(page, 'settings-home-input').value, 'Something else');
   assert.equal(byId(page, 'settings-home-value').textContent, 'Indiranagar', 'the row takes the saved place');
-  assert.equal(byId(page, 'settings-home-remove').hidden, false);
-  assert.equal(byId(page, 'settings-home-save').disabled, true, 'nothing is picked in the reopened window');
+  assert.equal(byId(page, 'settings-home-save').disabled, false, 'Save home area stays pressable in the reopened window');
 });
 
 test('WR-03: the two windows do not share one save flag', async () => {
@@ -672,7 +702,7 @@ test('S-3: a refused earlier name save does not refill the field', async () => {
   assert.equal(byId(page, 'settings-name-input').value, 'Old');
 });
 
-test('S-3: an earlier home save that lands in a reopened window refills the untouched field and works out the buttons', async () => {
+test('S-3: an earlier home save that lands in a reopened window refills the untouched field and works out the button', async () => {
   const page = loadSettings({ home: 'Old place' });
   const save = await startHomeSave(page);
   fire(page.homeWin, 'keydown', { key: 'Escape' });
@@ -684,9 +714,7 @@ test('S-3: an earlier home save that lands in a reopened window refills the unto
 
   assert.equal(page.homeWin.hidden, false);
   assert.equal(byId(page, 'settings-home-input').value, 'Indiranagar');
-  assert.equal(byId(page, 'settings-home-save').disabled, true, 'nothing is picked in the reopened window');
-  assert.equal(byId(page, 'settings-home-remove').hidden, false);
-  assert.equal(byId(page, 'settings-home-remove').disabled, false);
+  assert.equal(byId(page, 'settings-home-save').disabled, false, 'Save home area is worked out as pressable once nothing is out');
 });
 
 test('S-3: a home field the person already changed is left alone', async () => {
@@ -700,25 +728,6 @@ test('S-3: a home field the person already changed is left alone', async () => {
   await flush();
 
   assert.equal(byId(page, 'settings-home-input').value, 'Something else');
-  assert.equal(byId(page, 'settings-home-remove').hidden, false);
-});
-
-test('S-3: an earlier removal that lands in a reopened window empties the untouched field and hides Remove', async () => {
-  const page = loadSettings({ home: 'Old place' });
-  fire(byId(page, 'settings-home-row'), 'click');
-  fire(byId(page, 'settings-home-remove'), 'click');
-  const removal = page.requests[page.requests.length - 1];
-  fire(page.homeWin, 'keydown', { key: 'Escape' });
-  fire(byId(page, 'settings-home-row'), 'click');
-  assert.equal(byId(page, 'settings-home-input').value, 'Old place');
-  assert.equal(byId(page, 'settings-home-remove').disabled, true, 'a removal is still out');
-
-  answer(removal, 200, { display_name: null, home_area_name: null });
-  await flush();
-
-  assert.equal(byId(page, 'settings-home-input').value, '');
-  assert.equal(byId(page, 'settings-home-remove').hidden, true);
-  assert.equal(byId(page, 'settings-home-save').disabled, true);
 });
 
 // ---- Plan 28: suggestions while typing in the Home area --------------------
@@ -763,7 +772,9 @@ test('one request goes out after the typing pause, in areas mode, with no Search
   await flush();
   assert.equal(homeList(page).hidden, false);
   assert.equal(homeList(page).children.length, 2);
-  assert.equal(byId(page, 'settings-home-save').disabled, true, 'a suggestion is not a pick until it is tapped');
+  assert.equal(byId(page, 'settings-home-save').disabled, false, 'Save home area is pressable');
+  fire(byId(page, 'settings-home-save'), 'click');
+  assert.equal(page.requests.length, 1, 'a suggestion is not a pick until it is tapped, so a press sends nothing');
   pick(page, 0);
   assert.equal(byId(page, 'settings-home-save').disabled, false);
 });
