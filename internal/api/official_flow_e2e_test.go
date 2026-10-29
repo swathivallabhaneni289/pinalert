@@ -296,13 +296,17 @@ func TestPhase5OfficialJourney(t *testing.T) {
 	queries := sqlcgen.New(pool)
 	mailer := &gateFakeMailer{}
 	router := NewRouter(Deps{
-		Session:              mgr,
-		Sessions:             queries,
-		Reports:              service.NewReportService(queries),
-		AuthService:          service.NewAuthService(queries, mailer, "https://pinalert.example"),
-		Auth:                 handlers.AuthConfig{AssetVersion: "test"},
-		Template:             tmpl,
-		RateLimits:           gateGenerousRateLimits,
+		Session:     mgr,
+		Sessions:    queries,
+		Reports:     service.NewReportService(queries),
+		AuthService: service.NewAuthService(queries, mailer, "https://pinalert.example"),
+		Auth:        handlers.AuthConfig{AssetVersion: "test"},
+		Template:    tmpl,
+		RateLimits:  gateGenerousRateLimits,
+		// Amended 2026-10-29 by Phase 7.1 plan 08: the reader signs in with the
+		// password flow through gateVerifySession.
+		Credentials:          newGateTestCredentials(queries, mailer),
+		AuthLimits:           gateGenerousAuthLimits,
 		Official:             official.NewService(pool, queries, official.Config{}),
 		OfficialRefreshToken: journeyToken,
 	})

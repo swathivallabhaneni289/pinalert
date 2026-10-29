@@ -109,24 +109,24 @@ func revRevoke(t *testing.T, pool *pgxpool.Pool, accountID int64) {
 	testutil.MustExec(t, pool, `UPDATE sessions SET revoked_at = now() WHERE account_id = $1 AND revoked_at IS NULL`, accountID)
 }
 
-// revSignIn drives request link then open link for email with client, after
-// clearing the address's resend cooldown (45 seconds) so a test can sign the
-// same address in more than once. It returns the verify response status, body
-// and Set-Cookie cookies.
+// revSignedInMarker is what a successful sign in answers: the JSON
+// {"next": "/"}.
+//
+// Amended 2026-10-29 by Phase 7.1 plan 08: the tests below used to look for the
+// words "Email verified" on the verify page. The sign in is now a JSON answer.
+const revSignedInMarker = `"next"`
+
+// revSignIn signs email in with client through the password flow and returns
+// the status, the body and the Set-Cookie cookies of the answer that signed in.
+// The address signs in with its password when it has one and is created with a
+// typed code the first time (see signInOrSignUp), so a test can sign the same
+// address in more than once with no 45 second cooldown to clear.
+//
+// Amended 2026-10-29 by Phase 7.1 plan 08: it used to clear the address's
+// cooldown row, request a login link and open it. The signature is unchanged.
 func revSignIn(t *testing.T, client *http.Client, srv *httptest.Server, mailer *recordingMailer, pool *pgxpool.Pool, email string) (int, string, []*http.Cookie) {
 	t.Helper()
-	testutil.MustExec(t, pool, `DELETE FROM email_cooldowns WHERE email = $1`, email)
-	token := requestLink(t, client, srv, mailer, email)
-	resp, err := client.Get(srv.URL + "/auth/verify?token=" + url.QueryEscape(token))
-	if err != nil {
-		t.Fatalf("GET /auth/verify: %v", err)
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("reading /auth/verify body: %v", err)
-	}
-	return resp.StatusCode, string(body), resp.Cookies()
+	return signInOrSignUp(t, client, srv, mailer, email)
 }
 
 // revSession reads a session row: its account id (nil when unbound) and
@@ -273,7 +273,7 @@ func TestRevocationKeepsAuthorship(t *testing.T) {
 
 	// A signing in again elsewhere still has the report on My activity.
 	a2 := newJarClient(t)
-	if status, body, _ := revSignIn(t, a2, srv, mailer, pool, "auth-a@example.com"); status != http.StatusOK || !strings.Contains(body, "Email verified") {
+	if status, body, _ := revSignIn(t, a2, srv, mailer, pool, "auth-a@example.com"); status != http.StatusOK || !strings.Contains(body, revSignedInMarker) {
 		t.Fatalf("A signing in again: status %d: %s", status, body)
 	}
 	if !strings.Contains(revProfile(t, a2, srv), revMarker) {
@@ -294,7 +294,7 @@ func TestRevokedBrowserSignsInAgainAsSameEmail(t *testing.T) {
 	srv, mailer, pool := newRevServer(t)
 	first := newVerifiedClient(t, srv, mailer, "same-a@example.com")
 	second := newJarClient(t)
-	if status, body, _ := revSignIn(t, second, srv, mailer, pool, "same-a@example.com"); status != http.StatusOK || !strings.Contains(body, "Email verified") {
+	if status, body, _ := revSignIn(t, second, srv, mailer, pool, "same-a@example.com"); status != http.StatusOK || !strings.Contains(body, revSignedInMarker) {
 		t.Fatalf("second browser sign in: status %d: %s", status, body)
 	}
 	firstID, secondID := sessionIDFromJar(t, first, srv.URL), sessionIDFromJar(t, second, srv.URL)
@@ -309,7 +309,7 @@ func TestRevokedBrowserSignsInAgainAsSameEmail(t *testing.T) {
 	revExpect(t, "second revoked", second, srv, http.StatusUnauthorized, http.StatusFound)
 
 	status, body, cookies := revSignIn(t, second, srv, mailer, pool, "same-a@example.com")
-	if status != http.StatusOK || !strings.Contains(body, "Email verified") {
+	if status != http.StatusOK || !strings.Contains(body, revSignedInMarker) {
 		t.Fatalf("revoked browser signing in as the same address: status %d: %s", status, body)
 	}
 	var issued []string
@@ -359,7 +359,7 @@ func TestCopiedCookieStaysDeadAfterLogoutAllAndSignInAgain(t *testing.T) {
 	browser1 := newVerifiedClient(t, srv, mailer, email)
 	stolen := revCookieCopy(t, browser1, srv)
 	browser2 := newJarClient(t)
-	if status, body, _ := revSignIn(t, browser2, srv, mailer, pool, email); status != http.StatusOK || !strings.Contains(body, "Email verified") {
+	if status, body, _ := revSignIn(t, browser2, srv, mailer, pool, email); status != http.StatusOK || !strings.Contains(body, revSignedInMarker) {
 		t.Fatalf("browser 2 sign in: status %d: %s", status, body)
 	}
 	revPost(t, browser1, srv)
@@ -372,7 +372,7 @@ func TestCopiedCookieStaysDeadAfterLogoutAllAndSignInAgain(t *testing.T) {
 	revExpect(t, "stolen copy after logout all", stolen, srv, http.StatusUnauthorized, http.StatusFound)
 	revExpect(t, "browser 1 after logout all", browser1, srv, http.StatusUnauthorized, http.StatusFound)
 
-	if status, body, _ := revSignIn(t, browser1, srv, mailer, pool, email); status != http.StatusOK || !strings.Contains(body, "Email verified") {
+	if status, body, _ := revSignIn(t, browser1, srv, mailer, pool, email); status != http.StatusOK || !strings.Contains(body, revSignedInMarker) {
 		t.Fatalf("browser 1 signing in again: status %d: %s", status, body)
 	}
 	if got := sessionIDFromJar(t, browser1, srv.URL); got == oldID {
@@ -401,7 +401,7 @@ func TestRevokedBrowserSignsInAsDifferentEmailGetsFreshSession(t *testing.T) {
 	revRevoke(t, pool, aID)
 
 	status, body, cookies := revSignIn(t, browser, srv, mailer, pool, "swap-b@example.com")
-	if status != http.StatusOK || !strings.Contains(body, "Email verified") {
+	if status != http.StatusOK || !strings.Contains(body, revSignedInMarker) {
 		t.Fatalf("revoked browser signing in as a new address: status %d: %s", status, body)
 	}
 	var issued []string
@@ -439,7 +439,7 @@ func TestRevokedBrowserSignsInAsDifferentEmailGetsFreshSession(t *testing.T) {
 
 	// A signing in again elsewhere still has it.
 	a2 := newJarClient(t)
-	if status, body, _ := revSignIn(t, a2, srv, mailer, pool, "swap-a@example.com"); status != http.StatusOK || !strings.Contains(body, "Email verified") {
+	if status, body, _ := revSignIn(t, a2, srv, mailer, pool, "swap-a@example.com"); status != http.StatusOK || !strings.Contains(body, revSignedInMarker) {
 		t.Fatalf("A signing in again: status %d: %s", status, body)
 	}
 	if !strings.Contains(revProfile(t, a2, srv), revMarker) {

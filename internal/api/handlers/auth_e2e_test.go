@@ -261,6 +261,11 @@ func newAuthE2EServerWithRateLimit(t *testing.T, limit api.RequestLinkRateLimit)
 		Auth:                 handlers.AuthConfig{AssetVersion: "test"},
 		Template:             tmpl,
 		RequestLinkRateLimit: limit,
+		// Amended 2026-10-29 by Phase 7.1 plan 08: the code and password
+		// service with the test hasher and open buckets, so a test that signs
+		// in through verifySession never meets a 503 or a bucket.
+		Credentials: newTestCredentials(queries, fm),
+		AuthLimits:  e2eGenerousAuthLimits,
 	}
 	router := api.NewRouter(deps)
 

@@ -84,6 +84,11 @@ func newTrustE2EServer(t *testing.T, clock func() time.Time) (*httptest.Server, 
 		// not limits: one account taps Confirm twice and then Dispute on one
 		// report, which the 30 second vote cooldown would refuse.
 		RateLimits: e2eGenerousRateLimits,
+		// Amended 2026-10-29 by Phase 7.1 plan 08: this suite signs up to 25
+		// accounts through verifySession, which needs the code and password
+		// service (test hasher) and open auth buckets.
+		Credentials: newTestCredentials(queries, fm),
+		AuthLimits:  e2eGenerousAuthLimits,
 	}
 	router := api.NewRouter(deps)
 

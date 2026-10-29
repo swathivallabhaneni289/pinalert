@@ -205,6 +205,14 @@ func TestDeleteAccountRemovesPersonalRows(t *testing.T) {
 		`UPDATE accounts SET display_name = 'Asha', home_area_name = 'Indiranagar', home_area_cell = 'tdr1v',
 		        terms_agreed_at = now(), terms_version = 'v1', first_run_done_at = now() WHERE id = $1`, aID)
 
+	// Amended 2026-10-29 by Phase 7.1 plan 08: the sign in used to leave a login
+	// link token and a resend cooldown row for the address. The password flow
+	// still leaves the cooldown row (the code send claim) but no link token, so
+	// the token is seeded here and the assertions below (the delete removes
+	// both) keep their meaning until the cleanup plan drops the link tables.
+	testutil.MustExec(t, pool,
+		`INSERT INTO magic_link_tokens (token_hash, email, expires_at) VALUES ($1, $2, now() + interval '15 minutes')`,
+		"del-rows-seeded-token-hash", email)
 	if delCount(t, pool, `SELECT count(*) FROM magic_link_tokens WHERE email = $1`, email) == 0 ||
 		delCount(t, pool, `SELECT count(*) FROM email_cooldowns WHERE email = $1`, email) == 0 {
 		t.Fatalf("the fixture is wrong: the sign in left no token or cooldown row for the address")
@@ -275,7 +283,7 @@ func TestDeletedEmailCanSignUpAgainWithNoHistory(t *testing.T) {
 	}
 
 	fresh := newJarClient(t)
-	if status, body, _ := revSignIn(t, fresh, srv, mailer, pool, email); status != http.StatusOK || !strings.Contains(body, "Email verified") {
+	if status, body, _ := revSignIn(t, fresh, srv, mailer, pool, email); status != http.StatusOK || !strings.Contains(body, revSignedInMarker) {
 		t.Fatalf("signing up again: status %d: %s", status, body)
 	}
 	newID := revAccountID(t, pool, email)
@@ -318,7 +326,7 @@ func TestDeletedBrowserSignsInGetsFreshSession(t *testing.T) {
 	revExpect(t, "stale browser after the delete", a, srv, http.StatusUnauthorized, http.StatusFound)
 
 	status, body, _ := revSignIn(t, a, srv, mailer, pool, email)
-	if status != http.StatusOK || !strings.Contains(body, "Email verified") {
+	if status != http.StatusOK || !strings.Contains(body, revSignedInMarker) {
 		t.Fatalf("signing in again: status %d: %s", status, body)
 	}
 	newSession := sessionIDFromJar(t, a, srv.URL)

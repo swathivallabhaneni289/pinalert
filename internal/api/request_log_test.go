@@ -43,6 +43,11 @@ func TestRequestLogHoldsNoReaderData(t *testing.T) {
 		AuthService: service.NewAuthService(queries, fm, "https://pinalert.example"),
 		Auth:        handlers.AuthConfig{AssetVersion: "test"},
 		Template:    tmpl,
+		// Amended 2026-10-29 by Phase 7.1 plan 08: gateVerifySession signs in
+		// with the password flow, which needs the code and password service
+		// (test hasher) and open auth buckets.
+		Credentials: newGateTestCredentials(queries, fm),
+		AuthLimits:  gateGenerousAuthLimits,
 		RequestLog:  log.New(&captured, "", 0),
 	})
 	srv := httptest.NewServer(router)

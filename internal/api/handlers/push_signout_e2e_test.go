@@ -62,7 +62,7 @@ func TestPushSubscriptionsRemovedOn(t *testing.T) {
 		const email = "signout-plain@example.com"
 		first := newVerifiedClient(t, srv, mailer, email)
 		second := newJarClient(t)
-		if status, body, _ := revSignIn(t, second, srv, mailer, pool, email); status != http.StatusOK || !strings.Contains(body, "Email verified") {
+		if status, body, _ := revSignIn(t, second, srv, mailer, pool, email); status != http.StatusOK || !strings.Contains(body, revSignedInMarker) {
 			t.Fatalf("second sign in: status %d: %s", status, body)
 		}
 		accountID := revAccountID(t, pool, email)
@@ -104,7 +104,7 @@ func TestPushSubscriptionsRemovedOn(t *testing.T) {
 		const email = "signout-all@example.com"
 		first := newVerifiedClient(t, srv, mailer, email)
 		second := newJarClient(t)
-		if status, body, _ := revSignIn(t, second, srv, mailer, pool, email); status != http.StatusOK || !strings.Contains(body, "Email verified") {
+		if status, body, _ := revSignIn(t, second, srv, mailer, pool, email); status != http.StatusOK || !strings.Contains(body, revSignedInMarker) {
 			t.Fatalf("second sign in: status %d: %s", status, body)
 		}
 		other := newVerifiedClient(t, srv, mailer, "signout-all-other@example.com")
