@@ -1,0 +1,535 @@
+/*
+ * Pinalert - comments.css
+ *
+ * Owned by Phase 8 plan 16 (PAGE-02, UI-SPEC Surface 7). The look of the
+ * comments half of the report page that comments.js builds: the heading with
+ * its count, one comment (disc, name, Reporter tag, time, words, Reply), the
+ * folded thread, Show more comments, the loading, error and closed looks, and
+ * the one box. It links after report-page.css and before report-panel.css and
+ * phone.css, so the hosts' own rules win a tie.
+ *
+ * This file draws the laptop arrangement by default (UI-SPEC 7a: the username,
+ * the Reporter tag and the words on one running line, then a meta line that
+ * starts with the time). The phone arrangement (the username, the tag and the
+ * time on the top line, the words under them, then the controls) is the
+ * narrow block of phone.css, and the box pinned to the bottom of the laptop
+ * panel is report-panel.css's min-width block. The time is in the head line and
+ * again at the start of the meta line; each size shows one of them (the other is
+ * display none, so a reader never hears it twice).
+ *
+ * The page sits inside the Leaflet container, whose popup rules zero every
+ * paragraph margin and set its own font. Every selector here carries
+ * .leaflet-container .report-page .comments in front, four classes, so it
+ * outranks those. Colours, type and spacing come from the main.css tokens. On
+ * the laptop panel the page is on --color-bg, so the muted token is allowed
+ * there; the phone sheet is severity tinted, and phone.css switches the small
+ * text to --color-text. Every rule that sets display carries :not([hidden]) so
+ * the hidden attribute still hides the element. There is no opacity on text,
+ * no pill radius (the field is 12px) and no animation that a scroll triggers.
+ */
+
+/* Named literals: the discs are 32px (24px on a reply) and the thread is
+   indented by one disc and one gap, so a reply lines up under the words. */
+.leaflet-container .report-page .comments {
+  --comment-disc: 32px;
+  --comment-disc-small: 24px;
+  --comment-indent: calc(32px + var(--space-12));
+  --comment-glyph: 16px;
+  --composer-radius: 12px;
+  --composer-grow: 120px;
+}
+
+.leaflet-container .report-page .comments:not([hidden]) {
+  display: block;
+}
+
+/* ---- The heading and its count ---- */
+
+.leaflet-container .report-page .comments .comments__heading {
+  margin: 0 0 var(--space-12);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.leaflet-container .report-page .comments .comments__count {
+  margin-left: var(--space-xs);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+}
+
+.leaflet-container .report-page .comments .comments__count:not([hidden]) {
+  display: inline;
+}
+
+/* ---- The list and one comment ---- */
+
+.leaflet-container .report-page .comments .comments__list,
+.leaflet-container .report-page .comments .comment-thread {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.leaflet-container .report-page .comments .comments__list:not([hidden]),
+.leaflet-container .report-page .comments .comment-thread:not([hidden]) {
+  display: block;
+}
+
+.leaflet-container .report-page .comments .comments__list > .comment + .comment {
+  margin-top: var(--space-sm);
+}
+
+.leaflet-container .report-page .comments .comment-thread > .comment + .comment {
+  margin-top: var(--space-12);
+}
+
+.leaflet-container .report-page .comments .comment__row:not([hidden]) {
+  display: grid;
+  grid-template-columns: var(--comment-disc) minmax(0, 1fr);
+  column-gap: var(--space-12);
+  align-items: start;
+}
+
+.leaflet-container .report-page .comments .comment--reply > .comment__row:not([hidden]) {
+  grid-template-columns: var(--comment-disc-small) minmax(0, 1fr);
+}
+
+.leaflet-container .report-page .comments .comment__body {
+  min-width: 0;
+}
+
+/* The round letter disc: neutral, never a colour per person. */
+.leaflet-container .report-page .comments .comment__disc:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  box-sizing: border-box;
+  width: var(--comment-disc);
+  height: var(--comment-disc);
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: 1;
+  font-weight: var(--font-weight-semibold);
+}
+
+.leaflet-container .report-page .comments .comment__disc.comment__disc--small:not([hidden]) {
+  width: var(--comment-disc-small);
+  height: var(--comment-disc-small);
+}
+
+/* The user glyph for New member, Deleted account and a box with no name yet. */
+.leaflet-container .report-page .comments .comment__disc--glyph::before {
+  content: "";
+  width: var(--comment-glyph);
+  height: var(--comment-glyph);
+  background-color: currentColor;
+  -webkit-mask-image: url("/static/icons/user.svg");
+  mask-image: url("/static/icons/user.svg");
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+/* The reporter, as other people see them: the shipped icon badge, the report's
+   category glyph on the report's severity colour. */
+.leaflet-container .report-page .comments .comment__disc.icon-badge:not([hidden]) {
+  border-color: transparent;
+}
+
+.leaflet-container .report-page .comments .comment__disc.icon-badge .icon-glyph {
+  width: var(--comment-glyph);
+  height: var(--comment-glyph);
+}
+
+/* ---- The laptop arrangement: name, tag and words on one running line ---- */
+
+.leaflet-container .report-page .comments .comment__head:not([hidden]) {
+  display: inline;
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.leaflet-container .report-page .comments .comment__author {
+  margin-right: var(--space-xs);
+  overflow-wrap: anywhere;
+}
+
+.leaflet-container .report-page .comments .comment__tag:not([hidden]) {
+  display: inline-block;
+  margin-right: var(--space-xs);
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: 20px;
+  font-weight: var(--font-weight-semibold);
+}
+
+.leaflet-container .report-page .comments .comment__time--head {
+  display: none;
+}
+
+.leaflet-container .report-page .comments .comment__words:not([hidden]) {
+  display: inline;
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.leaflet-container .report-page .comments .comment__words .comment__mention {
+  font-weight: var(--font-weight-semibold);
+}
+
+.leaflet-container .report-page .comments .comment__gone:not([hidden]) {
+  display: block;
+  margin: 0;
+  padding: var(--space-xs) 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+}
+
+/* The meta line: flex, a 12px gap, wrapping, no negative margin, so no control's
+   44px area overlaps another (UI-SPEC 7a, D13). It starts with the time on the
+   laptop. */
+.leaflet-container .report-page .comments .comment__meta:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-12);
+  margin: 0;
+}
+
+.leaflet-container .report-page .comments .comment__time--meta:not([hidden]) {
+  display: inline;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+}
+
+.leaflet-container .report-page .comments .comment__reply:not([hidden]),
+.leaflet-container .report-page .comments .comment-thread__toggle:not([hidden]),
+.leaflet-container .report-page .comments .composer__cancel:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.leaflet-container .report-page .comments .comment__reply:not([hidden]):hover,
+.leaflet-container .report-page .comments .comment-thread__toggle:not([hidden]):hover,
+.leaflet-container .report-page .comments .composer__cancel:not([hidden]):hover {
+  color: var(--color-text);
+}
+
+.leaflet-container .report-page .comments .comment__held:not([hidden]) {
+  display: inline;
+  padding: var(--space-sm) 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text);
+}
+
+/* ---- Replies, folded behind View N replies ---- */
+
+.leaflet-container .report-page .comments .comment__replies:not([hidden]) {
+  display: block;
+  margin-left: var(--comment-indent);
+}
+
+.leaflet-container .report-page .comments .comment-thread:not([hidden]) {
+  margin-top: var(--space-sm);
+}
+
+.leaflet-container .report-page .comments .comment-thread__toggle:not([hidden]) {
+  display: flex;
+  justify-content: flex-start;
+  gap: var(--space-12);
+}
+
+.leaflet-container .report-page .comments .comment-thread__toggle::before {
+  content: "";
+  flex: none;
+  width: var(--space-lg);
+  height: 1px;
+  background-color: var(--color-text-muted);
+}
+
+/* ---- Show more comments, and the list's own states ---- */
+
+.leaflet-container .report-page .comments .comments__more:not([hidden]),
+.leaflet-container .report-page .comments .comments__retry:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+  margin-top: var(--space-12);
+  padding: 0 var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.leaflet-container .report-page .comments .comments__more:not([hidden]):hover,
+.leaflet-container .report-page .comments .comments__retry:not([hidden]):hover {
+  border-color: currentColor;
+}
+
+.leaflet-container .report-page .comments .comments__more-error:not([hidden]),
+.leaflet-container .report-page .comments .composer__error:not([hidden]) {
+  display: flex;
+  margin: var(--space-sm) 0 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+.leaflet-container .report-page .comments .comments__empty:not([hidden]) {
+  display: block;
+  margin: 0;
+  padding: 0 0 var(--space-12);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-text-muted);
+}
+
+.leaflet-container .report-page .comments .comments__closed:not([hidden]) {
+  display: block;
+  margin: 0;
+  padding: var(--space-12) 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
+.leaflet-container .report-page .comments .comments__error:not([hidden]) {
+  display: block;
+}
+
+.leaflet-container .report-page .comments .comments__error-title {
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.leaflet-container .report-page .comments .comments__error-line {
+  margin: var(--space-xs) 0 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text);
+}
+
+/* Loading: three skeleton comments, a disc and two bars. */
+.leaflet-container .report-page .comments .comment--skeleton:not([hidden]) {
+  display: grid;
+  grid-template-columns: var(--comment-disc) minmax(0, 1fr);
+  column-gap: var(--space-12);
+  align-items: start;
+}
+
+.leaflet-container .report-page .comments .comment__bar:not([hidden]) {
+  display: block;
+  height: var(--space-md);
+  margin-top: var(--space-xs);
+  border-radius: 6px;
+  background-color: var(--color-surface);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.leaflet-container .report-page .comments .comment__bar--head {
+  width: 40%;
+}
+
+.leaflet-container .report-page .comments .comment__bar--words {
+  width: 100%;
+}
+
+/* ---- The one box ---- */
+
+.leaflet-container .report-page .comments .composer:not([hidden]) {
+  display: block;
+  margin-top: var(--space-md);
+  padding: var(--space-12) 0 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.leaflet-container .report-page .comments .composer__replying:not([hidden]) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+
+.leaflet-container .report-page .comments .composer__replying-text {
+  margin: 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
+.leaflet-container .report-page .comments .composer__replying-name {
+  font-weight: var(--font-weight-semibold);
+}
+
+.leaflet-container .report-page .comments .composer__cancel::before {
+  content: "";
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  -webkit-mask-image: url("/static/icons/x.svg");
+  mask-image: url("/static/icons/x.svg");
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+.leaflet-container .report-page .comments .composer__row:not([hidden]) {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+}
+
+/* One rounded field: the textarea and Post inside it. The 2px ring is on the
+   field, not on the textarea. */
+.leaflet-container .report-page .comments .composer__field:not([hidden]) {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: flex-end;
+  box-sizing: border-box;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-xs) 0 var(--space-12);
+  border: 1px solid var(--color-border);
+  border-radius: var(--composer-radius);
+  background: var(--color-bg);
+}
+
+.leaflet-container .report-page .comments .composer__field:focus-within {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.leaflet-container .report-page .comments .composer__input {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  max-height: var(--composer-grow);
+  margin: 0;
+  padding: var(--space-12) 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  resize: none;
+  overflow-y: auto;
+}
+
+.leaflet-container .report-page .comments .composer__input:focus,
+.leaflet-container .report-page .comments .composer__input:focus-visible {
+  outline: none;
+}
+
+.leaflet-container .report-page .comments .composer__input::placeholder {
+  color: var(--color-text-muted);
+}
+
+/* Post is a text button, off by aria-disabled and a muted colour, never an
+   opacity and never a fill. */
+.leaflet-container .report-page .comments .composer__post:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-12);
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.leaflet-container .report-page .comments .composer__post[aria-disabled="true"] {
+  color: var(--color-text-muted);
+  cursor: default;
+}
+
+.leaflet-container .report-page .comments .composer__counter:not([hidden]) {
+  display: block;
+  margin: var(--space-xs) 0 0;
+  text-align: right;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  color: var(--color-text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .leaflet-container .report-page .comments .comment__bar {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .leaflet-container .report-page .comments .comment__tag {
+    border-color: CanvasText;
+  }
+
+  .leaflet-container .report-page .comments .comment__disc {
+    border-color: CanvasText;
+  }
+
+  .leaflet-container .report-page .comments .composer__field {
+    border-color: CanvasText;
+  }
+}

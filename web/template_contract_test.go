@@ -152,6 +152,12 @@ func TestVendorMapScriptsLoadInDependencyOrder(t *testing.T) {
 		// window.PinalertShare exists before any card is built).
 		// TestShareScriptIsLinkedInOrder pins its order.
 		"/static/js/share.js",
+		// Amended 2026-10-29 by Phase 8 plan 16 (D-02): comments.js is one more
+		// app module under the same vendor-layer-first rule, listed in its actual
+		// template position (right after share.js, before map.js, so
+		// window.PinalertComments exists before any card builds its page).
+		// TestCommentsAreLinkedInOrder pins its order.
+		"/static/js/comments.js",
 		"/static/js/map.js",
 		"/static/js/modal.js",
 		"/static/js/feed.js",

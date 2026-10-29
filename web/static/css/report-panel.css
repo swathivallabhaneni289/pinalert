@@ -172,4 +172,24 @@
   html[data-report-panel] .leaflet-container .leaflet-detail-pane .popup-card__body > .mute-control:not([hidden]) {
     margin-top: var(--space-lg);
   }
+
+  /* The comments box (Phase 8 plan 16, UI-SPEC 7c): pinned to the bottom of the
+     panel, the full panel width, on the page colour with a hairline above it.
+     The wrapper above is the only scroll box, so sticky sits against it. The
+     negative left and right margins undo the wrapper's 24px side padding, the
+     card's 4px severity bar and the body's 16px left padding, so the box spans
+     the whole panel; the padding then puts the field 24px from the edge. The
+     16px of air above it after the last comment is the base margin. */
+  html[data-report-panel] .leaflet-container .leaflet-detail-pane .report-page .comments .composer:not([hidden]) {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    margin: var(--space-md) calc(-1 * var(--space-lg)) 0 calc(-1 * (var(--space-lg) + var(--space-xs) + var(--space-md)));
+    padding: var(--space-12) var(--space-lg) var(--space-md);
+    background: var(--color-bg);
+  }
+
+  html[data-report-panel] .leaflet-container .leaflet-detail-pane .report-page .comments .composer:not([hidden]):focus-within {
+    box-shadow: var(--shadow-sheet);
+  }
 }
