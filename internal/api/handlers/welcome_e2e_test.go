@@ -576,9 +576,31 @@ func TestWelcomeAlertsAskRendersForNewAccount(t *testing.T) {
 		if !strings.Contains(tag, `data-push-key="`+key+`"`) {
 			t.Errorf("the flow root %q does not carry data-push-key=%q", tag, key)
 		}
-		for _, banned := range []string{`id="welcome-step-5"`, "Step 5 of", "welcome__example", "device-guide", "Home Screen"} {
+		// Amended 2026-10-29 by Phase 7.1 plan 13b (D-17): "device-guide" and
+		// "Home Screen" are no longer banned, because the install pop-up for an
+		// iPhone or iPad Safari tab holds the install guide. The other banned strings
+		// stay, and the install pop-up is asserted below: it is rendered once, closed
+		// (no open attribute), with one Not now button and no Allow of its own.
+		for _, banned := range []string{`id="welcome-step-5"`, "Step 5 of", "welcome__example"} {
 			if strings.Contains(body, banned) {
 				t.Errorf("/welcome holds %q: the alerts ask is a pop-up, not a fifth step", banned)
+			}
+		}
+		if n := strings.Count(body, `id="welcome-install-ask"`); n != 1 {
+			t.Errorf("/welcome holds id=welcome-install-ask %d times, want 1", n)
+		}
+		install := p25OpeningTag(t, body, `<dialog id="welcome-install-ask"`)
+		if strings.Contains(install, " open") {
+			t.Errorf("the install pop-up %q must start closed", install)
+		}
+		for _, want := range []string{
+			`<button type="button" class="btn" id="welcome-install-later">Not now</button>`,
+			`<p class="device-guide__lead">On this device, alerts work once Pinalert is on your Home Screen.</p>`,
+			`Open Pinalert from your Home Screen and sign in. Tap <strong>Allow</strong> when it asks about alerts.`,
+			`/static/css/device-guide.css`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("/welcome lacks %q", want)
 			}
 		}
 	}
@@ -592,6 +614,9 @@ func TestWelcomeAlertsAskRendersForNewAccount(t *testing.T) {
 		common(t, body)
 		if !strings.Contains(body, `id="welcome-alerts-ask-title" tabindex="-1">Get alerts for critical reports near your home area?</h2>`) {
 			t.Errorf("/welcome lacks the your home area title")
+		}
+		if !strings.Contains(body, `id="welcome-install-ask-title" tabindex="-1">Get alerts for critical reports near your home area</h2>`) {
+			t.Errorf("/welcome lacks the install pop-up title for an account with no home area")
 		}
 		if tag := p25OpeningTag(t, body, searchOpen); strings.Contains(tag, "hidden") {
 			t.Errorf("the search block %q is hidden for an account with no home area", tag)
@@ -613,6 +638,9 @@ func TestWelcomeAlertsAskRendersForNewAccount(t *testing.T) {
 		common(t, body)
 		if !strings.Contains(body, `id="welcome-alerts-ask-title" tabindex="-1">Get alerts for critical reports near Benz Circle?</h2>`) {
 			t.Errorf("/welcome lacks the Benz Circle title")
+		}
+		if !strings.Contains(body, `id="welcome-install-ask-title" tabindex="-1">Get alerts for critical reports near Benz Circle</h2>`) {
+			t.Errorf("/welcome lacks the install pop-up title naming Benz Circle")
 		}
 		if tag := p25OpeningTag(t, body, searchOpen); !strings.Contains(tag, "hidden") {
 			t.Errorf("the search block %q should be hidden when a home area is stored", tag)

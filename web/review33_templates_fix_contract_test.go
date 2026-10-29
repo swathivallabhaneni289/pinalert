@@ -25,6 +25,21 @@ func TestDeviceGuideLeadSpacing(t *testing.T) {
 	if got := win.Decls["margin-bottom"]; got != "var(--space-sm)" {
 		t.Errorf("the window lead margin-bottom is %q, want var(--space-sm) (8px gap + 8px = 16px)", got)
 	}
+	// Amended 2026-10-29 by Phase 7.1 plan 13b: the guide is also shown inside the
+	// install pop-up at the end of sign up (the Log out box, a plain block body
+	// with no gap). Nothing spaces its parts there, so the lead and the steps carry
+	// their own margins: 16px under the lead (the contract's lead to steps distance)
+	// and 24px under the steps (the Log out box's distance above its buttons). The
+	// lead keeps no top or side margin, so the 24px under the title stays the
+	// title's own.
+	boxLead := p31mRule(t, guide, "", ".logout-confirm__body > .device-guide__lead")
+	if got := boxLead.Decls["margin"]; got != "0 0 var(--space-md)" {
+		t.Errorf("the install pop-up lead margin is %q, want 0 0 var(--space-md) (16px to the steps)", got)
+	}
+	boxSteps := p31mRule(t, guide, "", ".logout-confirm__body > .device-guide__steps")
+	if got := boxSteps.Decls["margin"]; got != "0 0 var(--space-lg)" {
+		t.Errorf("the install pop-up steps margin is %q, want 0 0 var(--space-lg) (24px to the button)", got)
+	}
 	body := p31mRule(t, "static/css/window.css", "", ".app-window__body")
 	if body.Decls["gap"] != "var(--space-sm)" {
 		t.Errorf(".app-window__body gap is %q, want var(--space-sm); the window lead margin assumes it", body.Decls["gap"])

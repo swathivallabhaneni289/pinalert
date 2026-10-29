@@ -30,6 +30,12 @@
 //     failure still reaches first-run-done. Not now and Escape save nothing. A
 //     Mac Dock app never gets the pop-up. The cases that cover this start with
 //     "named pop-up: ".
+//   - Amended 2026-10-29 by Phase 7.1 plan 13b (D-17, D-18): an iPhone or iPad
+//     Safari tab (needs-install) now gets the install pop-up, not the alerts
+//     pop-up, when the page draws it (install: true in buildPage): once per
+//     account through the list in pinalert.installAsked, one Not now button, never
+//     enable. Without the install dialog on the page, the needs-install cases
+//     above are unchanged. The cases that cover this start with "install pop-up: ".
 //
 // Run it with: node --test web/welcome_alerts_test.mjs
 // It carries its own copy of the small fake page of welcome_flow_test.mjs,
@@ -135,7 +141,12 @@ const STEP_NAMES = ['Welcome', 'Disclaimer and policy', 'Your location', 'About 
 // askErrorLine false draws the pop-up as it was before WR-05, without its error line.
 // Amended 2026-10-29 by Phase 7.1 plan 13: username is the name the account has
 // already (the value the template draws on step 4).
-function buildPage({ start = 1, name = '', home = '', username = '', key = KEY, dialogSupport = true, askHome = 'Benz Circle', askErrorLine = true } = {}) {
+// Amended 2026-10-29 by Phase 7.1 plan 13b: install true draws the install pop-up
+// (welcome-install-ask) after the alerts pop-up, as the template does, and
+// accountId is the id the server writes on the flow root. Left out, the page is
+// as it was, so the earlier cases never meet the install pop-up. installShow
+// false draws it without showModal.
+function buildPage({ start = 1, name = '', home = '', username = '', key = KEY, dialogSupport = true, askHome = 'Benz Circle', askErrorLine = true, install = false, accountId = '', installShow = true } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -157,6 +168,7 @@ function buildPage({ start = 1, name = '', home = '', username = '', key = KEY, 
   root.setAttribute('data-start-step', String(start));
   root.setAttribute('data-step', String(start));
   root.setAttribute('data-push-key', key);
+  if (accountId) { root.setAttribute('data-account-id', accountId); }
 
   const side = make('aside', '', root, 'welcome__side');
   const list = make('ol', '', side, 'welcome__steps');
@@ -238,7 +250,29 @@ function buildPage({ start = 1, name = '', home = '', username = '', key = KEY, 
   make('button', 'welcome-alerts-later', dialog);
   make('button', 'welcome-alerts-allow', dialog);
 
-  return { doc, root, steps, dialog };
+  let installDialog = null;
+  if (install) {
+    installDialog = make('dialog', 'welcome-install-ask', doc.body);
+    installDialog.open = false;
+    installDialog.showCalls = 0;
+    installDialog.closeCalls = 0;
+    installDialog.throwOnShow = false;
+    if (installShow) {
+      installDialog.showModal = function () {
+        this.showCalls += 1;
+        if (this.throwOnShow) { throw new Error('InvalidStateError'); }
+        this.open = true;
+      };
+      installDialog.close = function () { this.closeCalls += 1; this.open = false; };
+    }
+    installDialog.setAttribute('data-home-area', askHome);
+    const installTitle = make('h2', 'welcome-install-ask-title', installDialog, 'logout-confirm__title');
+    installTitle.setAttribute('tabindex', '-1');
+    installTitle.textContent = 'Get alerts for critical reports near ' + (askHome || 'your home area');
+    make('button', 'welcome-install-later', installDialog);
+  }
+
+  return { doc, root, steps, dialog, installDialog };
 }
 
 // A fake PinalertNotify. enable answers as the mode says: 'pending' waits for
@@ -279,6 +313,23 @@ function load(options = {}) {
   const checks = [];
   const replaced = [];
   const session = {};
+  // Amended 2026-10-29 by Phase 7.1 plan 13b: the browser's local storage, for the
+  // list in pinalert.installAsked. options.storage is an object of starting values,
+  // or 'throw-get' / 'throw-set' for a storage that cannot be read or written. Left
+  // out, the sandbox has none, which reads as a storage that cannot be read.
+  const stored = Object.assign({}, typeof options.storage === 'object' ? options.storage : {});
+  const storageWrites = [];
+  const localStorage = options.storage === undefined ? undefined : {
+    getItem(k) {
+      if (options.storage === 'throw-get') { throw new Error('SecurityError'); }
+      return Object.hasOwn(stored, k) ? stored[k] : null;
+    },
+    setItem(k, v) {
+      if (options.storage === 'throw-set') { throw new Error('QuotaExceededError'); }
+      storageWrites.push([k, String(v)]);
+      stored[k] = String(v);
+    }
+  };
   const permissionCalls = [];
   // Timers the test moves by hand (the live check waits 300 ms after typing).
   let now = 0;
@@ -316,6 +367,7 @@ function load(options = {}) {
       setItem(k, v) { session[k] = String(v); },
       getItem(k) { return Object.hasOwn(session, k) ? session[k] : null; }
     },
+    localStorage,
     location: { search: options.search || '', replace(target) { replaced.push(target); } },
     history: { pushState() {}, replaceState() {} },
     getComputedStyle() { return { display: 'block' }; },
@@ -326,7 +378,7 @@ function load(options = {}) {
   vm.createContext(sandbox);
   vm.runInContext(checkSource, sandbox, { filename: 'username-check.js' });
   vm.runInContext(source, sandbox, { filename: 'welcome.js' });
-  return { ...page, api: sandbox.PinalertWelcome, notify, requests, checks, advance, replaced, session, permissionCalls, sandbox };
+  return { ...page, api: sandbox.PinalertWelcome, notify, requests, checks, advance, replaced, session, permissionCalls, sandbox, stored, storageWrites };
 }
 
 const flush = async () => { for (let i = 0; i < 8; i++) { await new Promise((r) => setImmediate(r)); } };
@@ -1086,3 +1138,252 @@ for (const [label, fail] of [
     assert.equal(byId(page, 'welcome-continue-4').disabled, false);
   });
 }
+
+// ---------------------------------------------------------------------------
+// The install pop-up (Phase 7.1 plan 13b, D-17, D-18, UI-SPEC Surface 10a),
+// added 2026-10-29. On a needs-install device (an iPhone or iPad Safari tab) the
+// end of step 4 opens one small box with the install guide and one button, Not
+// now, once per account on a browser (the list in pinalert.installAsked). It never
+// turns alerts on and never asks the browser for anything, and whatever happens
+// sign up finishes. The cases start with "install pop-up: ".
+// ---------------------------------------------------------------------------
+
+const INSTALL_KEY = 'pinalert.installAsked';
+const installOf = (page) => page.installDialog;
+const installPage = (options = {}) => atStep4({
+  install: true,
+  accountId: '42',
+  storage: {},
+  notify: makeNotify({ base: 'needs-install' }),
+  ...options
+});
+
+function assertInstallOpen(page) {
+  const box = installOf(page);
+  assert.equal(box.showCalls, 1, 'showModal is called once');
+  assert.equal(box.open, true);
+  assert.ok(page.doc.activeElement === byId(page, 'welcome-install-ask-title'), 'the title takes focus so no button looks chosen');
+  assert.equal(doneRequests(page).length, 0, 'first-run-done waits for Not now');
+  assert.equal(page.dialog.showCalls, 0, 'the alerts pop-up does not open');
+  assert.equal(page.notify.calls.enable.length, 0, 'the install pop-up never turns alerts on');
+  assert.equal(page.permissionCalls.length, 0, 'the install pop-up never asks the browser for anything');
+}
+
+test('install pop-up: a needs-install device opens it after step 4, names the home area, records the account and sends no first-run-done', () => {
+  const page = installPage();
+  click(page, 'welcome-continue-4');
+  assertInstallOpen(page);
+  assert.equal(byId(page, 'welcome-install-ask-title').textContent, 'Get alerts for critical reports near Benz Circle');
+  assert.deepEqual(JSON.parse(page.stored[INSTALL_KEY]), ['42']);
+  assert.equal(page.requests.length, 0);
+  assert.equal(visibleStep(page), 4, 'the flow stays on step 4 behind the pop-up');
+});
+
+test('install pop-up: the title names the place saved at step 4 in this visit, and your home area when none is known', async () => {
+  const none = installPage({ askHome: '' });
+  byId(none, 'welcome-name-input').value = 'Asha Rao';
+  fire(byId(none, 'welcome-name-input'), 'input');
+  click(none, 'welcome-continue-4');
+  answer(none.requests[0], 200);
+  await flush();
+  assertInstallOpen(none);
+  assert.equal(byId(none, 'welcome-install-ask-title').textContent, 'Get alerts for critical reports near your home area');
+
+  const filled = installPage({ askHome: '', start: 4, username: '', name: '', home: '' });
+  await fillStep4(filled);
+  click(filled, 'welcome-continue-4');
+  answer(filled.requests[0], 200);
+  await flush();
+  assertInstallOpen(filled);
+  assert.equal(byId(filled, 'welcome-install-ask-title').textContent, 'Get alerts for critical reports near Indiranagar');
+});
+
+test('install pop-up: a home area with markup is written as text, never parsed', () => {
+  const page = installPage({ askHome: '<b>x</b>' });
+  click(page, 'welcome-continue-4');
+  assert.equal(byId(page, 'welcome-install-ask-title').textContent, 'Get alerts for critical reports near <b>x</b>');
+});
+
+test('install pop-up: Not now closes it and sends first-run-done once, a second press sends nothing, a 204 lands on Nearby', async () => {
+  const page = installPage();
+  click(page, 'welcome-continue-4');
+  click(page, 'welcome-install-later');
+  click(page, 'welcome-install-later');
+  assert.equal(installOf(page).open, false);
+  assert.equal(doneRequests(page).length, 1);
+  assert.equal(page.notify.calls.enable.length, 0);
+  assert.equal(page.permissionCalls.length, 0);
+  answer(page.requests[0], 204);
+  await flush();
+  assert.deepEqual(page.replaced, ['/']);
+});
+
+test('install pop-up: Escape is Not now, the cancel event is prevented and one first-run-done goes out', async () => {
+  const page = installPage();
+  click(page, 'welcome-continue-4');
+  const event = fire(installOf(page), 'cancel');
+  assert.equal(event.prevented, true, 'the browser does not close the pop-up by itself');
+  fire(installOf(page), 'cancel');
+  assert.equal(installOf(page).open, false);
+  assert.equal(doneRequests(page).length, 1);
+  assert.equal(page.notify.calls.enable.length, 0);
+  assert.equal(page.permissionCalls.length, 0);
+  answer(page.requests[0], 204);
+  await flush();
+  assert.deepEqual(page.replaced, ['/']);
+});
+
+test('install pop-up: a showModal that throws, and a dialog without showModal, send first-run-done at once', () => {
+  const throwing = installPage();
+  installOf(throwing).throwOnShow = true;
+  click(throwing, 'welcome-continue-4');
+  assert.equal(installOf(throwing).open, false);
+  assert.equal(doneRequests(throwing).length, 1);
+
+  const plain = installPage({ installShow: false });
+  click(plain, 'welcome-continue-4');
+  assert.equal(doneRequests(plain).length, 1);
+  assert.equal(plain.storageWrites.length, 0, 'a box that cannot open is not recorded as shown');
+
+  const missing = atStep4({ accountId: '42', storage: {}, notify: makeNotify({ base: 'needs-install' }) });
+  click(missing, 'welcome-continue-4');
+  assert.equal(doneRequests(missing).length, 1, 'a page without the install dialog finishes directly');
+});
+
+test('install pop-up: once per account, a list holding this account id does not open it again and sign up finishes at once', () => {
+  const page = installPage({ storage: { [INSTALL_KEY]: JSON.stringify(['7', '42']) } });
+  click(page, 'welcome-continue-4');
+  assert.equal(installOf(page).showCalls, 0);
+  assert.equal(page.dialog.showCalls, 0);
+  assert.equal(doneRequests(page).length, 1);
+  assert.equal(page.storageWrites.length, 0);
+});
+
+test('install pop-up: other accounts on a shared phone do not hide it, and their ids stay in the list', () => {
+  const list = installPage({ storage: { [INSTALL_KEY]: JSON.stringify(['7', '9']) } });
+  click(list, 'welcome-continue-4');
+  assertInstallOpen(list);
+  assert.deepEqual(JSON.parse(list.stored[INSTALL_KEY]), ['7', '9', '42']);
+
+  const single = installPage({ storage: { [INSTALL_KEY]: '7' } });
+  click(single, 'welcome-continue-4');
+  assertInstallOpen(single);
+  assert.deepEqual(JSON.parse(single.stored[INSTALL_KEY]), ['7', '42'], 'one plain id reads as a list of one');
+
+  const single42 = installPage({ storage: { [INSTALL_KEY]: '42' } });
+  click(single42, 'welcome-continue-4');
+  assert.equal(installOf(single42).showCalls, 0, 'one plain id of this account counts as shown');
+  assert.equal(doneRequests(single42).length, 1);
+});
+
+test('install pop-up: the list keeps the last 8 ids, a ninth drops the oldest', () => {
+  const eight = ['1', '2', '3', '4', '5', '6', '7', '8'];
+  const page = installPage({ storage: { [INSTALL_KEY]: JSON.stringify(eight) } });
+  click(page, 'welcome-continue-4');
+  assertInstallOpen(page);
+  assert.deepEqual(JSON.parse(page.stored[INSTALL_KEY]), ['2', '3', '4', '5', '6', '7', '8', '42']);
+});
+
+test('install pop-up: a stored value that is neither an id nor a list counts as not shown and is replaced', () => {
+  for (const junk of ['not json', '{"a":1}', '"42"', '[42, null, {}]', 'null']) {
+    const page = installPage({ storage: { [INSTALL_KEY]: junk } });
+    click(page, 'welcome-continue-4');
+    assertInstallOpen(page);
+    assert.deepEqual(JSON.parse(page.stored[INSTALL_KEY]), ['42'], 'junk ' + junk);
+  }
+});
+
+test('install pop-up: a storage that cannot be read or written, or none at all, still opens it and nothing throws', () => {
+  for (const storage of ['throw-get', 'throw-set', undefined]) {
+    const page = installPage({ storage });
+    click(page, 'welcome-continue-4');
+    assertInstallOpen(page);
+  }
+});
+
+test('install pop-up: it opens only for needs-install, so it never opens beside the alerts pop-up', () => {
+  for (const base of ['maybe', 'ready']) {
+    const page = installPage({ notify: makeNotify({ base }) });
+    click(page, 'welcome-continue-4');
+    assert.equal(installOf(page).showCalls, 0, base);
+    assert.equal(page.dialog.showCalls, 1, base + ': the alerts pop-up behaves as before');
+    assert.equal(page.storageWrites.length, 0, base);
+  }
+  for (const base of ['blocked', 'unsupported', 'surprise']) {
+    const page = installPage({ notify: makeNotify({ base }) });
+    click(page, 'welcome-continue-4');
+    assert.equal(installOf(page).showCalls, 0, base);
+    assert.equal(page.dialog.showCalls, 0, base);
+    assert.equal(doneRequests(page).length, 1, base + ': first-run-done at once');
+  }
+  const noNotify = installPage({ notify: null });
+  click(noNotify, 'welcome-continue-4');
+  assert.equal(installOf(noNotify).showCalls, 0);
+  assert.equal(doneRequests(noNotify).length, 1);
+  const throwing = installPage({ notify: { baseState() { throw new Error('boom'); } } });
+  click(throwing, 'welcome-continue-4');
+  assert.equal(installOf(throwing).showCalls, 0);
+  assert.equal(doneRequests(throwing).length, 1);
+});
+
+test('install pop-up: a 409 with field profile returns to step 4, any other 409 to step 2, and the pop-up is closed', async () => {
+  const profile = installPage();
+  click(profile, 'welcome-continue-4');
+  click(profile, 'welcome-install-later');
+  answer(profile.requests[0], 409, { error: { field: 'profile', message: 'Add your username, name and home area.' } });
+  await flush();
+  assert.equal(installOf(profile).open, false);
+  assert.equal(visibleStep(profile), 4);
+  assert.equal(byId(profile, 'welcome-error-4').textContent, 'Add your username, name and home area.');
+
+  const terms = installPage();
+  click(terms, 'welcome-continue-4');
+  click(terms, 'welcome-install-later');
+  answer(terms.requests[0], 409, { error: { field: 'terms', message: 'Agree first.' } });
+  await flush();
+  assert.equal(installOf(terms).open, false);
+  assert.equal(visibleStep(terms), 2);
+  assert.equal(byId(terms, 'welcome-error-2').textContent, AGREE_FIRST);
+});
+
+test('install pop-up: after a failed first-run-done the next Continue records the flow again without showing the box a second time', async () => {
+  const page = installPage();
+  click(page, 'welcome-continue-4');
+  click(page, 'welcome-install-later');
+  answer(page.requests[0], 500);
+  await flush();
+  assert.equal(byId(page, 'welcome-error-4').textContent, SAVE_FAILED);
+  click(page, 'welcome-continue-4');
+  assert.equal(installOf(page).showCalls, 1, 'not shown again');
+  assert.equal(doneRequests(page).length, 2);
+  answer(page.requests[1], 204);
+  await flush();
+  assert.deepEqual(page.replaced, ['/']);
+});
+
+test('install pop-up: a step change under the open box puts it away without sending anything', () => {
+  const page = installPage();
+  click(page, 'welcome-continue-4');
+  assert.equal(installOf(page).open, true);
+  page.api.goTo(3);
+  assert.equal(installOf(page).open, false);
+  assert.equal(page.requests.length, 0);
+  assert.equal(byId(page, 'welcome-continue-4').disabled, false);
+});
+
+test('install pop-up: it lives outside the flow root, so its keys never reach the step Tab trap', () => {
+  const page = installPage();
+  assert.equal(page.root.contains(installOf(page)), false);
+  assert.equal(page.doc.body.contains(installOf(page)), true);
+});
+
+test('install pop-up: the script keeps it away from the browser prompt and from markup sinks', () => {
+  const body = (name) => {
+    const at = source.indexOf('function ' + name);
+    assert.ok(at !== -1, name);
+    return source.slice(at, source.indexOf('\n  }\n', at));
+  };
+  for (const name of ['canInstallAsk', 'openInstallAsk', 'onInstallLater', 'onInstallCancel', 'rememberInstallAsk', 'installAskedList']) {
+    assert.doesNotMatch(body(name), /enable|requestPermission|Notification|innerHTML|insertAdjacentHTML/, name);
+  }
+});
