@@ -623,3 +623,26 @@ func TestPersonColumnHeadsAndHoverKeepContrast(t *testing.T) {
 		}
 	}
 }
+
+// TestModerationDocRetentionNamesPhase9Items pins review fix WR-T04
+// (2026-10-30): the Retention section of docs/MODERATION.md says the Policy
+// page names what Phase 9 keeps, so it must list the same items the Policy
+// does: the switch time, ended follows with their reason, a cleared rating that
+// stays stored, and the permanent bar on rating.
+func TestModerationDocRetentionNamesPhase9Items(t *testing.T) {
+	raw, err := os.ReadFile("../docs/MODERATION.md")
+	if err != nil {
+		t.Fatalf("reading docs/MODERATION.md: %v", err)
+	}
+	doc := strings.Join(strings.Fields(string(raw)), " ")
+	for _, want := range []string{
+		"the profile switch with the time it was switched on",
+		"each follow kept with an end time and a reason after it ends",
+		"A rating its rater clears with Remove my rating stays stored, marked cleared with the time",
+		"the account is also barred from rating for good, and the moderator and the time are kept on the account",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("docs/MODERATION.md Retention lacks %q (WR-T04)", want)
+		}
+	}
+}

@@ -696,6 +696,13 @@ func TestPolicyNamesProfilesFollowingAndRatings(t *testing.T) {
 		// Review fix WR-T03, 2026-10-30: the Name goes to OpenAI too.
 		"When you switch on Let others follow me, and whenever you change your name while it is on, your name is checked by the same service. Only the name is sent, never your account, your sign in, your network address or your location. A name the check refuses, or cannot finish checking, is not shown.",
 		"Report, comment, username and name checks: OpenAI, as described above.",
+		// Review fix WR-T04, 2026-10-30: every item Phase 9 stores.
+		"When a follow ends, it is kept with the time it ended and why (unfollowed, removed, blocked, profile switched off, or tag lost) until you delete your account.",
+		"Blocks, mutes and ended follows are private.",
+		"Whether your profile is switched on, and when you switched it on.",
+		"When you remove your own rating it stops counting, but the rating stays stored and a moderator can still see it.",
+		"If a moderator removes every rating you gave, your account can no longer rate, for good, and that is kept with the moderator and the time.",
+		"The name of the area, never the square, is also shown on your profile while Let others follow me is on.",
 	} {
 		if n := strings.Count(policy, phrase); n != 1 {
 			t.Errorf("the Policy holds %q %d times, want exactly once", phrase, n)

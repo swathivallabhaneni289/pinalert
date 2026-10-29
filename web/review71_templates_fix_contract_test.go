@@ -340,7 +340,9 @@ func TestPolicyNamesNearbyCentre(t *testing.T) {
 // the address and the email, codes included.
 func TestPolicyNamesHomeSquareScreeningAndMail(t *testing.T) {
 	keeps := r71tPolicySection(t, "What Pinalert keeps")
-	const home = "<li>The name of your home area, a town or area and never a street, and a rough square about 5 km wide around it, used for alerts.</li>"
+	// Amended 2026-10-30 by the Phase 9 review fix (WR-T04): the line ends with
+	// the sentence that the area's name also shows on a profile that is on.
+	const home = "<li>The name of your home area, a town or area and never a street, and a rough square about 5 km wide around it, used for alerts. The name of the area, never the square, is also shown on your profile while Let others follow me is on.</li>"
 	if !strings.Contains(keeps, home) {
 		t.Errorf("the Policy's keeps list does not name the home area square:\n%s", home)
 	}

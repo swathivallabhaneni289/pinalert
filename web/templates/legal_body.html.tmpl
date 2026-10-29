@@ -140,7 +140,7 @@
         <li>Your password, kept only as a slow one way hash, never the password itself. Nobody at Pinalert can read it.</li>
         <li>Your username, which is public and shown to everyone.</li>
         <li>Your name, which is shown to other people only if you let them follow you.</li>
-        <li>The name of your home area, a town or area and never a street, and a rough square about 5 km wide around it, used for alerts.</li>
+        <li>The name of your home area, a town or area and never a street, and a rough square about 5 km wide around it, used for alerts. The name of the area, never the square, is also shown on your profile while Let others follow me is on.</li>
         <li>How you sign in: your email and password. A 6 digit code is emailed to you once when you create an account, and again if you forget your password. The code is kept only as a hash, works for 10 minutes and can be used only once. Pinalert sends no sign in links.</li>
         <li>Your reports, each with its place, its time and your account.</li>
         <li>Your votes, kept as a rough square about 150 metres wide, never as your exact spot.</li>
@@ -148,9 +148,10 @@
         <li>Your comments and replies, with the time and your username. Other people see them. A comment is checked by the same service as a report. When the check finishes on a comment, its result, its scores and which model gave them are kept with the comment.</li>
         <li>The likes you give to comments, and the flags you send on comments, with any note you add. A moderator may read a flag note. Nobody else can.</li>
         <li>When you delete a comment, its words are removed and "Comment deleted" stays so replies still read. When you delete your account, your comments are blanked and your likes and flags are removed.</li>
-        <li>Who you follow and who follows you, and who you have blocked or muted. Follows are public on a profile that is switched on. Blocks and mutes are private to you.</li>
+        <li>Who you follow and who follows you, and who you have blocked or muted. When a follow ends, it is kept with the time it ended and why (unfollowed, removed, blocked, profile switched off, or tag lost) until you delete your account. Follows are public on a profile that is switched on. Blocks, mutes and ended follows are private.</li>
+        <li>Whether your profile is switched on, and when you switched it on.</li>
         <li>Whether Notify me is on for each person you follow, and when you switched it on.</li>
-        <li>The ratings you give, each with the person rated, the stars and the time. For a rating a moderator removes, the moderator and the time are kept too.</li>
+        <li>The ratings you give, each with the person rated, the stars and the time. For a rating a moderator removes, the moderator and the time are kept too. When you remove your own rating it stops counting, but the rating stays stored and a moderator can still see it. If a moderator removes every rating you gave, your account can no longer rate, for good, and that is kept with the moderator and the time.</li>
         <li>For a report you share: a random link code. Anyone with the link can see only the report's kind and severity, a rough area, what is happening for a Critical report, its state and how many people confirmed it in one short sentence, and when. They see no comments, no names and no exact spot, and they need no account.</li>
         <li>For borderline reports, and for reports whose check finished after they were saved: the check's result, its scores and which model gave them, without the report text.</li>
       </ul>
