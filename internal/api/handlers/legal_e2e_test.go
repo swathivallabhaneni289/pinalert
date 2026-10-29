@@ -656,3 +656,41 @@ func TestTermsVersionFollowsPolicyDate(t *testing.T) {
 			shown.Format("2006-01-02"), service.CurrentTermsVersion)
 	}
 }
+
+// TestPolicyNamesProfilesFollowingAndRatings pins the Policy text Phase 9 plan
+// 27 added (D-17): an opt in profile, what it shows, the public Followers and
+// Following lists, tapped ratings with moderators able to see and remove them,
+// private blocks and mutes, and what deleting an account removes. Each phrase
+// must be on the rendered page exactly once, inside the Policy part.
+//
+// Dated note, 2026-10-30, Phase 9 plan 27: this plan does NOT move the Policy
+// "Last updated" date or service.CurrentTermsVersion. The standing rule of Phases
+// 7.1 and 8, written in README step 9, keeps both at their value until the day
+// of the first public deploy, when the owner moves them together; that move
+// covers these Phase 9 lines too (T-09-93). TestTermsVersionFollowsPolicyDate
+// above still holds them equal, so the pin here is equality and no date.
+func TestPolicyNamesProfilesFollowingAndRatings(t *testing.T) {
+	rec := legalRender(t, handlers.AuthConfig{AssetVersion: "test"}, handlers.LegalPolicyPage, nil)
+	text := legalText(t, rec.Body.String())
+	_, policy, found := strings.Cut(text, "Policy Rules, privacy and terms")
+	if !found {
+		t.Fatalf("the rendered page has no Policy part")
+	}
+	for _, phrase := range []string{
+		"Profiles, following and ratings",
+		"Your profile is off by default. It appears only after you switch on Let others follow me in Settings.",
+		"your username, your name, your home area, your stars, the month and year you joined, your reports from the last 30 days, and your Followers and Following lists",
+		"A report that has ended shows only a rough area and the date it ended, with no time and no link to the report.",
+		"appear only as a number, never by name",
+		"You can turn on Notify me for someone you follow",
+		"give you one to five stars",
+		"Moderators can see who gave which rating, by username, and remove abusive ratings.",
+		"Blocks and mutes are private.",
+		"your follows, blocks, mutes, Notify me choices and the ratings you gave and received are removed",
+		"The ratings you give, each with the person rated, the stars and the time.",
+	} {
+		if n := strings.Count(policy, phrase); n != 1 {
+			t.Errorf("the Policy holds %q %d times, want exactly once", phrase, n)
+		}
+	}
+}
