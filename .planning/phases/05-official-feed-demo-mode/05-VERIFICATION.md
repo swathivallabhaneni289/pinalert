@@ -33,7 +33,7 @@ human_verification:
     expected: "Owner picks the final words. Any rewrite moves the Last updated date (legal.go policyLastUpdated) and service.CurrentTermsVersion together to the real date of that day"
     why_human: "Owner's words. Note: the draft already moved both to 29 October 2026, so every account is sent through the agree step again after deploy"
   - test: "NDMA terms question"
-    expected: "Read https://sachet.ndma.gov.in/WebsitePolicy and email NDMA's SACHET contact asking in writing whether a free, unofficial, attributed relay is welcome and what request rate is acceptable. Required before wide promotion, not before the portfolio deploy"
+    expected: "Read https://sachet.ndma.gov.in/WebsitePolicy and email NDMA's SACHET contact asking in writing whether a free, unofficial, attributed relay is welcome and what request rate is acceptable. Required before wide promotion, not before the first deploy"
     why_human: "Cannot be done by code. Nothing in the repo says NDMA has agreed. Also confirm the district boundary credit wording in the legal or mentor review"
   - test: "make migrate for 00012 and 00013 on the owner's dev database, after the owner says yes"
     expected: "Migrations 00012_add_official_alerts and 00013_add_official_push apply, goose version 13"

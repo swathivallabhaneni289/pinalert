@@ -135,7 +135,7 @@ Built from UI-SPEC "Defaults to confirm"; each stands unless the owner says othe
 
 Nothing below was done by this plan.
 
-1. **NDMA SACHET terms.** Open https://sachet.ndma.gov.in/WebsitePolicy in a browser, read it, and email NDMA's SACHET contact asking in writing whether a free, unofficial, attributed relay is welcome and what request rate is acceptable. Required before any wide promotion, not before the portfolio deploy. Nothing in the docs says NDMA has agreed.
+1. **NDMA SACHET terms.** Open https://sachet.ndma.gov.in/WebsitePolicy in a browser, read it, and email NDMA's SACHET contact asking in writing whether a free, unofficial, attributed relay is welcome and what request rate is acceptable. Required before any wide promotion, not before the first deploy. Nothing in the docs says NDMA has agreed.
 2. **District boundary licence wording.** Before the first public share, read the Policy credit and the credit section of docs/OFFICIAL-ALERTS.md and confirm or change the wording; include it in the legal or mentor review CLAUDE.md asks for.
 3. **Policy wording.** Approve or rewrite the three Policy sentences at the viewing session. Any rewrite changes the Policy text, so the Last updated date and `CurrentTermsVersion` need the same day again (see the first deviation).
 4. **Real phone.** With the site on its https host, the phone installed, the cron set up and VAPID keys set, confirm one silent notification for a real Severe or Extreme alert at the home district that opens Official alerts (PUSH.md owner check 6).

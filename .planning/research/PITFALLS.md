@@ -1,7 +1,7 @@
 # Pitfalls Research
 
 **Domain:** Crowdsourced/crisis-informatics local emergency feed — anonymous geo-tagged reporting
-with a confirm/dispute trust mechanic, deployed as a solo-dev public portfolio project (India,
+with a confirm/dispute trust mechanic, deployed as a solo-dev public project (India,
 floods/cyclones)
 **Researched:** 2026-09-05
 **Confidence:** MEDIUM-HIGH (technical pitfalls verified against PostgreSQL docs, CGNAT/rate-limit
@@ -147,12 +147,12 @@ Wikipedia Pending Changes) actually depends on holding at least weakly true.
 
 **How to avoid:**
 Don't aim for unbeatable — aim for "costs more effort than the value of gaming it," which is the
-realistic bar for a portfolio project's core mechanic. Concretely: rate-limit *report+confirm
+realistic bar for a small project's core mechanic. Concretely: rate-limit *report+confirm
 combos from the same IP within a short time window* even across different session ids (raises the
 cost of the cookie-clear attack); treat "confirmation from a session created in the last N minutes"
 as lower-weight in the diversity calculation than an aged session (a same-day-created burst of
 "independent" confirmers is itself a signal); log and expose (even just in your own README/demo
-narrative) that this is a known, documented limitation with a stated mitigation — for a portfolio
+narrative) that this is a known, documented limitation with a stated mitigation — for a small
 project, showing you understood and reasoned about the Sybil problem is worth more than pretending
 it's solved. Do not claim in copy/UI that "confirmed by N nearby" is fraud-proof.
 
@@ -252,7 +252,7 @@ hand-written realistic-report fixtures, not just "call the API and pick a thresh
 
 **What goes wrong:**
 A crowdsourced app with zero real traffic shows an empty map to every visitor, which for a
-portfolio project reviewed by a recruiter/interviewer reads as "broken" or "doesn't work," not
+project opened by a first-time visitor reads as "broken" or "doesn't work," not
 "correctly empty." The project already (correctly) promotes demo/replay mode and the GDACS
 official-feed poller to core scope specifically to solve this — but a second, related pitfall
 often gets missed: if seeded historical/demo data and real official-feed/crowd data are not
@@ -308,7 +308,7 @@ confidence LOW; treat as "get this checked with an actual lawyer or knowledgeabl
 wide public promotion," not as legal advice.)*
 
 **Why it happens:**
-"It's just a portfolio project, no real users yet" creates a false sense that legal/authority-
+"It's just a personal project, no real users yet" creates a false sense that legal/authority-
 implication concerns don't apply yet — but the app is deployed live and publicly indexed, meaning
 it is discoverable during a real event regardless of intended audience, and intermediary
 obligations attach to what the platform does (host public UGC), not to how many users it currently
@@ -327,7 +327,7 @@ since the project has explicitly deferred a real verified-authority-account flow
 
 **Warning signs:**
 None will surface through normal testing — this is a "check before wide publicity/launch, not
-after" category. A concrete trigger: before sharing the live URL on LinkedIn/portfolio/socials
+after" category. A concrete trigger: before sharing the live URL on social media
 where it could get real unexpected traffic during an actual flood/cyclone news cycle.
 
 **Phase to address:**
@@ -539,7 +539,7 @@ already built.
 |------|----------|------------|-----------------|
 | Full-table Haversine scan for "nearby" feed | Feed/map endpoint latency grows linearly with total report count, not with local report density | Bounding-box index first, Haversine only on the narrowed set (Pitfall 1) | Noticeable past a few thousand rows; painful past tens of thousands |
 | Diversity-weighted confirm count recomputed via full join/aggregate on every page view | Feed page slows down specifically on popular/highly-confirmed reports as their confirmation count grows | Cache the computed diversity-weighted score, recomputed incrementally on each new confirm/dispute inside the same transaction that inserts the vote, not recomputed from scratch on every read | Breaks down once any single report accumulates hundreds of confirmations (plausible during a real surge event) |
-| Unbounded `reports`/`confirmations` table growth (no archive job) | Slow queries appear gradually over weeks/months of the demo being live, not attributable to any single code change | Scheduled archive/delete or partition of expired rows | Matters most for a long-lived public demo, less for a short-lived one — but "long-lived public portfolio demo" is exactly this project's shape |
+| Unbounded `reports`/`confirmations` table growth (no archive job) | Slow queries appear gradually over weeks/months of the demo being live, not attributable to any single code change | Scheduled archive/delete or partition of expired rows | Matters most for a long-lived public demo, less for a short-lived one — but "long-lived public demo" is exactly this project's shape |
 
 ## Security Mistakes
 
@@ -554,7 +554,7 @@ already built.
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-------------------|
-| Empty map on first visit with zero copy explaining why | Reads as "broken app," especially damaging for a portfolio reviewer who won't wait around for real traffic | Demo/replay mode + official feed as core scope (already planned) — but make sure the empty/low-data state has explicit copy ("No active reports near you right now — here's a past event replay") rather than a bare empty map |
+| Empty map on first visit with zero copy explaining why | Reads as "broken app," especially damaging for a first-time visitor who won't wait around for real traffic | Demo/replay mode + official feed as core scope (already planned) — but make sure the empty/low-data state has explicit copy ("No active reports near you right now — here's a past event replay") rather than a bare empty map |
 | "Confirmed by N nearby" shown without any indication of *when* or *how stale* | User can't tell if a confirmed-safe shelter status is 10 minutes or 10 hours old at a glance | Always pair confirm-count with a relative timestamp and visually fade/de-emphasize as a report approaches its expiry window, not just a binary shown/hidden state |
 | Provisional-gate dimmed pins with no explanation of why they're dimmed | A user assumes a real report simply "isn't loading correctly" rather than understanding it's awaiting a second confirmation | Explicit micro-copy or icon distinguishing "provisional — awaiting confirmation" from a rendering bug, given this is a genuinely unusual UI state most users won't have seen elsewhere |
 | Rate-limit/429 shown as a generic error during a real surge | A legitimate user behind a busy CGNAT IP during an actual event sees a confusing failure at the worst possible moment | A specific, human copy message ("too many reports from your network right now, try again in Xs") rather than a raw error, and err toward looser limits given Pitfall 3 |
@@ -638,7 +638,7 @@ already built.
   [ScienceDirect: Lessons learned from deploying crowdsourced technology](https://www.sciencedirect.com/science/article/pii/S1877050920313077/pdf) (MEDIUM-HIGH confidence — peer-reviewed)
 - India IT Rules 2021 intermediary safe-harbor/grievance-officer/takedown framework —
   [PRS India: IT Intermediary Guidelines Rules 2021 billtrack](https://prsindia.org/billtrack/the-information-technology-intermediary-guidelines-and-digital-media-ethics-code-rules-2021),
-  [Cyril Amarchand Mangaldas: From Harbour to Hardships](https://corporate.cyrilamarchandblogs.com/2021/05/from-harbour-to-hardships-understanding-the-information-technology-intermediary-guidelines-and-digital-media-ethics-code-rules-2021-part-ii/) (MEDIUM confidence for the general framework; LOW confidence for how it applies specifically to a solo hobby/portfolio deployment — recommend independent legal check before wide public promotion)
+  [Cyril Amarchand Mangaldas: From Harbour to Hardships](https://corporate.cyrilamarchandblogs.com/2021/05/from-harbour-to-hardships-understanding-the-information-technology-intermediary-guidelines-and-digital-media-ethics-code-rules-2021-part-ii/) (MEDIUM confidence for the general framework; LOW confidence for how it applies specifically to a solo hobby deployment — recommend independent legal check before wide public promotion)
 - Existing project research already cited in PROJECT-NOTES.md (Ushahidi 2008 Kenya, Waze
   confidence/reliability scoring, X/Twitter Community Notes, Wikipedia Pending Changes/ClueBot NG,
   Kerala 2018 rescue-request duplication study, Boston Marathon misinformation-reach study) —

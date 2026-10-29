@@ -4,7 +4,7 @@
 **Domain:** Server side ingestion of two public alert feeds (NDMA SACHET CAP over RSS, GDACS GeoJSON), point in polygon placement without PostGIS, a sandboxed in memory Demo that runs the real trust code, silent phone alerts through Phase 3.3's plumbing, and a MapLibre globe on the sign in page.
 **Confidence:** MEDIUM overall. HIGH on the feed shapes, the boundary data and the Demo design (all probed or read in code this session). MEDIUM on the scheduler (host and cron behaviour is cited, not run). LOW on NDMA's written terms (no readable policy text was reachable).
 
-All live calls of this session were made with the User-Agent `Pinalert-research/0.1 (portfolio project; contact address)`. Fourteen feed calls in total: 10 to SACHET (the RSS, four CAP messages, two refused polygon requests, the home page and two policy pages), 3 to GDACS (one a 400 for a missing parameter), 1 to NASA GIBS. The boundary release was downloaded once from GitHub. Raw probe outputs and the Go probe programs are in `/private/tmp/claude-501/-Users-swathivallabhaneni-code-pinalert/3bfdaabd-2ee0-416f-851f-d0a5ce547954/scratchpad/p5research/`, never in the repo.
+All live calls of this session were made with the User-Agent `Pinalert-research/0.1 (contact address)`. Fourteen feed calls in total: 10 to SACHET (the RSS, four CAP messages, two refused polygon requests, the home page and two policy pages), 3 to GDACS (one a 400 for a missing parameter), 1 to NASA GIBS. The boundary release was downloaded once from GitHub. Raw probe outputs and the Go probe programs are in `/private/tmp/claude-501/-Users-swathivallabhaneni-code-pinalert/3bfdaabd-2ee0-416f-851f-d0a5ce547954/scratchpad/p5research/`, never in the repo.
 
 <user_constraints>
 ## User Constraints (from CONTEXT.md)

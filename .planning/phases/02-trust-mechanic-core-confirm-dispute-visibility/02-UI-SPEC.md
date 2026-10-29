@@ -253,7 +253,7 @@ Added to the feed pane's toolbar, immediately above `#report-list` (same page, s
 </label>
 ```
 
-- Native checkbox (not a custom-styled switch) — deliberate, matches this project's existing preference for native form controls (`<select>` for shelter capacity, native `<input type="range">` for severity) over hand-rolled ARIA widgets, minimizing new accessibility surface for a portfolio-scale feature.
+- Native checkbox (not a custom-styled switch) — deliberate, matches this project's existing preference for native form controls (`<select>` for shelter capacity, native `<input type="range">` for severity) over hand-rolled ARIA widgets, minimizing new accessibility surface for a small-scale feature.
 - Checking it adds `?show_disputed=true` to the existing feed fetch (both the list AND the map query — one shared toggle, one shared query param, per D-11) and causes Hidden reports/pins to appear with the outline treatment described above; unchecking removes them again. No page reload — same `feed.js` polling/refetch mechanism Phase 1 already uses.
 - **Empty state when toggled on with nothing to show:** reuses the existing `.empty-state` component with new copy (see Copywriting Contract) — do not silently show nothing with no explanation.
 

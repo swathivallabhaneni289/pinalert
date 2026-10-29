@@ -21,7 +21,7 @@ India. People near an affected area post short, location tagged updates (a flood
 shelter, a power outage, someone needing rescue). Other people nearby confirm or dispute each report,
 so a report backed by several independent nearby confirmations can be trusted, and an unconfirmed
 one is clearly flagged. Reports fade and expire so the feed shows what is true right now. It is a
-live, trustworthy alternative to unverified WhatsApp forwards. It is a portfolio project, not a
+live, trustworthy alternative to unverified WhatsApp forwards. It is a personal project, not a
 startup, so the goal is a polished, intentional, credible tool rather than a flashy consumer app.
 
 Who uses it: ordinary people on phones, often stressed, sometimes on weak networks or with the power
