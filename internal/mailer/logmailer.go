@@ -23,3 +23,12 @@ func (logMailer) SendVerificationLink(ctx context.Context, email, link string) e
 	log.Printf("mailer: [dev] verification link for %s: %s", email, link)
 	return nil
 }
+
+// SendAuthEmail prints the kind and the code of an auth email, never the
+// address and never a link (accepted dev only risk AR-28). The code is empty
+// for the two kinds that carry none. LoadMailer selects this implementation
+// only under ENV=development.
+func (logMailer) SendAuthEmail(ctx context.Context, to string, msg AuthEmail) error {
+	log.Printf("mailer: [dev] auth email kind=%s code=%s", msg.Kind, msg.Code)
+	return nil
+}

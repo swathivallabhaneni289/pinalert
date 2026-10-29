@@ -2,6 +2,7 @@ package mailer
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -158,5 +159,75 @@ func TestResendErrorHoldsNoAddress(t *testing.T) {
 func TestVerificationSubjectConstant(t *testing.T) {
 	if verificationSubject != "Verify your email for Pinalert" {
 		t.Errorf("verificationSubject = %q, want %q", verificationSubject, "Verify your email for Pinalert")
+	}
+}
+
+// TestResendSendAuthEmailSendsTextAndHTML checks the request Resend receives:
+// one recipient, the subject, and both the plain text and the HTML part from
+// AuthEmailContent.
+func TestResendSendAuthEmailSendsTextAndHTML(t *testing.T) {
+	var got struct {
+		From    string   `json:"from"`
+		To      []string `json:"to"`
+		Subject string   `json:"subject"`
+		HTML    string   `json:"html"`
+		Text    string   `json:"text"`
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("decoding the request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"x"}`))
+	}))
+	t.Cleanup(srv.Close)
+	base, err := url.Parse(srv.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := newResendClient(srv.Client(), "re_test_key")
+	client.BaseURL = base
+	m := &resendMailer{client: client, from: "Pinalert <noreply@pinalert.example>"}
+
+	msg := AuthEmail{Kind: KindCodeSignup, Code: "482913", MinutesValid: 10}
+	if err := m.SendAuthEmail(context.Background(), "visitor@example.com", msg); err != nil {
+		t.Fatalf("SendAuthEmail: %v", err)
+	}
+	wantSubject, wantText, wantHTML, err := AuthEmailContent(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.From != "Pinalert <noreply@pinalert.example>" {
+		t.Errorf("From = %q", got.From)
+	}
+	if len(got.To) != 1 || got.To[0] != "visitor@example.com" {
+		t.Errorf("To = %v, want the one address", got.To)
+	}
+	if got.Subject != wantSubject || got.Text != wantText || got.HTML != wantHTML {
+		t.Errorf("request parts differ from AuthEmailContent: %+v", got)
+	}
+	if got.Text == "" || got.HTML == "" {
+		t.Error("both the Text and the Html part must be set")
+	}
+}
+
+// TestResendSendAuthEmailErrorCarriesNoAddress drives a refusal that repeats
+// the address and the code, and checks the returned error holds neither.
+func TestResendSendAuthEmailErrorCarriesNoAddress(t *testing.T) {
+	const recipient = "someone.private@example.com"
+	m := testResendMailer(t, http.StatusUnprocessableEntity, "application/json",
+		`{"statusCode":422,"name":"validation_error","message":"Invalid to: someone.private@example.com code 482913"}`, nil)
+	err := m.SendAuthEmail(context.Background(), recipient, AuthEmail{Kind: KindCodeReset, Code: "482913", MinutesValid: 10})
+	assertNoAddress(t, err)
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		if strings.Contains(e.Error(), "482913") {
+			t.Errorf("error %q holds the code", e.Error())
+		}
+	}
+	if !errors.Is(err, errResendRefused) || !strings.Contains(err.Error(), "(status 422)") {
+		t.Errorf("error %q lost its kind or status", err)
+	}
+	if !strings.Contains(err.Error(), "sending auth email via resend") {
+		t.Errorf("error %q does not name the operation", err)
 	}
 }

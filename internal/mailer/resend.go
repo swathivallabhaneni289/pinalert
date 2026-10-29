@@ -158,3 +158,26 @@ func verificationEmailHTML(link string) string {
 		"<p><a href=\"" + escaped + "\">" + verificationButtonLabel + "</a></p>" +
 		"<p>" + verificationDisclaimer + "</p>"
 }
+
+// SendAuthEmail sends one auth email through Resend with both a plain text
+// part and an HTML part. The returned error names the operation and the kind
+// of failure only, never the SDK's text, which can repeat the recipient
+// address, and never the code.
+func (m *resendMailer) SendAuthEmail(ctx context.Context, to string, msg AuthEmail) error {
+	subject, text, htmlBody, err := AuthEmailContent(msg)
+	if err != nil {
+		return err
+	}
+	rec := &statusRecorder{}
+	_, err = m.client.Emails.SendWithContext(context.WithValue(ctx, statusKey{}, rec), &resend.SendEmailRequest{
+		From:    m.from,
+		To:      []string{to},
+		Subject: subject,
+		Html:    htmlBody,
+		Text:    text,
+	})
+	if err != nil {
+		return fmt.Errorf("mailer: sending auth email via resend: %w", resendFailureKind(err, int(rec.code.Load())))
+	}
+	return nil
+}
