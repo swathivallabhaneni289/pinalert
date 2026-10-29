@@ -8,17 +8,23 @@ package handlers_test
 
 import (
 	"context"
+	"errors"
 	"math"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"pinalert/internal/account"
+	"pinalert/internal/api/handlers"
 	"pinalert/internal/service"
+	sqlcgen "pinalert/internal/store/sqlc"
 	"pinalert/internal/testutil"
 )
 
@@ -379,5 +385,65 @@ func TestPersonPageFinishedRowsAreCoarse(t *testing.T) {
 	}
 	if seen == 0 {
 		t.Fatal("no finished row was listed, so nothing was checked")
+	}
+}
+
+// p908FailingPeople fails the one read the profile page starts with, so the
+// page's server error state can be proved without breaking the database.
+type p908FailingPeople struct{ service.PeopleQuerier }
+
+func (p908FailingPeople) GetPersonByUsername(context.Context, string) (sqlcgen.GetPersonByUsernameRow, error) {
+	return sqlcgen.GetPersonByUsernameRow{}, errors.New("p908: the read failed")
+}
+
+// TestPersonPageServerErrorIsAFramedState is review fix IN-T05 (2026-10-30,
+// UI-SPEC Surface 6 and P9-C12): a profile read that fails answers 500 with the
+// page frame and the state box "Couldn't load this profile", its line and a Try
+// again link to the same address, never a bare text line. The box carries no
+// profile, no stored text and no reader data, and the page stays no-store and
+// noindex.
+func TestPersonPageServerErrorIsAFramedState(t *testing.T) {
+	tmpl, err := handlers.ParsePageTemplate()
+	if err != nil {
+		t.Fatalf("ParsePageTemplate: %v", err)
+	}
+	people := service.NewPeopleService(p908FailingPeople{})
+	h := handlers.PersonPage(tmpl, people, nil, handlers.PageConfig{AssetVersion: "test"})
+
+	req := httptest.NewRequest(http.MethodGet, "/u/someone", nil)
+	rc := chi.NewRouteContext()
+	rc.URLParams.Add("username", "someone")
+	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rc)
+	ctx = account.WithAccount(ctx, account.Account{ID: 1, Email: "p908-failing@example.com"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req.WithContext(ctx))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("Content-Type = %q, want text/html", ct)
+	}
+	if rec.Header().Get("Cache-Control") != "no-store" || rec.Header().Get("X-Robots-Tag") != "noindex" {
+		t.Errorf("the error page must be no-store and noindex, got %q and %q", rec.Header().Get("Cache-Control"), rec.Header().Get("X-Robots-Tag"))
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`id="person-load-failed"`,
+		"Couldn't load this profile",
+		"Check your connection and try again.",
+		`>Try again</a>`,
+		`href="/u/someone"`,
+		`app-topbar`,
+		`name="robots" content="noindex"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the error page lacks %q", want)
+		}
+	}
+	for _, banned := range []string{`id="person-header"`, `id="person-not-found"`, `data-username=`, `id="person-confirm"`, "internal server error"} {
+		if strings.Contains(body, banned) {
+			t.Errorf("the error page holds %q", banned)
+		}
 	}
 }

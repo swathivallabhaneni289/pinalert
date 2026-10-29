@@ -26,8 +26,15 @@
 
   <div class="app-content">
   {{/* Phase 9 plan 08 (D-04, UI-SPEC Surface 1): one page for your own profile and for anyone else's. data-username and data-self are written only when there is a profile, so the not found page carries nothing from the request and is the same bytes for every cause (T-09-30). Every value below goes through html/template escaping. */}}
-  <main id="person-page" class="person-page"{{if not .NotFound}} data-username="{{.Profile.Username}}" data-account-id="{{.AccountID}}" data-self="{{if .Profile.IsSelf}}true{{else}}false{{end}}"{{end}}>
-    {{if .NotFound}}
+  <main id="person-page" class="person-page"{{if not (or .NotFound .LoadFailed)}} data-username="{{.Profile.Username}}" data-account-id="{{.AccountID}}" data-self="{{if .Profile.IsSelf}}true{{else}}false{{end}}"{{end}}>
+    {{if .LoadFailed}}
+    {{/* Review fix IN-T05 (UI-SPEC Surface 6, P9-C12): a profile read that failed. It holds nothing about the profile; Try again returns to the same address. */}}
+    <section id="person-load-failed" class="person-state" aria-labelledby="person-load-failed-title">
+      <h2 class="person-state__title" id="person-load-failed-title" tabindex="-1">Couldn't load this profile</h2>
+      <p class="person-state__line">Check your connection and try again.</p>
+      <a class="btn" href="{{.RetryHref}}">Try again</a>
+    </section>
+    {{else if .NotFound}}
     <section id="person-not-found" class="person-state" aria-labelledby="person-not-found-title">
       <h2 class="person-state__title" id="person-not-found-title" tabindex="-1">Profile not found</h2>
       <p class="person-state__line">There is no public profile with this username. It may have been made private, or the username may have changed.</p>
@@ -164,7 +171,7 @@
   </main>
   </div>
 
-  {{if and (not .NotFound) (not .Profile.IsSelf)}}
+  {{if and (not .NotFound) (not .LoadFailed) (not .Profile.IsSelf)}}
   {{/* The Block and Remove follower box, a native dialog with the Log out box classes, structured exactly like #settings-delete-confirm. It sits outside every window as a direct child of the body. The script fills the title and the text with textContent. */}}
   <dialog id="person-confirm" class="logout-confirm" aria-labelledby="person-confirm-title" aria-describedby="person-confirm-text">
     <div class="logout-confirm__body">
@@ -179,7 +186,7 @@
   </dialog>
   {{end}}
 
-  {{if and (not .NotFound) (not .BlockedByYou)}}
+  {{if and (not .NotFound) (not .LoadFailed) (not .BlockedByYou)}}
   {{/* The Followers and Following list window (plan 09-11, UI-SPEC Surface 4), opened by the two count buttons. */}}
   {{template "people_list_window" .}}
   {{end}}

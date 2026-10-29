@@ -776,6 +776,7 @@ a.person-report__body:hover .person-report__label {
      by clipping and not by display none, as it does on Nearby (app-bar.css), so
      a screen reader still finds the page heading and nothing moves. */
   body:has(#person-not-found) .app-topbar__title,
+  body:has(#person-load-failed) .app-topbar__title,
   body:has(#person-blocked:not([hidden])) .app-topbar__title {
     position: absolute;
     display: block;

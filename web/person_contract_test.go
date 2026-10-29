@@ -651,6 +651,7 @@ func TestPersonPageHasOneH1AtEachSize(t *testing.T) {
 	}
 	for _, head := range []string{
 		"body:has(#person-not-found) .app-topbar__title",
+		"body:has(#person-load-failed) .app-topbar__title",
 		"body:has(#person-blocked:not([hidden])) .app-topbar__title",
 	} {
 		found := p26Find(rules, "min-width: 900px", head)
