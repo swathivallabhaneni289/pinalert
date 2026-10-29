@@ -442,7 +442,7 @@ func TestStarsControlLook(t *testing.T) {
 	if hex := regexp.MustCompile(`#[0-9a-fA-F]{3,8}\b`).FindString(noComments); hex != "" {
 		t.Errorf("stars.css holds a hex colour %q: the stars are never coloured", hex)
 	}
-	for _, bad := range []string{"rgb(","rgba(", "hsl(", "amber", "gold", "!important", "animation", "transition", "@keyframes", "box-shadow", "outline"} {
+	for _, bad := range []string{"rgb(", "rgba(", "hsl(", "amber", "gold", "!important", "animation", "transition", "@keyframes", "box-shadow", "outline"} {
 		if strings.Contains(noComments, bad) {
 			t.Errorf("stars.css holds %q: the stars are never coloured, ringed or animated", bad)
 		}
