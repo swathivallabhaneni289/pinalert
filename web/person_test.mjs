@@ -356,15 +356,35 @@ test('Block asks with its two texts, then the blocked box gets focus', async () 
   assert.equal(m.els['person-more'].focused, 0, 'focus does not go back to a hidden More');
 });
 
-test('a 409 shows the server sentence and removes Follow', async () => {
+// 2026-10-30 (09-REVIEW WR-B05): a 409 draws the profile again and the server's
+// can_follow decides whether Follow stays. This pin used to answer every call
+// with a 409 and expect Follow hidden at once.
+const refuseFollow = (message, profile) => (method) => (method === 'POST'
+  ? { status: 409, body: { error: { field: 'follow', message } } }
+  : { status: 200, body: profile });
+
+test('a 409 shows the server sentence and removes Follow when the person cannot be followed', async () => {
   const m = load({
-    route: () => ({ status: 409, body: { error: { field: 'follow', message: 'You can\'t follow this person right now.' } } })
+    route: refuseFollow('You can\'t follow this person right now.', { ...PROFILE_NOT_FOLLOWING, can_follow: false })
   });
   m.click('person-follow');
   await flush();
   assert.equal(m.els['person-action-error'].hidden, false);
   assert.equal(m.els['person-action-error'].textContent, 'You can\'t follow this person right now.');
   assert.equal(m.els['person-follow'].hidden, true);
+  assert.equal(m.els['person-follow'].disabled, false);
+  assert.equal(m.els['person-more'].focused, 1, 'focus goes to More, not to the page');
+});
+
+test('a 409 at the follow cap keeps Follow and its focus', async () => {
+  const m = load({
+    route: refuseFollow('You can follow up to 200 people.', PROFILE_NOT_FOLLOWING)
+  });
+  m.click('person-follow');
+  await flush();
+  assert.equal(m.els['person-action-error'].textContent, 'You can follow up to 200 people.');
+  assert.equal(m.els['person-follow'].hidden, false, 'Follow stays for the next try');
+  assert.equal(m.els['person-follow'].focused, 1, 'focus stays on the control used');
   assert.equal(m.els['person-follow'].disabled, false);
 });
 

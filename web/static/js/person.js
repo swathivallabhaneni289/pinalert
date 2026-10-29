@@ -522,8 +522,22 @@ window.PinalertPerson = (function () {
     return post(action).then(function (answer) {
       if (!answer.ok) {
         var line = refusal(answer, action);
-        if (action === 'follow' && answer.status === 409 && els.follow) {
-          els.follow.hidden = true;
+        if (action === 'follow' && answer.status === 409) {
+          // The server decides whether Follow still applies (can_follow): it
+          // stays after the follow cap, and goes when the person cannot be
+          // followed right now. Focus stays on the control used, or goes to More
+          // when that control is gone (09-REVIEW WR-B05).
+          return refresh().then(function (drawn) {
+            var out = fail(line);
+            if (drawn) {
+              if (els.follow && els.follow.hidden === false) {
+                els.follow.focus();
+              } else if (els.more) {
+                els.more.focus();
+              }
+            }
+            return out;
+          });
         }
         return fail(line);
       }
