@@ -1166,3 +1166,56 @@ test('WR-B01: Show more whose body never ends can be pressed again at 10 s', asy
   more.fire('click');
   assert.equal(env.fetches.length, before + 1, 'Show more asks again');
 });
+
+// ---- review fix WR-B03 (2026-10-29): a post that succeeds keeps the words
+// typed while it was in flight, and a reply target chosen meanwhile. ----
+
+test('WR-B03: words typed while the post was out stay in the box', async () => {
+  const env = load();
+  const page = await start(env, [cm(1)]);
+  type(page, 'Road closed at the flyover');
+  page.post.fire('click');
+  const sent = lastFetch(env);
+  type(page, 'Road closed at the flyover Use the service road instead');
+  sent.reply(201, cm(2, { is_own: true, can_delete: true, author: 'me.k', words: 'Road closed at the flyover' }));
+  await flush();
+  assert.equal(page.input.value, 'Use the service road instead', 'only the sent words go');
+});
+
+test('WR-B03: a box rewritten while the post was out is left alone', async () => {
+  const env = load();
+  const page = await start(env, [cm(1)]);
+  type(page, 'Road closed');
+  page.post.fire('click');
+  const sent = lastFetch(env);
+  type(page, 'Something else');
+  sent.reply(201, cm(2, { is_own: true, author: 'me.k', words: 'Road closed' }));
+  await flush();
+  assert.equal(page.input.value, 'Something else');
+});
+
+test('WR-B03: a reply target chosen while the post was out survives', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { author: 'ravi.k' }), cm(3, { author: 'asha.m' })]);
+  type(page, 'Road closed');
+  page.post.fire('click');
+  const sent = lastFetch(env);
+  replyButton(page.items()[1]).fire('click');
+  assert.equal(page.input.value, '@asha.m Road closed');
+  sent.reply(201, cm(4, { is_own: true, author: 'me.k', words: 'Road closed' }));
+  await flush();
+  assert.equal(page.replying.hidden, false, 'the new reply target stays');
+  assert.equal(page.input.getAttribute('aria-label'), 'Reply to asha.m');
+});
+
+test('WR-B03: the sent reply clears its own target and the box', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { author: 'ravi.k' })]);
+  replyButton(page.items()[0]).fire('click');
+  type(page, '@ravi.k thanks');
+  page.post.fire('click');
+  lastFetch(env).reply(201, cm(5, { is_own: true, author: 'me.k', words: '@ravi.k thanks', reply_to_author: 'ravi.k' }));
+  await flush();
+  assert.equal(page.input.value, '');
+  assert.equal(page.replying.hidden, true);
+});

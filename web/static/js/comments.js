@@ -1282,12 +1282,26 @@ window.PinalertComments = (function () {
       writeOwnDisc();
     }
 
-    function onPostAnswer(res, target) {
+    // clearSent takes the posted words out of the box. Words typed while the
+    // post was in flight stay (review fix WR-B03): only the sent words at the
+    // start go, and a box that no longer starts with them is left alone. The
+    // reply target goes only when it is still the one the post was sent to.
+    function clearSent(sent, target) {
+      if (input.value === sent) {
+        input.value = '';
+      } else if (sent !== '' && input.value.indexOf(sent) === 0) {
+        input.value = input.value.slice(sent.length).replace(/^\s+/, '');
+      }
+      if (replyTarget === target) {
+        clearReplyTarget(false);
+      }
+    }
+
+    function onPostAnswer(res, target, sent) {
       var message = res.body && res.body.error && typeof res.body.error.message === 'string' ? res.body.error.message : '';
       var field = res.body && res.body.error && typeof res.body.error.field === 'string' ? res.body.error.field : '';
       if (res.status === STATUS_CREATED && res.body && typeof res.body === 'object') {
-        input.value = '';
-        clearReplyTarget(false);
+        clearSent(sent, target);
         clearComposerError();
         addPosted(res.body, target);
         onInput();
@@ -1325,7 +1339,8 @@ window.PinalertComments = (function () {
       }
       posting = true;
       writePostState();
-      var payload = { words: input.value };
+      var sent = input.value;
+      var payload = { words: sent };
       var target = replyTarget;
       if (target) {
         payload.reply_to = Number(target.replyToId);
@@ -1333,7 +1348,7 @@ window.PinalertComments = (function () {
       request('POST', listPath(0), payload).promise.then(function (res) {
         posting = false;
         writePostState();
-        onPostAnswer(res, target);
+        onPostAnswer(res, target, sent);
       }).catch(function () {
         posting = false;
         writePostState();
