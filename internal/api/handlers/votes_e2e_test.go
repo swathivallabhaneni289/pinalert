@@ -32,7 +32,7 @@ import (
 const voterGeohashPrecision = 7
 
 // newVerifiedClient constructs a fresh cookie-jar-backed client and drives
-// the real request-link-then-verify flow for email against srv — one client
+// the real password sign in flow (a typed code, then a password) for email against srv: one client
 // equals one browser equals one account. Every test below that needs N
 // independent voters calls this N times with N distinct emails.
 func newVerifiedClient(t *testing.T, srv *httptest.Server, mailer *recordingMailer, email string) *http.Client {

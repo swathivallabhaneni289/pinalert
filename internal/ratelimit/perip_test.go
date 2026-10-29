@@ -137,7 +137,7 @@ func TestMiddlewareRefusesBeyondBurst(t *testing.T) {
 	}))
 
 	newReq := func() *http.Request {
-		req := httptest.NewRequest(http.MethodPost, "/api/auth/request-link", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/sign-up", nil)
 		req.RemoteAddr = "203.0.113.7:54321"
 		return req
 	}
@@ -171,7 +171,7 @@ func TestMiddlewareFallsBackToRawRemoteAddr(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/request-link", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/sign-up", nil)
 	req.RemoteAddr = "no-port-here"
 
 	rec := httptest.NewRecorder()
@@ -205,7 +205,7 @@ func TestMiddlewareIgnoresForgedForwardedHeaders(t *testing.T) {
 		handler := newHandler(2)
 		forged := []string{"198.51.100.1", "198.51.100.2", "198.51.100.3"}
 		for i, xff := range forged {
-			req := httptest.NewRequest(http.MethodPost, "/api/auth/request-link", nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/auth/sign-up", nil)
 			req.RemoteAddr = "203.0.113.9:44444"
 			req.Header.Set("X-Forwarded-For", xff)
 			rec := httptest.NewRecorder()
@@ -226,7 +226,7 @@ func TestMiddlewareIgnoresForgedForwardedHeaders(t *testing.T) {
 		handler := newHandler(2)
 		forged := []string{"198.51.100.11", "198.51.100.12", "198.51.100.13"}
 		for i, xrip := range forged {
-			req := httptest.NewRequest(http.MethodPost, "/api/auth/request-link", nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/auth/sign-up", nil)
 			req.RemoteAddr = "203.0.113.9:44444"
 			req.Header.Set("X-Real-IP", xrip)
 			rec := httptest.NewRecorder()
@@ -247,7 +247,7 @@ func TestMiddlewareIgnoresForgedForwardedHeaders(t *testing.T) {
 		handler := newHandler(2)
 		forged := []string{"198.51.100.21", "198.51.100.22", "198.51.100.23"}
 		for i, tcip := range forged {
-			req := httptest.NewRequest(http.MethodPost, "/api/auth/request-link", nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/auth/sign-up", nil)
 			req.RemoteAddr = "203.0.113.9:44444"
 			req.Header.Set("True-Client-IP", tcip)
 			rec := httptest.NewRecorder()
