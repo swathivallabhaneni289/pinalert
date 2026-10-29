@@ -257,3 +257,131 @@ func TestProfileHeaderFields(t *testing.T) {
 		t.Errorf("9lives: followers %q word %q initial %q, want \"1 Follower\", \"Follower\" and L", got.FollowersText, got.FollowersWord, got.Initial)
 	}
 }
+
+// TestProfileStarsParts proves the two parts of the stars and the reader's own
+// rating state on the profile (plan 09-14, D-02, D-21, UI-SPEC 1c, review W5):
+// below five counted raters only the total shows, from five on the profile also
+// shows the part the reports gave and the part the ratings gave (the tapped part
+// rounded to half stars), five raters in one place count as one, a New reporter
+// has no stars at all, and may_rate and your_rating follow the viewer.
+func TestProfileStarsParts(t *testing.T) {
+	ctx := context.Background()
+	pool := testutil.NewTestDB(t)
+	q := sqlcgen.New(pool)
+	ratings := service.NewRatingService(q)
+	svc := service.NewPeopleService(q, service.WithPeopleSignals(ratings), service.WithPeopleRatings(ratings))
+	now := time.Now()
+
+	viewer := testutil.SeedPerson(t, pool, "parts-viewer@example.com", "parts.viewer", false)
+
+	// reporter seeds a public reporter (outcome score 78) with a live report.
+	reporter := func(name string) (int64, int64) {
+		id := testutil.SeedPublicReporter(t, pool, name+"@example.com", name, name+"-sess", now)
+		report := testutil.SeedHistoryReport(t, pool, name+"-sess", "low", "flood", now.Add(time.Hour))
+		return id, report
+	}
+	read := func(name string) service.PersonProfile {
+		t.Helper()
+		p, err := svc.Profile(ctx, viewer, name)
+		if err != nil {
+			t.Fatalf("Profile(%q): %v", name, err)
+		}
+		return p
+	}
+
+	t.Run("four raters show only the total", func(t *testing.T) {
+		id, report := reporter("parts.four")
+		testutil.SeedRaters(t, pool, id, report, []int{5, 5, 5, 5})
+		p := read("parts.four")
+		if p.StarsNumber != "3.9" || p.StarsLabel != "Stars: 3.9 out of 5." || p.StarsFromReports != "" || p.StarsFromRatings != "" {
+			t.Errorf("four raters: %q %q parts %q %q, want the outcome only total and no parts", p.StarsNumber, p.StarsLabel, p.StarsFromReports, p.StarsFromRatings)
+		}
+	})
+
+	t.Run("twelve raters average four", func(t *testing.T) {
+		id, report := reporter("parts.twelve")
+		testutil.SeedRaters(t, pool, id, report, []int{4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4})
+		p := read("parts.twelve")
+		// Outcome 78, tapped 4.0: (78*12 + 20*48 + 12) / 24 is 79 points, 3.9 stars.
+		want := "Stars: 3.9 out of 5. 3.9 from reports. 4.0 from ratings by 12 people."
+		if p.StarsNumber != "3.9" || p.StarsFromReports != "3.9 from reports" || p.StarsFromRatings != "4.0 from ratings by 12 people" || p.StarsLabel != want {
+			t.Errorf("twelve raters: %q parts %q %q label %q, want 3.9, the two parts and %q", p.StarsNumber, p.StarsFromReports, p.StarsFromRatings, p.StarsLabel, want)
+		}
+	})
+
+	t.Run("the total moves with the ratings", func(t *testing.T) {
+		id, report := reporter("parts.high")
+		testutil.SeedRaters(t, pool, id, report, []int{5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5})
+		p := read("parts.high")
+		// Outcome 78, tapped 5.0 gives 89 points: 4.4 stars total, 3.9 from reports.
+		if p.StarsNumber != "4.4" || p.StarsFromReports != "3.9 from reports" || p.StarsFromRatings != "5.0 from ratings by 12 people" {
+			t.Errorf("twelve fives: %q parts %q %q, want 4.4, 3.9 from reports and 5.0 from ratings by 12 people", p.StarsNumber, p.StarsFromReports, p.StarsFromRatings)
+		}
+	})
+
+	t.Run("the tapped part is rounded to half stars", func(t *testing.T) {
+		id, report := reporter("parts.half")
+		testutil.SeedRaters(t, pool, id, report, []int{5, 5, 4, 4, 4})
+		p := read("parts.half")
+		// 22 stars over 5 raters is 4.4, shown as 4.5, never 4.4.
+		if p.StarsFromRatings != "4.5 from ratings by 5 people" {
+			t.Errorf("five raters, 22 stars: ratings part %q, want %q", p.StarsFromRatings, "4.5 from ratings by 5 people")
+		}
+	})
+
+	t.Run("five raters in one place count as one", func(t *testing.T) {
+		id, report := reporter("parts.cell")
+		testutil.SeedRatersInOneCell(t, pool, id, report, []int{5, 5, 5, 5, 5})
+		p := read("parts.cell")
+		if p.StarsNumber != "3.9" || p.StarsFromReports != "" || p.StarsFromRatings != "" {
+			t.Errorf("five raters in one cell: %q parts %q %q, want the outcome only total and no parts", p.StarsNumber, p.StarsFromReports, p.StarsFromRatings)
+		}
+	})
+
+	t.Run("a New reporter has no stars", func(t *testing.T) {
+		testutil.SeedPerson(t, pool, "parts-new@example.com", "parts.new", true)
+		p := read("parts.new")
+		if p.StarsNumber != "" || p.StarsLabel != "" || p.StarsFromReports != "" || p.StarsFromRatings != "" {
+			t.Errorf("a New reporter: %q %q parts %q %q, want no stars at all", p.StarsNumber, p.StarsLabel, p.StarsFromReports, p.StarsFromRatings)
+		}
+	})
+
+	t.Run("may rate and your rating follow the viewer", func(t *testing.T) {
+		id, report := reporter("parts.rate")
+		// Before the viewer voted on one of their reports they may not rate.
+		if p := read("parts.rate"); p.MayRate || p.YourRating != 0 {
+			t.Errorf("a viewer who never voted: may_rate %v your_rating %d, want false and 0", p.MayRate, p.YourRating)
+		}
+		testutil.MustExec(t, pool,
+			`INSERT INTO votes (report_id, account_id, kind, value, geohash_cell) VALUES ($1, $2, 'content', 'confirm', 'tdr1v8y')`,
+			report, viewer)
+		if p := read("parts.rate"); !p.MayRate || p.YourRating != 0 {
+			t.Errorf("a viewer who voted: may_rate %v your_rating %d, want true and 0", p.MayRate, p.YourRating)
+		}
+		if err := ratings.Rate(ctx, viewer, "parts.rate", 4); err != nil {
+			t.Fatalf("Rate: %v", err)
+		}
+		if p := read("parts.rate"); !p.MayRate || p.YourRating != 4 {
+			t.Errorf("after rating 4: may_rate %v your_rating %d, want true and 4", p.MayRate, p.YourRating)
+		}
+
+		// Your own page never offers a rating.
+		own, err := svc.Profile(ctx, id, "parts.rate")
+		if err != nil {
+			t.Fatalf("own Profile: %v", err)
+		}
+		if own.MayRate || own.YourRating != 0 {
+			t.Errorf("own page: may_rate %v your_rating %d, want false and 0", own.MayRate, own.YourRating)
+		}
+
+		// Without a rating reader both stay false and 0 even for an eligible viewer.
+		plain := service.NewPeopleService(q)
+		p, err := plain.Profile(ctx, viewer, "parts.rate")
+		if err != nil {
+			t.Fatalf("Profile without a reader: %v", err)
+		}
+		if p.MayRate || p.YourRating != 0 {
+			t.Errorf("no reader: may_rate %v your_rating %d, want false and 0", p.MayRate, p.YourRating)
+		}
+	})
+}

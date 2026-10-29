@@ -1986,6 +1986,157 @@ const docTemplate = `{
                 }
             }
         },
+        "/people/{username}/rating": {
+            "post": {
+                "description": "Saves the caller's rating of a person, 1 to 5 stars. Only someone who confirmed, disputed,\nresolved or reopened one of that person's reports may rate them, and never yourself. The\nfirst rating is free; a different rating can be given again after a day. The same stars\nagain change nothing and answer 204. Every reason a rating is not allowed answers 409 with\nthe field stars and the same sentence, and a change inside the day answers 409 with the\nfield stars and its own sentence, so the route does not tell who voted on whose report.\nStars outside 1 to 5, or a body that is not {\"stars\": n}, answers 400 with the field stars.\nA person the caller may not see answers the same 404 as the profile.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "people"
+                ],
+                "summary": "Rate a person",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Username",
+                        "name": "username",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The stars",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Saved"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/people/{username}/rating/clear": {
+            "post": {
+                "description": "Removes the caller's rating of a person. Send no body or an empty object. Removing counts\nas a change, so it needs a day since the last change and answers 409 with the field stars\ninside it. A person you have not rated answers 204 and changes nothing. A person the caller\nmay not see answers the same 404 as the profile.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "people"
+                ],
+                "summary": "Remove your rating of a person",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Username",
+                        "name": "username",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Removed"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/people/{username}/remove-follower": {
             "post": {
                 "description": "Ends the follow of the person with this username on the signed in account. Send no body\nor an empty object. A well formed username that matches nobody answers 204 and changes\nnothing. A malformed username answers the same 404 as the profile.\nRequires a session verified by email; an unverified caller receives 401.",
@@ -4815,6 +4966,11 @@ const docTemplate = `{
                     "type": "boolean",
                     "example": false
                 },
+                "may_rate": {
+                    "description": "MayRate says the caller may rate this person now. YourRating is the caller's\nown current rating, 1 to 5, or 0 for none.",
+                    "type": "boolean",
+                    "example": true
+                },
                 "member_since": {
                     "type": "string",
                     "example": "Member since October 2026"
@@ -4830,6 +4986,15 @@ const docTemplate = `{
                 "reliable": {
                     "type": "boolean",
                     "example": true
+                },
+                "stars_from_ratings": {
+                    "type": "string",
+                    "example": "4.0 from ratings by 12 people"
+                },
+                "stars_from_reports": {
+                    "description": "StarsFromReports and StarsFromRatings are the two parts of the stars total.\nBoth are empty until five people have rated (a different place each).",
+                    "type": "string",
+                    "example": "3.6 from reports"
                 },
                 "stars_label": {
                     "type": "string",
@@ -4855,6 +5020,10 @@ const docTemplate = `{
                 "username": {
                     "type": "string",
                     "example": "asha_k"
+                },
+                "your_rating": {
+                    "type": "integer",
+                    "example": 4
                 }
             }
         },
@@ -5072,6 +5241,15 @@ const docTemplate = `{
                 "serious": {
                     "type": "boolean",
                     "example": true
+                }
+            }
+        },
+        "handlers.RateRequest": {
+            "type": "object",
+            "properties": {
+                "stars": {
+                    "type": "integer",
+                    "example": 4
                 }
             }
         },

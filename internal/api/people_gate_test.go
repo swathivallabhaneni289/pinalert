@@ -2,6 +2,9 @@
 // the access gate, so a caller who is not signed in gets the 401 JSON envelope
 // and never a profile, a list or a changed row. Plan 09-08 adds the two HTML
 // routes to this table.
+//
+// Amended 2026-10-29 by Phase 9 plan 14 (D-02): the two rating routes join the
+// table. Every other assertion is unchanged.
 package api
 
 import (
@@ -26,6 +29,8 @@ func TestAccessGateBlocksPeopleRoutes(t *testing.T) {
 		{http.MethodPost, "/api/people/asha_k/remove-follower"},
 		{http.MethodPost, "/api/people/asha_k/block"},
 		{http.MethodPost, "/api/people/asha_k/unblock"},
+		{http.MethodPost, "/api/people/asha_k/rating"},
+		{http.MethodPost, "/api/people/asha_k/rating/clear"},
 		{http.MethodPost, "/api/me/followers/remove-all"},
 		{http.MethodGet, "/api/me/blocked"},
 		{http.MethodPatch, "/api/me/visibility"},

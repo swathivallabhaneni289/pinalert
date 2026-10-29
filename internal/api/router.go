@@ -42,6 +42,12 @@ type Deps struct {
 	// it (such as swagger_test.go's) still compiles and still serves
 	// every route that does not touch voting.
 	Votes *service.VotingService
+	// Ratings is the tapped ratings service (Phase 9 plan 14). It is the one
+	// signal source cmd/server/main.go hands to every reader of a reporter tag,
+	// and here it backs the two rating routes and the profile's rating fields.
+	// Nil, which every Deps{} literal that does not set it gives, leaves the
+	// profile without rating fields and both rating routes answering 404.
+	Ratings *service.RatingService
 
 	AuthService *service.AuthService
 	Auth        handlers.AuthConfig
@@ -401,6 +407,9 @@ var RateLimitsDefault = RateLimits{
 	// churn. Both are keyed per account, never per network address (CGNAT).
 	PeopleRead:   BucketLimit{Every: time.Second, Burst: 60},
 	PeopleAction: BucketLimit{Every: 3 * time.Second, Burst: 20},
+	// Rate (Phase 9 plan 14, D-02, T-09-54): a burst of 10 then one every 30
+	// seconds, per account. The once a day change rule sits on top of it.
+	Rate: BucketLimit{Every: 30 * time.Second, Burst: 10},
 }
 
 // resolveRateLimits replaces every field equal to BucketLimit{} with the
@@ -429,6 +438,7 @@ func resolveRateLimits(l RateLimits) RateLimits {
 	fill(&l.IPBackstopLike, RateLimitsDefault.IPBackstopLike)
 	fill(&l.PeopleRead, RateLimitsDefault.PeopleRead)
 	fill(&l.PeopleAction, RateLimitsDefault.PeopleAction)
+	fill(&l.Rate, RateLimitsDefault.Rate)
 	return l
 }
 
@@ -739,6 +749,15 @@ func NewRouter(deps Deps) *chi.Mux {
 	if deps.Reports != nil {
 		peopleOpts = append(peopleOpts, service.WithPeopleScreener(deps.Reports.Screener()))
 	}
+	// Plan 14: the same ratings source every other tag reader uses, so the
+	// profile reads the tag every other surface reads and fills may_rate and
+	// your_rating for the reader. A nil Ratings adds no option (a typed nil pointer in the interface would not be a nil interface).
+	if deps.Ratings != nil {
+		peopleOpts = append(peopleOpts,
+			service.WithPeopleSignals(deps.Ratings),
+			service.WithPeopleRatings(deps.Ratings),
+		)
+	}
 	people := service.NewPeopleService(deps.Sessions, peopleOpts...)
 	// Delete my account (plan 03.2-09): built from the sessions store and the
 	// optional transaction seam.
@@ -1013,6 +1032,11 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.With(rateGate.PeopleActionMiddleware()).Post("/api/people/{username}/remove-follower", handlers.RemoveFollower(people))
 		r.With(rateGate.PeopleActionMiddleware()).Post("/api/people/{username}/block", handlers.BlockPerson(people))
 		r.With(rateGate.PeopleActionMiddleware()).Post("/api/people/{username}/unblock", handlers.UnblockPerson(people))
+		// The two rating routes (Phase 9 plan 14, D-02): give or remove a star
+		// rating, through the per account Rate bucket. Without a ratings service
+		// both answer the uniform 404.
+		r.With(rateGate.RateMiddleware()).Post("/api/people/{username}/rating", handlers.RatePerson(deps.Ratings))
+		r.With(rateGate.RateMiddleware()).Post("/api/people/{username}/rating/clear", handlers.ClearPersonRating(deps.Ratings))
 		r.With(rateGate.PeopleActionMiddleware()).Post("/api/me/followers/remove-all", handlers.RemoveAllFollowers(people))
 		r.With(rateGate.PeopleReadMiddleware()).Get("/api/me/blocked", handlers.BlockedPeopleList(people))
 		r.With(rateGate.PeopleActionMiddleware()).Patch("/api/me/visibility", handlers.UpdateVisibility(people))

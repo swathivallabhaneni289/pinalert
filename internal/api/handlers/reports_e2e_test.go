@@ -90,13 +90,20 @@ func newE2EServerWith(t *testing.T, tweak func(d *api.Deps, q *sqlcgen.Queries))
 		t.Fatalf("parsing page template: %v", err)
 	}
 	queries := sqlcgen.New(pool)
+	// Amended 2026-10-29 by Phase 9 plan 14 (D-02, research Pitfall 2): the
+	// harness builds one RatingService and passes it to the same readers
+	// cmd/server/main.go does, so a test that rates a reporter sees the wired
+	// path and not a nil source. With no ratings stored the answers are what they
+	// were before. Every other assertion is unchanged.
+	ratings := service.NewRatingService(queries)
 	fm := &recordingMailer{}
 	deps := api.Deps{
 		Session:     mgr,
 		Sessions:    queries,
-		Reports:     service.NewReportService(queries),
-		Votes:       service.NewVotingService(queries),
-		AuthService: service.NewAuthService(queries, fm, "https://pinalert.example"),
+		Reports:     service.NewReportService(queries, service.WithReportSignals(ratings)),
+		Votes:       service.NewVotingService(queries, service.WithVotingSignals(ratings)),
+		AuthService: service.NewAuthService(queries, fm, "https://pinalert.example", service.WithAuthSignals(ratings)),
+		Ratings:     ratings,
 		Auth:        handlers.AuthConfig{AssetVersion: "test"},
 		Template:    tmpl,
 		RateLimits:  e2eGenerousRateLimits,

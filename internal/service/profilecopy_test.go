@@ -55,6 +55,22 @@ func TestProfileCopy(t *testing.T) {
 		eq(t, "StarsGroupLabel(72)", service.StarsGroupLabel(72), "Stars: 3.6 out of 5.")
 	})
 
+	// Plan 09-14 (D-02, UI-SPEC 1c, review W5): the two parts of the stars and the
+	// whole accessible name when both show.
+	t.Run("stars_parts", func(t *testing.T) {
+		eq(t, "StarsFromReportsText(72)", service.StarsFromReportsText(72), "3.6 from reports")
+		eq(t, "StarsFromReportsText(69)", service.StarsFromReportsText(69), "3.4 from reports")
+		eq(t, "StarsFromRatingsText(8, 12)", service.StarsFromRatingsText(8, 12), "4.0 from ratings by 12 people")
+		// 22 stars from 5 raters is 4.4, rounded to half stars: 9 halves, shown 4.5.
+		eq(t, "StarsFromRatingsText(TappedHalfStars(5, 22), 5)", service.StarsFromRatingsText(service.TappedHalfStars(5, 22), 5), "4.5 from ratings by 5 people")
+		// 21 stars from 5 raters is 4.2, rounded to 4.0.
+		eq(t, "StarsFromRatingsText(TappedHalfStars(5, 21), 5)", service.StarsFromRatingsText(service.TappedHalfStars(5, 21), 5), "4.0 from ratings by 5 people")
+		eq(t, "StarsGroupLabelParts both", service.StarsGroupLabelParts(72, "3.6 from reports", "4.0 from ratings by 12 people"),
+			"Stars: 3.6 out of 5. 3.6 from reports. 4.0 from ratings by 12 people.")
+		eq(t, "StarsGroupLabelParts no parts", service.StarsGroupLabelParts(72, "", ""), "Stars: 3.6 out of 5.")
+		eq(t, "StarsGroupLabelParts one part", service.StarsGroupLabelParts(72, "3.6 from reports", ""), "Stars: 3.6 out of 5.")
+	})
+
 	t.Run("own_state_line", func(t *testing.T) {
 		eq(t, "on and reliable", service.OwnStateLine(true, true), "People can follow you while you hold the Reliable reporter tag.")
 		eq(t, "on not reliable", service.OwnStateLine(true, false), "People can follow you once you hold the Reliable reporter tag.")
@@ -75,6 +91,8 @@ func TestProfileCopy(t *testing.T) {
 			service.FollowersCountText(12), service.FollowingCountText(30),
 			service.MemberSinceText(time.Date(2026, 10, 29, 0, 0, 0, 0, time.UTC)),
 			service.OthersText(3, true), service.StarsTotalText(72), service.StarsGroupLabel(72),
+			service.StarsFromReportsText(72), service.StarsFromRatingsText(8, 12),
+			service.StarsGroupLabelParts(72, "3.6 from reports", "4.0 from ratings by 12 people"),
 			service.OwnStateLine(true, true), service.OwnStateLine(true, false), service.OwnStateLine(false, false),
 		}
 		for _, s := range all {

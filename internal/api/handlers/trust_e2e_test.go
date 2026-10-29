@@ -59,10 +59,15 @@ func newTrustE2EServer(t *testing.T, clock func() time.Time) (*httptest.Server, 
 		t.Fatalf("parsing page template: %v", err)
 	}
 	queries := sqlcgen.New(pool)
+	// Amended 2026-10-29 by Phase 9 plan 14 (D-02, research Pitfall 2): the same
+	// ratings source cmd/server/main.go wires, so the feed and the vote answer
+	// parity tests run the wired path. With no ratings stored every answer is what
+	// it was before.
+	ratings := service.NewRatingService(queries)
 	fm := &recordingMailer{}
 
-	var reportOpts []service.ReportOption
-	var votingOpts []service.VotingOption
+	reportOpts := []service.ReportOption{service.WithReportSignals(ratings)}
+	votingOpts := []service.VotingOption{service.WithVotingSignals(ratings)}
 	if clock != nil {
 		reportOpts = append(reportOpts, service.WithReportClock(clock))
 		votingOpts = append(votingOpts, service.WithVotingClock(clock))
@@ -72,7 +77,8 @@ func newTrustE2EServer(t *testing.T, clock func() time.Time) (*httptest.Server, 
 		Sessions:    queries,
 		Reports:     service.NewReportService(queries, reportOpts...),
 		Votes:       service.NewVotingService(queries, votingOpts...),
-		AuthService: service.NewAuthService(queries, fm, "https://pinalert.example"),
+		AuthService: service.NewAuthService(queries, fm, "https://pinalert.example", service.WithAuthSignals(ratings)),
+		Ratings:     ratings,
 		Auth:        handlers.AuthConfig{AssetVersion: "test"},
 		Template:    tmpl,
 		// 04-09 opened every bucket because this suite tests trust semantics,

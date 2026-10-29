@@ -172,11 +172,14 @@ func pwSetup(t *testing.T) *pwWorld {
 	w := &pwWorld{notifier: &pwNotifier{}, sender: &pwSender{}, namer: &pwNamer{}}
 	srv, mailer, pool := newE2EServerWith(t, func(d *api.Deps, q *sqlcgen.Queries) {
 		d.Page.PushPublicKey = pushTestKey
-		reports := service.NewReportService(q, service.WithReportChangeNotifier(w.notifier))
+		// Amended 2026-10-29 by Phase 9 plan 14 (D-02): the services here are
+		// built in this hook, so they take the ratings source the harness built
+		// (d.Ratings), as cmd/server/main.go does.
+		reports := service.NewReportService(q, service.WithReportChangeNotifier(w.notifier), service.WithReportSignals(d.Ratings))
 		d.Reports = reports
-		d.Votes = service.NewVotingService(q, service.WithVoteChangeNotifier(w.notifier))
+		d.Votes = service.NewVotingService(q, service.WithVoteChangeNotifier(w.notifier), service.WithVotingSignals(d.Ratings))
 		updates := service.NewUpdatesService(q, reports)
-		w.disp = service.NewPushDispatcher(q, updates, w.namer)
+		w.disp = service.NewPushDispatcher(q, updates, w.namer, service.WithDispatchSignals(d.Ratings))
 		w.worker = service.NewPushWorker(q, w.sender)
 	})
 	w.srv, w.mailer, w.pool = srv, mailer, pool

@@ -93,8 +93,10 @@ func p17raSetup(t *testing.T, prefix string) *p17raWorld {
 	t.Helper()
 	clock := &p17raClock{}
 	srv, mailer, pool := newE2EServerWith(t, func(d *api.Deps, q *sqlcgen.Queries) {
-		d.Reports = service.NewReportService(q, service.WithReportClock(clock.Now))
-		d.Votes = service.NewVotingService(q, service.WithVotingClock(clock.Now))
+		// Amended 2026-10-29 by Phase 9 plan 14 (D-02): the service built here takes the
+		// ratings source the harness built (d.Ratings), as cmd/server/main.go does.
+		d.Reports = service.NewReportService(q, service.WithReportClock(clock.Now), service.WithReportSignals(d.Ratings))
+		d.Votes = service.NewVotingService(q, service.WithVotingClock(clock.Now), service.WithVotingSignals(d.Ratings))
 	})
 	w := &p17raWorld{
 		srv: srv, pool: pool, clock: clock, mailer: mailer,

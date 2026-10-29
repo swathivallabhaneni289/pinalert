@@ -132,10 +132,17 @@ const (
 	// actions are bounded to slow follow churn (a burst of 20 then one every 3
 	// seconds). Both are keyed per account and never per network address,
 	// because many phones share one carrier address.
-	peopleReadBurst    = 60
-	peopleReadEvery    = time.Second
-	peopleActionBurst  = 20
-	peopleActionEvery  = 3 * time.Second
+	peopleReadBurst   = 60
+	peopleReadEvery   = time.Second
+	peopleActionBurst = 20
+	peopleActionEvery = 3 * time.Second
+	// Ratings (Phase 9 plan 14, D-02, T-09-54): a real reader rates a few people a
+	// day, and the once a day change rule sits on top, so a burst of 10 then one
+	// more every 30 seconds is generous and still bounds rating spam. Keyed per
+	// account and never per network address, because many phones share one carrier
+	// address.
+	rateBurst          = 10
+	rateEvery          = 30 * time.Second
 	submitAttemptBurst = 20
 	submitAttemptEvery = 6 * time.Second
 )
@@ -464,18 +471,24 @@ func main() {
 		log.Println("WARNING: VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY unset; phone notifications are off")
 	}
 
+	// The one tapped ratings source (Phase 9 plan 14, research Pitfall 2). It is
+	// handed to every reader of a reporter tag below, so a rated reporter reads the
+	// same tag on the feed, the vote answer, Past and Focus, Activity, the phone
+	// alert check, the profile and the follow sweep. TestRatingsSourceWiredEverywhere
+	// fails if one of them is left without it.
+	ratingService := service.NewRatingService(queries)
+	reportOpts := []service.ReportOption{service.WithScreener(screener), service.WithReportSignals(ratingService)}
+	voteOpts := []service.VotingOption{service.WithVotingSignals(ratingService)}
+	commentOpts := []service.CommentOption{service.WithCommentScreener(screener)}
 	// Posting and voting poke the dispatcher only when push is on. A nil
 	// *PushDispatcher stored in the notifier interface would not be a nil
 	// interface, so the options are added only inside this branch.
-	reportOpts := []service.ReportOption{service.WithScreener(screener)}
-	var voteOpts []service.VotingOption
-	commentOpts := []service.CommentOption{service.WithCommentScreener(screener)}
 	var pushDispatcher *service.PushDispatcher
 	var pushUpdates *lateUpdates
 	if pushOn {
 		pushUpdates = &lateUpdates{}
 		// The one geocode client is also the dispatcher's area namer (T-07-01).
-		pushDispatcher = service.NewPushDispatcher(queries, pushUpdates, geocodeClient)
+		pushDispatcher = service.NewPushDispatcher(queries, pushUpdates, geocodeClient, service.WithDispatchSignals(ratingService))
 		reportOpts = append(reportOpts, service.WithReportChangeNotifier(pushDispatcher))
 		voteOpts = append(voteOpts, service.WithVoteChangeNotifier(pushDispatcher))
 		commentOpts = append(commentOpts, service.WithCommentChangeNotifier(pushDispatcher))
@@ -536,7 +549,8 @@ func main() {
 		Sessions:    queries,
 		Reports:     reportService,
 		Votes:       voteService,
-		AuthService: service.NewAuthService(queries, mail, baseURL),
+		Ratings:     ratingService,
+		AuthService: service.NewAuthService(queries, mail, baseURL, service.WithAuthSignals(ratingService)),
 		// The configured public address that roots every share link and og:url
 		// (Phase 8 plan 03), and the share service. The one geocode client is
 		// also the share area namer, the dispatcher's precedent (T-07-01).
@@ -628,6 +642,7 @@ func main() {
 			IPBackstopLike:    api.BucketLimit{Every: ipBackstopLikeEvery, Burst: ipBackstopLikeBurst},
 			PeopleRead:        api.BucketLimit{Every: peopleReadEvery, Burst: peopleReadBurst},
 			PeopleAction:      api.BucketLimit{Every: peopleActionEvery, Burst: peopleActionBurst},
+			Rate:              api.BucketLimit{Every: rateEvery, Burst: rateBurst},
 		},
 	}
 	router := api.NewRouter(deps)
@@ -675,9 +690,9 @@ func main() {
 	context.AfterFunc(runCtx, stopSignals)
 	// The follow sweep (plan 09-06, SC5) ends the stored follows of a person who
 	// stops being a Reliable reporter or followable. It runs whether or not phone
-	// alerts are configured, on the same runCtx, so it stops with the others. No
-	// SignalSource yet: plan 09-14 wires the ratings source into every tag reader.
-	followSweep := service.NewFollowSweep(queries)
+	// alerts are configured, on the same runCtx, so it stops with the others. It reads the tag
+	// through the ratings source, like every other surface (plan 09-14).
+	followSweep := service.NewFollowSweep(queries, service.WithFollowSweepSignals(ratingService))
 	runners := []func(context.Context){followSweep.Run}
 	if pushOn {
 		pushPolicy := push.DefaultEndpointPolicy()

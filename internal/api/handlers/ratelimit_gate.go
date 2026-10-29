@@ -84,6 +84,10 @@ type RateLimits struct {
 	// unblock, remove all followers and the visibility switch, keyed per account.
 	// It slows follow churn (Phase 9 plan 07, D-12).
 	PeopleAction BucketLimit
+	// Rate is the allowance for giving or removing a star rating, keyed per account
+	// and never per network address (Phase 9 plan 14, D-02, T-09-54). Every attempt
+	// costs one token and nothing is refunded; the 24 hour change rule sits on top.
+	Rate BucketLimit
 }
 
 // RateLimitResponse is the one 429 body of every Phase 4 limiter. The
@@ -128,6 +132,10 @@ const (
 	peopleActionBucketName = "people_action"
 	peopleActionRateField  = "rate_people_action"
 
+	// The rating bucket (Phase 9 plan 14). The name goes to the block log only.
+	rateBucketName = "rate"
+	rateRateField  = "rate_rating"
+
 	voteRateField       = "rate_vote"
 	voteChangeRateField = "rate_vote_change"
 
@@ -161,6 +169,7 @@ type RateGate struct {
 	like             *ratelimit.PerKey
 	peopleRead       *ratelimit.PerKey
 	peopleAction     *ratelimit.PerKey
+	rate             *ratelimit.PerKey
 
 	ipBackstopComment *ratelimit.PerKey
 	ipBackstopLike    *ratelimit.PerKey
@@ -196,6 +205,7 @@ func NewRateGate(limits RateLimits, clock func() time.Time, clientIPHeader strin
 		like:             ratelimit.NewPerKey(bucketConfig(limits.Like, clock)),
 		peopleRead:       ratelimit.NewPerKey(bucketConfig(limits.PeopleRead, clock)),
 		peopleAction:     ratelimit.NewPerKey(bucketConfig(limits.PeopleAction, clock)),
+		rate:             ratelimit.NewPerKey(bucketConfig(limits.Rate, clock)),
 
 		ipBackstopComment: ratelimit.NewPerKey(bucketConfig(limits.IPBackstopComment, clock)),
 		ipBackstopLike:    ratelimit.NewPerKey(bucketConfig(limits.IPBackstopLike, clock)),
@@ -524,6 +534,14 @@ func (g *RateGate) PeopleReadMiddleware() func(http.Handler) http.Handler {
 // 07, D-12). Every admitted attempt costs one token and nothing is refunded.
 func (g *RateGate) PeopleActionMiddleware() func(http.Handler) http.Handler {
 	return g.peopleMiddleware(g.peopleAction, peopleActionBucketName, peopleActionRateField)
+}
+
+// RateMiddleware throttles giving and removing a star rating: the per account
+// rate bucket keyed acct:<id>, never per network address, because many phones
+// share one carrier address (Phase 9 plan 14, D-02, T-09-54). Every admitted
+// attempt costs one token and nothing is refunded, so a refused rating pays too.
+func (g *RateGate) RateMiddleware() func(http.Handler) http.Handler {
+	return g.peopleMiddleware(g.rate, rateBucketName, rateRateField)
 }
 
 // peopleMiddleware is the body of the two people middlewares.
