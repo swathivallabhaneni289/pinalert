@@ -256,9 +256,11 @@ func r71tPolicySection(t *testing.T, heading string) string {
 // lists of account ids, pinalert.installAsked (plan 13b) and
 // pinalert.alertsAsked (plan 13c), so a phone is not asked twice. The Policy's
 // storage list reads as complete, so it names them in plain words. The older
-// keys the list does not name (pinalert.pushIntent, pinalert.changesAsked and
-// the per account pinalert.locationAsked. marker) predate this phase and are
-// recorded in 07.1-REVIEW-FIX-templates.md, not changed here.
+// keys (pinalert.pushIntent, pinalert.changesAsked and the per account
+// pinalert.locationAsked. marker) were first recorded in
+// 07.1-REVIEW-FIX-templates.md. Amended 2026-10-29 by the review fix round 2
+// (skeptic SK-09): the list now names them too, pinned by
+// TestPolicyNamesOlderStorageKeys.
 func TestPolicyNamesAskedLists(t *testing.T) {
 	const line = "<li>Which accounts on this device were already asked about alerts and about adding Pinalert to the Home Screen, kept as a list of account numbers, so this device does not ask again.</li>"
 	storage := r71tPolicySection(t, "Cookies and storage on your device")
@@ -270,6 +272,41 @@ func TestPolicyNamesAskedLists(t *testing.T) {
 	for _, key := range []string{"'pinalert.installAsked'", "'pinalert.alertsAsked'"} {
 		if !strings.Contains(js, key) {
 			t.Errorf("welcome.js no longer uses %s; the Policy line about it may be stale", key)
+		}
+	}
+}
+
+// TestPolicyNamesOlderStorageKeys (review fix round 2, skeptic SK-09): the
+// Policy's storage list also names, in plain words, the three older browser
+// keys: pinalert.pushIntent (which account turned alerts on here, read by
+// notify.js and now welcome.js), pinalert.changesAsked (the accounts asked
+// about a report changing) and the per account pinalert.locationAsked. marker.
+// Each line says what it remembers and that it stays on the device, and each
+// key is checked to still be in use, so a stale line shows.
+func TestPolicyNamesOlderStorageKeys(t *testing.T) {
+	storage := r71tPolicySection(t, "Cookies and storage on your device")
+	cases := []struct {
+		line, script, key string
+	}{
+		{
+			"<li>Which account turned on alerts on this device, kept as that account's number, so this device remembers alerts are on and does not ask about them again. It stays on this device.</li>",
+			"js/notify.js", "'pinalert.pushIntent'",
+		},
+		{
+			"<li>Which accounts on this device were already asked whether to be told when a report changes, kept as a list of account numbers on this device, so it does not ask again.</li>",
+			"js/changes-ask.js", "'pinalert.changesAsked'",
+		},
+		{
+			"<li>Whether this device already asked for your location for an account, kept as a mark with the account number on this device, so it does not ask again.</li>",
+			"js/position.js", "'pinalert.locationAsked.'",
+		},
+	}
+	for _, c := range cases {
+		if !strings.Contains(storage, c.line) {
+			t.Errorf("the Policy's storage list lacks:\n%s", c.line)
+		}
+		if !strings.Contains(stripJSComments(p421ReadStatic(t, c.script)), c.key) {
+			t.Errorf("%s no longer uses %s; the Policy line about it may be stale", c.script, c.key)
 		}
 	}
 }
