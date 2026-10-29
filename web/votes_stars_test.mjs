@@ -703,3 +703,41 @@ test(NAME + 'K2: with the first post or vote pop-up on the page the host box wai
   await settle();
   assert.equal(boxesIn(m.host).length, 1);
 });
+
+// 2026-10-30 (skeptic SK-I04): an Undo that lands while the first pop-up is
+// still open must stop the box that is waiting for it.
+test(NAME + 'SK-I04: a toast Undo taken while the pop-up is open means no hosted box after it', async () => {
+  let release = null;
+  const pending = new Promise((resolveIt) => { release = resolveIt; });
+  const holder = { card: null };
+  const m = load({
+    prompt: PROMPT, withHost: true, resolveBody: CLOSED, onRefetch: closeOnRefetch(holder),
+    changesAsk: { offer() { return Promise.resolve(); }, settled() { return pending; } }
+  });
+  holder.card = buildCard(m);
+  await resolve(holder.card);
+  assert.equal(boxesIn(m.doc.body).length, 0, 'waiting for the pop-up');
+  await m.toasts[0].action.onClick();
+  release();
+  await settle();
+  assert.equal(boxesIn(m.doc.body).length, 0, 'no box for a resolve that no longer stands');
+});
+
+test(NAME + 'SK-I04: a card Undo taken while the pop-up is open means no box after it, and a later resolve is offered one', async () => {
+  let release = null;
+  const pending = new Promise((resolveIt) => { release = resolveIt; });
+  const m = load({
+    prompt: PROMPT, withHost: true,
+    changesAsk: { offer() { return Promise.resolve(); }, settled() { return pending; } }
+  });
+  const card = buildCard(m);
+  await resolve(card);
+  assert.equal(boxesIn(m.doc.body).length, 0, 'waiting for the pop-up');
+  fire(card.block.controls.querySelector('.vote-btn--takeback'));
+  await settle();
+  release();
+  await settle();
+  assert.equal(boxesIn(m.doc.body).length, 0, 'no box for a resolve that was taken back');
+  await resolve(card);
+  assert.equal(boxesIn(m.doc.body).length, 1, 'the next resolve of the same report is offered a box');
+});

@@ -1887,7 +1887,7 @@
 
     castVote(origin.reportId, action, { ownReport: isReopen && block.isOwnReport === true }).then(function (result) {
       // A taken back resolve takes the star box with it (plan 09-17).
-      removeRateBox(origin.reportId);
+      takeRateBoxBack(origin.reportId);
       var message = isReopen ? REOPEN_SUCCEEDED_TOAST : takeBackSuccessMessage(wasClosed, result);
       return readAfterWrite(block).then(function () {
         setVoteButtonLabel(button, restingLabel);
@@ -1932,8 +1932,9 @@
   function takeBackFromToast(reportId, wasClosed, link) {
     var origin = { reportId: String(reportId), controls: document.getElementById('toast') };
     return castVote(reportId, 'unresolve').then(function (result) {
-      // A taken back resolve takes the star box with it (plan 09-17).
-      removeRateBox(reportId);
+      // A taken back resolve takes the star box with it (plan 09-17), and calls
+      // off one that is still waiting for the first pop-up (SK-I04).
+      takeRateBoxBack(reportId);
       relinkAfterToastUndo(reportId, wasClosed, link, result);
       return Pinalert.fetchReports({ afterWrite: true }).then(function () {
         focusAfterTakeBack(origin);
@@ -2012,6 +2013,10 @@
   // report id -> the box on this page, and the ids Skip was pressed for.
   var rateBoxes = {};
   var rateSkipped = {};
+  // report id -> a counter that each offer takes and each Undo of the resolve
+  // moves on, so a box that was waiting for the first pop-up can tell that its
+  // resolve was taken back meanwhile (skeptic SK-I04, 2026-10-30).
+  var rateGeneration = {};
 
   // removeRateBox takes the box of one report out of the page, if there is one.
   function removeRateBox(reportId) {
@@ -2021,6 +2026,14 @@
     if (box && box.parentNode && typeof box.parentNode.removeChild === 'function') {
       box.parentNode.removeChild(box);
     }
+  }
+
+  // takeRateBoxBack is the Undo of a resolve: the box goes, and an offer still
+  // waiting for the first pop-up is called off.
+  function takeRateBoxBack(reportId) {
+    var key = String(reportId);
+    rateGeneration[key] = (rateGeneration[key] || 0) + 1;
+    removeRateBox(key);
   }
 
   // rateHostIsLive says the vote controls are still on the page and, in a map
@@ -2211,8 +2224,17 @@
       if (window.PinalertChangesAsk && typeof window.PinalertChangesAsk.settled === 'function') {
         wait = window.PinalertChangesAsk.settled();
       }
+      // Each offer takes a number; an Undo of the resolve moves the number on.
+      // A box that waited for the first pop-up mounts only if its number still
+      // stands, so no box appears for a resolve that was taken back (SK-I04).
+      var key = String(reportId);
+      rateGeneration[key] = (rateGeneration[key] || 0) + 1;
+      var mine = rateGeneration[key];
       if (wait && typeof wait.then === 'function') {
         wait.then(function () {
+          if (rateGeneration[key] !== mine) {
+            return;
+          }
           try {
             mountRateBox(block, reportId, prompt);
           } catch (err) {
