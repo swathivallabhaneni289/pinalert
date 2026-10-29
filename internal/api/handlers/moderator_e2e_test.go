@@ -362,7 +362,9 @@ func modSetup(t *testing.T) modFixture {
 	t.Helper()
 	srv, mailer, pool := newE2EServerWith(t, func(d *api.Deps, q *sqlcgen.Queries) {
 		d.ModeratorEmails = modAllowList(t, "Mod@Example.com")
-		d.Reports = service.NewReportService(q, service.WithScreener(modStubScreener{}))
+		// Amended 2026-10-29 by Phase 9 plan 14 (D-02): the service built here takes the
+		// ratings source the harness built (d.Ratings), as cmd/server/main.go does.
+		d.Reports = service.NewReportService(q, service.WithScreener(modStubScreener{}), service.WithReportSignals(d.Ratings))
 	})
 	fx := modFixture{
 		srv:       srv,

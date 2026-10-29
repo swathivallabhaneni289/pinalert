@@ -75,7 +75,9 @@ func p11Scores(scores map[string]float64) *p11Screener {
 func p11Server(t *testing.T, scr *p11Screener) (*httptest.Server, *recordingMailer, *pgxpool.Pool) {
 	t.Helper()
 	return newE2EServerWith(t, func(d *api.Deps, q *sqlcgen.Queries) {
-		d.Reports = service.NewReportService(q, service.WithScreener(scr))
+		// Amended 2026-10-29 by Phase 9 plan 14 (D-02): the service built here takes the
+		// ratings source the harness built (d.Ratings), as cmd/server/main.go does.
+		d.Reports = service.NewReportService(q, service.WithScreener(scr), service.WithReportSignals(d.Ratings))
 	})
 }
 

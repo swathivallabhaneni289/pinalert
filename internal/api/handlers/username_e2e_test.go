@@ -45,7 +45,9 @@ func (s *p71uScreener) Screen(_ context.Context, text string) (moderation.Result
 func p71uServer(t *testing.T, scr *p71uScreener, mutate func(d *api.Deps)) (*httptest.Server, *recordingMailer) {
 	t.Helper()
 	srv, mailer, _ := newE2EServerWith(t, func(d *api.Deps, q *sqlcgen.Queries) {
-		d.Reports = service.NewReportService(q, service.WithScreener(scr))
+		// Amended 2026-10-29 by Phase 9 plan 14 (D-02): the service built here takes the
+		// ratings source the harness built (d.Ratings), as cmd/server/main.go does.
+		d.Reports = service.NewReportService(q, service.WithScreener(scr), service.WithReportSignals(d.Ratings))
 		if mutate != nil {
 			mutate(d)
 		}

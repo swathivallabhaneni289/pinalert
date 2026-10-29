@@ -64,7 +64,9 @@ func p17Tweak(clk *p17Clock, scr service.TextScreener, mutate func(d *api.Deps))
 	return func(d *api.Deps, q *sqlcgen.Queries) {
 		d.LimiterClock = clk.Now
 		if scr != nil {
-			d.Reports = service.NewReportService(q, service.WithScreener(scr))
+			// Amended 2026-10-29 by Phase 9 plan 14 (D-02): the service built here takes the
+			// ratings source the harness built (d.Ratings), as cmd/server/main.go does.
+			d.Reports = service.NewReportService(q, service.WithScreener(scr), service.WithReportSignals(d.Ratings))
 		}
 		if mutate != nil {
 			mutate(d)
