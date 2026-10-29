@@ -7,12 +7,15 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mmcloughlin/geohash"
+
+	"pinalert/internal/auth"
 )
 
 // Default sizes for SeedReporterHistory. The 48,000 reports (200 accounts times
@@ -25,15 +28,46 @@ const (
 	HistorySeedReportsPerSession  = 80
 )
 
-// SeedReporterAccount inserts an account with the given email, binds each of
-// sessionIDs to it through sessions.account_id, and returns the account id.
+// TestAccountPassword is the password every seeded reporter account carries.
+// Its value equals the e2e helper password (e2eTestPassword in
+// internal/api/handlers), so verifySession's sign in first path works for an
+// account these helpers made. It is test only: an auth.TestParams hash of a
+// fixed string, and this package is never compiled into the server (T-07.1-36).
+const TestAccountPassword = "wide river morning 47"
+
+var (
+	testPasswordHashOnce  sync.Once
+	testPasswordHashValue string
+	testPasswordHashErr   error
+)
+
+// testPasswordHash returns the argon2id hash of TestAccountPassword at the cheap
+// auth.TestParams cost, computed once per test binary.
+func testPasswordHash(t *testing.T) string {
+	t.Helper()
+
+	testPasswordHashOnce.Do(func() {
+		testPasswordHashValue, testPasswordHashErr = auth.NewHasher(auth.TestParams()).
+			Hash(context.Background(), TestAccountPassword)
+	})
+	if testPasswordHashErr != nil {
+		t.Fatalf("hashing the test account password: %v", testPasswordHashErr)
+	}
+	return testPasswordHashValue
+}
+
+// SeedReporterAccount inserts an account with the given email and the test
+// password (TestAccountPassword), binds each of sessionIDs to it through
+// sessions.account_id, and returns the account id. The password matters because
+// the access gate treats a session of an account with no password as signed out
+// (Phase 7.1 revision W1, D-14).
 func SeedReporterAccount(t *testing.T, pool *pgxpool.Pool, email string, sessionIDs ...string) int64 {
 	t.Helper()
 
 	ctx := context.Background()
 	var accountID int64
 	if err := pool.QueryRow(ctx,
-		"INSERT INTO accounts (email) VALUES ($1) RETURNING id", email,
+		"INSERT INTO accounts (email, password_hash) VALUES ($1, $2) RETURNING id", email, testPasswordHash(t),
 	).Scan(&accountID); err != nil {
 		t.Fatalf("seeding account %q: %v", email, err)
 	}

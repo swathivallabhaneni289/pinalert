@@ -48,6 +48,13 @@ func requireModerator(q *sqlcgen.Queries, allowed map[string]struct{}) func(http
 				http.NotFound(w, r)
 				return
 			}
+			// Phase 7.1 revision W1, D-14: a session of an account with no
+			// password is signed out (the deploy gap can leave one live), so it
+			// gets the same plain not found as any other refusal.
+			if !row.HasPassword {
+				http.NotFound(w, r)
+				return
+			}
 			if _, listed := allowed[row.Email]; !listed {
 				http.NotFound(w, r)
 				return

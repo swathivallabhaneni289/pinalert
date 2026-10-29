@@ -87,6 +87,15 @@ func requireVerifiedAccount(q *sqlcgen.Queries) func(http.Handler) http.Handler 
 			if ok && q != nil {
 				row, err := q.GetAccountBySessionID(r.Context(), sessionID)
 				switch {
+				case err == nil && !row.HasPassword:
+					// Phase 7.1 revision W1, D-14: an account with no password is
+					// not signed in, whatever its session row says. The migration
+					// revokes the sessions that existed when it ran, but the old
+					// binary can still create a session from an emailed link in the
+					// deploy gap between the migration and the new binary. That
+					// session is treated exactly like a missing row: the visitor
+					// goes to Create account (or Forgot password) with a typed code
+					// and then through the one time fill in (IDENT-06, IDENT-07).
 				case err == nil:
 					acc := account.Account{
 						ID: row.ID, Email: row.Email, FirstRunDone: row.FirstRunDoneAt.Valid,
