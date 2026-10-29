@@ -30,6 +30,8 @@
   var SIGNING_IN_LABEL = 'Signing in\u2026';
   var CHECKING_LABEL = 'Checking\u2026';
   var MAX_CLIENT_TRIES = 5;
+  // How long one request may take, the body read included (review fix WR-B01).
+  var REQUEST_TIMEOUT_MS = 10000;
   var NEXT_PATHS = ['/', '/low'];
 
   function byId(id) {
@@ -105,11 +107,14 @@
     from: 'create',
     email: '',
     tries: 0,
-    expired: false,
     resendLeft: 0,
+    resendAt: 0,
+    expiresAt: 0,
     resendBusy: false,
     resendTimer: null,
-    expiryTimer: null
+    expiryTimer: null,
+    // Bumped by showPanel, so every screen has its own number (IN-B03).
+    generation: 0
   };
 
   function setText(el, value) {
@@ -123,6 +128,12 @@
     var n = parseInt(card.getAttribute(name), 10);
     return n > 0 ? n : 0;
   }
+
+  // The full Resend wait, started after every send. data-resend-seconds is the
+  // wait left when the page was drawn (review fix WR-B02), which on an entry
+  // panel is the whole wait. A page that also draws data-resend-cooldown-seconds
+  // names the whole wait everywhere, the code screen after a reload included.
+  var fullResendSeconds = numberAttr('data-resend-cooldown-seconds') || numberAttr('data-resend-seconds');
 
   // ---- Errors and the field marks ------------------------------------------------
 
@@ -225,19 +236,55 @@
   // ---- Requests -------------------------------------------------------------------
 
   // postJSON always resolves: status 0 stands for a request that never got an answer.
+  // The time limit covers the body read too, so a request WebKit leaves unsettled
+  // (an iPhone tab suspended on the way to Mail) still ends and frees its button,
+  // as request() in welcome.js and settings.js does (review fix WR-B01).
   function postJSON(path, body) {
-    return fetch(path, {
+    var controller = typeof AbortController === 'function' ? new AbortController() : null;
+    var init = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
-    }).then(function (res) {
-      return res.json().catch(function () {
-        return {};
-      }).then(function (data) {
-        return { ok: res.ok, status: res.status, body: data || {} };
+    };
+    if (controller !== null) {
+      init.signal = controller.signal;
+    }
+    var noAnswer = { ok: false, status: 0, body: {} };
+    return new Promise(function (resolve) {
+      var settled = false;
+      var timer = setTimeout(function () {
+        timer = null;
+        if (controller !== null) {
+          controller.abort();
+        }
+        finish(noAnswer);
+      }, REQUEST_TIMEOUT_MS);
+      function finish(result) {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (timer !== null) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        resolve(result);
+      }
+      var call;
+      try {
+        call = fetch(path, init);
+      } catch (err) {
+        call = Promise.reject(err);
+      }
+      Promise.resolve(call).then(function (res) {
+        return res.json().catch(function () {
+          return {};
+        }).then(function (data) {
+          finish({ ok: res.ok, status: res.status, body: data || {} });
+        });
+      }).then(null, function () {
+        finish(noAnswer);
       });
-    }, function () {
-      return { ok: false, status: 0, body: {} };
     });
   }
 
@@ -333,6 +380,9 @@
       title.focus();
     }
     state.panel = name;
+    // Every change of panel starts a new screen; an answer to a request sent from
+    // an older one only frees its button (review fix IN-B03).
+    state.generation += 1;
   }
 
   // selectTab is what a press, an arrow, Home, End, Enter or Space on a choice does.
@@ -395,30 +445,42 @@
     }
   }
 
-  // startResendWait counts the Resend wait down each second. It is its own clock,
-  // separate from the code's lifetime below. The countdown is not a live region; it
-  // announces once, when the wait is over.
+  // Both clocks below are wall clock deadlines (review fix WR-B02). A tick only
+  // redraws from Date.now, so a tab that iOS suspended or a desktop browser
+  // throttled shows the right wait the moment it runs again, and coming back to
+  // the page (visibilitychange, pageshow) catches up at once.
+  function secondsUntil(at) {
+    var left = Math.ceil((at - Date.now()) / 1000);
+    return left > 0 ? left : 0;
+  }
+
+  function tickResend() {
+    state.resendLeft = secondsUntil(state.resendAt);
+    renderResend();
+    if (state.resendLeft <= 0 && state.resendTimer !== null) {
+      clearInterval(state.resendTimer);
+      state.resendTimer = null;
+      setText(codeReadyLive, 'Resend code');
+    }
+  }
+
+  // startResendWait starts the Resend wait: the seconds left at this moment. It is
+  // its own clock, separate from the code's lifetime below. The countdown is not a
+  // live region; it announces once, when the wait is over.
   function startResendWait(seconds) {
     if (state.resendTimer !== null) {
       clearInterval(state.resendTimer);
       state.resendTimer = null;
     }
     state.resendBusy = false;
+    state.resendAt = Date.now() + seconds * 1000;
     state.resendLeft = seconds;
     setText(codeReadyLive, '');
     renderResend();
     if (seconds <= 0) {
       return;
     }
-    state.resendTimer = setInterval(function () {
-      state.resendLeft -= 1;
-      renderResend();
-      if (state.resendLeft <= 0) {
-        clearInterval(state.resendTimer);
-        state.resendTimer = null;
-        setText(codeReadyLive, 'Resend code');
-      }
-    }, 1000);
+    state.resendTimer = setInterval(tickResend, 1000);
   }
 
   function expireNow() {
@@ -426,26 +488,34 @@
       clearInterval(state.expiryTimer);
       state.expiryTimer = null;
     }
-    state.expired = true;
     setText(codeStatus, CODE_EXPIRED_MESSAGE);
     codeStatus.hidden = false;
   }
 
-  // startExpiry shows the expiry notice once the code's lifetime has run out. The
-  // button stays pressable; a press still asks the server.
+  function tickExpiry() {
+    if (state.expiryTimer !== null && Date.now() >= state.expiresAt) {
+      expireNow();
+    }
+  }
+
+  // startExpiry shows the expiry notice once the code's lifetime (the seconds left
+  // at this moment) has run out. The button stays pressable; a press still asks
+  // the server.
   function startExpiry(seconds) {
     if (state.expiryTimer !== null) {
       clearInterval(state.expiryTimer);
       state.expiryTimer = null;
     }
-    state.expired = false;
-    var left = seconds;
-    state.expiryTimer = setInterval(function () {
-      left -= 1;
-      if (left <= 0) {
-        expireNow();
-      }
-    }, 1000);
+    state.expiresAt = Date.now() + seconds * 1000;
+    state.expiryTimer = setInterval(tickExpiry, 1000);
+  }
+
+  // catchUp redraws both clocks from the wall clock when the person comes back.
+  function catchUp() {
+    if (state.resendTimer !== null) {
+      tickResend();
+    }
+    tickExpiry();
   }
 
   // ---- The code screen: field, modes, tries ---------------------------------------
@@ -503,7 +573,7 @@
     setCodeMode(mode);
     lockCodeButton(false);
     showPanel('code');
-    startResendWait(numberAttr('data-resend-seconds'));
+    startResendWait(fullResendSeconds);
     startExpiry(numberAttr('data-code-ttl-seconds'));
   }
 
@@ -537,9 +607,13 @@
     clearErrors('create');
     resetShow();
     var email = createEmail.value.trim();
+    var mine = state.generation;
     setBusy(createSubmit, SENDING_LABEL);
     postJSON('/api/auth/sign-up', { email: email, password: createPassword.value }).then(function (result) {
       clearBusy(createSubmit);
+      if (mine !== state.generation) {
+        return;
+      }
       if (result.ok) {
         openCode('create', email, 'create');
         return;
@@ -559,11 +633,17 @@
     }
     clearErrors('signin');
     resetShow();
+    var mine = state.generation;
     setBusy(signinSubmit, SIGNING_IN_LABEL);
     postJSON('/api/auth/sign-in', { email: signinEmail.value.trim(), password: signinPassword.value }).then(function (result) {
       clearBusy(signinSubmit);
+      // A sign in that succeeded goes on whatever the card shows now: the
+      // browser is signed in.
       if (result.ok) {
         goNext(result.body.next);
+        return;
+      }
+      if (mine !== state.generation) {
         return;
       }
       if (result.status === 400 && fieldOf(result) === 'credentials') {
@@ -586,9 +666,13 @@
     }
     clearErrors('forgot');
     var email = forgotEmail.value.trim();
+    var mine = state.generation;
     setBusy(forgotSubmit, SENDING_LABEL);
     postJSON('/api/auth/reset', { email: email }).then(function (result) {
       clearBusy(forgotSubmit);
+      if (mine !== state.generation) {
+        return;
+      }
       if (result.ok) {
         openCode('reset', email, 'forgot');
         return;
@@ -608,15 +692,26 @@
       return;
     }
     clearErrors('code');
+    // The code sent line has done its job; it must not sit beside a refusal
+    // (review fix IN-B07). The expiry notice stays: it is still true.
+    if (codeStatus.textContent === CODE_SENT_MESSAGE) {
+      setText(codeStatus, '');
+      codeStatus.hidden = true;
+    }
     resetShow();
     var reset = state.mode === 'reset';
     var path = reset ? '/api/auth/reset/code' : '/api/auth/sign-up/code';
     var payload = reset ? { code: codeInput.value, password: codeNewPassword.value } : { code: codeInput.value };
+    var mine = state.generation;
     setBusy(codeSubmit, CHECKING_LABEL);
     postJSON(path, payload).then(function (result) {
       clearBusy(codeSubmit);
+      // A confirmed account is signed in: it goes on whatever the card shows now.
       if (result.ok && !reset) {
         goNext(result.body.next);
+        return;
+      }
+      if (mine !== state.generation) {
         return;
       }
       if (result.ok) {
@@ -655,16 +750,30 @@
     clearErrors('code');
     state.resendBusy = true;
     renderResend();
+    var mine = state.generation;
     postJSON('/api/auth/code/resend', {}).then(function (result) {
+      // The card has moved on: the next code screen sets Resend up itself.
+      if (mine !== state.generation) {
+        return;
+      }
       state.resendBusy = false;
       if (!result.ok) {
-        renderResend();
+        // An early Resend refused with a wait restarts the wait from the server
+        // (review fix WR-B02), so the button says how long, even on a page that
+        // named no full wait. A wait longer than the code's lifetime (the hourly
+        // limit) is left to the server's sentence, not drawn as a countdown.
+        var wait = result.status === 429 && result.body ? result.body.retry_after_seconds : 0;
+        if (typeof wait === 'number' && wait > 0 && wait <= numberAttr('data-code-ttl-seconds')) {
+          startResendWait(Math.ceil(wait));
+        } else {
+          renderResend();
+        }
         showError(codeError, null, messageFor(result));
         return;
       }
       state.tries = 0;
       lockCodeButton(false);
-      startResendWait(numberAttr('data-resend-seconds'));
+      startResendWait(fullResendSeconds);
       startExpiry(numberAttr('data-code-ttl-seconds'));
       setText(codeStatus, CODE_SENT_MESSAGE);
       codeStatus.hidden = false;
@@ -732,6 +841,14 @@
     }
   });
   codeInput.addEventListener('paste', onCodePaste);
+
+  // Back from Mail, or from the back and forward cache: the clocks catch up.
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'hidden') {
+      catchUp();
+    }
+  });
+  window.addEventListener('pageshow', catchUp);
 
   // ---- Start ----------------------------------------------------------------------
 

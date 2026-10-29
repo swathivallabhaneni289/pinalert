@@ -21,6 +21,8 @@
 //   refresh()             judges the value now in the input, for a value set by
 //                         the page and not by typing (Settings opens its window
 //                         with the stored name; step 4 is drawn with one).
+//   cancel()              stops a check that is due and drops one still out
+//                         (Settings calls it when its window shuts).
 //
 // options: {mode: 'signup' | 'settings' (default 'signup'), debounceMs (300),
 // onChange(state, controller), setTimer, clearTimer, fetchFn}. The timers and the
@@ -28,7 +30,9 @@
 //
 // What it does while a person types:
 //   - capitals become lowercase, a typed leading @ is dropped (the page draws its
-//     own @ beside the input), and spaces round the value are removed;
+//     own @ beside the input), and spaces round the value are removed; the caret
+//     stays where the person was typing, and a paste is folded before the
+//     field's own cut at its maxlength;
 //   - the local rule shows at once and asks nothing: 3 to 20 letters, numbers,
 //     dots or underscores, at least one letter, no full stop at the start or the
 //     end, no two in a row (the server is the authority; this only saves a trip);
@@ -49,6 +53,11 @@
   var FAILED_MESSAGE = 'Couldn\'t check that username. Try again.';
   var DEFAULT_DEBOUNCE_MS = 300;
   var MAX_SENTENCE = 200;
+  // Review fix WR-B03: one check may take 10 s, a 429 is asked again at most three
+  // times, and a wait longer than 30 s named by the server is cut to 30 s.
+  var REQUEST_TIMEOUT_MS = 10000;
+  var MAX_RETRIES = 3;
+  var MAX_RETRY_SECONDS = 30;
 
   var BASE_CLASS = 'username-status';
   var GOOD_CLASS = 'username-status--good';
@@ -106,7 +115,10 @@
     var current = 'rule';
     // Bumped on every judgement, so an answer for an older value is dropped.
     var seq = 0;
+    // The pause before a check, or the wait before a check is asked again.
     var timer = null;
+    // How many times this judgement was asked again after a 429.
+    var retries = 0;
 
     function show(state, message) {
       current = state;
@@ -133,43 +145,188 @@
       return fallback;
     }
 
-    function ask(value, mine) {
-      var call;
-      try {
-        call = fetchFn(CHECK_URL + encodeURIComponent(value), { credentials: 'same-origin', headers: { Accept: 'application/json' } });
-      } catch (err) {
-        call = Promise.reject(err);
+    // limitSentence is the server's own sentence of a refusal, when it sent one.
+    function limitSentence(body) {
+      var sent = body && body.error && body.error.message;
+      if (typeof sent === 'string' && sent !== '' && sent.length <= MAX_SENTENCE) {
+        return sent;
       }
-      Promise.resolve(call).then(function (res) {
-        if (!res || res.status !== 200) {
-          return null;
+      return FAILED_MESSAGE;
+    }
+
+    // retryWait is the wait a 429 names, in ms: the Retry-After header, else the
+    // body's retry_after_seconds, else one second, and never more than the cap.
+    function retryWait(res, body) {
+      var secs = NaN;
+      try {
+        if (res.headers && typeof res.headers.get === 'function') {
+          secs = parseInt(res.headers.get('Retry-After'), 10);
         }
-        return res.json().then(function (body) { return body; }, function () { return null; });
-      }).then(function (body) {
+      } catch (err) {
+        secs = NaN;
+      }
+      if (!(secs > 0) && body && typeof body.retry_after_seconds === 'number') {
+        secs = body.retry_after_seconds;
+      }
+      if (!(secs > 0)) {
+        secs = 1;
+      }
+      return Math.min(Math.ceil(secs), MAX_RETRY_SECONDS) * 1000;
+    }
+
+    function readBody(res) {
+      if (typeof res.json !== 'function') {
+        return Promise.resolve(null);
+      }
+      return Promise.resolve(res.json()).then(function (body) { return body; }, function () { return null; });
+    }
+
+    // ask sends one check (review fix WR-B03). It has a time limit, so a check
+    // WebKit leaves unsettled ends as failed. A 429 from the per account allowance
+    // keeps Checking and asks again by itself once the server's wait is over, up
+    // to MAX_RETRIES times, so the person is never left with nothing to press.
+    function ask(value, mine) {
+      var controller = typeof AbortController === 'function' ? new AbortController() : null;
+      var init = { credentials: 'same-origin', headers: { Accept: 'application/json' } };
+      if (controller !== null) {
+        init.signal = controller.signal;
+      }
+      var settled = false;
+      var limit = setTimer(function () {
+        limit = null;
+        if (controller !== null) {
+          controller.abort();
+        }
+        end(null);
+      }, REQUEST_TIMEOUT_MS);
+
+      // end takes the outcome once: null for a failed check, {limited, wait,
+      // message} for a 429, or {body} for an answer.
+      function end(outcome) {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (limit !== null) {
+          clearTimer(limit);
+          limit = null;
+        }
         if (mine !== seq) {
           return;
         }
+        if (outcome !== null && outcome.limited) {
+          if (retries >= MAX_RETRIES) {
+            show('failed', outcome.message);
+            return;
+          }
+          retries += 1;
+          cancelPending();
+          timer = setTimer(function () {
+            timer = null;
+            if (mine === seq) {
+              ask(value, mine);
+            }
+          }, outcome.wait);
+          return;
+        }
+        var body = outcome === null ? null : outcome.body;
         if (!body || typeof body.state !== 'string' || SERVER_STATES.indexOf(body.state) === -1) {
           show('failed', FAILED_MESSAGE);
           return;
         }
         show(body.state, sentenceOr(body, RULE_MESSAGE));
-      }, function () {
-        if (mine !== seq) {
-          return;
+      }
+
+      var call;
+      try {
+        call = fetchFn(CHECK_URL + encodeURIComponent(value), init);
+      } catch (err) {
+        call = Promise.reject(err);
+      }
+      Promise.resolve(call).then(function (res) {
+        if (res && res.status === 429) {
+          return readBody(res).then(function (body) {
+            end({ limited: true, wait: retryWait(res, body), message: limitSentence(body) });
+          });
         }
-        show('failed', FAILED_MESSAGE);
+        if (!res || res.status !== 200) {
+          end(null);
+          return null;
+        }
+        return readBody(res).then(function (body) {
+          end({ body: body });
+        });
+      }).then(null, function () {
+        end(null);
       });
+    }
+
+    // caretOf is where the caret is while the person is in the input, or null
+    // (not focused, or a browser that does not say).
+    function caretOf() {
+      var doc = input.ownerDocument;
+      if (!doc || doc.activeElement !== input || typeof input.selectionStart !== 'number' ||
+          typeof input.setSelectionRange !== 'function') {
+        return null;
+      }
+      return input.selectionStart;
+    }
+
+    function placeCaret(at) {
+      try {
+        input.setSelectionRange(at, at);
+      } catch (err) {
+        // The caret stays where the browser put it.
+      }
+    }
+
+    // onPaste folds what is pasted before the field's own cut at maxlength, so a
+    // pasted "@ravi.kumar_12345678" keeps every letter of the name. The pasted
+    // text loses its own spaces round it and its leading @, goes where the caret
+    // is, and the whole value is folded, cut and judged (review fix IN-B04).
+    function onPaste(e) {
+      var data = e && e.clipboardData;
+      var pasted = data && typeof data.getData === 'function' ? data.getData('text') : '';
+      if (!pasted) {
+        return;
+      }
+      e.preventDefault();
+      pasted = String(pasted).replace(/^\s+|\s+$/g, '').replace(/^@+/, '');
+      var value = String(input.value === null || input.value === undefined ? '' : input.value);
+      var start = typeof input.selectionStart === 'number' ? input.selectionStart : value.length;
+      var end = typeof input.selectionEnd === 'number' ? input.selectionEnd : start;
+      var head = value.slice(0, start) + pasted;
+      var max = typeof input.getAttribute === 'function' ? parseInt(input.getAttribute('maxlength'), 10) : NaN;
+      var next = fold(head + value.slice(end));
+      if (max > 0) {
+        next = next.slice(0, max);
+      }
+      input.value = next;
+      var caret = Math.min(fold(head).length, next.length);
+      if (typeof input.setSelectionRange === 'function') {
+        placeCaret(caret);
+      }
+      judge();
     }
 
     // judge looks at the value in the input: folds it, shows the local rule, or
     // shows Checking and starts the pause before the request.
     function judge() {
       seq += 1;
+      retries = 0;
       cancelPending();
-      var folded = fold(input.value);
-      if (input.value !== folded) {
+      var raw = String(input.value === null || input.value === undefined ? '' : input.value);
+      var folded = fold(raw);
+      if (raw !== folded) {
+        // Writing the value puts the caret at the end, so a capital typed in the
+        // middle would send it there; it goes back where it was, less what the
+        // fold dropped in front of it (review fix IN-B04).
+        var caret = caretOf();
         input.value = folded;
+        if (caret !== null) {
+          var dropped = raw.length - raw.replace(/^\s+/, '').replace(/^@+/, '').length;
+          placeCaret(Math.max(0, Math.min(folded.length, caret - dropped)));
+        }
       }
       if (folded === '') {
         show('rule', RULE_MESSAGE);
@@ -212,10 +369,18 @@
         cancelPending();
         show('refused', String(message === null || message === undefined ? '' : message));
       },
-      refresh: judge
+      refresh: judge,
+      // cancel stops a check that is due and drops the answer of one still out,
+      // so a shut window spends none of the account's allowance (review fix
+      // IN-B05). The line keeps what it shows; the next refresh judges again.
+      cancel: function () {
+        seq += 1;
+        cancelPending();
+      }
     };
 
     input.addEventListener('input', judge);
+    input.addEventListener('paste', onPaste);
     // A press anywhere in the box, the @ included, puts the cursor in the input.
     var box = input.parentNode;
     if (box && typeof box.addEventListener === 'function' && (' ' + String(box.className) + ' ').indexOf(' username-field ') !== -1) {

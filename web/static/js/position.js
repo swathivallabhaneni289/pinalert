@@ -205,16 +205,36 @@
   function startMode(callback) {
     permissionState(function (state) {
       if (state === 'granted') {
+        noteLoad(false);
         callback('silent');
         return;
       }
       if (askedBefore()) {
+        noteLoad(false);
         callback('reuse');
         return;
       }
       markAsked();
+      // A location already refused answers at once and shows no question.
+      noteLoad(state !== 'denied');
       callback('ask');
     });
+  }
+
+  // Whether the browser's own location question is shown on this page load:
+  // null until the first startMode of the load has decided, then true or false.
+  // The first decision is kept. installed-ask.js reads it so the alerts ask never
+  // opens at the same time as the location question (review fix WR-B05).
+  var askingNow = null;
+
+  function noteLoad(asking) {
+    if (askingNow === null) {
+      askingNow = asking;
+    }
+  }
+
+  function askingThisLoad() {
+    return askingNow;
   }
 
   window.PinalertPosition = {
@@ -223,6 +243,7 @@
     askedBefore: askedBefore,
     markAsked: markAsked,
     permissionState: permissionState,
-    startMode: startMode
+    startMode: startMode,
+    askingThisLoad: askingThisLoad
   };
 }());

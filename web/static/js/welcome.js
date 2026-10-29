@@ -1221,7 +1221,38 @@
     }
     try {
       var base = notify.baseState();
-      return base === 'maybe' || base === 'ready';
+      if (base !== 'maybe' && base !== 'ready') {
+        return false;
+      }
+    } catch (err) {
+      return false;
+    }
+    // Review fix WR-B06 (D-18): once per device and account, and never on a
+    // device that is already on. Every account that comes back through step 4
+    // (an old link account, changed terms) reaches here again.
+    var account = accountId();
+    if (account !== '') {
+      try {
+        if (alertsAskedList().indexOf(account) !== -1) {
+          return false;
+        }
+      } catch (err) {
+        // A list that cannot be read lets the pop-up open.
+      }
+    }
+    return !alertsAlreadyOn(notify, account);
+  }
+
+  // alertsAlreadyOn says this device turned alerts on for this account: notify.js
+  // keeps its intent flag, the account id under its INTENT_KEY, from the moment a
+  // turn-on succeeds. Only the flag is read, so nothing is asked of the server or
+  // awaited before the pop-up (review fix WR-B06). A flag that cannot be read is off.
+  function alertsAlreadyOn(notify, account) {
+    if (account === '' || typeof notify.INTENT_KEY !== 'string' || notify.INTENT_KEY === '') {
+      return false;
+    }
+    try {
+      return window.localStorage.getItem(notify.INTENT_KEY) === account;
     } catch (err) {
       return false;
     }
@@ -1281,6 +1312,7 @@
     try {
       askDialog.showModal();
     } catch (err) {
+      forgetAsked(ALERTS_ASKED_KEY);
       postDone();
       return;
     }
@@ -1430,6 +1462,24 @@
     }
   }
 
+  // forgetAsked takes this account back out of one of the two lists, for a pop-up
+  // that never opened because showModal threw (review fix IN-B06): the id was
+  // added just before showModal, so a box that was never seen must not count as
+  // asked. The other ids stay. A storage that fails changes nothing else.
+  function forgetAsked(key) {
+    var account = accountId();
+    if (account === '') {
+      return;
+    }
+    try {
+      var list = key === ALERTS_ASKED_KEY ? alertsAskedList() : installAskedList();
+      var kept = list.filter(function (id) { return id !== account; });
+      window.localStorage.setItem(key, JSON.stringify(kept));
+    } catch (err) {
+      // The flow still goes on.
+    }
+  }
+
   // closeInstall puts the install pop-up away when it is open. Nothing is sent
   // from the dialog's close event.
   function closeInstall() {
@@ -1450,6 +1500,7 @@
     try {
       installDialog.showModal();
     } catch (err) {
+      forgetAsked(INSTALL_ASKED_KEY);
       postDone();
       return;
     }
@@ -1621,6 +1672,21 @@
       return Promise.resolve();
     }
     if (!allGood()) {
+      // Review fix WR-B03: when the name and home area are good and the username
+      // is only waiting for its check, or its check failed, nothing is missing:
+      // a failed check is asked again, one still out is left to answer, and the
+      // line does not tell the person to add a username they have typed.
+      var checkState = usernameCheck !== null ? usernameCheck.state() : '';
+      if (nameGood() && homeGood() && (checkState === 'failed' || checkState === 'checking')) {
+        if (!profileError.hidden && profileError.textContent === MESSAGE_ADD_ALL) {
+          hideLine(profileError);
+        }
+        usernameInput.focus();
+        if (checkState === 'failed') {
+          usernameCheck.refresh();
+        }
+        return Promise.resolve();
+      }
       focusFirstMissing();
       showLine(profileError, MESSAGE_ADD_ALL);
       return Promise.resolve();

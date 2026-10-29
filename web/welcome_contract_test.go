@@ -386,14 +386,33 @@ func TestWelcomeStep3And4Privacy(t *testing.T) {
 	// reading and writing pinalert.alertsAsked (the list the alerts pop-up adds the
 	// account id to when it opens, which installed-ask.js on Nearby reads). The
 	// pins below fail on any other use.
-	w10Count(t, "welcome.js", js, "localStorage", 4)
+	//
+	// Amended 2026-10-29 by the Phase 7.1 review fix (browser): WR-B06, five places
+	// now. The fifth only reads notify.js's own intent flag (its exported
+	// INTENT_KEY), so the sign up alerts pop-up does not ask a device whose alerts
+	// are already on for this account. It is never written here.
+	//
+	// Amended 2026-10-29 by the Phase 7.1 review fix (browser): IN-B06, six places
+	// now. The sixth, in forgetAsked, takes this account back out of
+	// pinalert.alertsAsked or pinalert.installAsked when showModal threw, so a box
+	// that never opened does not count as asked. It writes only those two keys.
+	w10Count(t, "welcome.js", js, "localStorage", 6)
+	forget := jsFunctionBody(t, js, "forgetAsked(key)")
+	p13MustContain(t, "forgetAsked", forget,
+		"key === ALERTS_ASKED_KEY ? alertsAskedList() : installAskedList()",
+		"window.localStorage.setItem(key, JSON.stringify(kept))")
+	p13MustContain(t, "welcome.js", js, "forgetAsked(ALERTS_ASKED_KEY);", "forgetAsked(INSTALL_ASKED_KEY);")
+	w10Count(t, "welcome.js", js, "forgetAsked(", 3)
 	p13MustContain(t, "welcome.js", js,
 		"var INSTALL_ASKED_KEY = 'pinalert.installAsked';",
 		"window.localStorage.getItem(INSTALL_ASKED_KEY)",
 		"window.localStorage.setItem(INSTALL_ASKED_KEY, JSON.stringify(list.slice(-INSTALL_ASKED_KEEP)))",
 		"var ALERTS_ASKED_KEY = 'pinalert.alertsAsked';",
 		"window.localStorage.getItem(ALERTS_ASKED_KEY)",
-		"window.localStorage.setItem(ALERTS_ASKED_KEY, JSON.stringify(list.slice(-INSTALL_ASKED_KEEP)))")
+		"window.localStorage.setItem(ALERTS_ASKED_KEY, JSON.stringify(list.slice(-INSTALL_ASKED_KEEP)))",
+		"window.localStorage.getItem(notify.INTENT_KEY) === account")
+	w10Count(t, "welcome.js", js, "INTENT_KEY", 3)
+	p13MustNotContain(t, "welcome.js", js, "setItem(notify.INTENT_KEY", "removeItem(")
 	for _, banned := range []string{"reverse", "nominatim", "watchPosition", "&lat=", "&lon="} {
 		if strings.Contains(strings.ToLower(js), strings.ToLower(banned)) {
 			t.Errorf("welcome.js uses %q: there is no reverse lookup and the position is saved only through PinalertPosition", banned)

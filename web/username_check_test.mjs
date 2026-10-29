@@ -249,14 +249,25 @@ test('a failed request or an answer that is not 200 says so and is never good', 
   assert.equal(offline.line.textContent, FAILED);
   assert.equal(offline.control.isGood(), false);
 
+  // Amended 2026-10-29 by the Phase 7.1 review fix (browser), WR-B03: a 429 is no
+  // longer a failed check at once; it keeps Checking and is asked again (see the
+  // WR-B03 cases). It is still never good. A 500 stands in for "not 200" here.
   const limited = setup();
   limited.input.type('ravi.k');
   limited.advance(300);
   reply(limited.requests[0], 429, { error: { field: 'username', message: 'Too many tries.' } });
   await flush();
-  assert.equal(limited.control.state(), 'failed');
-  assert.equal(limited.line.textContent, FAILED);
+  assert.equal(limited.control.state(), 'checking');
   assert.equal(limited.control.isGood(), false);
+
+  const broken = setup();
+  broken.input.type('ravi.k');
+  broken.advance(300);
+  reply(broken.requests[0], 500, { error: { field: 'username', message: 'Couldn\'t check that username. Try again.' } });
+  await flush();
+  assert.equal(broken.control.state(), 'failed');
+  assert.equal(broken.line.textContent, FAILED);
+  assert.equal(broken.control.isGood(), false);
 
   const odd = setup();
   odd.input.type('ravi.k');
@@ -359,4 +370,182 @@ test('a value already in the field when the script attaches is checked without a
   assert.equal(control.state(), 'checking');
   assert.equal(timers.length, 1);
   assert.equal(timers[0].ms, 300);
+});
+
+// Phase 7.1 review fix (browser), IN-B04: folding while typing keeps the caret
+// where the person was typing, and a paste is folded before the field's own cut
+// at 20, so a pasted "@name" keeps every letter of the name.
+class CaretInput extends FakeInput {
+  constructor(doc) {
+    super();
+    this.ownerDocument = doc;
+    this.selectionStart = 0;
+    this.selectionEnd = 0;
+    this.attrs.maxlength = '20';
+  }
+  setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; }
+  focus() { this.ownerDocument.activeElement = this; }
+  typeAt(text, caret) {
+    this.value = text;
+    this.selectionStart = caret;
+    this.selectionEnd = caret;
+    (this.handlers.input || []).forEach((h) => h({ type: 'input', target: this }));
+  }
+  paste(text) {
+    const event = {
+      type: 'paste',
+      prevented: false,
+      preventDefault() { this.prevented = true; },
+      clipboardData: { getData: (kind) => (kind === 'text' || kind === 'text/plain' ? text : '') }
+    };
+    (this.handlers.paste || []).forEach((h) => h(event));
+    return event;
+  }
+}
+
+function caretSetup() {
+  const sandbox = { console };
+  sandbox.window = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(source, sandbox, { filename: 'username-check.js' });
+  const doc = { activeElement: null };
+  const input = new CaretInput(doc);
+  const line = new FakeLine();
+  const requests = [];
+  const control = sandbox.PinalertUsernameCheck.attach(input, line, {
+    setTimer() { return 1; },
+    clearTimer() {},
+    fetchFn(target) { requests.push(String(target)); return new Promise(() => {}); }
+  });
+  input.focus();
+  return { input, line, control, requests };
+}
+
+test('IN-B04: a capital typed in the middle keeps the caret there; a dropped @ moves it back one', () => {
+  const page = caretSetup();
+  page.input.typeAt('raVi', 3);
+  assert.equal(page.input.value, 'ravi');
+  assert.equal(page.input.selectionStart, 3);
+  assert.equal(page.input.selectionEnd, 3);
+
+  page.input.typeAt('@ravi', 5);
+  assert.equal(page.input.value, 'ravi');
+  assert.equal(page.input.selectionStart, 4);
+
+  page.input.typeAt(' Ra', 1);
+  assert.equal(page.input.value, 'ra');
+  assert.equal(page.input.selectionStart, 0);
+});
+
+test('IN-B04: a pasted "@name" of 21 characters keeps all 19 letters of the name', () => {
+  const page = caretSetup();
+  const event = page.input.paste('@Ravi.Kumar_12345678');
+  assert.equal(event.prevented, true, 'the browser does not cut the paste first');
+  assert.equal(page.input.value, 'ravi.kumar_12345678');
+  assert.equal(page.input.selectionStart, 19);
+  assert.equal(page.control.state(), 'checking', 'the pasted name is judged');
+
+  const long = caretSetup();
+  long.input.paste('abcdefghijklmnopqrstuvwxyz');
+  assert.equal(long.input.value, 'abcdefghijklmnopqrst', 'cut to 20 after folding');
+
+  const inside = caretSetup();
+  inside.input.typeAt('ravi', 2);
+  inside.input.paste('@XY');
+  assert.equal(inside.input.value, 'raxyvi', 'pasted where the caret is; the @ inside a name is not a leading @');
+  assert.equal(inside.input.selectionStart, 4);
+
+  const empty = caretSetup();
+  const nothing = empty.input.paste('');
+  assert.equal(nothing.prevented, false, 'an empty paste is left to the browser');
+});
+
+// Phase 7.1 review fix (browser), WR-B03: a check refused by the per account
+// allowance (429) is asked again by itself after the wait the server names, and
+// a check WebKit leaves unsettled ends as failed after 10 s, so neither leaves
+// Continue or Save off with nothing to press.
+const limited = (req, retryAfter, body) => req.resolve({
+  ok: false,
+  status: 429,
+  headers: { get(name) { return name.toLowerCase() === 'retry-after' && retryAfter !== null ? String(retryAfter) : null; } },
+  json: () => Promise.resolve(body || { error: { field: 'username', message: 'Too many requests. Try again in a minute.' }, retry_after_seconds: 1 })
+});
+
+test('WR-B03: a 429 keeps Checking and asks again for the same value after Retry-After', async () => {
+  const page = setup();
+  page.input.type('ravi.k');
+  page.advance(300);
+  assert.equal(page.requests.length, 1);
+  limited(page.requests[0], 1);
+  await flush();
+  assert.equal(page.control.state(), 'checking');
+  assert.equal(page.line.textContent, CHECKING);
+  assert.equal(page.control.isGood(), false);
+  page.advance(999);
+  assert.equal(page.requests.length, 1);
+  page.advance(1);
+  assert.equal(page.requests.length, 2, 'asked again by itself');
+  assert.equal(page.requests[1].url, page.requests[0].url);
+  reply(page.requests[1], 200, { state: 'available', message: 'ravi.k is available.' });
+  await flush();
+  assert.equal(page.control.state(), 'available');
+  assert.equal(page.control.isGood(), true);
+});
+
+test('WR-B03: with no Retry-After the body wait is used, and a keystroke cancels the second ask', async () => {
+  const page = setup();
+  page.input.type('ravi.k');
+  page.advance(300);
+  limited(page.requests[0], null, { error: { message: 'Too many requests. Try again in a minute.' }, retry_after_seconds: 2 });
+  await flush();
+  page.advance(1999);
+  assert.equal(page.requests.length, 1);
+  page.input.type('ravi.kumar');
+  page.advance(300);
+  assert.equal(page.requests.length, 2);
+  assert.ok(page.requests[1].url.endsWith('ravi.kumar'));
+  page.advance(5000);
+  assert.equal(page.requests.length, 2, 'the retry of the older value was cancelled');
+});
+
+test('WR-B03: refused again and again, the check gives up as failed with the server sentence', async () => {
+  const page = setup();
+  page.input.type('ravi.k');
+  page.advance(300);
+  for (let i = 0; i < 4; i++) {
+    limited(page.requests[i], 1);
+    await flush();
+    page.advance(1000);
+  }
+  assert.equal(page.requests.length, 4, 'three asks again, no more');
+  assert.equal(page.control.state(), 'failed');
+  assert.equal(page.line.textContent, 'Too many requests. Try again in a minute.');
+  assert.equal(page.control.isGood(), false);
+});
+
+test('WR-B03: a check that never settles ends as failed after 10 s; one answered in time stays', async () => {
+  const page = setup();
+  page.input.type('ravi.k');
+  page.advance(300);
+  page.advance(9999);
+  await flush();
+  assert.equal(page.control.state(), 'checking');
+  page.advance(1);
+  await flush();
+  assert.equal(page.control.state(), 'failed');
+  assert.equal(page.line.textContent, FAILED);
+  // The answer that comes after the limit changes nothing.
+  reply(page.requests[0], 200, { state: 'available', message: 'ravi.k is available.' });
+  await flush();
+  assert.equal(page.control.state(), 'failed');
+
+  const quick = setup();
+  quick.input.type('ravi.k');
+  quick.advance(300);
+  reply(quick.requests[0], 200, { state: 'available', message: 'ravi.k is available.' });
+  await flush();
+  quick.advance(20000);
+  await flush();
+  assert.equal(quick.control.state(), 'available', 'no leftover limit marks a good answer failed');
+  assert.equal(quick.timers.size, 0);
 });

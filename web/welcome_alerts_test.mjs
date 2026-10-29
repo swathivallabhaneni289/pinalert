@@ -1424,9 +1424,87 @@ test('asked key: other accounts stay in the list, an older single id is a list o
   click(full, 'welcome-continue-4');
   assert.deepEqual(JSON.parse(full.stored[ALERTS_KEY]), ['2', '3', '4', '5', '6', '7', '8', '42']);
 
+  // Amended 2026-10-29 by the Phase 7.1 review fix (browser), WR-B06: an account
+  // already in the list is not asked again (D-18), so the pop-up does not open and
+  // the list is left as it is; before, it opened and moved the id to the end.
   const twice = alertsPage({ storage: { [ALERTS_KEY]: JSON.stringify(['42', '7']) } });
   click(twice, 'welcome-continue-4');
-  assert.deepEqual(JSON.parse(twice.stored[ALERTS_KEY]), ['7', '42'], 'this account is listed once, as the newest');
+  assert.equal(twice.dialog.showCalls, 0);
+  assert.deepEqual(JSON.parse(twice.stored[ALERTS_KEY]), ['42', '7'], 'the list is left as it was');
+});
+
+// Phase 7.1 review fix (browser), IN-B06: the id is added to the list just before
+// showModal; when showModal throws, the box never opened, so the id is taken back
+// out (the other ids stay) and the flow still finishes.
+test('IN-B06: a showModal that throws takes this account back out of the alerts list', () => {
+  const page = alertsPage({ storage: { [ALERTS_KEY]: JSON.stringify(['7']) } });
+  page.dialog.throwOnShow = true;
+  click(page, 'welcome-continue-4');
+  assert.deepEqual(JSON.parse(page.stored[ALERTS_KEY]), ['7']);
+  assert.equal(doneRequests(page).length, 1);
+});
+
+test('IN-B06: a showModal that throws takes this account back out of the install list', () => {
+  const page = installPage({ storage: { [INSTALL_KEY]: JSON.stringify(['7']) } });
+  installOf(page).throwOnShow = true;
+  click(page, 'welcome-continue-4');
+  assert.deepEqual(JSON.parse(page.stored[INSTALL_KEY]), ['7']);
+  assert.equal(doneRequests(page).length, 1);
+});
+
+// Phase 7.1 review fix (browser), WR-B06: the sign up pop-up asks once per device
+// and account (D-18) and never piles a question on a device that is already on
+// (the owner: notifications few, never piled up). Every way past it still records
+// the flow as done.
+const INTENT = 'pinalert.pushIntent';
+const notifyWithIntent = () => ({ ...makeNotify({ base: 'maybe' }), INTENT_KEY: INTENT });
+
+test('WR-B06: an account already in pinalert.alertsAsked goes straight to first-run-done', async () => {
+  for (const stored of [JSON.stringify(['7', '42']), '42']) {
+    const page = alertsPage({ storage: { [ALERTS_KEY]: stored } });
+    click(page, 'welcome-continue-4');
+    assert.equal(page.dialog.showCalls, 0, stored);
+    assert.equal(page.dialog.open, false);
+    assert.equal(page.notify.calls.enable.length, 0);
+    assert.equal(doneRequests(page).length, 1, 'the flow is recorded as done');
+    answer(doneRequests(page)[0], 204);
+    await flush();
+    assert.deepEqual(page.replaced, ['/']);
+    assert.equal(page.storageWrites.length, 0, 'nothing is written');
+  }
+});
+
+test('WR-B06: a device whose alerts are already on for this account is not asked again', async () => {
+  const page = alertsPage({ notify: notifyWithIntent(), storage: { [INTENT]: '42' } });
+  click(page, 'welcome-continue-4');
+  assert.equal(page.dialog.showCalls, 0);
+  assert.equal(page.notify.calls.enable.length, 0);
+  assert.equal(page.notify.calls.deviceState.length, 0, 'no request is made to find out');
+  assert.equal(doneRequests(page).length, 1);
+  answer(doneRequests(page)[0], 204);
+  await flush();
+  assert.deepEqual(page.replaced, ['/']);
+});
+
+test('WR-B06: alerts on for another account, or a flag that cannot be read, still asks this one', () => {
+  const other = alertsPage({ notify: notifyWithIntent(), storage: { [INTENT]: '7' } });
+  click(other, 'welcome-continue-4');
+  assertAskOpen(other);
+
+  const blocked = alertsPage({ notify: notifyWithIntent(), storage: 'throw-get' });
+  click(blocked, 'welcome-continue-4');
+  assertAskOpen(blocked);
+});
+
+test('WR-B06: a failed first-run-done after the skipped pop-up frees Continue, and it does not ask on the retry', async () => {
+  const page = alertsPage({ storage: { [ALERTS_KEY]: '42' } });
+  click(page, 'welcome-continue-4');
+  answer(doneRequests(page)[0], 500, { error: { message: 'x' } });
+  await flush();
+  assert.equal(byId(page, 'welcome-continue-4').disabled, false);
+  click(page, 'welcome-continue-4');
+  assert.equal(page.dialog.showCalls, 0);
+  assert.equal(doneRequests(page).length, 2);
 });
 
 test('asked key: a value that is not an id or a list is replaced, and the pop-up still opens', () => {

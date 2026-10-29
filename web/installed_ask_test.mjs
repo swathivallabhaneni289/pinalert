@@ -69,13 +69,46 @@ function fakeEl(id, doc, log, extra = {}) {
 //   pushKey, account         what the dialog carries
 //   globals                  true to put document, window.PinalertNotify and
 //                            localStorage on the sandbox, so the script runs at load
+//   locationAsking           Amended 2026-10-29 by the Phase 7.1 review fix
+//                            (browser), WR-B05: what PinalertPosition.askingThisLoad
+//                            answers (false: the browser's location question is not
+//                            asked on this load; true: it is; null: not decided
+//                            yet). A function is called on every look.
+//   position                 a PinalertPosition of the case's own, or null for
+//                            a page without one
+//   timers                   true to run the script's own waits on a fake clock
+//                            the case moves with m.advance(ms)
 function load(o = {}) {
   const opts = {
     appleMobile: true, installed: true, base: 'maybe', device: 'ready', enable: 'resolve', patch: 200,
     noDialog: false, showModal: true, otherDialog: false, modalOpen: false, stored: null,
     readThrows: false, writeThrows: false, noStorage: false, pushKey: 'BPUSHKEY', account: '42',
-    globals: false, notify: true, ...o
+    globals: false, notify: true, locationAsking: false, timers: false, ...o
   };
+  const looks = [];
+  const position = o.position !== undefined ? o.position : {
+    askingThisLoad() {
+      const answer = typeof opts.locationAsking === 'function' ? opts.locationAsking() : opts.locationAsking;
+      looks.push(answer);
+      return answer;
+    }
+  };
+  let now = 0;
+  let nextId = 1;
+  const fakeTimers = new Map();
+  const advance = (ms) => {
+    const end = now + ms;
+    for (;;) {
+      const due = [...fakeTimers.entries()].filter(([, t]) => t.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+      if (!due) { break; }
+      const [id, timer] = due;
+      now = timer.at;
+      fakeTimers.delete(id);
+      timer.fn();
+    }
+    now = end;
+  };
+  const setTimer = (fn, ms) => { const id = nextId++; fakeTimers.set(id, { fn, at: now + ms }); return id; };
   const log = [];
   const doc = { activeElement: null };
   doc.documentElement = {
@@ -176,12 +209,17 @@ function load(o = {}) {
     sandbox.fetch = fetchFn;
     if (opts.notify) { sandbox.PinalertNotify = notify; }
     if (!opts.noStorage) { sandbox.localStorage = localStorage; }
+    if (position !== null) { sandbox.PinalertPosition = position; }
   }
   vm.runInNewContext(source, sandbox);
-  const options = { doc, notify: opts.notify ? notify : undefined, storage: opts.noStorage ? null : localStorage, fetchFn };
+  const options = { doc, notify: opts.notify ? notify : undefined, storage: opts.noStorage ? null : localStorage, fetchFn, position };
+  if (opts.timers) { options.setTimer = setTimer; }
   return {
     ask: sandbox.PinalertInstalledAsk,
     options,
+    looks,
+    advance,
+    fakeTimers,
     dialog, title, later, allow, reliable, doc, log, fetches, enables, deviceCalls, store, make,
     releaseEnable: (value) => releaseEnable(value),
     escape: () => dialog.fire('cancel'),
@@ -252,8 +290,11 @@ for (const [label, extra] of OFF) {
   });
 }
 
+// Amended 2026-10-29 by the Phase 7.1 review fix (browser), IN-B01: a device that
+// is already on now writes the key (the case below), so { device: 'on' } left this
+// list; the device states that are not ready and not on stay.
 test(NAME + 'does not write the key when it skips for another dialog or a locked page, or for a device that is not ready', async () => {
-  for (const extra of [{ otherDialog: true }, { modalOpen: true }, { device: 'on' }, { base: 'needs-install' }]) {
+  for (const extra of [{ otherDialog: true }, { modalOpen: true }, { device: 'blocked' }, { device: 'reject' }, { base: 'needs-install' }, { locationAsking: true }]) {
     const m = load({ stored: JSON.stringify(['7']), ...extra });
     await m.go();
     assert.equal(m.dialog.showCalls, 0);
@@ -494,6 +535,121 @@ test(NAME + 'focus goes back to the element that had it', async () => {
   await m.go();
   m.later.click();
   assert.equal(before.focused, 1);
+});
+
+// Phase 7.1 review fix (browser), IN-B01: a device already on is as good as asked,
+// so the account is written into the list and later Nearby loads stop asking the
+// server for the device state. Nothing opens and nothing else is sent.
+test(NAME + 'IN-B01: a device already on writes the account, and the next load asks nothing', async () => {
+  const m = load({ device: 'on', stored: JSON.stringify(['7']) });
+  assert.equal(await m.go(), 'skipped');
+  assert.equal(m.dialog.showCalls, 0);
+  assert.deepEqual(JSON.parse(m.store.get(KEY)), ['7', '42']);
+  assert.equal(m.fetches.length, 0);
+
+  const next = load({ device: 'on', stored: m.store.get(KEY) });
+  assert.equal(await next.go(), 'skipped');
+  assert.deepEqual(next.deviceCalls, [], 'no device state request on the next load');
+
+  const full = load({ device: 'on', stored: JSON.stringify(['1', '2', '3', '4', '5', '6', '7', '8']) });
+  await full.go();
+  assert.deepEqual(JSON.parse(full.store.get(KEY)), ['2', '3', '4', '5', '6', '7', '8', '42'], 'the last 8 are kept');
+
+  const broken = load({ device: 'on', writeThrows: true });
+  assert.equal(await broken.go(), 'skipped', 'a store that cannot be written changes nothing else');
+});
+
+// Phase 7.1 review fix (browser), IN-B06: a showModal that throws means the box
+// never opened: the account is taken back out of the list (other ids stay), no
+// listener is left on the box, and the run answers skipped.
+test(NAME + 'IN-B06: a showModal that throws leaves no key for this account and no listeners', async () => {
+  const m = load({ stored: JSON.stringify(['7']) });
+  m.dialog.showModal = function () { this.showCalls += 1; throw new Error('InvalidStateError'); };
+  assert.equal(await m.go(), 'skipped');
+  assert.deepEqual(JSON.parse(m.store.get(KEY)), ['7']);
+  for (const el of [m.dialog, m.allow, m.later]) {
+    assert.equal(el.listeners.length, 0, el.id + ' has no listener');
+  }
+  assert.equal(m.enables.length, 0);
+});
+
+// ---- WR-B05: never together with the browser's location question ----------
+//
+// Phase 7.1 review fix (browser), WR-B05: an app on the Home Screen has its own
+// storage, so its first Nearby load asks for the location (position.js startMode
+// answers 'ask') while the alerts ask would open too. The ask waits for this
+// load's location decision (PinalertPosition.askingThisLoad, which position.js
+// sets when the map starts), skips without writing the key when the question is
+// asked on this load or no decision comes within 5 s, and opens otherwise.
+
+test(NAME + 'WR-B05: skips, writing no key, when the location question is asked on this load', async () => {
+  const m = load({ locationAsking: true });
+  assert.equal(await m.go(), 'skipped');
+  assert.equal(m.dialog.showCalls, 0);
+  assert.equal(m.store.has(KEY), false, 'the next Nearby load can ask');
+});
+
+test(NAME + 'WR-B05: opens when this load asks no location question', async () => {
+  const m = load({ locationAsking: false });
+  assert.equal(await m.go(), 'opened');
+  assert.ok(m.looks.length >= 1, 'the location decision was read');
+});
+
+test(NAME + 'WR-B05: waits for a decision that comes after the device state, then skips', async () => {
+  // position.js runs after this script, so the decision can come later than
+  // deviceState: null (not decided) on the first looks, then the question.
+  let answer = null;
+  const m = load({ timers: true, locationAsking: () => answer });
+  const run = m.go();
+  await settle();
+  assert.deepEqual(m.deviceCalls, ['BPUSHKEY']);
+  assert.equal(m.dialog.showCalls, 0, 'nothing opens before the decision');
+  m.advance(300);
+  await settle();
+  assert.equal(m.dialog.showCalls, 0);
+  answer = true;
+  m.advance(100);
+  assert.equal(await run, 'skipped');
+  assert.equal(m.store.has(KEY), false);
+});
+
+test(NAME + 'WR-B05: waits for a decision that comes after the device state, then opens', async () => {
+  let answer = null;
+  const m = load({ timers: true, locationAsking: () => answer });
+  const run = m.go();
+  await settle();
+  m.advance(500);
+  await settle();
+  assert.equal(m.dialog.showCalls, 0);
+  answer = false;
+  m.advance(100);
+  assert.equal(await run, 'opened');
+  assert.equal(m.dialog.showCalls, 1);
+});
+
+test(NAME + 'WR-B05: no decision within 5 s, or no position module, skips without the key', async () => {
+  const m = load({ timers: true, locationAsking: null });
+  const run = m.go();
+  await settle();
+  m.advance(4900);
+  await settle();
+  assert.equal(m.dialog.showCalls, 0);
+  m.advance(200);
+  assert.equal(await run, 'skipped');
+  assert.equal(m.store.has(KEY), false);
+
+  const none = load({ timers: true, position: null });
+  const run2 = none.go();
+  await settle();
+  none.advance(5200);
+  assert.equal(await run2, 'skipped');
+  assert.equal(none.store.has(KEY), false);
+});
+
+test(NAME + 'WR-B05: a position module that throws counts as do not open', async () => {
+  const m = load({ position: { askingThisLoad() { throw new Error('broken'); } } });
+  assert.equal(await m.go(), 'skipped');
+  assert.equal(m.store.has(KEY), false);
 });
 
 // ---- the script itself -----------------------------------------------------

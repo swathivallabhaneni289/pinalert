@@ -22,6 +22,10 @@
 //   - deviceState(pushKey) resolves to 'ready' (not on, blocked or unsupported;
 //     the key is the dialog's data-push-key, which notify.js needs to ask the
 //     server whether this device is already on);
+//   - the browser's own location question is not shown on this load
+//     (PinalertPosition.askingThisLoad answers false within 5 s; review fix
+//     WR-B05). An installed app's first Nearby load asks for the location, so
+//     the alerts ask waits for the next load, and the key is not written;
 //   - then, at the moment it would open, no other dialog is open and the page
 //     root carries no data-modal-open. Nearby can hold three small dialogs: this
 //     ask (on load), the first post or vote pop-up of Phase 3.3 (after a post or
@@ -35,7 +39,8 @@
 // JSON list of account ids, the last 8, so a shared phone does not ask account A
 // again after B. One plain id (the older format of pinalert.changesAsked) reads
 // as a list of one. The id is added just before the dialog opens, so a tab closed
-// mid-question does not ask again. The sign up alerts pop-up writes the same key
+// mid-question does not ask again, and when deviceState answers 'on' (review fix
+// IN-B01), so a device already on is not asked about again on every load. The sign up alerts pop-up writes the same key
 // when it opens, so a person who signed up inside the installed app is not asked
 // a second time. Storage that cannot be read or written, or a value that is
 // neither an id nor a list, means no ask at all.
@@ -57,6 +62,10 @@
   var ACCOUNT_ID_PATTERN = /^[1-9][0-9]{0,18}$/;
   // How many account ids the asked list keeps on one device.
   var ASKED_KEEP = 8;
+  // How often, and how long, the ask looks for this load's location decision
+  // (review fix WR-B05).
+  var LOCATION_POLL_MS = 100;
+  var LOCATION_WAIT_MS = 5000;
 
   // The one run of this page load. A second call returns it, so the dialog can
   // never open twice.
@@ -81,6 +90,77 @@
     return list.filter(function (id) {
       return typeof id === 'string' && ACCOUNT_ID_PATTERN.test(id);
     });
+  }
+
+  // locationClear resolves to true when the browser's own location question is
+  // not shown on this page load, and to false when it is, when no answer comes in
+  // LOCATION_WAIT_MS, or when the module cannot be read (review fix WR-B05). An app
+  // on the Home Screen has its own storage, so on its first Nearby load the map
+  // asks for the location; the alerts ask must not open on top of that question.
+  // position.js and map.js run after this script, so the answer is looked for
+  // again every LOCATION_POLL_MS until it comes.
+  function locationClear(o) {
+    var later = typeof o.setTimer === 'function' ? o.setTimer : function (fn, ms) {
+      return setTimeout(fn, ms);
+    };
+    return new Promise(function (resolve) {
+      var waited = 0;
+      function look() {
+        var asking = null;
+        try {
+          var position = o.position !== undefined ? o.position :
+            (typeof window !== 'undefined' ? window.PinalertPosition : null);
+          if (position && typeof position.askingThisLoad === 'function') {
+            asking = position.askingThisLoad();
+          }
+        } catch (err) {
+          resolve(false);
+          return;
+        }
+        if (asking === true || asking === false) {
+          resolve(!asking);
+          return;
+        }
+        if (waited >= LOCATION_WAIT_MS) {
+          resolve(false);
+          return;
+        }
+        waited += LOCATION_POLL_MS;
+        later(look, LOCATION_POLL_MS);
+      }
+      look();
+    });
+  }
+
+  // remember adds the account to the list, keeping the last ASKED_KEEP. A list
+  // that cannot be read or written, or junk in it, changes nothing.
+  function remember(storage, account) {
+    try {
+      var list = askedList(storage);
+      if (list === null || list.indexOf(account) !== -1) {
+        return;
+      }
+      list.push(account);
+      storage.setItem(ASKED_KEY, JSON.stringify(list.slice(-ASKED_KEEP)));
+    } catch (err) {
+      // Nothing more to do; the next load asks the device state again.
+    }
+  }
+
+  // forget takes the account back out of the list; the other ids stay. A list
+  // that cannot be read or written changes nothing.
+  function forget(storage, account) {
+    try {
+      var list = askedList(storage);
+      if (list === null) {
+        return;
+      }
+      storage.setItem(ASKED_KEY, JSON.stringify(list.filter(function (id) {
+        return id !== account;
+      })));
+    } catch (err) {
+      // Nothing more to do.
+    }
   }
 
   function pageLocked(doc) {
@@ -215,14 +295,16 @@
       finish();
     }
 
-    parts.allow.addEventListener('click', onAllow);
-    parts.later.addEventListener('click', onLater);
-    dialog.addEventListener('cancel', onCancel);
-    dialog.addEventListener('close', onClose);
-
+    // open shows the box and only then attaches the four listeners, so a
+    // showModal that throws leaves nothing on a box that never opened (review fix
+    // IN-B06); the throw reaches the caller.
     return function open() {
       opener = parts.doc.activeElement || null;
       dialog.showModal();
+      parts.allow.addEventListener('click', onAllow);
+      parts.later.addEventListener('click', onLater);
+      dialog.addEventListener('cancel', onCancel);
+      dialog.addEventListener('close', onClose);
       // The question takes the first focus, as the Log out box does, so no button
       // looks chosen.
       parts.title.focus();
@@ -274,7 +356,21 @@
       }
       var parts = { doc: doc, dialog: dialog, title: title, later: later, allow: allow, reliable: reliable, key: key };
       return Promise.resolve(notify.deviceState(key)).then(function (state) {
+        if (state === 'on') {
+          // Already on: as good as asked (review fix IN-B01), so later loads do
+          // not ask the server again, and a device turned off afterwards in
+          // Settings is not asked straight after that choice.
+          remember(storage, account);
+          return false;
+        }
         if (state !== 'ready') {
+          return false;
+        }
+        return locationClear(o);
+      }).then(function (clear) {
+        // Not ready, or the location question is asked on this load: skip, and
+        // do not write the key, so the next visit can ask.
+        if (!clear) {
           return 'skipped';
         }
         // Another box is open or locks the page now: skip, and do not write the
@@ -288,7 +384,13 @@
         }
         list.push(account);
         storage.setItem(ASKED_KEY, JSON.stringify(list.slice(-ASKED_KEEP)));
-        wire(parts, notify, fetchFn)();
+        try {
+          wire(parts, notify, fetchFn)();
+        } catch (err) {
+          // The box never opened, so it does not count as asked (IN-B06).
+          forget(storage, account);
+          return 'skipped';
+        }
         return 'opened';
       }).then(null, function () {
         return 'skipped';
@@ -299,7 +401,7 @@
   }
 
   // run starts the ask once per page load; a second call returns the first run.
-  // The options are for tests: { doc, notify, storage, fetchFn }.
+  // The options are for tests: { doc, notify, storage, fetchFn, position, setTimer }.
   function run(options) {
     if (current === null) {
       current = start(options || {});
