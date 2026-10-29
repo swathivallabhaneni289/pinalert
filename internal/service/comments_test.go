@@ -279,7 +279,9 @@ func TestCommentScreeningOutcomes(t *testing.T) {
 		if _, err := r.post(rep, r.alice, "   ", nil); !errors.Is(err, service.ErrCommentEmpty) {
 			t.Errorf("empty Post = %v, want ErrCommentEmpty", err)
 		}
-		if _, err := r.post(rep, r.alice, "a\tb", nil); !errors.Is(err, service.ErrCommentCharacters) {
+		// Amended 2026-10-29 by review IN-S01: a tab is now read as a space, so
+		// the refused control character is the bell character instead.
+		if _, err := r.post(rep, r.alice, "a\ab", nil); !errors.Is(err, service.ErrCommentCharacters) {
 			t.Errorf("control character Post = %v, want ErrCommentCharacters", err)
 		}
 		if r.scr.calls != calls {
