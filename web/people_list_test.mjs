@@ -401,3 +401,83 @@ test('no markup sink is used', async () => {
   assert.deepEqual(h.sinks, []);
   assert.equal(/\.(innerHTML|outerHTML)\s*=|insertAdjacentHTML|document\.write/.test(source), false);
 });
+
+// ---- plan 09-20: the Muted people kind (UI-SPEC 4b, 4c, D-12) ----------------
+
+test('the muted kind reads /api/me/muted-people and draws plain rows with an outlined Unmute', async () => {
+  const h = load({
+    route: (method) => (method === 'GET'
+      ? { status: 200, body: { entries: [{ username: 'first_x' }, { username: 'second_y' }] } }
+      : { status: 204 })
+  });
+  const o = opener();
+  h.api.open({ kind: 'muted', opener: o });
+  await flush();
+  assert.equal(h.calls[0].address, '/api/me/muted-people');
+  assert.equal(h.els['people-list-title'].textContent, 'Muted people');
+  assert.equal(h.els['people-list-subtitle'].hidden, true, 'it is your own list, no subtitle');
+  assert.equal(h.els['people-list-remove-all'].hidden, true);
+  const rows = rowsOf(h);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].querySelectorAll('a').length, 0, 'a muted row holds no link');
+  assert.equal(rows[0].children[1].textContent, 'first_x', 'the username is shown');
+  const button = rows[0].querySelector('button');
+  assert.equal(button.textContent, 'Unmute');
+  assert.equal(button.className, 'btn people-row__action', 'an outlined button, not a primary one');
+});
+
+test('Unmute posts once, removes the row, says the sentence and moves focus', async () => {
+  const h = load({
+    route: (method) => (method === 'GET'
+      ? { status: 200, body: { entries: [{ username: 'first_x' }, { username: 'second_y' }] } }
+      : { status: 204 })
+  });
+  let changed = 0;
+  h.api.open({ kind: 'muted', opener: opener(), onChange: () => { changed += 1; } });
+  await flush();
+  const button = rowsOf(h)[0].querySelector('button');
+  button.fire('click');
+  button.fire('click');
+  await flush();
+  const posts = h.calls.filter((c) => c.method === 'POST');
+  assert.equal(posts.length, 1, 'one tap sends one call');
+  assert.equal(posts[0].address, '/api/people/first_x/unmute');
+  assert.equal(rowsOf(h).length, 1);
+  assert.equal(h.els['notice-live'].textContent, 'first_x is unmuted.');
+  assert.equal(h.state.active, rowsOf(h)[0].querySelector('button'), 'focus moves to the next row button');
+  assert.equal(changed, 1);
+
+  rowsOf(h)[0].querySelector('button').fire('click');
+  await flush();
+  assert.equal(h.els['people-list-empty'].hidden, false);
+  assert.equal(h.state.active, h.els['people-list-empty-title'], 'focus moves to the empty heading');
+  assert.equal(h.els['people-list-empty-title'].textContent, 'No muted people');
+  assert.equal(h.els['people-list-empty-line'].textContent, 'People you mute show here, with a way to unmute them.');
+});
+
+test('a refused Unmute keeps the row and shows Couldn\'t unmute. Try again. above the list', async () => {
+  const h = load({
+    route: (method) => (method === 'GET' ? { status: 200, body: { entries: [{ username: 'first_x' }] } } : { status: 500, body: {} })
+  });
+  h.api.open({ kind: 'muted', opener: opener() });
+  await flush();
+  rowsOf(h)[0].querySelector('button').fire('click');
+  await flush();
+  assert.equal(rowsOf(h).length, 1);
+  assert.equal(h.els['people-list-action-error'].hidden, false);
+  assert.equal(h.els['people-list-action-error'].textContent, 'Couldn\'t unmute. Try again.');
+  assert.equal(h.els['notice-live'].textContent, '', 'no status line on a failure');
+});
+
+test('an empty muted list shows its words and the blocked list keeps Unblock', async () => {
+  const m = load({ route: () => ({ status: 200, body: { entries: [] } }) });
+  m.api.open({ kind: 'muted', opener: opener() });
+  await flush();
+  assert.equal(m.els['people-list-empty'].hidden, false);
+  assert.equal(m.els['people-list-empty-title'].textContent, 'No muted people');
+
+  const b = load({ route: () => ({ status: 200, body: { entries: [{ username: 'blk_z' }] } }) });
+  b.api.open({ kind: 'blocked', opener: opener() });
+  await flush();
+  assert.equal(rowsOf(b)[0].querySelector('button').textContent, 'Unblock');
+});

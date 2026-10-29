@@ -266,8 +266,11 @@ func TestSettingsShowsOnlyExistingRows(t *testing.T) {
 	// Amended 2026-10-29 by Phase 9 plan 12 (D-04, UI-SPEC 7a and 7c): the Following,
 	// Followers and Blocked people rows open the list window and the phone View my
 	// profile row opens the profile page, so seventeen.
-	if got := strings.Count(page, "app-icon--chevron-right"); got != 17 {
-		t.Errorf("settings.html.tmpl draws %d chevrons, want one on each of the seventeen rows that open something", got)
+	//
+	// Amended 2026-10-29 by Phase 9 plan 20 (D-12, UI-SPEC Defaults 7): the Muted
+	// people row opens the same list window, so eighteen.
+	if got := strings.Count(page, "app-icon--chevron-right"); got != 18 {
+		t.Errorf("settings.html.tmpl draws %d chevrons, want one on each of the eighteen rows that open something", got)
 	}
 	header := p421ReadTemplate(t, "account_header.html.tmpl")
 	for _, label := range waitingSettingsLabels {

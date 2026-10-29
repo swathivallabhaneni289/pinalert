@@ -2,8 +2,9 @@
 // plan 08, D-12, UI-SPEC 1d, 1e, 1g, 1h).
 //
 // The page is drawn by the server. This script only does what a person taps:
-// Follow and Following (a one tap toggle), the More menu, Remove follower and
-// Block (each asks first in a system style box), and Unblock. It decides
+// Follow and Following (a one tap toggle), the More menu, Mute and Unmute (at
+// once, no box), Remove follower and Block (each asks first in a system style
+// box), and Unblock. It decides
 // nothing about trust: the browser computes no star, no tag, no count and no
 // eligibility. After an action it asks the server for the profile again and
 // draws the strings and the booleans that come back.
@@ -35,6 +36,8 @@ window.PinalertPerson = (function () {
   var FAILED = {
     follow: 'Couldn\'t follow. Try again.',
     unfollow: 'Couldn\'t unfollow. Try again.',
+    mute: 'Couldn\'t mute. Try again.',
+    unmute: 'Couldn\'t unmute. Try again.',
     'remove-follower': 'Couldn\'t remove this follower. Try again.',
     block: 'Couldn\'t block. Try again.',
     unblock: 'Couldn\'t unblock. Try again.'
@@ -290,6 +293,20 @@ window.PinalertPerson = (function () {
     if (els.removeFollower) {
       els.removeFollower.hidden = profile.follows_you !== true;
     }
+    if (typeof profile.muted === 'boolean') {
+      drawMute(profile.muted);
+    }
+  }
+
+  // drawMute sets the first menu item to Mute or Unmute from the server's
+  // muted flag. The flag is the viewer's own state only (plan 09-19), so the
+  // browser reads one boolean and decides nothing else.
+  function drawMute(on) {
+    if (!els.mute) {
+      return;
+    }
+    els.mute.textContent = on ? 'Unmute' : 'Mute';
+    els.mute.setAttribute('data-muted', on ? 'true' : 'false');
   }
 
   // refresh asks the server for the profile again. A failed read reloads the
@@ -402,6 +419,69 @@ window.PinalertPerson = (function () {
 
   function unfollow() {
     return toggle('unfollow', els.unfollow, 'You unfollowed ' + username + '.');
+  }
+
+  // ---- Mute and Unmute (plan 09-20, UI-SPEC 1e) -------------------------------
+
+  // isMuted reads the state the server drew: the label and data-muted are
+  // written together and only ever redrawn from the refetched profile.
+  function isMuted() {
+    return !!els.mute && els.mute.getAttribute('data-muted') === 'true';
+  }
+
+  // toggleMute sends mute or unmute at once, with no confirmation, then redraws
+  // from the server's profile and says the status line. The person is never told:
+  // this sends nothing to them and shows nothing of the muted person's own page.
+  // Focus ends on More, where the menu that held the item was opened from.
+  function toggleMute() {
+    if (busy || !els.mute) {
+      return Promise.resolve(false);
+    }
+    var action = isMuted() ? 'unmute' : 'mute';
+    var message = action === 'mute'
+      ? username + ' is muted. Their reports still show.'
+      : username + ' is unmuted.';
+    busy = true;
+    hideError();
+    setBusy(els.mute, true);
+    function done() {
+      busy = false;
+      setBusy(els.mute, false);
+    }
+    function fail(text) {
+      done();
+      if (text !== null) {
+        showError(text);
+      }
+      if (els.more) {
+        els.more.focus();
+      }
+      return false;
+    }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return Promise.resolve(fail(MESSAGE_OFFLINE));
+    }
+    return post(action).then(function (answer) {
+      if (!answer.ok) {
+        return fail(refusal(answer, action));
+      }
+      // The server kept it. Draw the expected label now; the refetch below
+      // overrides it with the server's own flag when it sends one.
+      drawMute(action === 'mute');
+      return refresh().then(function (drawn) {
+        done();
+        if (!drawn) {
+          return false;
+        }
+        say(message);
+        if (els.more) {
+          els.more.focus();
+        }
+        return true;
+      });
+    }, function () {
+      return fail(offlineOr(action));
+    });
   }
 
   // ---- The More menu ----------------------------------------------------------
@@ -527,10 +607,13 @@ window.PinalertPerson = (function () {
     }
   }
 
-  // choose runs the item the person picked. Both menu items ask first.
+  // choose runs the item the person picked. Remove follower and Block ask first;
+  // Mute and Unmute take effect at once.
   function choose(item) {
     closeMenu(false);
-    if (item === els.removeFollower) {
+    if (item === els.mute) {
+      toggleMute();
+    } else if (item === els.removeFollower) {
       ask('remove-follower');
     } else if (item === els.block) {
       ask('block');
@@ -722,7 +805,7 @@ window.PinalertPerson = (function () {
     var ids = {
       live: 'notice-live', header: 'person-header', reports: 'person-reports-section',
       error: 'person-action-error', follow: 'person-follow', unfollow: 'person-unfollow',
-      more: 'person-more', menu: 'person-more-menu', removeFollower: 'person-remove-follower',
+      more: 'person-more', menu: 'person-more-menu', mute: 'person-mute-item', removeFollower: 'person-remove-follower',
       block: 'person-block', blocked: 'person-blocked', blockedTitle: 'person-blocked-title',
       blockedError: 'person-blocked-error', unblock: 'person-unblock',
       followersButton: 'person-followers-button', followingButton: 'person-following-button',
@@ -753,6 +836,7 @@ window.PinalertPerson = (function () {
     on(els.more, 'click', onMoreClick);
     on(els.more, 'keydown', onMoreKeydown);
     on(els.menu, 'keydown', onMenuKeydown);
+    on(els.mute, 'click', function () { choose(els.mute); });
     on(els.removeFollower, 'click', function () { choose(els.removeFollower); });
     on(els.block, 'click', function () { choose(els.block); });
     on(els.unblock, 'click', function () { unblock(); });
@@ -791,6 +875,7 @@ window.PinalertPerson = (function () {
     init: init,
     follow: follow,
     unfollow: unfollow,
+    toggleMute: toggleMute,
     openMenu: openMenu,
     closeMenu: closeMenu,
     ask: ask,

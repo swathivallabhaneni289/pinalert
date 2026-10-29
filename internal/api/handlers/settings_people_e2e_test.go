@@ -59,6 +59,9 @@ func TestSettingsPeopleRows(t *testing.T) {
 	testutil.SeedFollow(t, pool, meID, b, now.Add(-2*time.Hour))
 	testutil.SeedFollow(t, pool, fan, meID, now.Add(-time.Hour))
 	testutil.SeedBlock(t, pool, meID, foe)
+	// Amended 2026-10-29 by Phase 9 plan 20 (D-12, UI-SPEC Defaults 7): the account
+	// also muted one person, so the Muted people row reads 1.
+	testutil.SeedMute(t, pool, meID, fan)
 
 	resp, body := getPlacePage(t, me, srv.URL, "/settings")
 	if resp.StatusCode != http.StatusOK {
@@ -71,6 +74,7 @@ func TestSettingsPeopleRows(t *testing.T) {
 		`id="settings-following-row"`,
 		`id="settings-followers-row"`,
 		`id="settings-muted-row"`,
+		`id="settings-muted-people-row"`,
 		`id="settings-blocked-row"`,
 	}
 	at := p912Positions(t, body, order)
@@ -81,7 +85,7 @@ func TestSettingsPeopleRows(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Your public profile and the lists that go with it.",
-		"Let others follow me", "Following", "Followers", "Muted reports", "Blocked people",
+		"Let others follow me", "Following", "Followers", "Muted reports", "Muted people", "Blocked people",
 		`data-username="rows_me"`,
 		`id="settings-profile-off-confirm"`, "Turn off your public profile?",
 		`id="people-list-window"`,
@@ -98,6 +102,8 @@ func TestSettingsPeopleRows(t *testing.T) {
 		"settings-followers-value": "1",
 		"settings-blocked-value":   "1",
 		"settings-muted-value":     "0",
+		// Amended 2026-10-29 by Phase 9 plan 20 (D-12): the Muted people count.
+		"settings-muted-people-value": "1",
 	} {
 		if got := p912Value(t, body, id); got != want {
 			t.Errorf("%s = %q, want %q", id, got, want)
@@ -117,7 +123,9 @@ func TestSettingsPeopleRows(t *testing.T) {
 	if !regexp.MustCompile(`<a class="place-row place-row--phone-only" id="settings-view-profile-row" href="/me">`).MatchString(body) {
 		t.Errorf("/settings has no View my profile link to /me")
 	}
-	for _, banned := range []string{"Someone I follow posts", "follow_posts", "Muted people"} {
+	// Amended 2026-10-29 by Phase 9 plan 20 (D-12, UI-SPEC Defaults 7): "Muted
+	// people" is drawn now and left this list; the other two stay banned.
+	for _, banned := range []string{"Someone I follow posts", "follow_posts"} {
 		if strings.Contains(body, banned) {
 			t.Errorf("/settings holds %q", banned)
 		}

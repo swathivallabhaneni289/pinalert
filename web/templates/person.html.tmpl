@@ -76,6 +76,8 @@
         <button type="button" id="person-unfollow" class="btn" aria-pressed="true"{{if not .Profile.Following}} hidden{{end}}>Following</button>
         <button type="button" id="person-more" class="btn person-more" aria-haspopup="menu" aria-expanded="false" aria-controls="person-more-menu"><span>More</span><span class="person-more__chevron" aria-hidden="true"></span></button>
         <div id="person-more-menu" class="person-menu" role="menu" aria-label="More" hidden>
+          {{/* Plan 09-20 (D-12, UI-SPEC 1e): Mute or Unmute is the first item, drawn always on another person's page. The label and data-muted are the server's Muted flag; the script flips both after a refetch of the profile. No confirmation. */}}
+          <button type="button" id="person-mute-item" class="person-menu__item" role="menuitem" data-muted="{{if .Profile.Muted}}true{{else}}false{{end}}">{{if .Profile.Muted}}Unmute{{else}}Mute{{end}}</button>
           <button type="button" id="person-remove-follower" class="person-menu__item" role="menuitem"{{if not .Profile.FollowsYou}} hidden{{end}}>Remove follower</button>
           <button type="button" id="person-block" class="person-menu__item" role="menuitem">Block</button>
         </div>

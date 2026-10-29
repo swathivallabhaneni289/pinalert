@@ -382,6 +382,11 @@ var touchControls = []string{
 	// or more through --touch-target-min or a 56px row in person.css. Show more
 	// and Remove all followers are .btn, listed above. No other entry changed.
 	".people-row__link", ".people-row__action", ".person-report__body",
+	// Amended 2026-10-29 by Phase 9 plan 20 (D-12, UI-SPEC 1e, 4b and 7a): the
+	// Muted people Settings row is a .place-row (52px), the Unmute button of a
+	// Muted people row is the .people-row__action entry above, and the Mute or
+	// Unmute item of the More menu is the .person-menu__item entry listed under
+	// plan 08, so each already reaches 44px. No entry was added or changed.
 	// Phase 9 plan 16 (UI-SPEC 3a and Interaction and Accessibility): each of the
 	// five star buttons of the rating control and its Remove my rating button,
 	// each 44px through --touch-target-min in stars.css. No other entry changed.

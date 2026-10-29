@@ -51,7 +51,7 @@ class FakeEl {
 }
 
 // The ids settings.html.tmpl renders for the people rows.
-function buildPage({ followers = 0, following = 2, blocked = 1, on = false, username = 'asha_k', dialog = true } = {}) {
+function buildPage({ followers = 0, following = 2, blocked = 1, mutedPeople = 2, mutedRow = true, on = false, username = 'asha_k', dialog = true } = {}) {
   const doc = { activeElement: null, byId: {} };
   const make = (tag, id) => {
     const el = new FakeEl(doc, tag, id);
@@ -66,6 +66,11 @@ function buildPage({ followers = 0, following = 2, blocked = 1, on = false, user
   make('button', 'settings-following-row');
   make('button', 'settings-followers-row');
   make('button', 'settings-blocked-row');
+  // Plan 20 (D-12): the Muted people row and its count.
+  if (mutedRow) {
+    make('button', 'settings-muted-people-row');
+    make('span', 'settings-muted-people-value').textContent = String(mutedPeople);
+  }
   make('span', 'settings-following-value').textContent = String(following);
   make('span', 'settings-followers-value').textContent = String(followers);
   make('span', 'settings-blocked-value').textContent = String(blocked);
@@ -317,6 +322,49 @@ test('a person with no username opens only the Blocked people list', () => {
   fire(el(page, 'settings-following-row'), 'click');
   fire(el(page, 'settings-followers-row'), 'click');
   assert.equal(page.opens.length, 0);
+  fire(el(page, 'settings-blocked-row'), 'click');
+  assert.equal(page.opens.length, 1);
+  assert.equal(page.opens[0].kind, 'blocked');
+});
+
+// ---- plan 09-20: the Muted people row (UI-SPEC 7a, D-12) ----------------------
+
+test('the Muted people row opens the list window with kind muted and no username', () => {
+  const page = load({ username: 'asha_k' });
+  fire(el(page, 'settings-muted-people-row'), 'click');
+  assert.equal(page.opens.length, 1);
+  assert.equal(page.opens[0].kind, 'muted');
+  assert.equal(page.opens[0].own, true);
+  assert.equal(page.opens[0].username, '');
+  assert.equal(page.opens[0].opener, el(page, 'settings-muted-people-row'));
+  assert.equal(typeof page.opens[0].onChange, 'function');
+  assert.equal(page.requests.length, 0, 'opening the window sends nothing from this script');
+});
+
+test('a person with no username can still open Muted people', () => {
+  const page = load({ username: '' });
+  fire(el(page, 'settings-muted-people-row'), 'click');
+  assert.equal(page.opens.length, 1);
+  assert.equal(page.opens[0].kind, 'muted');
+});
+
+test('each Unmute takes the Muted people count down by one and never below zero', async () => {
+  const page = load({ mutedPeople: 2 });
+  fire(el(page, 'settings-muted-people-row'), 'click');
+  page.opens[0].onChange();
+  await flush();
+  assert.equal(el(page, 'settings-muted-people-value').textContent, '1');
+  page.opens[0].onChange();
+  await flush();
+  assert.equal(el(page, 'settings-muted-people-value').textContent, '0');
+  page.opens[0].onChange();
+  await flush();
+  assert.equal(el(page, 'settings-muted-people-value').textContent, '0');
+  assert.equal(page.requests.length, 0, 'the count is not read from a list');
+});
+
+test('a page without the Muted people row still wires the other rows', () => {
+  const page = load({ mutedRow: false });
   fire(el(page, 'settings-blocked-row'), 'click');
   assert.equal(page.opens.length, 1);
   assert.equal(page.opens[0].kind, 'blocked');

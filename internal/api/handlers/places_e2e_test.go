@@ -173,8 +173,12 @@ func TestSettingsRows(t *testing.T) {
 	// Blocked people after it, each a button row that opens the list window. The
 	// Let others follow me switch row is a label, and View my profile is a link, so
 	// neither is in this list.
-	if strings.Join(buttonIDs, ",") != "settings-username-row,settings-name-row,settings-home-row,settings-device-install,settings-critical-nohome,settings-official-nohome,settings-reliable-nohome,settings-following-row,settings-followers-row,settings-muted-row,settings-blocked-row,settings-logout-all-row,settings-delete-row" {
-		t.Errorf("Settings button rows are %v, want Username, Name, Home area, the On this device install row, the three Add a home area first rows, Following, Followers, Muted reports, Blocked people, Log out of all devices, Delete my account", buttonIDs)
+	//
+	// Amended 2026-10-29 by Phase 9 plan 20 (D-12, UI-SPEC Defaults 7): the Muted
+	// people button row sits between Muted reports and Blocked people. Every
+	// other id is unchanged.
+	if strings.Join(buttonIDs, ",") != "settings-username-row,settings-name-row,settings-home-row,settings-device-install,settings-critical-nohome,settings-official-nohome,settings-reliable-nohome,settings-following-row,settings-followers-row,settings-muted-row,settings-muted-people-row,settings-blocked-row,settings-logout-all-row,settings-delete-row" {
+		t.Errorf("Settings button rows are %v, want Username, Name, Home area, the On this device install row, the three Add a home area first rows, Following, Followers, Muted reports, Muted people, Blocked people, Log out of all devices, Delete my account", buttonIDs)
 	}
 	for _, want := range []string{
 		// Amended 2026-10-22 (owner: "too much details under the heading for
