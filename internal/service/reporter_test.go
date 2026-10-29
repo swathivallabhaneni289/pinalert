@@ -557,6 +557,12 @@ func TestReporterSignalsNewAndNone(t *testing.T) {
 			{"ScoreSentence", reflect.TypeOf("")},
 			{"JudgedReports", reflect.TypeOf(0)},
 			{"CorroboratedReports", reflect.TypeOf(0)},
+			// Amended 2026-10-29 by Phase 9 plan 13 (D-02, D-21, G6): three
+			// fields carry the tapped ratings when they applied. Every other
+			// assertion in this test is unchanged.
+			{"OutcomeScore", reflect.TypeOf((*int)(nil))},
+			{"Raters", reflect.TypeOf(0)},
+			{"TappedHalves", reflect.TypeOf((*int)(nil))},
 		}
 		if rt.NumField() != len(want) {
 			t.Fatalf("ReporterSignal has %d fields, want %d", rt.NumField(), len(want))
