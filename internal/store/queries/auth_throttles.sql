@@ -14,8 +14,10 @@ WHERE scope = sqlc.arg(scope) AND key_hash = sqlc.arg(key_hash);
 -- for the 60 minute cap, never a reset to 1. Once the failures pass
 -- free_failures the lock is base_lock_seconds doubled for each failure beyond
 -- the first locked one, capped at max_lock_seconds: with 5 free, 300 s base and
--- 3600 s cap the waits are 5, 10, 20, 40, 60, 60 minutes. The service refuses a
--- locked attempt before this runs, so a refused attempt never extends the wait.
+-- 3600 s cap the waits are 5, 10, 20, 40, 60, 60 minutes. The sign in path
+-- counts its tries with ReserveSignInTry below, the same arithmetic with the
+-- lock guard on it (Phase 7.1 review CR-S01); this unguarded form is kept for
+-- the store tests and for seeding a throttle row.
 INSERT INTO auth_throttles AS t (scope, key_hash, failures, last_failure_at, locked_until)
 VALUES (
     sqlc.arg(scope), sqlc.arg(key_hash), 1, sqlc.arg(now)::timestamptz,
@@ -50,6 +52,53 @@ SET failures = CASE
                          END) - sqlc.arg(free_failures)::int - 1)::float8)))
         ELSE NULL
     END
+RETURNING failures, locked_until;
+
+-- name: ReserveSignInTry :one
+-- Counts one sign in try BEFORE the password is checked (Phase 7.1 review
+-- CR-S01), the way BumpAuthCodeAttempt counts a code try before the compare.
+-- It is RecordAuthFailure with one more guard on the DO UPDATE: an address
+-- that is locked right now gets no update and no row back (pgx.ErrNoRows), so
+-- a refused try never extends the lock. The row lock of the upsert serialises
+-- a parallel burst for one address, so the burst gets exactly free_failures + 1
+-- password checks before the lock is in place. A right password then clears
+-- the row with ClearAuthThrottle. Every address, known or unknown, takes this
+-- same statement, so the count never tells whether an account exists.
+INSERT INTO auth_throttles AS t (scope, key_hash, failures, last_failure_at, locked_until)
+VALUES (
+    sqlc.arg(scope), sqlc.arg(key_hash), 1, sqlc.arg(now)::timestamptz,
+    CASE WHEN 1 > sqlc.arg(free_failures)::int
+         THEN sqlc.arg(now)::timestamptz
+              + make_interval(secs => LEAST(sqlc.arg(max_lock_seconds)::int::float8, sqlc.arg(base_lock_seconds)::int::float8))
+         ELSE NULL END
+)
+ON CONFLICT (scope, key_hash) DO UPDATE
+SET failures = CASE
+        WHEN t.last_failure_at <= sqlc.arg(forget_cutoff)::timestamptz
+         AND (t.locked_until IS NULL OR t.locked_until <= sqlc.arg(forget_cutoff)::timestamptz)
+            THEN 1
+        ELSE t.failures + 1
+    END,
+    last_failure_at = sqlc.arg(now)::timestamptz,
+    locked_until = CASE
+        WHEN (CASE
+                WHEN t.last_failure_at <= sqlc.arg(forget_cutoff)::timestamptz
+                 AND (t.locked_until IS NULL OR t.locked_until <= sqlc.arg(forget_cutoff)::timestamptz)
+                    THEN 1
+                ELSE t.failures + 1
+              END) > sqlc.arg(free_failures)::int
+            THEN sqlc.arg(now)::timestamptz
+                 + make_interval(secs => LEAST(
+                       sqlc.arg(max_lock_seconds)::int::float8,
+                       sqlc.arg(base_lock_seconds)::int::float8 * power(2::float8, LEAST(30, (CASE
+                           WHEN t.last_failure_at <= sqlc.arg(forget_cutoff)::timestamptz
+                            AND (t.locked_until IS NULL OR t.locked_until <= sqlc.arg(forget_cutoff)::timestamptz)
+                               THEN 1
+                           ELSE t.failures + 1
+                         END) - sqlc.arg(free_failures)::int - 1)::float8)))
+        ELSE NULL
+    END
+WHERE t.locked_until IS NULL OR t.locked_until <= sqlc.arg(now)::timestamptz
 RETURNING failures, locked_until;
 
 -- name: ClearAuthThrottle :exec

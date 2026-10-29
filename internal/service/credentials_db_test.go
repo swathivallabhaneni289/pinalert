@@ -3,7 +3,11 @@ package service_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -138,5 +142,112 @@ func TestCredentialFlowOnDatabase(t *testing.T) {
 	}
 	if legacyRes.AccountID != legacy.ID {
 		t.Errorf("account id = %d, want the legacy %d", legacyRes.AccountID, legacy.ID)
+	}
+}
+
+// gateHasher is a password hasher whose Verify blocks until release is closed,
+// so a test can hold many sign ins inside the password check at once. It
+// counts the Verify calls and the calls in flight.
+type gateHasher struct {
+	inner    *auth.Hasher
+	release  chan struct{}
+	verifies atomic.Int64
+	inFlight atomic.Int64
+}
+
+func (h *gateHasher) Hash(ctx context.Context, password string) (string, error) {
+	return h.inner.Hash(ctx, password)
+}
+
+func (h *gateHasher) Verify(ctx context.Context, encoded, password string) (bool, bool, error) {
+	h.verifies.Add(1)
+	h.inFlight.Add(1)
+	<-h.release
+	return h.inner.Verify(ctx, encoded, password)
+}
+
+func (h *gateHasher) DummyHash() string { return h.inner.DummyHash() }
+
+// TestSignInLockCountsBeforeVerify is CR-S01 of the Phase 7.1 review: the per
+// address lock must count a try before the password check, in one guarded
+// statement, so a parallel burst of wrong passwords for one address gets at
+// most FreeFailures + 1 password checks and every other request is refused as
+// locked. Before the fix every request read "not locked" and all of them
+// reached the password check.
+func TestSignInLockCountsBeforeVerify(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+	h := &gateHasher{inner: auth.NewHasher(auth.TestParams()), release: make(chan struct{})}
+	svc := service.NewCredentialService(q, &credMailer{},
+		service.WithHasher(h),
+		service.WithCodeKey(credCodeKey),
+		service.WithThrottleKey(credThrottleKey),
+	)
+	const burst = 20
+	var returned atomic.Int64
+	var locked atomic.Int64
+	var wg sync.WaitGroup
+	for i := 0; i < burst; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			defer returned.Add(1)
+			_, err := svc.SignIn(ctx, fmt.Sprintf("burst-%d", i), credEmail, "not the password 12", credSessionIDs("x"))
+			var le service.SignInLockedError
+			if errors.As(err, &le) {
+				locked.Add(1)
+			}
+		}(i)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for h.inFlight.Load()+returned.Load() < burst && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	close(h.release)
+	wg.Wait()
+
+	free := int64(service.DefaultCredentialLimits.FreeFailures)
+	if got := h.verifies.Load(); got > free+1 {
+		t.Errorf("password checks in a parallel burst = %d, want at most %d", got, free+1)
+	}
+	if got := locked.Load(); got < burst-(free+1) {
+		t.Errorf("requests refused as locked = %d, want at least %d", got, burst-(free+1))
+	}
+}
+
+// TestSignInGoodPasswordClearsCount is the other half of CR-S01: a try is
+// counted before the check, so a right password must clear the count, or a
+// person who mistypes a few times and then signs in would lock themselves out
+// later.
+func TestSignInGoodPasswordClearsCount(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+	mail := &credMailer{}
+	svc := service.NewCredentialService(q, mail,
+		service.WithHasher(auth.NewHasher(auth.TestParams())),
+		service.WithCodeKey(credCodeKey),
+		service.WithThrottleKey(credThrottleKey),
+	)
+	if err := svc.SignUp(ctx, "sess-A", credEmail, credPassword); err != nil {
+		t.Fatalf("SignUp: %v", err)
+	}
+	if _, err := svc.ConfirmSignUp(ctx, "sess-A", mail.last(t).msg.Code, credSessionIDs("sess-B")); err != nil {
+		t.Fatalf("ConfirmSignUp: %v", err)
+	}
+	for round := 1; round <= 2; round++ {
+		for i := 1; i <= service.DefaultCredentialLimits.FreeFailures; i++ {
+			if _, err := svc.SignIn(ctx, "sess-C", credEmail, "not the password 12", credSessionIDs("c")); !errors.Is(err, service.ErrWrongCredentials) {
+				t.Fatalf("round %d wrong sign in %d: %v", round, i, err)
+			}
+		}
+		if _, err := svc.SignIn(ctx, "sess-C", credEmail, credPassword, credSessionIDs(fmt.Sprintf("good%d", round))); err != nil {
+			t.Fatalf("round %d: the right password after %d wrong ones: %v", round, service.DefaultCredentialLimits.FreeFailures, err)
+		}
+		var rows int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM auth_throttles`).Scan(&rows); err != nil || rows != 0 {
+			t.Fatalf("round %d: throttle rows after a good sign in = %d err=%v, want 0", round, rows, err)
+		}
 	}
 }

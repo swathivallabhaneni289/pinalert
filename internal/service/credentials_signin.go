@@ -154,29 +154,25 @@ func (s *CredentialService) ConfirmSignUp(ctx context.Context, sessionID, rawCod
 	return s.rotate(ctx, sessionID, account.ID, newID)
 }
 
-// SignIn takes the email and the password only. A locked address is refused
-// before any hashing. An unknown address and an account with no password are
-// verified against the dummy hash, so neither answers faster than a wrong
-// password, and all three get the one error. Failures are counted in the
-// database; a good sign in clears the count, upgrades an old hash and rotates
-// the session id. The per device and per network buckets are the handler's job.
+// SignIn takes the email and the password only. Every try is counted in the
+// database before the password is checked, in one guarded statement, so a
+// parallel burst cannot run more checks than the lock allows (Phase 7.1 review
+// CR-S01); a locked address is refused before any hashing. An unknown address
+// and an account with no password are counted and verified against the dummy
+// hash the same way, so neither answers faster than a wrong password, and all
+// three get the one error. A good sign in clears the count, upgrades an old
+// hash and rotates the session id. A busy hasher keeps the counted try, the
+// same for every address. The per device and per network buckets are the
+// handler's job.
 func (s *CredentialService) SignIn(ctx context.Context, sessionID, rawEmail, password string, newID func() string) (SignInResult, error) {
 	email, err := normalizeEmail(rawEmail)
 	if err != nil {
 		return SignInResult{}, ValidationError{Field: "email", Message: InvalidEmailMessage}
 	}
 	key := s.ThrottleKey(email)
-	now := s.now()
 
-	t, err := s.q.GetAuthThrottle(ctx, sqlcgen.GetAuthThrottleParams{Scope: throttleScope, KeyHash: key})
-	switch {
-	case err == nil:
-		if t.LockedUntil.Valid && t.LockedUntil.Time.After(now) {
-			return SignInResult{}, SignInLockedError{Wait: t.LockedUntil.Time.Sub(now)}
-		}
-	case errors.Is(err, pgx.ErrNoRows):
-	default:
-		return SignInResult{}, fmt.Errorf("service: reading sign in throttle: %w", err)
+	if err := s.reserveTry(ctx, key); err != nil {
+		return SignInResult{}, err
 	}
 
 	account, found, err := s.lookupAccount(ctx, email)
@@ -202,12 +198,15 @@ func (s *CredentialService) SignIn(ctx context.Context, sessionID, rawEmail, pas
 		good = false
 	}
 	if !(good && usable) {
-		if err := s.recordFailure(ctx, key); err != nil {
-			return SignInResult{}, err
-		}
+		// The try was already counted by reserveTry.
 		return SignInResult{}, ErrWrongCredentials
 	}
 
+	// Bind first, then clear the count, so a refused bind never clears a lock.
+	result, err := s.rotate(ctx, sessionID, account.ID, newID)
+	if err != nil {
+		return SignInResult{}, err
+	}
 	if err := s.q.ClearAuthThrottle(ctx, sqlcgen.ClearAuthThrottleParams{Scope: throttleScope, KeyHash: key}); err != nil {
 		return SignInResult{}, fmt.Errorf("service: clearing sign in throttle: %w", err)
 	}
@@ -218,7 +217,45 @@ func (s *CredentialService) SignIn(ctx context.Context, sessionID, rawEmail, pas
 			_, _ = s.q.SetAccountPassword(ctx, sqlcgen.SetAccountPasswordParams{PasswordHash: fresh, ID: account.ID})
 		}
 	}
-	return s.rotate(ctx, sessionID, account.ID, newID)
+	return result, nil
+}
+
+// reserveTry counts one sign in try for the address before the password check
+// (CR-S01). It returns SignInLockedError when the address is locked. When the
+// guarded statement refused but a fresh read finds the address no longer
+// locked (a reset cleared it, or the lock ended in between), it tries once
+// more; a second refusal is answered as locked with at least one second to
+// wait, never a negative wait.
+func (s *CredentialService) reserveTry(ctx context.Context, key string) error {
+	for attempt := 0; attempt < 2; attempt++ {
+		now := s.now()
+		_, err := s.q.ReserveSignInTry(ctx, sqlcgen.ReserveSignInTryParams{
+			Scope:           throttleScope,
+			KeyHash:         key,
+			Now:             now,
+			ForgetCutoff:    now.Add(-s.limits.ForgetAfter),
+			FreeFailures:    int32(s.limits.FreeFailures),
+			BaseLockSeconds: int32(s.limits.BaseLock / time.Second),
+			MaxLockSeconds:  int32(s.limits.MaxLock / time.Second),
+		})
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("service: counting sign in try: %w", err)
+		}
+		t, err := s.q.GetAuthThrottle(ctx, sqlcgen.GetAuthThrottleParams{Scope: throttleScope, KeyHash: key})
+		switch {
+		case err == nil:
+			if t.LockedUntil.Valid && t.LockedUntil.Time.After(now) {
+				return SignInLockedError{Wait: t.LockedUntil.Time.Sub(now)}
+			}
+		case errors.Is(err, pgx.ErrNoRows):
+		default:
+			return fmt.Errorf("service: reading sign in throttle: %w", err)
+		}
+	}
+	return SignInLockedError{Wait: time.Second}
 }
 
 // ConfirmReset is the typed code of Forgot password, with the new password.
@@ -295,22 +332,6 @@ func (s *CredentialService) setPassword(ctx context.Context, accountID int64, ha
 func (s *CredentialService) clearThrottle(ctx context.Context, email string) error {
 	if err := s.q.ClearAuthThrottle(ctx, sqlcgen.ClearAuthThrottleParams{Scope: throttleScope, KeyHash: s.ThrottleKey(email)}); err != nil {
 		return fmt.Errorf("service: clearing sign in throttle: %w", err)
-	}
-	return nil
-}
-
-func (s *CredentialService) recordFailure(ctx context.Context, key string) error {
-	now := s.now()
-	if _, err := s.q.RecordAuthFailure(ctx, sqlcgen.RecordAuthFailureParams{
-		Scope:           throttleScope,
-		KeyHash:         key,
-		Now:             now,
-		ForgetCutoff:    now.Add(-s.limits.ForgetAfter),
-		FreeFailures:    int32(s.limits.FreeFailures),
-		BaseLockSeconds: int32(s.limits.BaseLock / time.Second),
-		MaxLockSeconds:  int32(s.limits.MaxLock / time.Second),
-	}); err != nil {
-		return fmt.Errorf("service: recording sign in failure: %w", err)
 	}
 	return nil
 }

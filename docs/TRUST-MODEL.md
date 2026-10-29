@@ -596,7 +596,7 @@ The rules.
 
 The limits.
 
-- Wrong passwords: 5 free tries per address, then a lock of 5 minutes that doubles on each further failure up to 60 minutes. The count is kept in the database under a keyed hash of the address, and is forgotten after 30 minutes with no failure. A right password clears it. `TestLimitsLockScheduleReachesCap` pins the schedule.
+- Wrong passwords: 5 free tries per address, then a lock of 5 minutes that doubles on each further failure up to 60 minutes. The count is kept in the database under a keyed hash of the address, and is forgotten after 30 minutes with no failure. Each try is counted before the password is checked, in one guarded statement, so many guesses sent at once get no more checks than the lock allows (`TestSignInLockCountsBeforeVerify`). A right password clears it. `TestLimitsLockScheduleReachesCap` pins the schedule.
 - Per device: each browser has its own buckets for sign in, for sending codes and for trying codes, so one noisy phone is held back without touching anyone else.
 - Per network address: a bucket by IP exists only when the host's client IP header is confirmed and named in `CLIENT_IP_HEADER`. Without it, a shared carrier address (CGNAT) is never counted as one person, which is the point (`TestLimitsDeviceBucketCGNAT`).
 - Code emails: one per address every 45 seconds, 5 an hour for each address (Create account and Forgot password share the count), and a cap for browsers that send no cookie at all.

@@ -284,14 +284,18 @@ func (f *credFakeQuerier) GetAuthThrottle(_ context.Context, arg sqlcgen.GetAuth
 	return row, nil
 }
 
-// RecordAuthFailure follows the SQL: the count restarts only when both the last
+// ReserveSignInTry follows the SQL: a row locked at now is refused with no
+// write (pgx.ErrNoRows); otherwise the count restarts only when both the last
 // failure and the end of the last lock are at or before the forget cutoff.
-func (f *credFakeQuerier) RecordAuthFailure(_ context.Context, arg sqlcgen.RecordAuthFailureParams) (sqlcgen.RecordAuthFailureRow, error) {
-	f.log("RecordAuthFailure")
+func (f *credFakeQuerier) ReserveSignInTry(_ context.Context, arg sqlcgen.ReserveSignInTryParams) (sqlcgen.ReserveSignInTryRow, error) {
+	f.log("ReserveSignInTry")
 	if arg.Scope != "sign_in" {
-		return sqlcgen.RecordAuthFailureRow{}, fmt.Errorf("fake: bad throttle scope %q", arg.Scope)
+		return sqlcgen.ReserveSignInTryRow{}, fmt.Errorf("fake: bad throttle scope %q", arg.Scope)
 	}
 	t, ok := f.throttles[arg.KeyHash]
+	if ok && t.locked != nil && t.locked.After(arg.Now) {
+		return sqlcgen.ReserveSignInTryRow{}, pgx.ErrNoRows
+	}
 	n := int32(1)
 	if ok {
 		forget := !t.last.After(arg.ForgetCutoff) && (t.locked == nil || !t.locked.After(arg.ForgetCutoff))
@@ -312,7 +316,7 @@ func (f *credFakeQuerier) RecordAuthFailure(_ context.Context, arg sqlcgen.Recor
 		locked = &l
 	}
 	f.throttles[arg.KeyHash] = &credThrottle{failures: n, last: arg.Now, locked: locked}
-	row := sqlcgen.RecordAuthFailureRow{Failures: n}
+	row := sqlcgen.ReserveSignInTryRow{Failures: n}
 	if locked != nil {
 		row.LockedUntil = pgtype.Timestamptz{Time: *locked, Valid: true}
 	}
@@ -1392,8 +1396,11 @@ func TestSignInHashBusy(t *testing.T) {
 	if !errors.Is(err, service.ErrBusy) {
 		t.Fatalf("err = %v, want ErrBusy", err)
 	}
-	if r.q.count("RecordAuthFailure") != 0 {
-		t.Error("a busy hasher is not a wrong password")
+	// The try is counted before the check (Phase 7.1 review CR-S01), so a busy
+	// hasher keeps the counted try, the same for every address.
+	if r.q.count("ReserveSignInTry") != 1 || r.q.count("BindSessionAccount") != 0 {
+		t.Errorf("a busy sign in: tries counted %d, binds %d; want 1 and 0",
+			r.q.count("ReserveSignInTry"), r.q.count("BindSessionAccount"))
 	}
 }
 
@@ -1444,7 +1451,8 @@ func TestSignInLockedRefusedBeforeHash(t *testing.T) {
 			t.Fatalf("attempt %d: %v", i, err)
 		}
 	}
-	verifies, lookups, failures := len(r.hasher.verified), r.q.count("GetAccountForSignIn"), r.q.count("RecordAuthFailure")
+	verifies, lookups := len(r.hasher.verified), r.q.count("GetAccountForSignIn")
+	before := *r.q.throttles[r.svc.ThrottleKey(credEmail)]
 
 	_, err := r.svc.SignIn(ctx, "sess-c", credEmail, credPassword, credSessionIDs("f"))
 	var locked service.SignInLockedError
@@ -1454,8 +1462,10 @@ func TestSignInLockedRefusedBeforeHash(t *testing.T) {
 	if locked.Wait <= 0 || locked.Wait > 5*time.Minute {
 		t.Errorf("wait = %v, want up to 5 minutes", locked.Wait)
 	}
-	if len(r.hasher.verified) != verifies || r.q.count("GetAccountForSignIn") != lookups || r.q.count("RecordAuthFailure") != failures {
-		t.Error("a locked address is refused before any hashing, lookup or failure record")
+	after := *r.q.throttles[r.svc.ThrottleKey(credEmail)]
+	if len(r.hasher.verified) != verifies || r.q.count("GetAccountForSignIn") != lookups ||
+		after.failures != before.failures || !after.last.Equal(before.last) || !after.locked.Equal(*before.locked) {
+		t.Error("a locked address is refused before any hashing or lookup, and the refused try changes nothing")
 	}
 	// The lock ends: the right password works again.
 	r.clk.Advance(5*time.Minute + time.Second)

@@ -35,9 +35,10 @@ type CredentialQuerier interface {
 	DeleteAuthCodesForEmail(ctx context.Context, email string) error
 	PruneAuthCodes(ctx context.Context, before time.Time) (int64, error)
 
-	// The database sign in throttle.
+	// The database sign in throttle. ReserveSignInTry counts a try before the
+	// password check and returns no row (pgx.ErrNoRows) for a locked address.
 	GetAuthThrottle(ctx context.Context, arg sqlcgen.GetAuthThrottleParams) (sqlcgen.GetAuthThrottleRow, error)
-	RecordAuthFailure(ctx context.Context, arg sqlcgen.RecordAuthFailureParams) (sqlcgen.RecordAuthFailureRow, error)
+	ReserveSignInTry(ctx context.Context, arg sqlcgen.ReserveSignInTryParams) (sqlcgen.ReserveSignInTryRow, error)
 	ClearAuthThrottle(ctx context.Context, arg sqlcgen.ClearAuthThrottleParams) error
 	PruneAuthThrottles(ctx context.Context, cutoff time.Time) (int64, error)
 
