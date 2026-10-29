@@ -499,7 +499,7 @@ var _ handlers.LoginState = (*service.CredentialService)(nil)
 // @description  reports both require a signed in session, an account signed in with an email
 // @description  and a password, and a session that is not signed in is refused with 401. Pinalert is an unofficial,
 // @description  unaffiliated project and is not a substitute for contacting emergency services.
-// @description  This document is Swagger 2.0 — swag (the generator behind this spec) does not
+// @description  This document is Swagger 2.0: swag (the generator behind this spec) does not
 // @description  emit OpenAPI 3.x, so tooling that expects OpenAPI 3.x specifically should account
 // @description  for that; OPS-01's "OpenAPI/Swagger spec" requirement is satisfied by either
 // @description  format.
