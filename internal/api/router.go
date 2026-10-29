@@ -489,7 +489,7 @@ var _ handlers.LoginState = (*service.CredentialService)(nil)
 // @description  for that; OPS-01's "OpenAPI/Swagger spec" requirement is satisfied by either
 // @description  format.
 // @BasePath     /api
-// @license.name Unlicensed (portfolio project, all rights reserved)
+// @license.name Unlicensed (all rights reserved)
 // @contact.name Pinalert project
 // @contact.url  https://github.com/swathivallabhaneni289/pinalert
 

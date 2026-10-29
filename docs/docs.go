@@ -14,7 +14,7 @@ const docTemplate = `{
             "url": "https://github.com/swathivallabhaneni289/pinalert"
         },
         "license": {
-            "name": "Unlicensed (portfolio project, all rights reserved)"
+            "name": "Unlicensed (all rights reserved)"
         },
         "version": "{{.Version}}"
     },
