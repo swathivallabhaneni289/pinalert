@@ -32,6 +32,11 @@
   var MAX_CLIENT_TRIES = 5;
   // How long one request may take, the body read included (review fix WR-B01).
   var REQUEST_TIMEOUT_MS = 10000;
+  // The three calls that send an email (Create account, Forgot password, Resend)
+  // wait longer than the server's 75 s write window for them, so a slow mail
+  // provider is never shown as offline while the code goes out (review fix round
+  // 2, SK-03).
+  var SEND_TIMEOUT_MS = 80000;
   var NEXT_PATHS = ['/', '/low'];
 
   function byId(id) {
@@ -238,8 +243,10 @@
   // postJSON always resolves: status 0 stands for a request that never got an answer.
   // The time limit covers the body read too, so a request WebKit leaves unsettled
   // (an iPhone tab suspended on the way to Mail) still ends and frees its button,
-  // as request() in welcome.js and settings.js does (review fix WR-B01).
-  function postJSON(path, body) {
+  // as request() in welcome.js and settings.js does (review fix WR-B01). limitMs is
+  // the time limit, REQUEST_TIMEOUT_MS when not given. A request that ran out of
+  // time also carries timedOut, so a caller can tell it from one that never left.
+  function postJSON(path, body, limitMs) {
     var controller = typeof AbortController === 'function' ? new AbortController() : null;
     var init = {
       method: 'POST',
@@ -257,8 +264,8 @@
         if (controller !== null) {
           controller.abort();
         }
-        finish(noAnswer);
-      }, REQUEST_TIMEOUT_MS);
+        finish({ ok: false, status: 0, body: {}, timedOut: true });
+      }, limitMs || REQUEST_TIMEOUT_MS);
       function finish(result) {
         if (settled) {
           return;
@@ -323,6 +330,23 @@
   function goNext(next) {
     var target = NEXT_PATHS.indexOf(next) >= 0 ? next : NEXT_PATHS[0];
     window.location.assign(target);
+  }
+
+  // askServerAgain reloads this page when a code submit got no answer in time
+  // (review fix round 2, SK-03). The server may already have spent the code, set
+  // the password or made the account, so it draws the right screen, rather than
+  // the card saying offline and a retry then saying the code is wrong. It names
+  // no path. A browser that says it is offline is not reloaded: that would only
+  // show its own error page, so the offline line stays.
+  function askServerAgain(result) {
+    if (!result.timedOut) {
+      return false;
+    }
+    if (typeof navigator !== 'undefined' && navigator && navigator.onLine === false) {
+      return false;
+    }
+    window.location.reload();
+    return true;
   }
 
   // ---- Show and Hide --------------------------------------------------------------
@@ -609,7 +633,7 @@
     var email = createEmail.value.trim();
     var mine = state.generation;
     setBusy(createSubmit, SENDING_LABEL);
-    postJSON('/api/auth/sign-up', { email: email, password: createPassword.value }).then(function (result) {
+    postJSON('/api/auth/sign-up', { email: email, password: createPassword.value }, SEND_TIMEOUT_MS).then(function (result) {
       clearBusy(createSubmit);
       if (mine !== state.generation) {
         return;
@@ -668,7 +692,7 @@
     var email = forgotEmail.value.trim();
     var mine = state.generation;
     setBusy(forgotSubmit, SENDING_LABEL);
-    postJSON('/api/auth/reset', { email: email }).then(function (result) {
+    postJSON('/api/auth/reset', { email: email }, SEND_TIMEOUT_MS).then(function (result) {
       clearBusy(forgotSubmit);
       if (mine !== state.generation) {
         return;
@@ -718,6 +742,9 @@
         finishReset();
         return;
       }
+      if (askServerAgain(result)) {
+        return;
+      }
       if (result.status === 400 && fieldOf(result) === 'code') {
         refuseCode();
         return;
@@ -751,7 +778,7 @@
     state.resendBusy = true;
     renderResend();
     var mine = state.generation;
-    postJSON('/api/auth/code/resend', {}).then(function (result) {
+    postJSON('/api/auth/code/resend', {}, SEND_TIMEOUT_MS).then(function (result) {
       // The card has moved on: the next code screen sets Resend up itself.
       if (mine !== state.generation) {
         return;

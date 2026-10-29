@@ -38,11 +38,18 @@ type CredentialQuerier interface {
 	GetLatestAuthCode(ctx context.Context, arg sqlcgen.GetLatestAuthCodeParams) (sqlcgen.GetLatestAuthCodeRow, error)
 	DeleteAuthCodesForEmail(ctx context.Context, email string) error
 	PruneAuthCodes(ctx context.Context, before time.Time) (int64, error)
+	// LockCredentialAddress is the first statement of both confirm
+	// transactions: one advisory lock per address, so they never deadlock
+	// (review fix skeptic SK-05).
+	LockCredentialAddress(ctx context.Context, addressKey string) error
 
 	// The database sign in throttle. ReserveSignInTry counts a try before the
 	// password check and returns no row (pgx.ErrNoRows) for a locked address.
+	// RefundSignInTry gives back a try whose password was never checked (a
+	// busy hasher, review fix skeptic SK-02).
 	GetAuthThrottle(ctx context.Context, arg sqlcgen.GetAuthThrottleParams) (sqlcgen.GetAuthThrottleRow, error)
 	ReserveSignInTry(ctx context.Context, arg sqlcgen.ReserveSignInTryParams) (sqlcgen.ReserveSignInTryRow, error)
+	RefundSignInTry(ctx context.Context, arg sqlcgen.RefundSignInTryParams) (int64, error)
 	ClearAuthThrottle(ctx context.Context, arg sqlcgen.ClearAuthThrottleParams) error
 	PruneAuthThrottles(ctx context.Context, cutoff time.Time) (int64, error)
 

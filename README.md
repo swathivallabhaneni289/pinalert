@@ -40,7 +40,7 @@ How confirmations are counted, why a place is a precision 7 geohash cell, the 1 
    # export EMERGENCY_PRIMARY="112"                  # optional, default 112
    # export EMERGENCY_OLDER="100,101,108"            # optional, this is the default; set but empty drops the older numbers text
    # export EMERGENCY_STATE_LINES="1070,1077"        # optional, this is the default; set but empty drops the state helpline row
-   # export CLIENT_IP_HEADER="Header-Your-Host-Sets" # optional, unset skips the network address backstop; use the header your host sets, only after the host canary in the checklist below
+   # export CLIENT_IP_HEADER="Header-Your-Host-Sets" # optional when ENV=development, required otherwise: the server will not start without it; pick it with the host canary check in the checklist below
    # export MODERATOR_EMAILS="you@example.com"       # optional, comma separated verified emails; unset means no moderator; a malformed entry stops startup
    # export VAPID_PUBLIC_KEY="..."                   # optional, phone notifications; make the pair once with: go run ./cmd/vapidkeys, and keep it as host secrets
    # export VAPID_PRIVATE_KEY="..."                  # optional, set both or neither; one alone stops startup
@@ -66,7 +66,8 @@ How confirmations are counted, why a place is a precision 7 geohash cell, the 1 
    repository URL as the identifier, so unlike `SESSION_SECRET` and `RESEND_API_KEY` this variable
    never blocks boot. The text check, the limits, the moderator screen and the numbers settings are
    described in [docs/MODERATION.md](./docs/MODERATION.md). A missing `OPENAI_API_KEY` outside
-   `ENV=development`, a malformed `CONTACT_EMAIL`, a `CLIENT_IP_HEADER` that is not a plain header
+   `ENV=development`, a malformed `CONTACT_EMAIL`, a missing `CLIENT_IP_HEADER` outside
+   `ENV=development`, a `CLIENT_IP_HEADER` that is not a plain header
    name and a malformed `MODERATOR_EMAILS` entry each stop startup with a message that names the
    setting.
 3. **Apply the schema** (a dedicated binary, never run automatically by the server):
@@ -128,11 +129,15 @@ sender is the first):
    `EMERGENCY_PRIMARY` (default 112), `EMERGENCY_OLDER` (default 100,101,108) and
    `EMERGENCY_STATE_LINES` (default 1070,1077; set but empty drops the text) if they differ. Never
    present 1070 or 1077 as national numbers.
-5. Send one canary request through the host to learn which header carries the visitor address
-   before setting `CLIENT_IP_HEADER` (unset means no network limit on the new limiters).
-   Until `CLIENT_IP_HEADER` is set on a host behind a proxy, the per address limits on place search
-   and the sign in and code limits see one shared address for every visitor, so set it only after the
-   canary shows which header carries the visitor address.
+5. Pick `CLIENT_IP_HEADER` with the host canary check before the first start outside
+   `ENV=development`: the server will not start there without it. Start from the header your host
+   documents (CF-Connecting-IP on Render, Fly-Client-IP on Fly.io, X-Real-IP on Railway). Then send
+   one canary request through the host with that header set to a made up value, to any small page
+   that shows the headers it received (a throwaway echo service on the same host is enough), and
+   check that the host replaced the made up value with your real address. Set `CLIENT_IP_HEADER`
+   to that header only when it did. A header the host passes through unchanged would let anyone
+   choose their own address, and a wrong header makes the per address limits on place search and
+   the sign in and code limits see one shared address for every visitor.
 6. Set `MODERATOR_EMAILS` to the verified emails of your moderators and bookmark `/moderate`.
 7. Set `OPENAI_API_KEY` and check that a fresh zero balance key is accepted by running the
    recorder once (see [docs/MODERATION.md](./docs/MODERATION.md)).
@@ -156,12 +161,14 @@ ceiling shows the person "Something went wrong. Try again." and says nothing abo
 ### Signing in: client address header and hashing speed
 
 - **`CLIENT_IP_HEADER` canary.** Sign in has a per device limit and a per address lock in the
-  database that need no setup. A limit by network address exists too, but it is off until
-  `CLIENT_IP_HEADER` names the header your host sets. Find the header with the host canary in step
-  5 of the checklist above, then set `CLIENT_IP_HEADER`, which turns the sign in network buckets
-  on. It **must be set before any public share**: without it, a script that drops cookies is held
-  back only by the per address lock and the hashing cost (see "Signing in" in
-  [docs/TRUST-MODEL.md](./docs/TRUST-MODEL.md)).
+  database that need no setup. A limit by network address exists too, and `CLIENT_IP_HEADER`
+  names the header your host sets for it. Find the header with the host canary in step 5 of the
+  checklist above, then set `CLIENT_IP_HEADER`, which turns the sign in network buckets and the
+  per network share of the Forgot password reserve on. It is **required outside
+  `ENV=development`**: the server will not start without it. Without it, a script that drops
+  cookies is held back only by the per address lock and the hashing cost, and a script that
+  fetches a fresh cookie before each Forgot password can spend the emails kept for real resets
+  (see "Signing in" in [docs/TRUST-MODEL.md](./docs/TRUST-MODEL.md)).
 - **Hashing speed.** Passwords are hashed with argon2id at m=19456 (19 MiB), t=2, p=1, the OWASP
   minimum, with at most 3 hashes running at once. On a very small host, if sign in feels slow or
   the host reports out of memory, use the fallback m=12288, t=3 (OWASP equal strength) by

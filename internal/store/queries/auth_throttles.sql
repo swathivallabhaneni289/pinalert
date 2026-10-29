@@ -99,7 +99,26 @@ SET failures = CASE
         ELSE NULL
     END
 WHERE t.locked_until IS NULL OR t.locked_until <= sqlc.arg(now)::timestamptz
-RETURNING failures, locked_until;
+RETURNING failures, locked_until, last_failure_at;
+
+-- name: RefundSignInTry :execrows
+-- Gives back one try ReserveSignInTry counted when the password was never
+-- checked because the hasher was busy (Phase 7.1 review fix skeptic SK-02). It
+-- is guarded on the row the reserve returned: it changes the row only while its
+-- failures and last_failure_at are still that try's, so it never undoes a later
+-- try. failures goes down by one and the lock goes. Clearing the lock is the
+-- state before the try: the reserve only updates a row whose lock had already
+-- ended (or never existed), and an ended lock and no lock read the same to the
+-- reserve's guard. The forget rule also reads the same, because last_failure_at
+-- is kept at this try's time, which is never before an ended lock. Every
+-- address, known or unknown, takes this same statement.
+UPDATE auth_throttles
+SET failures = failures - 1,
+    locked_until = NULL
+WHERE scope = sqlc.arg(scope) AND key_hash = sqlc.arg(key_hash)
+  AND failures = sqlc.arg(failures)
+  AND failures > 0
+  AND last_failure_at = sqlc.arg(last_failure_at)::timestamptz;
 
 -- name: ClearAuthThrottle :exec
 -- Forgets an address: after a successful sign in, after a password reset, and

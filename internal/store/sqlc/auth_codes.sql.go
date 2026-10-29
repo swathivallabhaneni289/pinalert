@@ -184,6 +184,23 @@ func (q *Queries) IssueAuthCode(ctx context.Context, arg IssueAuthCodeParams) (i
 	return id, err
 }
 
+const lockCredentialAddress = `-- name: LockCredentialAddress :exec
+SELECT pg_advisory_xact_lock(71, hashtext($1::text))
+`
+
+// The first statement of both confirm transactions, Create account's typed
+// code and Forgot password's (Phase 7.1 review fix skeptic SK-05): one
+// transaction scoped advisory lock per normalised address, keyed by its keyed
+// throttle hash, so two confirms for one address run one after the other. Each
+// takes the account row and the address's code rows, in different orders; under
+// this lock they can no longer deadlock, and the lock also covers a brand new
+// account, which has no row yet to lock. The class 71 keeps these keys apart
+// from any other advisory lock. It ends with the transaction.
+func (q *Queries) LockCredentialAddress(ctx context.Context, addressKey string) error {
+	_, err := q.db.Exec(ctx, lockCredentialAddress, addressKey)
+	return err
+}
+
 const pruneAuthCodes = `-- name: PruneAuthCodes :execrows
 DELETE FROM auth_codes WHERE expires_at < $1::timestamptz
 `

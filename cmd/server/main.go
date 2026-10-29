@@ -329,18 +329,16 @@ func main() {
 	// on Railway). It turns on the network address backstop and makes every per
 	// IP limiter key on that header. It is only safe on a host that overwrites
 	// the header, so the canary check in the README checklist comes first.
-	// Unset leaves the backstop off and the limits per account. A value that is
-	// not a plain header name stops startup.
-	clientIPHeader := strings.TrimSpace(os.Getenv("CLIENT_IP_HEADER"))
+	// Outside ENV=development an unset header stops startup (review fix
+	// skeptic SK-01); in development unset leaves the backstop off and the
+	// limits per account. A value that is not a plain header name stops startup.
+	clientIPHeader, err := clientIPHeaderFor(env, os.Getenv("CLIENT_IP_HEADER"))
+	if err != nil {
+		log.Fatal(err)
+	}
 	if clientIPHeader == "" {
 		log.Println("WARNING: CLIENT_IP_HEADER unset; the network address backstop is off and limits stay per account")
 	} else {
-		for _, c := range clientIPHeader {
-			isLetter := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-			if !isLetter && !(c >= '0' && c <= '9') && c != '-' {
-				log.Fatalf("CLIENT_IP_HEADER must be a plain header name of letters, digits and hyphens")
-			}
-		}
 		log.Printf("client IP header for the network backstop: %s", clientIPHeader)
 	}
 
@@ -666,6 +664,31 @@ func serveUntilDone(ctx context.Context, serve func() error, shutdown func(conte
 		errs = append(errs, errors.New("background loops still busy after the shutdown grace period"))
 	}
 	return errors.Join(errs...)
+}
+
+// clientIPHeaderFor checks the CLIENT_IP_HEADER value. Outside
+// ENV=development it is required (Phase 7.1 review fix skeptic SK-01): without
+// it every request with a valid cookie is its own mail sender and its own
+// device, so a script that fetches a fresh cookie before each Forgot password
+// for a made up address could spend the reset reserve of the send ceiling, and
+// sign in would have no network bucket. Development keeps it optional. A value
+// that is not a plain header name of letters, digits and hyphens is an error
+// everywhere.
+func clientIPHeaderFor(env, raw string) (string, error) {
+	header := strings.TrimSpace(raw)
+	if header == "" {
+		if env == "development" {
+			return "", nil
+		}
+		return "", errors.New("CLIENT_IP_HEADER must be set outside ENV=development: run the host canary check in the README checklist, then set CLIENT_IP_HEADER to the header it shows")
+	}
+	for _, c := range header {
+		isLetter := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+		if !isLetter && !(c >= '0' && c <= '9') && c != '-' {
+			return "", errors.New("CLIENT_IP_HEADER must be a plain header name of letters, digits and hyphens")
+		}
+	}
+	return header, nil
 }
 
 // loadSessionSecret reads SESSION_SECRET, failing fast unless env is

@@ -956,7 +956,10 @@ test('the script holds the two pinned sentences once and never mentions the aler
 // request WebKit leaves unsettled (an iPhone tab suspended on the way to Mail)
 // ends after 10 s as a request with no answer: the button is free again, the
 // offline line shows, and a second press posts again.
-test('WR-B01: a request that never settles ends after 10 s and frees its button', async () => {
+// Amended 2026-10-29 by the Phase 7.1 review fix round 2, SK-03: Create account
+// sends an email, so its limit is 80 s, longer than the server's 75 s write
+// window; the case now moves the clock to 80 s.
+test('WR-B01: a request that never settles ends after its limit and frees its button', async () => {
   const aborted = [];
   class FakeAbort {
     constructor() { this.signal = { aborted: false }; }
@@ -967,7 +970,7 @@ test('WR-B01: a request that never settles ends after 10 s and frees its button'
   submit(page, 'create');
   assert.equal(page.requests.length, 1);
   assert.ok(page.requests[0].init.signal, 'the request carries an abort signal');
-  page.advance(9999);
+  page.advance(79999);
   await flush();
   assert.equal(byId(page, 'create-submit').getAttribute('aria-busy'), 'true', 'still waiting before the limit');
   page.advance(1);
@@ -1011,6 +1014,9 @@ test('WR-B01: the limit covers the body read, and the timer goes once the answer
   assertClean(page);
 });
 
+// Amended 2026-10-29 by the Phase 7.1 review fix round 2, SK-03: a code submit
+// with no answer in 10 s now reloads the page instead of showing the offline
+// line, and Resend, which sends an email, ends after 80 s.
 test('WR-B01: Resend and the code submit are bounded too', async () => {
   const page = load({ start: 'create' });
   await toCodeScreen(page);
@@ -1020,13 +1026,13 @@ test('WR-B01: Resend and the code submit are bounded too', async () => {
   await flush();
   assert.equal(byId(page, 'code-submit').getAttribute('aria-busy'), null);
   assert.equal(text(page, 'code-submit'), 'Create account');
-  assert.equal(text(page, 'code-error'), "You're offline. Try again when you have a signal.");
+  assert.deepEqual(page.touched, ['location.reload']);
 
   page.advance(45000);
   click(page, 'code-resend');
   const before = page.requests.length;
   assert.equal(page.requests[before - 1].url, '/api/auth/code/resend');
-  page.advance(10000);
+  page.advance(80000);
   await flush();
   assert.equal(byId(page, 'code-resend').getAttribute('aria-busy'), null);
   assert.equal(text(page, 'code-resend'), 'Resend code');
@@ -1255,4 +1261,124 @@ test('IN-B03: a sign in that succeeded still goes on after the choice changed', 
   answer(page.requests[0], 200, { next: '/low' });
   await flush();
   assert.deepEqual(page.assigned, ['/low']);
+});
+
+// Phase 7.1 review fix round 2, skeptic SK-04: a code screen reloaded after the
+// wait ran out draws data-resend-seconds="0" and the full cooldown in
+// data-resend-cooldown-seconds; a Resend that succeeds then waits the full 45 s.
+test('SK-04: a code screen reloaded with no wait left still waits the full cooldown after a Resend', async () => {
+  const page = load({ start: 'code', email: 'priya@example.com', secondsLeft: 550, resend: 0, cooldown: 45 });
+  assert.equal(text(page, 'code-resend'), 'Resend code');
+  click(page, 'code-resend');
+  answer(page.requests[0], 200, { sent: true });
+  await flush();
+  assert.equal(text(page, 'code-resend'), 'Resend in 45s');
+  assert.equal(isOff(page, 'code-resend'), true);
+  page.advance(44000);
+  assert.equal(isOff(page, 'code-resend'), true, 'still off one second before the full wait ends');
+  page.advance(1000);
+  assert.equal(text(page, 'code-resend'), 'Resend code');
+  assertClean(page);
+});
+
+// Phase 7.1 review fix round 2, skeptic SK-03: the three calls that send an
+// email (Create account, Forgot password, Resend) wait longer than the server's
+// 75 s write window for them, so a slow mail provider is not shown as offline
+// while the server has sent the code. A code submit (Create account or Set new
+// password) that gets no answer in time reloads the page, so the server shows
+// what really happened instead of "offline" and then "That code is wrong".
+test('SK-03: a send answered after 15 s opens the code screen, not the offline line', async () => {
+  const page = load({ start: 'create' });
+  await fillCreate(page, 'priya@example.com', 'pinalert-demo');
+  submit(page, 'create');
+  page.advance(15000);
+  await flush();
+  assert.equal(byId(page, 'create-error').hidden, true, 'no offline line while the send is still out');
+  assert.equal(byId(page, 'create-submit').getAttribute('aria-busy'), 'true');
+  answer(page.requests[0], 200, { sent: true });
+  await flush();
+  assert.deepEqual(shownPanel(page), ['code']);
+
+  const forgot = load({ start: 'signin' });
+  byId(forgot, 'signin-email').value = 'priya@example.com';
+  click(forgot, 'signin-forgot');
+  submit(forgot, 'forgot');
+  forgot.advance(15000);
+  await flush();
+  assert.equal(byId(forgot, 'forgot-error').hidden, true);
+  answer(forgot.requests[0], 200, { sent: true });
+  await flush();
+  assert.deepEqual(shownPanel(forgot), ['code']);
+
+  forgot.advance(45000);
+  click(forgot, 'code-resend');
+  forgot.advance(15000);
+  await flush();
+  assert.equal(byId(forgot, 'code-error').hidden, true);
+  answer(forgot.requests[forgot.requests.length - 1], 200, { sent: true });
+  await flush();
+  assert.equal(text(forgot, 'code-status'), 'A new code is on its way.');
+  assertClean(page);
+  assertClean(forgot);
+});
+
+test('SK-03: a send still ends after 80 s, longer than the server write window', async () => {
+  const page = load({ start: 'create' });
+  await fillCreate(page, 'priya@example.com', 'pinalert-demo');
+  submit(page, 'create');
+  page.advance(79999);
+  await flush();
+  assert.equal(byId(page, 'create-submit').getAttribute('aria-busy'), 'true');
+  page.advance(1);
+  await flush();
+  assert.equal(byId(page, 'create-submit').getAttribute('aria-busy'), null);
+  assert.equal(text(page, 'create-error'), "You're offline. Try again when you have a signal.");
+  assert.ok(/SEND_TIMEOUT_MS = 80000/.test(source), 'the send limit is 80 s');
+  assert.ok(/REQUEST_TIMEOUT_MS = 10000/.test(source), 'the other calls keep 10 s');
+});
+
+test('SK-03: a code submit with no answer in time reloads the page, in both modes', async () => {
+  const page = load({ start: 'create' });
+  await toCodeScreen(page);
+  byId(page, 'code-input').value = '123456';
+  submit(page, 'code');
+  page.advance(9999);
+  await flush();
+  assert.deepEqual(page.touched, []);
+  page.advance(1);
+  await flush();
+  assert.deepEqual(page.touched, ['location.reload'], 'the server shows the screen');
+  assert.deepEqual(page.assigned, []);
+  assert.equal(byId(page, 'code-error').hidden, true, 'no offline line over a state the server may have changed');
+
+  const reset = load({ start: 'code', mode: 'reset', email: 'priya@example.com', secondsLeft: 300, resend: 0 });
+  byId(reset, 'code-input').value = '123456';
+  byId(reset, 'code-new-password').value = 'a new long password';
+  submit(reset, 'code');
+  reset.advance(10000);
+  await flush();
+  assert.deepEqual(reset.touched, ['location.reload']);
+  assert.equal(byId(reset, 'code-error').hidden, true);
+});
+
+test('SK-03: a code submit that never left the phone keeps the offline line and does not reload', async () => {
+  const page = load({ start: 'create' });
+  await toCodeScreen(page);
+  byId(page, 'code-input').value = '123456';
+  submit(page, 'code');
+  refuse(page.requests[page.requests.length - 1]);
+  await flush();
+  assert.equal(text(page, 'code-error'), "You're offline. Try again when you have a signal.");
+  assertClean(page);
+
+  // A timed out submit while the browser says it is offline shows the line too:
+  // a reload would only show the browser's own error page.
+  const away = load({ start: 'create', globals: { navigator: { onLine: false } } });
+  await toCodeScreen(away);
+  byId(away, 'code-input').value = '123456';
+  submit(away, 'code');
+  away.advance(10000);
+  await flush();
+  assert.equal(text(away, 'code-error'), "You're offline. Try again when you have a signal.");
+  assertClean(away);
 });

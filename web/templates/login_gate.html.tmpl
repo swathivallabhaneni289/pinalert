@@ -27,7 +27,8 @@
     <div class="login-card" id="login-form-panel"
          data-start-panel="{{.StartPanel}}" data-code-mode="{{.CodeMode}}"
          data-code-seconds-left="{{.CodeSecondsLeft}}" data-code-ttl-seconds="{{.CodeTTLSeconds}}"
-         data-resend-seconds="{{.ResendSeconds}}" data-password-min="{{.PasswordMin}}">
+         data-resend-seconds="{{.ResendSeconds}}" data-resend-cooldown-seconds="{{.ResendCooldownSeconds}}"
+         data-password-min="{{.PasswordMin}}">
       {{if .DoneLine}}<p class="login-done" id="login-done" role="status">{{.DoneLine}}</p>{{end}}
       <h1 id="login-title" tabindex="-1">{{if eq .StartPanel "code"}}{{if eq .CodeMode "reset"}}Reset your password{{else}}Check your email{{end}}{{else}}Pinalert{{end}}</h1>
 

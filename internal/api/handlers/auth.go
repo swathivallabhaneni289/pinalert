@@ -86,9 +86,14 @@ type loginGateViewModel struct {
 	// reads from data attributes. ResendSeconds is the full resend cooldown
 	// when there is no live code and the seconds left of it when there is one
 	// (review WR-B02); CodeSecondsLeft is the seconds left of a live code.
-	CodeDigits     int
-	CodeTTLSeconds int
-	ResendSeconds  int
+	// ResendCooldownSeconds is always the full resend cooldown, the wait the
+	// script starts after every send, so a code screen reloaded with less left
+	// never takes the leftover as the next whole wait (review fix round 2,
+	// skeptic SK-04).
+	CodeDigits            int
+	CodeTTLSeconds        int
+	ResendSeconds         int
+	ResendCooldownSeconds int
 	// PasswordMin and PasswordMax feed minlength and maxlength on the new
 	// password fields and the rule line.
 	PasswordMin int
@@ -171,6 +176,7 @@ func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 			vm.CodeTTLSeconds = int(cfg.Login.CodeTTL() / time.Second)
 			vm.ResendSeconds = int(cfg.Login.ResendCooldown() / time.Second)
 		}
+		vm.ResendCooldownSeconds = vm.ResendSeconds
 
 		vm.LowDataDefault = lowDataChosen(r)
 		switch r.URL.Query().Get("low") {

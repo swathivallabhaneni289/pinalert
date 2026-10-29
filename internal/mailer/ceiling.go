@@ -31,8 +31,10 @@ type CeilingLimits struct {
 	Window             time.Duration
 	PerWindow          int
 	WindowResetReserve int
-	// SenderReserveShare is how many reserved slots (a reset class send that
-	// the other class would have been refused) one sender may take per UTC date.
+	// SenderReserveShare is how many reserved slots of the day (a reset class
+	// send admitted once the other class has spent its PerDay minus
+	// ResetReserve) one sender may take per UTC date. The window's kept slots
+	// never count toward it (review fix skeptic SK-06).
 	// The sender is the one WithSender put in the context; a send with no sender
 	// has no share limit. 0 turns the share off.
 	SenderReserveShare int
@@ -84,9 +86,11 @@ type sendCeiling struct {
 //
 // The Resend free plan allows 100 emails a day and 3,000 a month; the caller
 // wires 90 so there is headroom (cmd/server/main.go only). The counts live in
-// memory, so a restart resets them. That is accepted because the provider
-// enforces the true limit. A send the wrapped mailer fails still counts, as
-// the provider may have counted it.
+// memory, so a restart, or a free host waking from sleep, resets them. That is
+// accepted as part of T-07.1-09 in docs/TRUST-MODEL.md: after a reset the
+// provider's own day limit is the only cap, and once it is spent the provider
+// refuses every email, Forgot password included. A send the wrapped mailer
+// fails still counts, as the provider may have counted it.
 //
 // The pacing means a burst cannot spend the whole day: a person refused in a
 // busy window gets in a few minutes later, not the next day. The sender share
@@ -136,9 +140,9 @@ func (c *sendCeiling) admit(reset bool, sender string) error {
 	}
 	inWindow := len(c.recent)
 
-	// Whether the other class would be refused now; a reset class send
-	// admitted in that state takes a reserved slot.
-	otherFull := c.count >= c.limits.PerDay-c.limits.ResetReserve ||
+	// Whether the other class would be refused now.
+	dayReserveInUse := c.count >= c.limits.PerDay-c.limits.ResetReserve
+	otherFull := dayReserveInUse ||
 		(windowOn && inWindow >= c.limits.PerWindow-c.limits.WindowResetReserve)
 	if !reset {
 		if otherFull {
@@ -148,7 +152,11 @@ func (c *sendCeiling) admit(reset bool, sender string) error {
 		if c.count >= c.limits.PerDay || (windowOn && inWindow >= c.limits.PerWindow) {
 			return ErrDailyCeiling
 		}
-		if otherFull && c.limits.SenderReserveShare > 0 && sender != "" {
+		// The share counts only the day's reserved slots, never the window's
+		// (review fix skeptic SK-06): a busy 10 minutes is normal on a flood
+		// day, and a shared carrier address (CGNAT) is one sender, so a share
+		// charged by the window would refuse every phone behind it.
+		if dayReserveInUse && c.limits.SenderReserveShare > 0 && sender != "" {
 			if c.shares[sender] >= c.limits.SenderReserveShare {
 				return ErrDailyCeiling
 			}

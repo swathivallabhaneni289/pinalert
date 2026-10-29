@@ -212,3 +212,48 @@ func TestMainStopsOnSignals(t *testing.T) {
 		t.Error("a push loop still runs on context.Background, which no signal can end")
 	}
 }
+
+// TestClientIPHeaderRequiredOutsideDevelopment is SK-01 of the Phase 7.1 review
+// fix skeptic: without CLIENT_IP_HEADER every request with a valid cookie is
+// its own mail sender, so a script that fetches a fresh cookie before each
+// Forgot password can spend the reset reserve. Outside ENV=development the
+// server therefore refuses to start without the header, with one plain line
+// that says to run the README canary check and set it. Development keeps it
+// optional, and a value that is not a plain header name is refused everywhere.
+func TestClientIPHeaderRequiredOutsideDevelopment(t *testing.T) {
+	for _, env := range []string{"", "production", "staging"} {
+		got, err := clientIPHeaderFor(env, "  ")
+		if err == nil {
+			t.Errorf("ENV=%q with no CLIENT_IP_HEADER: got %q and no error, want a refusal", env, got)
+			continue
+		}
+		msg := err.Error()
+		if strings.Contains(msg, "\n") {
+			t.Errorf("ENV=%q: the refusal is not one line: %q", env, msg)
+		}
+		for _, want := range []string{"CLIENT_IP_HEADER", "canary", "README"} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("ENV=%q: the refusal %q does not name %q", env, msg, want)
+			}
+		}
+	}
+	if got, err := clientIPHeaderFor("development", ""); err != nil || got != "" {
+		t.Errorf("ENV=development with no header = %q, %v; want it optional", got, err)
+	}
+	for _, env := range []string{"development", "production"} {
+		if got, err := clientIPHeaderFor(env, " CF-Connecting-IP "); err != nil || got != "CF-Connecting-IP" {
+			t.Errorf("ENV=%q with a plain header = %q, %v; want CF-Connecting-IP", env, got, err)
+		}
+		if _, err := clientIPHeaderFor(env, "X-Real-IP: 1"); err == nil {
+			t.Errorf("ENV=%q: a header value that is not a plain name was accepted", env)
+		}
+	}
+
+	raw, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("reading main.go: %v", err)
+	}
+	if !strings.Contains(string(raw), `clientIPHeaderFor(env, os.Getenv("CLIENT_IP_HEADER"))`) {
+		t.Error(`main must read the header through clientIPHeaderFor(env, os.Getenv("CLIENT_IP_HEADER"))`)
+	}
+}
