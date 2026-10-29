@@ -1100,3 +1100,70 @@ func TestSignInCleansReplacedSessionPush(t *testing.T) {
 		t.Errorf("the phone after signing in as B: GET /api/reports = %d, want 200", got)
 	}
 }
+
+// ---- Review fix round 1: the new limiters --------------------------------
+
+// headerTransport sets fixed headers on every request, so a test client can
+// send a junk cookie (with no jar to replace it) or a client address.
+type headerTransport struct {
+	base    http.RoundTripper
+	headers map[string]string
+}
+
+func (h headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	r := req.Clone(req.Context())
+	for k, v := range h.headers {
+		r.Header.Set(k, v)
+	}
+	return h.base.RoundTrip(r)
+}
+
+// newHeaderClient is a client with no cookie jar, response compression off and
+// the given headers on every request.
+func newHeaderClient(t *testing.T, headers map[string]string) *http.Client {
+	t.Helper()
+	tr := &http.Transport{DisableCompression: true}
+	t.Cleanup(tr.CloseIdleConnections)
+	return &http.Client{Transport: headerTransport{base: tr, headers: headers}}
+}
+
+// TestEnumerationCookielessBucketsIdentical covers the two shared cookieless
+// buckets of review WR-S01 (CodeSendNoCookie, now keyed on a minted session id,
+// and the new SignInNoCookie): once a junk cookie script has spent them, the
+// refusal for a known address and for an unknown one is the same answer, on
+// sign in and on Create account.
+func TestEnumerationCookielessBucketsIdentical(t *testing.T) {
+	srv, mail, pool := newE2EServerWith(t, func(d *api.Deps, _ *sqlcgen.Queries) {
+		limits := e2eGenerousAuthLimits
+		limits.CodeSendNoCookie = api.BucketLimit{Every: time.Hour, Burst: 1}
+		limits.SignInNoCookie = api.BucketLimit{Every: time.Hour, Burst: 1}
+		d.AuthLimits = limits
+	})
+	const (
+		knownAddr   = "enum-junk-known@example.com"
+		unknownAddr = "enum-junk-unknown@example.com"
+	)
+	// A browser that opened /login first carries a valid cookie, so making the
+	// known account spends neither shared bucket.
+	verifySession(t, newLoginClient(t, srv), srv, mail, knownAddr)
+	ageClaim(t, pool, knownAddr)
+
+	junk := newHeaderClient(t, map[string]string{"Cookie": "pinalert_session=x"})
+	// Spend both shared buckets.
+	if a := doAuth(t, junk, srv, "/api/auth/sign-up", map[string]string{"email": "enum-junk-spend@example.com", "password": e2eTestPassword}); a.status != http.StatusOK {
+		t.Fatalf("the first junk cookie sign up = %d, want 200: %s", a.status, a.body)
+	}
+	if a := doAuth(t, junk, srv, "/api/auth/sign-in", map[string]string{"email": "enum-junk-spend@example.com", "password": secWrongPassword}); a.status != http.StatusBadRequest {
+		t.Fatalf("the first junk cookie sign in = %d, want 400: %s", a.status, a.body)
+	}
+
+	for _, path := range []string{"/api/auth/sign-in", "/api/auth/sign-up"} {
+		body := func(addr string) map[string]string {
+			return map[string]string{"email": addr, "password": secWrongPassword}
+		}
+		known := doAuth(t, junk, srv, path, body(knownAddr))
+		unknown := doAuth(t, junk, srv, path, body(unknownAddr))
+		expectError(t, path+" known address after the shared bucket is spent", known, http.StatusTooManyRequests, "email", secMinuteSentence)
+		compareAuthAnswers(t, path+" junk cookie: known vs unknown address", known, unknown)
+	}
+}
