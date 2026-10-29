@@ -1409,3 +1409,104 @@ test('IN-B06: the comments refresh when the tab comes back, and not after close'
   page.view.open();
   assert.equal(env.doc.listeners.visibilitychange.length, 1, 'one listener per open section');
 });
+
+// ---- review fix round 2, SK-01 (2026-10-29): a thread longer than the reply
+// cap keeps every reply reachable. The toggle counts reply_count, Show more
+// replies reads the rest of the thread, and a poll that covers only the first
+// replies never drops the ones after them, a reader's own new reply included. ----
+
+function replyRange(from, to) {
+  const out = [];
+  for (let id = from; id <= to; id++) { out.push(cm(id, { words: 'reply ' + id })); }
+  return out;
+}
+function threadIds(li) { return findAll(li, 'comment--reply').map((n) => wordsOf(n).textContent); }
+
+test('SK-01: a long thread counts reply_count and Show more replies reads the rest', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { replies: replyRange(2, 101), reply_count: 101 })]);
+  const [li] = page.items();
+  const toggle = find(li, 'comment-thread__toggle');
+  const more = find(li, 'comment-thread__more');
+  assert.equal(toggle.textContent, 'View 101 replies', 'the toggle counts every reply, not the 100 sent');
+  assert.equal(more.hidden, true, 'folded, the thread shows no Show more replies');
+  toggle.fire('click');
+  assert.equal(more.hidden, false, 'an open thread with replies left offers them');
+  assert.equal(more.textContent, 'Show more replies');
+  assert.equal(more.tagName, 'BUTTON');
+  more.fire('click');
+  const call = lastFetch(env);
+  assert.equal(call.address, '/api/reports/r1/comments?replies_of=1&reply_after=101');
+  call.reply(200, body([cm(1, { reply_count: 101, replies: [cm(102, { words: 'reply 102' })] })], { more: false, next_after: 102 }));
+  await flush();
+  const ids = threadIds(li);
+  assert.equal(ids.length, 101);
+  assert.equal(ids[100], 'reply 102', 'the 101st reply lands last, oldest first');
+  assert.equal(more.hidden, true, 'nothing is left to show');
+
+  env.advance(30000);
+  lastFetch(env).reply(200, body([cm(1, { replies: replyRange(2, 101), reply_count: 101 })]));
+  await flush();
+  assert.equal(threadIds(li).length, 101, 'a poll that covers the first 100 keeps the 101st');
+  assert.equal(threadIds(li)[100], 'reply 102');
+});
+
+test('SK-01: your own reply in a long thread stays at the next poll', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { author: 'ravi.k', replies: replyRange(2, 101), reply_count: 101 })]);
+  const [li] = page.items();
+  replyButton(li).fire('click');
+  type(page, 'the hall next door has room');
+  page.post.fire('click');
+  posts(env)[0].reply(201, cm(103, { is_own: true, words: 'mine' }));
+  await flush();
+  assert.equal(threadIds(li).length, 101);
+  env.advance(30000);
+  lastFetch(env).reply(200, body([cm(1, { author: 'ravi.k', replies: replyRange(2, 101), reply_count: 102 })]));
+  await flush();
+  const ids = threadIds(li);
+  assert.equal(ids.length, 101, 'the poll did not drop the new reply');
+  assert.equal(ids[100], 'mine');
+  const toggle = find(li, 'comment-thread__toggle');
+  toggle.fire('click');
+  assert.equal(toggle.textContent, 'View 102 replies');
+  toggle.fire('click');
+  const more = find(li, 'comment-thread__more');
+  assert.equal(more.hidden, false, 'reply 102 is still to be read');
+  more.fire('click');
+  lastFetch(env).reply(200, body([cm(1, { reply_count: 102, replies: [cm(102, { words: 'reply 102' }), cm(103, { is_own: true, words: 'mine' })] })], { more: false, next_after: 103 }));
+  await flush();
+  const after = threadIds(li);
+  assert.equal(after.length, 102);
+  assert.deepEqual(after.slice(99), ['reply 101', 'reply 102', 'mine'], 'the read reply sits before the newer own one');
+  assert.equal(more.hidden, true);
+});
+
+test('SK-01: a failed Show more replies says so and can be pressed again', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { replies: replyRange(2, 101), reply_count: 101 })]);
+  const [li] = page.items();
+  find(li, 'comment-thread__toggle').fire('click');
+  const more = find(li, 'comment-thread__more');
+  more.fire('click');
+  lastFetch(env).reply(500, null);
+  await flush();
+  const error = find(li, 'comment-thread__more-error');
+  assert.equal(error.hidden, false);
+  assert.equal(error.textContent, "Couldn't load more replies. Try again.");
+  assert.equal(more.hidden, false);
+  const before = env.fetches.length;
+  more.fire('click');
+  assert.equal(env.fetches.length, before + 1, 'a second press asks again');
+});
+
+test('SK-01: a thread the server sends whole still drops a reply that went', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { replies: [cm(2, { words: 'a' }), cm(3, { words: 'b' })], reply_count: 2 })]);
+  const [li] = page.items();
+  env.advance(30000);
+  lastFetch(env).reply(200, body([cm(1, { replies: [cm(3, { words: 'b' })], reply_count: 1 })]));
+  await flush();
+  assert.deepEqual(threadIds(li), ['b']);
+  assert.equal(find(li, 'comment-thread__toggle').textContent, 'View 1 reply');
+});

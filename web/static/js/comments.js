@@ -64,6 +64,8 @@ window.PinalertComments = (function () {
   var OFFLINE_LINE = "You're offline, so comments can't load. Try again when you have a signal.";
   var RETRY_LABEL = 'Try again';
   var MORE_ERROR = "Couldn't load more comments. Try again.";
+  var SHOW_MORE_REPLIES = 'Show more replies';
+  var MORE_REPLIES_ERROR = "Couldn't load more replies. Try again.";
   var OFFLINE_POST = "You're offline, so this comment wasn't posted. Your words are still here. Try again when you have a signal.";
   var POST_ERROR = "Couldn't post your comment. Try again.";
   var DELETED_LINE = 'Comment deleted';
@@ -493,14 +495,38 @@ window.PinalertComments = (function () {
       toggle.setAttribute('type', 'button');
       toggle.setAttribute('aria-expanded', 'false');
       toggle.setAttribute('aria-controls', ul.id);
+      // Show more replies reads the rest of a thread longer than the server's
+      // reply cap (review fix round 2, SK-01). It shows only while the thread
+      // is open, under its replies, so replies stay folded.
+      var more = element('button', 'comment-thread__more');
+      more.setAttribute('type', 'button');
+      Pinalert.setText(more, SHOW_MORE_REPLIES);
+      more.hidden = true;
+      var moreErr = element('p', 'inline-error comment-thread__more-error');
+      Pinalert.setText(moreErr, MORE_REPLIES_ERROR);
+      moreErr.setAttribute('role', 'alert');
+      moreErr.hidden = true;
       wrap.appendChild(ul);
+      wrap.appendChild(more);
+      wrap.appendChild(moreErr);
       wrap.appendChild(toggle);
       rec.li.appendChild(wrap);
-      rec.thread = { wrap: wrap, ul: ul, toggle: toggle, replyIds: [] };
+      // total is the thread's real reply count (reply_count, plus your own
+      // new reply until the next answer); coveredTo is the last reply id the
+      // server's answers have covered from the start; serverMore says replies
+      // after coveredTo are still to be read.
+      rec.thread = {
+        wrap: wrap, ul: ul, toggle: toggle, more: more, moreError: moreErr, replyIds: [],
+        total: 0, coveredTo: 0, serverMore: false, busy: false
+      };
       toggle.addEventListener('click', function (evt) {
         evt.stopPropagation();
         openThreads[rec.id] = !openThreads[rec.id];
         writeThread(rec);
+      });
+      more.addEventListener('click', function (evt) {
+        evt.stopPropagation();
+        loadMoreReplies(rec);
       });
     }
 
@@ -753,6 +779,9 @@ window.PinalertComments = (function () {
         if (at >= 0) {
           parent.thread.replyIds.splice(at, 1);
         }
+        if (parent.thread.total > 0) {
+          parent.thread.total -= 1;
+        }
         writeThread(parent);
       }
     }
@@ -781,7 +810,9 @@ window.PinalertComments = (function () {
       if (!t) {
         return;
       }
-      var count = t.replyIds.length;
+      // The toggle counts the thread's real replies, which can be more than
+      // the replies read so far (review fix round 2, SK-01).
+      var count = Math.max(t.total, t.replyIds.length);
       t.wrap.hidden = count === 0;
       if (count === 0) {
         return;
@@ -790,6 +821,11 @@ window.PinalertComments = (function () {
       t.ul.hidden = !open;
       t.toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
       writeText(t.toggle, open ? HIDE_REPLIES : viewReplies(count));
+      var offer = open && t.serverMore;
+      t.more.hidden = !offer;
+      if (!offer) {
+        t.moreError.hidden = true;
+      }
     }
 
     // freshData keeps the like state a Like answer wrote when the list answer
@@ -809,32 +845,42 @@ window.PinalertComments = (function () {
       return kept;
     }
 
-    // placeReplies makes the thread hold exactly the replies of data, in order,
-    // writing the nodes it already has and adding or dropping the rest.
-    function placeReplies(rec, replies, sentStamp) {
+    // placeReplies writes one answer's replies into the thread, in id order
+    // (the server's order, oldest first), writing the nodes it already has and
+    // adding the rest. A reply the answer should have held but did not is
+    // dropped only inside the range the answer covers: after from (0 for the
+    // list) up to its last reply, or to the end when toEnd is set because the
+    // answer holds the whole rest of the thread (review fix round 2, SK-01).
+    // Replies after that range stay, and so does your own reply posted after
+    // the request left, so a capped thread never loses the replies it did not
+    // cover and a new reply never vanishes at the next poll.
+    function placeReplies(rec, replies, sentStamp, from, toEnd) {
       var t = rec.thread;
+      var lo = typeof from === 'number' ? from : 0;
       var seen = {};
-      var prev = null;
+      var lastId = lo;
       for (var i = 0; i < replies.length; i++) {
         var id = String(replies[i].id);
         var data = freshData(nodes[id], replies[i], sentStamp);
         seen[id] = true;
+        lastId = Math.max(lastId, Number(data.id));
         var child = nodes[id];
         if (!child) {
           child = makeRecord(data, true, rec.id);
           nodes[id] = child;
         }
         writeComment(child, data);
-        var at = prev === null ? t.ul.firstChild : prev.li.nextSibling;
-        if (child.li.parentNode !== t.ul || at !== child.li) {
-          t.ul.insertBefore(child.li, at);
-        }
-        prev = child;
       }
-      var kept = [];
+      var hi = toEnd ? Infinity : lastId;
+      var ids = [];
       for (var j = 0; j < t.replyIds.length; j++) {
         var old = t.replyIds[j];
-        if (!seen[old]) {
+        if (seen[old]) {
+          continue;
+        }
+        var n = Number(old);
+        var postedSince = nodes[old] && nodes[old].postStamp > sentStamp;
+        if (n > lo && n <= hi && !postedSince) {
           if (replyTarget && replyTarget.replyToId === old) {
             clearReplyTarget(false);
           }
@@ -842,12 +888,43 @@ window.PinalertComments = (function () {
             nodes[old].li.parentNode.removeChild(nodes[old].li);
           }
           delete nodes[old];
+          continue;
         }
+        ids.push(old);
       }
       for (var k = 0; k < replies.length; k++) {
-        kept.push(String(replies[k].id));
+        ids.push(String(replies[k].id));
       }
-      t.replyIds = kept;
+      ids.sort(function (a, b) { return Number(a) - Number(b); });
+      var prev = null;
+      for (var m = 0; m < ids.length; m++) {
+        var node = nodes[ids[m]];
+        var at = prev === null ? t.ul.firstChild : prev.li.nextSibling;
+        if (node.li.parentNode !== t.ul || at !== node.li) {
+          t.ul.insertBefore(node.li, at);
+        }
+        prev = node;
+      }
+      t.replyIds = ids;
+      writeThread(rec);
+    }
+
+    // coverReplies notes what a list answer said about a thread: its real
+    // reply count, and whether replies after the ones it carried are left to
+    // read. A thread the answer holds whole has none left. A capped one has
+    // some when its count is more than the replies read, or when the answer
+    // reached past every page Show more replies read (SK-01).
+    function coverReplies(rec, data, replies, capped) {
+      var t = rec.thread;
+      t.total = typeof data.reply_count === 'number' ? data.reply_count : 0;
+      var last = replies.length > 0 ? Number(replies[replies.length - 1].id) : 0;
+      if (!capped) {
+        t.coveredTo = last;
+        t.serverMore = false;
+      } else {
+        t.serverMore = t.total > t.replyIds.length || last >= t.coveredTo;
+        t.coveredTo = Math.max(t.coveredTo, last);
+      }
       writeThread(rec);
     }
 
@@ -912,7 +989,11 @@ window.PinalertComments = (function () {
         }
         writeComment(rec, data);
         var replies = Array.isArray(data.replies) ? data.replies : [];
-        placeReplies(rec, replies, sentStamp);
+        // The server lists at most its reply cap of each thread, oldest
+        // first; reply_count is the real count (review fix round 2, SK-01).
+        var capped = typeof data.reply_count === 'number' && data.reply_count > replies.length;
+        placeReplies(rec, replies, sentStamp, 0, !capped);
+        coverReplies(rec, data, replies, capped);
       }
       var limit = covered === 'all' ? Infinity : lastId;
       var stale = rootIds.filter(function (id) {
@@ -1082,6 +1163,12 @@ window.PinalertComments = (function () {
       return after ? path + '?after=' + encodeURIComponent(String(after)) : path;
     }
 
+    // threadPath reads one thread's replies after the last one read (SK-01).
+    function threadPath(rootId, after) {
+      var path = '/api/reports/' + encodeURIComponent(reportId) + '/comments?replies_of=' + encodeURIComponent(String(rootId));
+      return after ? path + '&reply_after=' + encodeURIComponent(String(after)) : path;
+    }
+
     function stopLoad() {
       loadSeq += 1;
       if (inflight !== null) {
@@ -1187,6 +1274,56 @@ window.PinalertComments = (function () {
         moreBusy = false;
         moreButton.removeAttribute('aria-disabled');
         moreError.hidden = false;
+      });
+    }
+
+    // loadMoreReplies reads the next page of one thread's replies, after the
+    // last reply the server's answers have covered, and writes it through
+    // placeReplies (review fix round 2, SK-01). A thread no longer on the list
+    // when the answer comes is left alone; a failed read keeps the button and
+    // says so, and a second press asks again.
+    function loadMoreReplies(rec) {
+      var t = rec.thread;
+      if (!t || t.busy || !t.serverMore) {
+        return;
+      }
+      t.busy = true;
+      t.moreError.hidden = true;
+      t.more.setAttribute('aria-disabled', 'true');
+      var after = t.coveredTo;
+      var sentStamp = answerStamp;
+      var call = request('GET', threadPath(rec.id, after));
+      call.promise.then(function (res) {
+        t.busy = false;
+        t.more.removeAttribute('aria-disabled');
+        if (nodes[rec.id] !== rec) {
+          return;
+        }
+        if (!res.ok || !res.body || !Array.isArray(res.body.comments)) {
+          throw new Error('more replies failed');
+        }
+        var head = res.body.comments[0];
+        if (!head || String(head.id) !== String(rec.id)) {
+          t.serverMore = false;
+          writeThread(rec);
+          return;
+        }
+        var replies = Array.isArray(head.replies) ? head.replies : [];
+        var more = res.body.more === true;
+        placeReplies(rec, replies, sentStamp, after, !more);
+        if (typeof head.reply_count === 'number') {
+          t.total = head.reply_count;
+        }
+        var next = typeof res.body.next_after === 'number' ? res.body.next_after : 0;
+        t.coveredTo = Math.max(t.coveredTo, next);
+        t.serverMore = more;
+        writeThread(rec);
+      }).catch(function () {
+        t.busy = false;
+        t.more.removeAttribute('aria-disabled');
+        if (nodes[rec.id] === rec) {
+          t.moreError.hidden = false;
+        }
       });
     }
 
@@ -1342,6 +1479,12 @@ window.PinalertComments = (function () {
         var rootRec = nodes[target.rootId];
         if (rootRec && rootRec.thread) {
           var child = makeRecord(data, true, rootRec.id);
+          // The stamp keeps this reply through a list answer that left before
+          // it was posted, and total counts it until the next answer does
+          // (review fix round 2, SK-01).
+          answerStamp += 1;
+          child.postStamp = answerStamp;
+          rootRec.thread.total = Math.max(rootRec.thread.total, rootRec.thread.replyIds.length) + 1;
           nodes[String(data.id)] = child;
           rootRec.thread.ul.appendChild(child.li);
           rootRec.thread.replyIds.push(String(data.id));

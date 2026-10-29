@@ -362,6 +362,10 @@ var touchControls = []string{
 	// high and wide through --touch-target-min in comments.css. No other entry
 	// changed.
 	".comment__like", ".comment__delete", ".comment__flag",
+	// Amended 2026-10-29 by review fix round 2 (SK-01): the Show more replies
+	// button of a long thread, 44px through --touch-target-min in comments.css,
+	// in the same rule as Show more comments. No other entry changed.
+	".comment-thread__more",
 }
 
 // touchValue reads a height or min-height value as pixels: a px length, a

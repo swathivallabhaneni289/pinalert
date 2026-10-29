@@ -500,13 +500,82 @@ func (s *CommentService) List(ctx context.Context, reportID, viewerAccountID, af
 		return CommentList{}, fmt.Errorf("service: List: reading comments of report %d: %w", reportID, err)
 	}
 
+	roots := commentThreadsFromRows(rows, viewerAccountID)
+	out := CommentList{Open: rep.open, Comments: roots}
+	if len(roots) > CommentPageSize {
+		out.Comments = roots[:CommentPageSize]
+		out.More = true
+	}
+	if n := len(out.Comments); n > 0 {
+		out.NextAfter = out.Comments[n-1].ID
+	}
+
+	if out.Count, err = s.commentCount(ctx, reportID, viewerAccountID); err != nil {
+		return CommentList{}, fmt.Errorf("service: List: %w", err)
+	}
+	return out, nil
+}
+
+// ListReplies returns one page of the replies of one thread, so a thread
+// longer than CommentReplyCap keeps every reply reachable (review fix round 2,
+// SK-01). The page holds the replies with an id larger than after, oldest
+// first, at most CommentReplyCap of them; More says some are left and NextAfter
+// is the last reply id, for the next page. Comments holds the root alone,
+// carrying that page, or nothing when rootID is not a thread root List would
+// show this viewer on this report (a reply, another report's comment, a removed
+// root with no shown reply, an unknown id): all of these answer the same empty
+// list, so the answer tells nothing List does not. The report check and the
+// visibility rule are List's own.
+func (s *CommentService) ListReplies(ctx context.Context, reportID, viewerAccountID, rootID, after int64) (CommentList, error) {
+	now := s.now().UTC()
+	rep, err := s.reportFor(ctx, reportID, now)
+	if err != nil {
+		return CommentList{}, err
+	}
+	out := CommentList{Open: rep.open, Comments: []CommentView{}}
+	if rep.hidden || rootID <= 0 {
+		return out, nil
+	}
+
+	rows, err := s.q.CommentsForReport(ctx, sqlcgen.CommentsForReportParams{
+		ViewerAccountID: viewerAccountID,
+		ReportID:        reportID,
+		AfterID:         rootID - 1,
+		RootCap:         1,
+		ReplyAfter:      after,
+		ReplyCap:        CommentReplyCap + 1,
+	})
+	if err != nil {
+		return CommentList{}, fmt.Errorf("service: ListReplies: reading thread %d of report %d: %w", rootID, reportID, err)
+	}
+	roots := commentThreadsFromRows(rows, viewerAccountID)
+	if len(roots) == 1 && roots[0].ID == rootID {
+		thread := roots[0]
+		if len(thread.Replies) > CommentReplyCap {
+			thread.Replies = thread.Replies[:CommentReplyCap]
+			out.More = true
+		}
+		if n := len(thread.Replies); n > 0 {
+			out.NextAfter = thread.Replies[n-1].ID
+		}
+		out.Comments = []CommentView{thread}
+	}
+
+	if out.Count, err = s.commentCount(ctx, reportID, viewerAccountID); err != nil {
+		return CommentList{}, fmt.Errorf("service: ListReplies: %w", err)
+	}
+	return out, nil
+}
+
+// commentThreadsFromRows shapes CommentsForReport rows into threads: each root
+// in order, carrying its replies in order and the real count of its shown
+// replies, which can be more than the rows returned (WR-S02).
+func commentThreadsFromRows(rows []sqlcgen.CommentsForReportRow, viewerAccountID int64) []CommentView {
 	roots := make([]CommentView, 0, len(rows))
 	rootIndex := make(map[int64]int)
 	for _, row := range rows {
 		v := commentViewFromRow(row, viewerAccountID)
 		if row.ParentID == nil {
-			// The real number of replies the viewer may see in this thread, which
-			// can be more than the CommentReplyCap rows returned (WR-S02).
 			v.ReplyCount = int(row.ShownReplies)
 			rootIndex[row.ID] = len(roots)
 			roots = append(roots, v)
@@ -518,29 +587,25 @@ func (s *CommentService) List(ctx context.Context, reportID, viewerAccountID, af
 		}
 		roots[i].Replies = append(roots[i].Replies, v)
 	}
+	return roots
+}
 
-	out := CommentList{Open: rep.open, Comments: roots}
-	if len(roots) > CommentPageSize {
-		out.Comments = roots[:CommentPageSize]
-		out.More = true
-	}
-	if n := len(out.Comments); n > 0 {
-		out.NextAfter = out.Comments[n-1].ID
-	}
-
+// commentCount is the number of comments everyone can see on a report, the
+// same number the report rows carry.
+func (s *CommentService) commentCount(ctx context.Context, reportID, viewerAccountID int64) (int, error) {
 	extras, err := s.q.ReportExtrasForReports(ctx, sqlcgen.ReportExtrasForReportsParams{
 		ViewerAccountID: viewerAccountID,
 		ReportIds:       []int64{reportID},
 	})
 	if err != nil {
-		return CommentList{}, fmt.Errorf("service: List: reading the comment count of report %d: %w", reportID, err)
+		return 0, fmt.Errorf("reading the comment count of report %d: %w", reportID, err)
 	}
 	for _, e := range extras {
 		if e.ReportID == reportID {
-			out.Count = int(e.CommentCount)
+			return int(e.CommentCount), nil
 		}
 	}
-	return out, nil
+	return 0, nil
 }
 
 // commentViewFromRow shapes one CommentsForReport row. A placeholder carries no

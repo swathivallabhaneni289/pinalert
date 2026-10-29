@@ -36,7 +36,18 @@ func TestShareTokenNeverInAccessLog(t *testing.T) {
 	})
 	token := seedSharedReport(t, pool, "accesslog")
 
-	for _, path := range []string{"/r/" + token, "/r/" + token + "/extra"} {
+	// Amended 2026-10-29 by review fix round 2 (SK-04): a path that resolves
+	// under /r/ but is not written as /r/ (a doubled slash, an encoded r, a dot
+	// segment, an encoded slash) still carries the token, so it is redacted too.
+	paths := []string{
+		"/r/" + token,
+		"/r/" + token + "/extra",
+		"//r/" + token,
+		"/%72/" + token,
+		"/./r/" + token,
+		"/%2Fr/" + token,
+	}
+	for _, path := range paths {
 		resp, err := http.Get(srv.URL + path)
 		if err != nil {
 			t.Fatalf("GET %s: %v", path, err)
@@ -50,12 +61,12 @@ func TestShareTokenNeverInAccessLog(t *testing.T) {
 		mu.Lock()
 		logged := buf.String()
 		mu.Unlock()
-		if strings.Count(logged, "\n") >= 2 || time.Now().After(deadline) {
+		if strings.Count(logged, "\n") >= len(paths) || time.Now().After(deadline) {
 			if strings.Contains(logged, token) {
 				t.Errorf("the access log holds the share token: %q", logged)
 			}
-			if strings.Count(logged, "GET /r/{token} ") < 2 {
-				t.Errorf("the access log does not name the route /r/{token} for both requests: %q", logged)
+			if strings.Count(logged, "GET /r/{token} ") < len(paths) {
+				t.Errorf("the access log does not name the route /r/{token} for every request: %q", logged)
 			}
 			return
 		}
