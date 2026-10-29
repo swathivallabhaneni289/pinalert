@@ -80,8 +80,9 @@ func TestPushKindsClosed(t *testing.T) {
 }
 
 // Amended 2026-10-30 by Phase 9 plan 25 (D-09, D-25): every value is unchanged;
-// the new assertions at the end say a follow push counts toward the hourly cap
-// and is held back by it like Reliable, so follow notes stay few.
+// FollowFanoutCap (500) joins the table, and the new assertions at the end say a
+// follow push counts toward the hourly cap and is held back by it like
+// Reliable, so follow notes stay few.
 func TestPushCapsAreNamed(t *testing.T) {
 	ints := []struct {
 		name      string
@@ -92,6 +93,7 @@ func TestPushCapsAreNamed(t *testing.T) {
 		{"PushReliableReportsPerReporterPerHour", PushReliableReportsPerReporterPerHour, 2},
 		{"PushRecipientsPerReport", PushRecipientsPerReport, 2000},
 		{"PushDevicesPerAccount", PushDevicesPerAccount, 8},
+		{"FollowFanoutCap", FollowFanoutCap, 500},
 	}
 	for _, c := range ints {
 		if c.got != c.want {

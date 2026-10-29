@@ -57,6 +57,7 @@ type dispatchFake struct {
 	areaTried     int
 
 	followers     []int64
+	bellFollowers []int64 // answer of NotifyFollowersOf (Phase 9 plan 25)
 	followerCalls []int64
 	changeAccts   []int64
 	changeAfter   []int64 // the after_id of each AccountsWithChangesPush call
@@ -183,6 +184,38 @@ func (f *dispatchFake) MarkReliableFanout(_ context.Context, a sqlcgen.MarkRelia
 		p.ReliableAt = pgtype.Timestamptz{Time: a.Now, Valid: true}
 	}
 	return nil
+}
+
+// MarkFollowFanout, EnqueueFollowFromUpdates and NotifyFollowersOf were added by
+// Phase 9 plan 25 (D-09) when PushDispatchQuerier gained the follow pass. They
+// record their calls like the others and change no existing behavior: the mark
+// is sticky like the other two, the enqueue queues nothing, and no follower has
+// the bell on unless a test sets bellFollowers.
+func (f *dispatchFake) MarkFollowFanout(_ context.Context, a sqlcgen.MarkFollowFanoutParams) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.rec("MarkFollowFanout")
+	p := f.prog(a.ReportID)
+	if p.FollowState == nil {
+		s := a.State
+		p.FollowState = &s
+		p.FollowAt = pgtype.Timestamptz{Time: a.Now, Valid: true}
+	}
+	return nil
+}
+
+func (f *dispatchFake) EnqueueFollowFromUpdates(_ context.Context, _ sqlcgen.EnqueueFollowFromUpdatesParams) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.rec("EnqueueFollowFromUpdates")
+	return 0, nil
+}
+
+func (f *dispatchFake) NotifyFollowersOf(_ context.Context, _ sqlcgen.NotifyFollowersOfParams) ([]int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.rec("NotifyFollowersOf")
+	return f.bellFollowers, nil
 }
 
 func (f *dispatchFake) MarkAreaLookupTried(_ context.Context, a sqlcgen.MarkAreaLookupTriedParams) error {

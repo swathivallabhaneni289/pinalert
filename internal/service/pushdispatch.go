@@ -16,6 +16,14 @@
 //     asks the updates service to Refresh each nearby account that turned the
 //     switch on and pushes exactly the reliable_nearby rows that rule wrote. One
 //     row, two channels, never a second rule (D-06, owner amendment 2026-10-18).
+//   - Follow (Phase 9 plan 25, D-09) is a report by a person the reader follows
+//     with the Notify me bell on. The same one row, two channels shape: the
+//     dispatcher asks the updates service to Refresh each follower of the
+//     reporter who has the bell on, and pushes exactly the followed_posted rows
+//     that step wrote. There is no second rule; the bell step applies
+//     MayNotifyAboutReport(UpdateFollowedPosted, ...), the Reliable reporter
+//     check and every mute, block and privacy rule. A follow note is not about
+//     distance, so a follower needs no home area.
 //   - Changed (kind 3) is pushed from the same 3.2 updates rows the bell reads.
 //     After a vote the report's followers are refreshed and their new event rows
 //     are queued, and a periodic sweep does the same for fading reports and for
@@ -23,6 +31,19 @@
 //     pushes (D-06, D-13 of 3.2).
 //   - Confirmed update (kind 5) is queued once for each initial alert that went
 //     out saying Not confirmed yet, when ConfirmedByPeople becomes true.
+//
+// One first alert per person and report (D-09, research 5.2 item 7): when one
+// report matches several kinds for one person only the first is queued, because
+// the branches run in this order and uq_push_outbox_first allows one row per
+// account and report across critical, follow and reliable:
+//
+//	Critical, then Follow, then Reliable (the first alert), then Changes (a
+//	reached_live change is skipped while a first alert exists), then the
+//	confirmed update.
+//
+// Critical wins over Follow, and Follow wins over Reliable. The phone default is
+// few notes that never pile up (D-25): at most one first alert per report, and
+// the hourly cap counts follow pushes.
 //
 // Disputes: a Critical report that most nearby cells dispute stays Live and
 // listed, because disputes cannot hide a Critical report. Its push follows the
@@ -80,6 +101,11 @@ const (
 	PushSweepReportCap = 50
 	// PushChangesSweepAccountCap is the most accounts one changes sweep serves.
 	PushChangesSweepAccountCap = 500
+	// FollowFanoutCap is the most followers (people with the Notify me bell on)
+	// read for one report in the follow pass. A follower past the cap still gets
+	// the bell note from their own poll; only the phone note is left out
+	// (T-09-87).
+	FollowFanoutCap = 500
 )
 
 // pushFanoutWindow is the rolling window of the per reporter fan out caps.
@@ -118,12 +144,15 @@ type PushDispatchQuerier interface {
 	MarkReportEvaluated(ctx context.Context, arg sqlcgen.MarkReportEvaluatedParams) error
 	MarkCriticalFanout(ctx context.Context, arg sqlcgen.MarkCriticalFanoutParams) error
 	MarkReliableFanout(ctx context.Context, arg sqlcgen.MarkReliableFanoutParams) error
+	MarkFollowFanout(ctx context.Context, arg sqlcgen.MarkFollowFanoutParams) error
 	MarkAreaLookupTried(ctx context.Context, arg sqlcgen.MarkAreaLookupTriedParams) error
 	SetReportAreaName(ctx context.Context, arg sqlcgen.SetReportAreaNameParams) error
 	CountReporterFanouts(ctx context.Context, arg sqlcgen.CountReporterFanoutsParams) (int64, error)
 	PushHomeCandidates(ctx context.Context, arg sqlcgen.PushHomeCandidatesParams) ([]sqlcgen.PushHomeCandidatesRow, error)
 	EnqueueInitialPush(ctx context.Context, arg sqlcgen.EnqueueInitialPushParams) (int64, error)
 	EnqueueReliableFromUpdates(ctx context.Context, arg sqlcgen.EnqueueReliableFromUpdatesParams) (int64, error)
+	EnqueueFollowFromUpdates(ctx context.Context, arg sqlcgen.EnqueueFollowFromUpdatesParams) (int64, error)
+	NotifyFollowersOf(ctx context.Context, arg sqlcgen.NotifyFollowersOfParams) ([]int64, error)
 	EnqueueChangedFromUpdates(ctx context.Context, arg sqlcgen.EnqueueChangedFromUpdatesParams) (int64, error)
 	EnqueueConfirmedUpdates(ctx context.Context, arg sqlcgen.EnqueueConfirmedUpdatesParams) (int64, error)
 	FollowersWithChangesPush(ctx context.Context, reportID int64) ([]int64, error)
@@ -332,6 +361,7 @@ type evalRun struct {
 
 	critical string // stored or just written critical_state, "" while NULL
 	reliable string // the same for reliable_state
+	follow   string // the same for follow_state
 	areaTry  bool   // the area lookup was already considered in this call
 	areaDone bool   // the stored progress says it was tried
 	cands    []sqlcgen.PushHomeCandidatesRow
@@ -341,10 +371,12 @@ type evalRun struct {
 // EvaluateReport decides and queues everything about one report. actor is the
 // account whose vote caused the call, or 0 for a new report or a sweep.
 //
-// Order: the facts, the evaluated mark, the Critical branch, the Reliable
-// branch (Critical rows are queued first, so a report that is both goes out as
-// Critical), the changes branch (only with an actor) and the confirmed update.
-// Each branch is independent; their errors come back joined.
+// Order: the facts, the evaluated mark, the Critical branch, the Follow branch,
+// the Reliable branch, the changes branch (only with an actor) and the confirmed
+// update. The first alert kinds are queued in that order, so a report that
+// matches several goes out once, as the first of Critical, Follow, Reliable, and
+// the Changes branch skips a reached_live note while a first alert exists. Each
+// branch is independent; their errors come back joined.
 func (d *PushDispatcher) EvaluateReport(ctx context.Context, reportID, actorAccountID int64) error {
 	now := d.now().UTC()
 	facts, ok, err := loadPushFacts(ctx, d.q, reportID, now)
@@ -368,9 +400,15 @@ func (d *PushDispatcher) EvaluateReport(ctx context.Context, reportID, actorAcco
 	if progress.ReliableState != nil {
 		run.reliable = *progress.ReliableState
 	}
+	if progress.FollowState != nil {
+		run.follow = *progress.FollowState
+	}
 
 	var errs []error
 	if err := d.criticalBranch(ctx, run); err != nil {
+		errs = append(errs, err)
+	}
+	if err := d.followBranch(ctx, run); err != nil {
 		errs = append(errs, err)
 	}
 	if err := d.reliableBranch(ctx, run); err != nil {
@@ -481,6 +519,74 @@ func (d *PushDispatcher) criticalBranch(ctx context.Context, run *evalRun) error
 		}
 		run.critical = pushStateFanned
 	}
+	return nil
+}
+
+// followBranch carries the follow note to the phone (Phase 9 plan 25, D-09,
+// research 5.2). It reads the reporter's followers who have the Notify me bell on
+// (at most FollowFanoutCap), asks the updates service to Refresh each one, which
+// is where the one rule writes the followed_posted row, and then queues a follow
+// push for exactly the rows that step wrote for this report. The rule lives
+// once, in the bell step; this branch only follows it (T-09-88). It runs after
+// criticalBranch and before reliableBranch, so a follower who was already queued
+// a Critical push keeps it and a follower who would also get the Reliable alert
+// gets the follow note instead (uq_push_outbox_first holds one first alert).
+//
+// A pass is one that got past the reporter, predicate and window checks. It is
+// recorded as fanned after one full pass whether or not any row was queued
+// (review W2): a pass that found nobody must not be repeated on every later
+// evaluation, which would refresh the followers each time. This differs on
+// purpose from the Critical and Reliable branches, which mark a report fanned
+// only when they found a recipient. A report that is Hidden or Withheld at its
+// first evaluation fails the predicate, is not marked, and gets its one pass
+// when it first becomes listable. A report with no reporter account is never
+// pushed. A failed Refresh logs ids only and does not stop the pass.
+func (d *PushDispatcher) followBranch(ctx context.Context, run *evalRun) error {
+	f := run.facts
+	if f.ReporterAccountID == nil || d.updates == nil {
+		return nil
+	}
+	if run.follow != "" {
+		return nil
+	}
+	if !MayNotifyAboutReport(UpdateFollowedPosted, f.Vis, f.ExpiresAt, run.now) {
+		return nil
+	}
+	if run.now.Sub(f.CreatedAt) >= PushInitialWindow {
+		return nil
+	}
+
+	followers, err := d.q.NotifyFollowersOf(ctx, sqlcgen.NotifyFollowersOfParams{
+		FolloweeID: *f.ReporterAccountID,
+		RowLimit:   FollowFanoutCap,
+	})
+	if err != nil {
+		return err
+	}
+	if len(followers) > 0 {
+		d.ensureAreaName(ctx, run)
+		for _, id := range followers {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if err := d.updates.Refresh(ctx, id); err != nil {
+				// The text of this error is not logged; it comes from a layer
+				// that reads reports and places.
+				log.Printf("push dispatch: follow refresh failed for account %d, report %d", id, f.ID)
+			}
+		}
+		if _, err := d.q.EnqueueFollowFromUpdates(ctx, sqlcgen.EnqueueFollowFromUpdatesParams{
+			ExpiresAt: pushEarlier(f.ExpiresAt, run.now.Add(PushOtherTTL)),
+			Now:       run.now,
+			ReportID:  f.ID,
+		}); err != nil {
+			return err
+		}
+	}
+	if err := d.q.MarkFollowFanout(ctx, sqlcgen.MarkFollowFanoutParams{ReportID: f.ID, State: pushStateFanned, Now: run.now}); err != nil {
+		return err
+	}
+	run.follow = pushStateFanned
 	return nil
 }
 
