@@ -31,7 +31,8 @@
 // Phase 5 review fix CR-B01, one more when the answer reaches the 30 minute
 // fresh limit, every five minutes while it is stale or unavailable, when a shown
 // row ends, and when the tab is shown again more than a minute after the last
-// request. Between those, the minutes of the status line move once a minute
+// request; a Demo page makes none of these automatic asks (Phase 5 review fix
+// NP-1). Between those, the minutes of the status line move once a minute
 // from the server's age plus the time that passed here, with no live region.
 //
 // The renderer is source agnostic: it reads its API base and its position from
@@ -316,6 +317,13 @@
     }
     return pageAttr('data-demo') === '1' ? null : DEFAULT_BASE;
   }
+
+  // demoPage is true on the Demo's Official alerts (Phase 5 review fix NP-1).
+  // Its sample answer never ages (always fresh, age 0), and the world behind it
+  // ends after 30 idle minutes, so the page never asks again on its own: an
+  // automatic ask could only meet an ended visit. It asks on the reader's load
+  // and on Try again only.
+  var demoPage = window.PinalertDemoPage === true || pageAttr('data-demo') === '1';
 
   // ---- Showing and hiding -------------------------------------------------
 
@@ -770,8 +778,12 @@
   }
 
   // load makes the one request and draws the answer. A press while a request is
-  // out does nothing.
-  function load() {
+  // out does nothing. byReader is true for the loads the reader started (the
+  // first one and Try again): only those may hand an ended Demo visit over to
+  // PinalertDemoEnded, which starts a new visit (Phase 5 review fix NP-1). An
+  // automatic ask that meets an ended visit shows the load error, whose Try
+  // again is the press that starts the Demo again.
+  function load(byReader) {
     if (requestOut) {
       return;
     }
@@ -804,7 +816,7 @@
         // set by demo.js on Demo pages only, so a real page never reads it.
         if (res.status === 404 && typeof window.PinalertDemoEnded === 'function' && typeof res.json === 'function') {
           return res.json().then(function (body) {
-            if (mine === requestSeq && body && body.error && body.error.field === 'visit') {
+            if (mine === requestSeq && byReader === true && body && body.error && body.error.field === 'visit') {
               window.PinalertDemoEnded();
             }
           }, function () {}).then(function () {
@@ -897,20 +909,22 @@
       return;
     }
     var elapsed = Date.now() - renderedAt;
-    if (answerTooOld(current, elapsed)) {
-      load();
+    if (!demoPage && answerTooOld(current, elapsed)) {
+      load(false);
       return;
     }
     renderStatus(current, elapsed);
   }
 
   function askIfOld() {
-    if (Date.now() - lastLoadAt >= SHOWN_AGAIN_MS) {
-      load();
+    if (!demoPage && Date.now() - lastLoadAt >= SHOWN_AGAIN_MS) {
+      load(false);
     }
   }
 
-  retryEl.addEventListener('click', load);
+  retryEl.addEventListener('click', function () {
+    load(true);
+  });
   setInterval(tick, STATUS_TICK_MS);
   if (typeof document.addEventListener === 'function') {
     document.addEventListener('visibilitychange', function () {
@@ -935,5 +949,5 @@
     untilText: untilText
   };
 
-  load();
+  load(true);
 }());

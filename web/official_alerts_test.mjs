@@ -1302,3 +1302,63 @@ test('IN-S05-browser: under the unavailable notice nothing is drawn unless the G
   }));
   assert.equal(shown(page, 'official-section'), false, 'a SACHET row is never drawn from an unavailable feed');
 });
+
+// ---- An idle Demo visit never leaves the page by itself (Phase 5 review fix NP-1) ----
+// Added 2026-10-29. The Demo's sample answer never ages (it is always fresh
+// with age 0, and the world behind it ends after 30 idle minutes), so a Demo
+// page never asks again on its own: not at the fresh limit, not when a shown
+// row ends, not when the tab is shown again. Only the reader's own load (the
+// first one and Try again) may hand an ended visit over to PinalertDemoEnded,
+// which starts a new visit, so no visit is spent without a press.
+
+const demoShell = () => ({ account: null, demo: true, dataApiBase: '/demo/api/v/abc_DEF-123', fixedLat: '16.5', fixedLon: '80.6' });
+const demoAnswer = () => withRows({ age_seconds: 0, last_success_at: '2026-10-29T10:34:00Z',
+  groups: [group('reader', 'Where you are', [row({ demo: true, expires_at: '2026-10-29T10:50:00Z' })])] });
+const visitEnded = { error: { field: 'visit', message: 'This Demo has ended. Reload the page to start again.' } };
+
+test('NP-1: an idle Demo Official alerts page makes no request and never restarts on its own', async () => {
+  const page = await open(demoShell(), demoAnswer());
+  let ended = 0;
+  page.sandbox.PinalertDemoEnded = () => { ended += 1; };
+  for (let i = 0; i < 31; i++) { page.advance(60000); }
+  await flush();
+  assert.equal(page.requests.length, 1, 'no ask at the fresh limit or when the sample row ends');
+  showTab(page, 'hidden');
+  for (let i = 0; i < 90; i++) { page.advance(60000); }
+  showTab(page);
+  (page.sandbox.windowListeners.pageshow || []).forEach((h) => h({ type: 'pageshow', persisted: true }));
+  await flush();
+  assert.equal(page.requests.length, 1, 'no ask when the tab is shown again or the page is restored');
+  assert.equal(ended, 0, 'nothing restarted the Demo');
+  assert.ok(hasInForce(page), 'the sample answer stays drawn');
+});
+
+test('NP-1: on the Demo, Try again on an ended visit starts the Demo again, once', async () => {
+  const page = loadPage(demoShell());
+  let ended = 0;
+  page.sandbox.PinalertDemoEnded = () => { ended += 1; };
+  await flush();
+  answer(page.requests[0], 500);
+  await flush();
+  assert.ok(shown(page, 'official-error'));
+  assert.equal(ended, 0);
+  fire(el(page, 'official-retry'), 'click');
+  await flush();
+  answer(page.requests[1], 404, visitEnded);
+  await flush();
+  assert.equal(ended, 1, 'the press hands the ended visit over');
+});
+
+test('NP-1: an automatic ask that meets an ended visit never restarts anything', async () => {
+  // A page that asks on its own (not the Demo) and still has the hand over set.
+  const page = await open({}, view(staleAt()));
+  let ended = 0;
+  page.sandbox.PinalertDemoEnded = () => { ended += 1; };
+  page.advance(5 * 60000);
+  await flush();
+  assert.equal(page.requests.length, 2);
+  answer(page.requests[1], 404, visitEnded);
+  await flush();
+  assert.equal(ended, 0, 'only a load the reader started hands over');
+  assert.ok(shown(page, 'official-error'), 'the load error with Try again shows instead');
+});
