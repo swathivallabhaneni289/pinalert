@@ -1009,7 +1009,18 @@
       return;
     }
     var elapsed = Date.now() - renderedAt;
-    if (!demoPage && answerTooOld(current, elapsed)) {
+    if (answerTooOld(current, elapsed)) {
+      if (demoPage) {
+        // Phase 5 review fix NP2-1: a Demo page never asks on its own (NP-1),
+        // but it must not keep "In force now" past the fresh limit or a shown
+        // row's end (CR-B01). Drop the claim with no request: the visit is over
+        // or the sample has aged, and Try again starts it again. renderError
+        // sets current to null, so this runs once.
+        var place = takePlace();
+        renderError();
+        keepPlace(place);
+        return;
+      }
       load(false);
       return;
     }

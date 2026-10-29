@@ -1316,13 +1316,24 @@ const demoAnswer = () => withRows({ age_seconds: 0, last_success_at: '2026-10-29
   groups: [group('reader', 'Where you are', [row({ demo: true, expires_at: '2026-10-29T10:50:00Z' })])] });
 const visitEnded = { error: { field: 'visit', message: 'This Demo has ended. Reload the page to start again.' } };
 
+// Amended 2026-10-29 by the Phase 5 review fix (NP2-1): the old last line
+// asserted hasInForce after 121 idle minutes ("the sample answer stays drawn"),
+// which kept "In force now" up forever on an idle Demo page (CR-B01). Every
+// old case stays: no ask, no hand over, no ask on a shown tab or a restored
+// page. What changed is the end state: at the fresh limit the page drops the
+// claim and shows the error block (no request), with focus on the error title.
 test('NP-1: an idle Demo Official alerts page makes no request and never restarts on its own', async () => {
   const page = await open(demoShell(), demoAnswer());
   let ended = 0;
   page.sandbox.PinalertDemoEnded = () => { ended += 1; };
+  rowsOf(page)[0].focus();
   for (let i = 0; i < 31; i++) { page.advance(60000); }
   await flush();
   assert.equal(page.requests.length, 1, 'no ask at the fresh limit or when the sample row ends');
+  assert.equal(ended, 0, 'no hand over at the fresh limit');
+  assert.equal(hasInForce(page), false, 'NP2-1: the claim is dropped once the answer is too old');
+  assert.ok(shown(page, 'official-error'), 'NP2-1: the error block shows, with Try again');
+  assert.ok(page.doc.activeElement === el(page, 'official-error-title'), 'NP2-1: focus is on the error title, not the body');
   showTab(page, 'hidden');
   for (let i = 0; i < 90; i++) { page.advance(60000); }
   showTab(page);
@@ -1330,7 +1341,28 @@ test('NP-1: an idle Demo Official alerts page makes no request and never restart
   await flush();
   assert.equal(page.requests.length, 1, 'no ask when the tab is shown again or the page is restored');
   assert.equal(ended, 0, 'nothing restarted the Demo');
-  assert.ok(hasInForce(page), 'the sample answer stays drawn');
+  assert.equal(hasInForce(page), false, 'NP2-1: the claim stays gone (was: the sample answer stays drawn)');
+  assert.ok(shown(page, 'official-error'), 'NP2-1: the error block still shows');
+});
+
+test('NP2-1: on an idle Demo page the claim is dropped once, and Try again with an ended visit hands over once', async () => {
+  const page = await open(demoShell(), demoAnswer());
+  let ended = 0;
+  page.sandbox.PinalertDemoEnded = () => { ended += 1; };
+  for (let i = 0; i < 31; i++) { page.advance(60000); }
+  await flush();
+  assert.equal(hasInForce(page), false);
+  assert.ok(shown(page, 'official-error'));
+  for (let i = 0; i < 60; i++) { page.advance(60000); }
+  await flush();
+  assert.equal(page.requests.length, 1, 'later ticks add no request');
+  assert.equal(ended, 0, 'no navigation without a press');
+  fire(el(page, 'official-retry'), 'click');
+  await flush();
+  assert.equal(page.requests.length, 2, 'the press asks once');
+  answer(page.requests[1], 404, visitEnded);
+  await flush();
+  assert.equal(ended, 1, 'the press with an ended visit answer hands over exactly once');
 });
 
 test('NP-1: on the Demo, Try again on an ended visit starts the Demo again, once', async () => {
