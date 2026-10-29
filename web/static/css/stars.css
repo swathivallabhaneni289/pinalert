@@ -1,0 +1,97 @@
+/*
+ * Pinalert stars.css (Phase 9 plan 16, UI-SPEC Surface 3, 3a and 3b)
+ *
+ * The five star control that stars.js draws. The profile page uses it for Your
+ * rating, and the star box after "Yes, mark resolved" uses the same markup, so
+ * the look lives here once. Tokens only, no new token.
+ *
+ * Every star is drawn in --color-text and is never coloured: a rating is not an
+ * emergency colour. An unchosen star is the outline glyph, and the stars from 1
+ * to the rating are the filled glyph, so the state is never colour alone. The
+ * hover fill is --color-surface, with --color-text staying on top of it. Each
+ * button is 44 by 44 through --touch-target-min and the five sit 4px apart. No
+ * animation. Loads after main.css.
+ */
+
+.stars-control {
+  box-sizing: border-box;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.stars-control__legend {
+  padding: 0;
+  margin-bottom: var(--space-xs);
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+.stars-control__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.stars-control__star {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.stars-control__star:hover:not(:disabled) {
+  background: var(--color-surface);
+}
+
+.stars-control__star:disabled {
+  cursor: default;
+}
+
+.stars-control__glyph {
+  display: block;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  background-color: var(--color-text);
+  -webkit-mask-image: url("/static/icons/star.svg");
+  mask-image: url("/static/icons/star.svg");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.stars-control__star[data-filled="true"] .stars-control__glyph {
+  -webkit-mask-image: url("/static/icons/star-filled.svg");
+  mask-image: url("/static/icons/star-filled.svg");
+}
+
+/* Remove my rating is a plain outlined .btn; it only needs room from the five. */
+.stars-control__remove {
+  margin-left: var(--space-sm);
+  min-height: var(--touch-target-min);
+}
+
+@media (forced-colors: active) {
+  .stars-control__star[aria-pressed="true"] {
+    border: 1px solid Highlight;
+  }
+}

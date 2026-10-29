@@ -120,6 +120,17 @@
   font-weight: var(--font-weight-semibold);
 }
 
+/* Plan 09-16 (1c): the two parts beside the total, Label 14px muted on the page
+   background. They sit on the same wrapping row, 12px from the total and from
+   each other (the row's gap), and wrap under the total on a narrow phone. No
+   separator is drawn. */
+.person-stars__part {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+}
+
 /* 1b part 3: the reporter tag chip and its counts sentence. */
 .person-tag-group {
   display: flex;

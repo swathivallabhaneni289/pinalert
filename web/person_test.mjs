@@ -33,7 +33,15 @@ const PROFILE_NOT_FOLLOWING = {
 
 // load builds the page of another person's profile and runs person.js on it.
 // route(method, url) answers each call with {status, body} or a promise of one.
-function load({ route, online = true, dialogSupport = true, followsYou = true } = {}) {
+// stars is the shared star control script (plan 09-16). It is run in the same
+// sandbox as person.js when a test asks for it, so the two scripts meet the way
+// they do on the page.
+const starsSource = fs.readFileSync(path.join(here, 'static', 'js', 'stars.js'), 'utf8');
+
+// rating: null draws no rating box (the server said the reader may not rate);
+// {yours: n} draws the box with data-your-rating, as the server does when it
+// says may_rate. withStars: false leaves stars.js out of the sandbox.
+function load({ route, online = true, dialogSupport = true, followsYou = true, rating = null, withStars = true } = {}) {
   const sinks = [];
   const state = { active: null };
   const calls = [];
@@ -54,8 +62,14 @@ function load({ route, online = true, dialogSupport = true, followsYou = true } 
       setAttribute(name, value) { this.attrs[name] = String(value); },
       getAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attrs, name) ? this.attrs[name] : null; },
       removeAttribute(name) { delete this.attrs[name]; },
-      appendChild(node) { this.children.push(node); return node; },
-      removeChild(node) { this.children = this.children.filter((c) => c !== node); return node; },
+      appendChild(node) { node.parentNode = this; this.children.push(node); return node; },
+      insertBefore(node, before) {
+        node.parentNode = this;
+        const at = this.children.indexOf(before);
+        this.children.splice(at < 0 ? this.children.length : at, 0, node);
+        return node;
+      },
+      removeChild(node) { this.children = this.children.filter((c) => c !== node); node.parentNode = null; return node; },
       contains(node) { return node === this || this.children.includes(node) || (this.kids || []).includes(node); },
       querySelectorAll() { return this.kids || []; },
       focus() { this.focused += 1; state.active = this; },
@@ -74,9 +88,15 @@ function load({ route, online = true, dialogSupport = true, followsYou = true } 
 
   const page = add('person-page', { attrs: { 'data-username': 'asha_k', 'data-self': 'false' } });
   add('notice-live');
-  add('person-header');
+  const header = add('person-header');
   add('person-reports-section');
-  add('person-action-error', { hidden: true });
+  const actionError = add('person-action-error', { hidden: true });
+  header.children.push(actionError);
+  actionError.parentNode = header;
+  if (rating) {
+    const box = add('person-rating', { attrs: { 'data-your-rating': String(rating.yours) } });
+    header.insertBefore(box, actionError);
+  }
   add('person-follow', { textContent: 'Follow' });
   add('person-unfollow', { textContent: 'Following', hidden: true });
   const more = add('person-more');
@@ -137,7 +157,11 @@ function load({ route, online = true, dialogSupport = true, followsYou = true } 
     }));
   };
   const navigator = { onLine: online };
-  vm.runInNewContext(source, { document, window, fetch, navigator, Promise });
+  const sandbox = vm.createContext({ document, window, fetch, navigator, Promise, JSON, encodeURIComponent, isFinite, Math, Number, parseInt });
+  if (withStars) {
+    vm.runInContext(starsSource, sandbox, { filename: 'stars.js' });
+  }
+  vm.runInContext(source, sandbox, { filename: 'person.js' });
   window.PinalertPerson.init();
 
   const click = (id) => els[id].fire('click', { target: els[id] });
@@ -384,4 +408,142 @@ test('no markup sink is ever used, and the script text has none', async () => {
   assert.deepEqual(m.sinks, [], 'nothing was assigned to a markup sink');
   assert.equal(/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(/.test(source), false);
   assert.ok((source.match(/textContent/g) || []).length >= 5);
+});
+
+// ---- plan 09-16: the Your rating control (UI-SPEC 3a) ------------------------
+
+const RATE_ROUTE = (profile, rate = () => ({ status: 204 })) => (method, address) => {
+  if (method === 'POST') { return rate(address); }
+  return { status: 200, body: profile };
+};
+
+// ratingParts reads the five star buttons and Remove my rating out of the box.
+function ratingParts(m) {
+  const box = m.els['person-rating'];
+  const fieldset = box.children[0];
+  if (!fieldset) { return { box, fieldset: null, stars: [], remove: null }; }
+  const row = fieldset.children[1];
+  return { box, fieldset, stars: row.children.slice(0, 5), remove: row.children[5] };
+}
+
+test('the star control mounts when the server drew the rating box, with the server\'s rating', () => {
+  const m = load({ route: RATE_ROUTE(PROFILE_FOLLOWING), rating: { yours: 4 } });
+  const parts = ratingParts(m);
+  assert.equal(parts.box.children.length, 1);
+  assert.equal(parts.fieldset.id, 'fieldset');
+  assert.equal(parts.fieldset.children[0].textContent, 'Your rating');
+  assert.deepEqual(parts.stars.map((s) => s.getAttribute('aria-label')), ['1 star', '2 stars', '3 stars', '4 stars', '5 stars']);
+  assert.deepEqual(parts.stars.map((s) => s.getAttribute('aria-pressed')), ['false', 'false', 'false', 'true', 'false']);
+  assert.equal(parts.remove.hidden, false);
+  assert.equal(m.calls.length, 0, 'drawing the control sends nothing');
+});
+
+test('no rating box from the server means no control and nothing explaining why', () => {
+  const m = load({ route: RATE_ROUTE(PROFILE_FOLLOWING) });
+  assert.equal(m.els['person-rating'], undefined);
+  assert.equal(m.els['person-header'].children.length, 1, 'only the action error line is in the header');
+  assert.equal(m.els['person-action-error'].hidden, true);
+});
+
+test('without stars.js on the page the empty box stays empty and nothing throws', () => {
+  const m = load({ route: RATE_ROUTE(PROFILE_FOLLOWING), rating: { yours: 0 }, withStars: false });
+  assert.equal(m.els['person-rating'].children.length, 0);
+});
+
+test('a tap saves, says so in the live line and clears the error line', async () => {
+  const m = load({ route: RATE_ROUTE(PROFILE_FOLLOWING), rating: { yours: 0 } });
+  m.els['person-action-error'].textContent = 'old';
+  m.els['person-action-error'].hidden = false;
+  const parts = ratingParts(m);
+  parts.stars[4].fire('click', { target: parts.stars[4] });
+  await flush();
+  assert.deepEqual(m.calls.map((c) => c.method + ' ' + c.address), ['POST /api/people/asha_k/rating']);
+  assert.equal(m.calls[0].init.body, '{"stars":5}');
+  assert.equal(m.els['notice-live'].textContent, 'You rated asha_k 5 stars.');
+  assert.equal(m.els['person-action-error'].hidden, true);
+  assert.deepEqual(parts.stars.map((s) => s.getAttribute('aria-pressed')), ['false', 'false', 'false', 'false', 'true']);
+});
+
+test('a refusal shows the server sentence under the box and leaves the rating', async () => {
+  const sentence = 'You can change this rating again tomorrow.';
+  const m = load({
+    route: RATE_ROUTE(PROFILE_FOLLOWING, () => ({ status: 409, body: { error: { field: 'stars', message: sentence } } })),
+    rating: { yours: 2 }
+  });
+  const parts = ratingParts(m);
+  parts.stars[0].fire('click', {});
+  await flush();
+  assert.equal(m.els['person-action-error'].textContent, sentence);
+  assert.equal(m.els['person-action-error'].hidden, false);
+  assert.deepEqual(parts.stars.map((s) => s.getAttribute('aria-pressed')), ['false', 'true', 'false', 'false', 'false']);
+});
+
+test('Remove my rating says Your rating was removed. in the live line', async () => {
+  const m = load({ route: RATE_ROUTE(PROFILE_FOLLOWING), rating: { yours: 3 } });
+  const parts = ratingParts(m);
+  parts.remove.fire('click', {});
+  await flush();
+  assert.equal(m.calls[0].address, '/api/people/asha_k/rating/clear');
+  assert.equal(m.els['notice-live'].textContent, 'Your rating was removed.');
+  assert.equal(parts.remove.hidden, true);
+});
+
+test('a refetch with may_rate false removes the box with no message', async () => {
+  const m = load({ route: FOLLOW_ROUTE({ ...PROFILE_FOLLOWING, may_rate: false, your_rating: 0 }), rating: { yours: 3 } });
+  m.click('person-follow');
+  await flush();
+  const box = m.els['person-rating'];
+  assert.equal(box.children.length, 0, 'the control is taken out');
+  assert.equal(box.hidden, true);
+  assert.equal(m.els['notice-live'].textContent, 'You followed asha_k.', 'no line about the rating');
+  assert.equal(m.els['person-action-error'].hidden, true);
+});
+
+test('a refetch with may_rate true redraws the control with the server\'s your_rating', async () => {
+  const m = load({ route: FOLLOW_ROUTE({ ...PROFILE_FOLLOWING, may_rate: true, your_rating: 2 }), rating: { yours: 3 } });
+  const parts = ratingParts(m);
+  m.click('person-follow');
+  await flush();
+  assert.equal(m.els['person-rating'].children.length, 1, 'still one control, not two');
+  assert.deepEqual(parts.stars.map((s) => s.getAttribute('aria-pressed')), ['false', 'true', 'false', 'false', 'false']);
+});
+
+test('a refetch that turns may_rate true on a page with no box builds the box above the error line', async () => {
+  const m = load({ route: FOLLOW_ROUTE({ ...PROFILE_FOLLOWING, may_rate: true, your_rating: 0 }) });
+  m.click('person-follow');
+  await flush();
+  const header = m.els['person-header'];
+  assert.equal(header.children.length, 2);
+  const host = header.children[0];
+  assert.equal(host.id, 'person-rating');
+  assert.equal(header.children[1], m.els['person-action-error']);
+  assert.equal(host.children[0].id, 'fieldset');
+});
+
+test('a refetch that says nothing about may_rate leaves the control alone', async () => {
+  const m = load({ route: FOLLOW_ROUTE(PROFILE_FOLLOWING), rating: { yours: 3 } });
+  m.click('person-follow');
+  await flush();
+  assert.equal(m.els['person-rating'].children.length, 1);
+});
+
+test('a 404 on a rating redraws the page from the server', async () => {
+  const m = load({ route: RATE_ROUTE(PROFILE_FOLLOWING, () => ({ status: 404, body: {} })), rating: { yours: 0 } });
+  const parts = ratingParts(m);
+  parts.stars[2].fire('click', {});
+  await flush();
+  assert.equal(m.reloads.length, 1);
+});
+
+test('the rating control adds no markup sink and uses only the rating addresses', async () => {
+  const m = load({ route: RATE_ROUTE(PROFILE_FOLLOWING), rating: { yours: 1 } });
+  const parts = ratingParts(m);
+  parts.stars[3].fire('click', {});
+  await flush();
+  parts.remove.fire('click', {});
+  await flush();
+  assert.deepEqual(m.sinks, []);
+  for (const call of m.calls) {
+    assert.match(call.address, /^\/api\/people\/asha_k\/rating(\/clear)?$/);
+  }
 });

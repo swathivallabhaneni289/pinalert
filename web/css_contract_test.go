@@ -816,6 +816,12 @@ var nonCategoryIcons = map[string]bool{
 	// exemption cannot hide an orphan. Its fill does not break the stroke rules
 	// of that check: it keeps the same stroke attributes as every other glyph.
 	"static/icons/star-filled.svg": true,
+	// Phase 9 plan 16 (UI-SPEC Design System, Surface 3a): star, the Lucide
+	// star outline, the unchosen star of the rating control, drawn by a literal
+	// url("/static/icons/star.svg") mask rule in stars.css, same exemption
+	// reasoning as search.svg. TestNewIconsAreRegisteredAndUsed checks it
+	// through laterIcons, so the exemption cannot hide an orphan.
+	"static/icons/star.svg": true,
 }
 
 // laterIcons lists the glyphs added after Phase 3.4 (plan 04-30: bell-off).
@@ -835,7 +841,11 @@ var nonCategoryIcons = map[string]bool{
 // Phase 9 plan 08 (UI-SPEC Design System): star-filled.svg joins the list,
 // masked by person.css for the stars total of a profile header. No other
 // assertion changed.
-var laterIcons = []string{"bell-off.svg", "share-2.svg", "link.svg", "thumbs-up.svg", "star-filled.svg"}
+//
+// Phase 9 plan 16 (UI-SPEC Design System): star.svg joins the list, masked by
+// stars.css for the unchosen star of the rating control. No other assertion
+// changed.
+var laterIcons = []string{"bell-off.svg", "share-2.svg", "link.svg", "thumbs-up.svg", "star-filled.svg", "star.svg"}
 
 // phase34Icons lists the ten Phase 3.4 glyph files, all exempted through
 // nonCategoryIcons above.

@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="/static/css/window.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/updates.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/phone.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/stars.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/person.css?v={{.AssetVersion}}">
   <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
 </head>
@@ -46,6 +47,9 @@
       <div id="person-stars" class="person-stars" role="group" aria-label="{{.Profile.StarsLabel}}">
         <span class="person-stars__icon" aria-hidden="true"></span>
         <span class="person-stars__total"><span class="person-stars__number">{{.Profile.StarsNumber}}</span> <span class="person-stars__word">stars</span></span>
+        {{/* Plan 09-16 (D-02, UI-SPEC 1c): the two parts of the total, drawn only when the server sends them (from 5 raters on). They wrap under the total on a narrow phone and carry no separator. */}}
+        {{if .Profile.StarsFromReports}}<span id="person-stars-from-reports" class="person-stars__part">{{.Profile.StarsFromReports}}</span>{{end}}
+        {{if .Profile.StarsFromRatings}}<span id="person-stars-from-ratings" class="person-stars__part">{{.Profile.StarsFromRatings}}</span>{{end}}
       </div>
       {{end}}
       <div class="person-tag-group">
@@ -76,6 +80,10 @@
           <button type="button" id="person-block" class="person-menu__item" role="menuitem">Block</button>
         </div>
       </div>
+      {{if .Profile.MayRate}}
+      {{/* Plan 09-16 (D-02, UI-SPEC 3a): the mount of the Your rating control. It is drawn only when the server says this reader may rate, and never on your own page. stars.js fills it. data-your-rating is the server's number, 0 when unrated. */}}
+      <div id="person-rating" class="person-rating" data-your-rating="{{.Profile.YourRating}}"></div>
+      {{end}}
       {{end}}
       <p id="person-action-error" class="inline-error" role="alert" hidden></p>
     </header>
@@ -177,6 +185,7 @@
   <script src="/static/js/position.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/person-reports.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/people-list.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/stars.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/person.js?v={{.AssetVersion}}" defer></script>
 </body>
 </html>
