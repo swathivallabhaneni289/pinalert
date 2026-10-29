@@ -29,7 +29,7 @@ How confirmations are counted, why a place is a precision 7 geohash cell, the 1 
    ```bash
    export DATABASE_URL="postgres://localhost:5432/pinalert?sslmode=disable"  # or your Neon/Supabase connection string
    export SESSION_SECRET="$(openssl rand -base64 32)"
-   export BASE_URL="http://localhost:8080"        # the site origin; sign in no longer uses it, push still reads it, see below
+   export BASE_URL="http://localhost:8080"        # the site origin; roots every share link and og:url, push still reads it; outside ENV=development it must be an https address, see below
    export ENV=development                          # unlocks the SESSION_SECRET/RESEND_API_KEY dev fallbacks below
    export RESEND_API_KEY="re_..."                   # optional when ENV=development, required otherwise — see Email delivery below
    export RESEND_FROM="Pinalert <onboarding@resend.dev>"  # optional; defaults to the Resend sandbox sender when unset
@@ -54,8 +54,10 @@ How confirmations are counted, why a place is a precision 7 geohash cell, the 1 
    instead of sending it (a line with `code=`; there is never a link to print); with any other
    `ENV` (including unset), a missing `RESEND_API_KEY` makes the process exit at startup rather
    than boot into a state where nobody can receive their code email. `BASE_URL` is no longer used
-   by sign in, because no email carries a link any more; phone notifications still read it as a
-   fallback contact, so set it to your real deployed origin outside local development. Both place searches (the report form's and the map's) ask Photon
+   by sign in, because no email carries a link any more. Amended 2026-10-29 by Phase 8: it now roots
+   every share link and the `og:url` of the public report page, and phone notifications still read
+   it as a fallback contact. Outside `ENV=development` the server refuses to start unless `BASE_URL`
+   is an `https://` address, so a share link can never leave with `localhost` in it. Both place searches (the report form's and the map's) ask Photon
    (photon.komoot.io, OpenStreetMap data, by komoot) first, because it matches close spellings and
    half typed words, and fall back to OSM Nominatim only when Photon fails, takes over 2 seconds
    and then over 2.5 seconds on one retry, or finds nothing. Nominatim's usage policy requires an identifying contact in the outbound
@@ -178,7 +180,7 @@ ceiling shows the person "Something went wrong. Try again." and says nothing abo
 ## Phone notifications
 
 Pinalert can send a short, silent note to a person's lock screen when a Critical report is posted near
-their home area, and when a report they posted or voted on changes. It is off until both
+their home area, and when a report they posted, voted on or commented on changes or gets a comment. It is off until both
 `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` are set; with neither set the app works as before. People
 switch it on in Settings, under Notifications. [docs/PUSH.md](./docs/PUSH.md) covers making the keys,
 https, the push services the server accepts, what a lock screen shows, what the site cannot promise
@@ -186,6 +188,31 @@ https, the push services the server accepts, what a lock screen shows, what the 
 checking it on real devices. [docs/TRUST-MODEL.md](./docs/TRUST-MODEL.md) says who gets which note.
 Never commit the keys. Phone notifications need migration 00011, so run `make migrate` once on an
 existing database after pulling.
+
+## The report page, sharing and comments
+
+Phase 8 gave every report a page of its own. It shows the trust block, a short history of how the
+report got where it is ("What happened so far"), and the comments. People signed in with a username
+can comment from anywhere, reply one level, like a comment with a thumbs up and flag a comment. A
+comment, a reply or a like never changes any trust number: only people at different spots within
+1 km still confirm or dispute. Comments close when the report is resolved or has faded.
+
+Share on a report gives a link such as `https://your-site/r/<random token>`. Anyone can open it
+without an account. The public page shows only the category, a rough area, whether it is still
+active, disputed, resolved or ended, and when. It never shows the report's own words, an exact
+spot, a name or a comment, and the link preview says "Open to see if this is still true right now"
+with no count, so a forward cannot go stale. The link is built from `BASE_URL`, which must be an
+https address outside `ENV=development`.
+
+Without `CLIENT_IP_HEADER` the public page has no per address limit at all, and only the long
+random token protects it. Set the header after the host canary check (see the checklist above)
+before sharing links widely.
+
+Moderators keep or remove flagged and held comments on `/moderate`. [docs/MODERATION.md](./docs/MODERATION.md)
+covers the comment checks and limits, and [docs/TRUST-MODEL.md](./docs/TRUST-MODEL.md) says why
+comments and likes stay out of every number. This phase needs migrations 00017, 00018 and 00019, so
+run `make migrate` once on an existing database after pulling (run the migration first, then start
+the new server).
 
 ## Official alerts and the Demo
 
