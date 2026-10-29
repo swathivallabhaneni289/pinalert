@@ -1221,7 +1221,38 @@
     }
     try {
       var base = notify.baseState();
-      return base === 'maybe' || base === 'ready';
+      if (base !== 'maybe' && base !== 'ready') {
+        return false;
+      }
+    } catch (err) {
+      return false;
+    }
+    // Review fix WR-B06 (D-18): once per device and account, and never on a
+    // device that is already on. Every account that comes back through step 4
+    // (an old link account, changed terms) reaches here again.
+    var account = accountId();
+    if (account !== '') {
+      try {
+        if (alertsAskedList().indexOf(account) !== -1) {
+          return false;
+        }
+      } catch (err) {
+        // A list that cannot be read lets the pop-up open.
+      }
+    }
+    return !alertsAlreadyOn(notify, account);
+  }
+
+  // alertsAlreadyOn says this device turned alerts on for this account: notify.js
+  // keeps its intent flag, the account id under its INTENT_KEY, from the moment a
+  // turn-on succeeds. Only the flag is read, so nothing is asked of the server or
+  // awaited before the pop-up (review fix WR-B06). A flag that cannot be read is off.
+  function alertsAlreadyOn(notify, account) {
+    if (account === '' || typeof notify.INTENT_KEY !== 'string' || notify.INTENT_KEY === '') {
+      return false;
+    }
+    try {
+      return window.localStorage.getItem(notify.INTENT_KEY) === account;
     } catch (err) {
       return false;
     }
