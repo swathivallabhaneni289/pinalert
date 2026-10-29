@@ -791,7 +791,8 @@
     }
   }
 
-  // openHomeFrom opens the Home area window from one of the two no home rows
+  // openHomeFrom opens the Home area window from one of the three no home rows
+  // (Reliable, Critical and, since plan 05-14, Official; IN-B06 comment fix)
   // and remembers which, so focus can go back to the matching control.
   function openHomeFrom(which) {
     if (window.PinalertSettings && typeof window.PinalertSettings.openWindow === 'function') {
