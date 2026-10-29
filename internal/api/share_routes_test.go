@@ -7,18 +7,74 @@ package api
 // its Open Graph tags are proved in internal/api/handlers (public_status_e2e_test).
 
 import (
+	"bytes"
 	"context"
 	"io"
+	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"pinalert/internal/service"
+	sqlcgen "pinalert/internal/store/sqlc"
 	"pinalert/internal/testutil"
 )
+
+// TestShareTokenNeverInAccessLog proves review WR-S01 (2026-10-29): the token in
+// /r/{token} is a capability, so the access log line of the public page names
+// the route, never the token. A shared link opened by a reader or by WhatsApp's
+// crawler leaves "/r/{token}" in the host's log store, not the link itself.
+func TestShareTokenNeverInAccessLog(t *testing.T) {
+	var buf bytes.Buffer
+	var mu sync.Mutex
+	srv, pool, _ := newGateTestServerWith(t, func(d *Deps, _ *sqlcgen.Queries) {
+		d.RequestLog = log.New(&shareLogWriter{mu: &mu, w: &buf}, "", 0)
+	})
+	token := seedSharedReport(t, pool, "accesslog")
+
+	for _, path := range []string{"/r/" + token, "/r/" + token + "/extra"} {
+		resp, err := http.Get(srv.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}
+	// The logger writes after the handler returns; wait for both lines.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		mu.Lock()
+		logged := buf.String()
+		mu.Unlock()
+		if strings.Count(logged, "\n") >= 2 || time.Now().After(deadline) {
+			if strings.Contains(logged, token) {
+				t.Errorf("the access log holds the share token: %q", logged)
+			}
+			if strings.Count(logged, "GET /r/{token} ") < 2 {
+				t.Errorf("the access log does not name the route /r/{token} for both requests: %q", logged)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// shareLogWriter serialises writes to a shared buffer, so the test can read it
+// while the server goroutines log.
+type shareLogWriter struct {
+	mu *sync.Mutex
+	w  io.Writer
+}
+
+func (l *shareLogWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
+}
 
 // seedSharedReport stores one clear report of its own account and gives it a
 // fresh share token, which it returns. label keeps the account email and the
