@@ -62,6 +62,12 @@ func TestForcedColoursShowsTheMaskGlyphs(t *testing.T) {
 		{"feed.css", ".map-search__icon"},
 		{"feed.css", `.map-chip[aria-pressed="true"]::before`},
 		{"phone.css", ".sheet__handle > .sheet__grabber"},
+		// Phase 9 review fix WR-T01 (2026-10-30): the profile's bell, More
+		// chevron and stars total, and the shared five star control.
+		{"person.css", ".person-bell__icon"},
+		{"person.css", ".person-more__chevron"},
+		{"person.css", ".person-stars__icon"},
+		{"stars.css", ".stars-control__glyph"},
 	}
 	for _, g := range glyphs {
 		rules := p26Rules(t, g.file)

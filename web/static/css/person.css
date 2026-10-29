@@ -826,4 +826,18 @@ a.person-report__body:hover {
   .person-bell[aria-pressed="true"] {
     border: 1px solid Highlight;
   }
+
+  /* Review fix WR-T01: each glyph is a coloured box behind a mask, and a forced
+     colours theme turns a background colour into Canvas, so it would vanish. It
+     opts out of the adjustment and takes a system colour, as .app-icon does. */
+  .person-bell__icon,
+  .person-more__chevron {
+    forced-color-adjust: none;
+    background-color: ButtonText;
+  }
+
+  .person-stars__icon {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
 }

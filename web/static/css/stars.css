@@ -94,6 +94,13 @@
   .stars-control__star[aria-pressed="true"] {
     border: 1px solid Highlight;
   }
+
+  /* Review fix WR-T01: the star is a coloured box behind a mask, which a forced
+     colours theme would turn into Canvas. It takes a system colour instead. */
+  .stars-control__glyph {
+    forced-color-adjust: none;
+    background-color: ButtonText;
+  }
 }
 
 /*
