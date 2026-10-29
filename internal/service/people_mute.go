@@ -63,6 +63,12 @@ func (s *PeopleService) Mute(ctx context.Context, muterID int64, username string
 	if _, err := s.q.TurnOffFollowNotify(ctx, sqlcgen.TurnOffFollowNotifyParams{FollowerID: muterID, FolloweeID: person.ID}); err != nil {
 		return fmt.Errorf("service: Mute: turning the bell off: %w", err)
 	}
+	// A follow note already queued for this reader about this person goes too
+	// (plan 09-26, SC5, research Q9, D-12, D-24). The worker would skip it at send
+	// time anyway; deleting it keeps the outbox true. Sent notes and bell rows stay.
+	if _, err := s.q.DeleteQueuedFollowPush(ctx, sqlcgen.DeleteQueuedFollowPushParams{FollowerID: muterID, FolloweeID: person.ID}); err != nil {
+		return fmt.Errorf("service: Mute: deleting the queued follow notes: %w", err)
+	}
 	return nil
 }
 
