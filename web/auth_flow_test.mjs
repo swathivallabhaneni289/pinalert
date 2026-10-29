@@ -1101,3 +1101,93 @@ test('WR-B02: the wait after a send is the full wait, also on a page reloaded wi
   reloaded.fireWin('pageshow', { persisted: false });
   assert.equal(text(reloaded, 'code-resend'), 'Resend code');
 });
+
+// Phase 7.1 review fix (browser), IN-B03: an answer belongs to the screen that
+// sent it. Once the card has moved on (another choice, Change email, a new code
+// screen), a late answer only frees its button; it never switches the card, writes
+// a line or counts a try on the new screen. A sign in that succeeded still goes on.
+test('IN-B03: a Create account answer after the Sign in choice does not switch the card', async () => {
+  const page = load({ start: 'create' });
+  await fillCreate(page, 'priya@example.com', 'pinalert-demo');
+  submit(page, 'create');
+  click(page, 'login-tab-signin');
+  answer(page.requests[0], 200, { sent: true });
+  await flush();
+  assert.deepEqual(shownPanel(page), ['signin']);
+  assert.equal(byId(page, 'create-submit').getAttribute('aria-busy'), null, 'the old button is free');
+  assert.equal(text(page, 'create-submit'), 'Email me a code');
+
+  const refused = load({ start: 'create' });
+  await fillCreate(refused, 'priya@example.com', 'short');
+  submit(refused, 'create');
+  click(refused, 'login-tab-signin');
+  answer(refused.requests[0], 400, { error: { field: 'password', message: 'Use at least 8 characters.' } });
+  await flush();
+  assert.equal(byId(refused, 'create-error').hidden, true, 'no line is written on the panel left behind');
+  assert.equal(byId(refused, 'create-password').getAttribute('aria-invalid'), null);
+});
+
+test('IN-B03: a Resend answer after Change email and a new code says nothing on the new screen', async () => {
+  const page = load({ start: 'create' });
+  await toCodeScreen(page, 'priya@example.com');
+  page.advance(45000);
+  click(page, 'code-resend');
+  const resendReq = page.requests[page.requests.length - 1];
+  click(page, 'code-change-email');
+  await toCodeScreen(page, 'asha@example.com');
+  assert.equal(text(page, 'code-resend'), 'Resend in 45s');
+  answer(resendReq, 429, { error: { field: 'email', message: 'Too many codes for this email. Try again in an hour.' } });
+  await flush();
+  assert.equal(byId(page, 'code-error').hidden, true);
+  assert.equal(byId(page, 'code-status').hidden, true);
+  assert.equal(text(page, 'code-resend'), 'Resend in 45s', 'the new wait is left alone');
+
+  // The good answer of an old Resend does not restart the clocks or say a code is coming.
+  const late = load({ start: 'create' });
+  await toCodeScreen(late, 'priya@example.com');
+  late.advance(45000);
+  click(late, 'code-resend');
+  const old = late.requests[late.requests.length - 1];
+  click(late, 'code-change-email');
+  await toCodeScreen(late, 'asha@example.com');
+  late.advance(10000);
+  answer(old, 200, { sent: true });
+  await flush();
+  assert.equal(byId(late, 'code-status').hidden, true);
+  assert.equal(text(late, 'code-resend'), 'Resend in 35s');
+});
+
+test('IN-B03: a late code refusal is not counted against the new code and takes no focus', async () => {
+  const page = load({ start: 'create' });
+  await toCodeScreen(page, 'priya@example.com');
+  byId(page, 'code-input').value = '111111';
+  submit(page, 'code');
+  const old = page.requests[page.requests.length - 1];
+  click(page, 'code-change-email');
+  await toCodeScreen(page, 'asha@example.com');
+  byId(page, 'create-email').focus();
+  answer(old, 400, { error: { field: 'code', message: 'That code is wrong or has expired.' } });
+  await flush();
+  assert.equal(byId(page, 'code-error').hidden, true);
+  assert.equal(byId(page, 'code-input').getAttribute('aria-invalid'), null);
+  assert.ok(isFocused(page, 'create-email'), 'focus stays where it was');
+  // Five fresh refusals are still needed to lock the new code.
+  for (let i = 0; i < 4; i++) {
+    byId(page, 'code-input').value = '222222';
+    submit(page, 'code');
+    answer(page.requests[page.requests.length - 1], 400, { error: { field: 'code', message: 'x' } });
+    await flush();
+  }
+  assert.equal(isOff(page, 'code-submit'), false, 'four refusals of the new code do not lock it');
+});
+
+test('IN-B03: a sign in that succeeded still goes on after the choice changed', async () => {
+  const page = load({ start: 'signin' });
+  byId(page, 'signin-email').value = 'priya@example.com';
+  byId(page, 'signin-password').value = 'pinalert-demo';
+  submit(page, 'signin');
+  click(page, 'login-tab-create');
+  answer(page.requests[0], 200, { next: '/low' });
+  await flush();
+  assert.deepEqual(page.assigned, ['/low']);
+});

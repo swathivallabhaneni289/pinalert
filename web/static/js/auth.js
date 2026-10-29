@@ -113,7 +113,9 @@
     expiresAt: 0,
     resendBusy: false,
     resendTimer: null,
-    expiryTimer: null
+    expiryTimer: null,
+    // Bumped by showPanel, so every screen has its own number (IN-B03).
+    generation: 0
   };
 
   function setText(el, value) {
@@ -379,6 +381,9 @@
       title.focus();
     }
     state.panel = name;
+    // Every change of panel starts a new screen; an answer to a request sent from
+    // an older one only frees its button (review fix IN-B03).
+    state.generation += 1;
   }
 
   // selectTab is what a press, an arrow, Home, End, Enter or Space on a choice does.
@@ -605,9 +610,13 @@
     clearErrors('create');
     resetShow();
     var email = createEmail.value.trim();
+    var mine = state.generation;
     setBusy(createSubmit, SENDING_LABEL);
     postJSON('/api/auth/sign-up', { email: email, password: createPassword.value }).then(function (result) {
       clearBusy(createSubmit);
+      if (mine !== state.generation) {
+        return;
+      }
       if (result.ok) {
         openCode('create', email, 'create');
         return;
@@ -627,11 +636,17 @@
     }
     clearErrors('signin');
     resetShow();
+    var mine = state.generation;
     setBusy(signinSubmit, SIGNING_IN_LABEL);
     postJSON('/api/auth/sign-in', { email: signinEmail.value.trim(), password: signinPassword.value }).then(function (result) {
       clearBusy(signinSubmit);
+      // A sign in that succeeded goes on whatever the card shows now: the
+      // browser is signed in.
       if (result.ok) {
         goNext(result.body.next);
+        return;
+      }
+      if (mine !== state.generation) {
         return;
       }
       if (result.status === 400 && fieldOf(result) === 'credentials') {
@@ -654,9 +669,13 @@
     }
     clearErrors('forgot');
     var email = forgotEmail.value.trim();
+    var mine = state.generation;
     setBusy(forgotSubmit, SENDING_LABEL);
     postJSON('/api/auth/reset', { email: email }).then(function (result) {
       clearBusy(forgotSubmit);
+      if (mine !== state.generation) {
+        return;
+      }
       if (result.ok) {
         openCode('reset', email, 'forgot');
         return;
@@ -680,11 +699,16 @@
     var reset = state.mode === 'reset';
     var path = reset ? '/api/auth/reset/code' : '/api/auth/sign-up/code';
     var payload = reset ? { code: codeInput.value, password: codeNewPassword.value } : { code: codeInput.value };
+    var mine = state.generation;
     setBusy(codeSubmit, CHECKING_LABEL);
     postJSON(path, payload).then(function (result) {
       clearBusy(codeSubmit);
+      // A confirmed account is signed in: it goes on whatever the card shows now.
       if (result.ok && !reset) {
         goNext(result.body.next);
+        return;
+      }
+      if (mine !== state.generation) {
         return;
       }
       if (result.ok) {
@@ -723,7 +747,12 @@
     clearErrors('code');
     state.resendBusy = true;
     renderResend();
+    var mine = state.generation;
     postJSON('/api/auth/code/resend', {}).then(function (result) {
+      // The card has moved on: the next code screen sets Resend up itself.
+      if (mine !== state.generation) {
+        return;
+      }
       state.resendBusy = false;
       if (!result.ok) {
         renderResend();
