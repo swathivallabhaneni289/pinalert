@@ -94,3 +94,17 @@ func FlagLimitMessage(wait time.Duration) string {
 func ShareLimitMessage(wait time.Duration) string {
 	return "You've shared several reports in a short time. You can share again in " + WaitPhrase(wait) + "."
 }
+
+// CommentLimitMessage is the sentence shown above the comment composer when a
+// reader has posted several comments in a short time (Phase 8 plan 12, D-13).
+// Its 429 field is rate_comment. The composer keeps its words.
+func CommentLimitMessage(wait time.Duration) string {
+	return "You're commenting very quickly. You can comment again in " + WaitPhrase(wait) + ". Your words are still here."
+}
+
+// LikeLimitMessage is the sentence shown when a reader has liked, unliked or
+// deleted comments in a short time (Phase 8 plan 12, D-13). Its 429 field is
+// rate_like.
+func LikeLimitMessage(wait time.Duration) string {
+	return "You're reacting very quickly. You can try again in " + WaitPhrase(wait) + "."
+}

@@ -115,8 +115,17 @@ const (
 	// Share (Phase 8 plan 03, A-P8-4): a real reader shares a few reports in a
 	// minute, so a burst of 10 then one more every 30 seconds is generous, and
 	// it still bounds the reverse area lookups a share can spend.
-	shareBurst         = 10
-	shareEvery         = 30 * time.Second
+	shareBurst = 10
+	shareEvery = 30 * time.Second
+	// Comment and Like (Phase 8 plan 12, D-13, A-P8-4): a real thread is a few
+	// lines a minute, so a burst of 6 then one more every 20 seconds is
+	// generous, and every attempt may cost one screener call, so nothing is
+	// refunded. Likes, unlikes and deletes are cheap toggles, so a burst of 30
+	// then one every 3 seconds.
+	commentBurst       = 6
+	commentEvery       = 20 * time.Second
+	likeBurst          = 30
+	likeEvery          = 3 * time.Second
 	submitAttemptBurst = 20
 	submitAttemptEvery = 6 * time.Second
 )
@@ -138,10 +147,15 @@ const (
 //     100 x one per flagEvery 2 minutes.
 //   - Shares (Phase 8 plan 03): burst 1000 = 100 x shareBurst 10; one more
 //     every 1.2 s, the same shape as the flag family.
+//   - Comments (Phase 8 plan 12): burst 600 = 100 x commentBurst 6; one more
+//     every 200 ms = 100 x one per commentEvery 20 s.
+//   - Likes (Phase 8 plan 12): burst 3000 = 100 x likeBurst 30; one more every
+//     30 ms = 100 x one per likeEvery 3 s.
 //
 // These are not owner numbers (D-11 sets only the account allowances); tune
 // them from the block log, whose bucket names are ip_backstop_report,
-// ip_backstop_vote, ip_backstop_flag and ip_backstop_share. api.RateLimitsDefault
+// ip_backstop_vote, ip_backstop_flag, ip_backstop_share, ip_backstop_comment and
+// ip_backstop_like. api.RateLimitsDefault
 // mirrors them.
 const (
 	ipBackstopReportBurst = 2000
@@ -152,6 +166,11 @@ const (
 	ipBackstopFlagEvery   = 1200 * time.Millisecond
 	ipBackstopShareBurst  = 1000
 	ipBackstopShareEvery  = 1200 * time.Millisecond
+
+	ipBackstopCommentBurst = 600
+	ipBackstopCommentEvery = 200 * time.Millisecond
+	ipBackstopLikeBurst    = 3000
+	ipBackstopLikeEvery    = 30 * time.Millisecond
 )
 
 // The public status page of a shared link, GET /r/{token} (Phase 8 plan 04,
@@ -582,6 +601,11 @@ func main() {
 			IPBackstopFlag:   api.BucketLimit{Every: ipBackstopFlagEvery, Burst: ipBackstopFlagBurst},
 			Share:            api.BucketLimit{Every: shareEvery, Burst: shareBurst},
 			IPBackstopShare:  api.BucketLimit{Every: ipBackstopShareEvery, Burst: ipBackstopShareBurst},
+
+			Comment:           api.BucketLimit{Every: commentEvery, Burst: commentBurst},
+			Like:              api.BucketLimit{Every: likeEvery, Burst: likeBurst},
+			IPBackstopComment: api.BucketLimit{Every: ipBackstopCommentEvery, Burst: ipBackstopCommentBurst},
+			IPBackstopLike:    api.BucketLimit{Every: ipBackstopLikeEvery, Burst: ipBackstopLikeBurst},
 		},
 	}
 	router := api.NewRouter(deps)

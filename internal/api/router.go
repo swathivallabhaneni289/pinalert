@@ -355,6 +355,17 @@ var RateLimitsDefault = RateLimits{
 	// backstop matches the flag family's.
 	Share:           BucketLimit{Every: 30 * time.Second, Burst: 10},
 	IPBackstopShare: BucketLimit{Every: 1200 * time.Millisecond, Burst: 1000},
+	// Comment and Like (Phase 8 plan 12, D-13, A-P8-4): a real thread is a few
+	// lines a minute, so a burst of 6 then one more every 20 seconds is
+	// generous, and every attempt may cost one screener call, so nothing is
+	// refunded. Likes, unlikes and deletes are cheap toggles: a burst of 30 then
+	// one every 3 seconds. The backstops follow the "100 phones behind one
+	// carrier address" rule main.go documents: 100 x the account burst, refilling
+	// at 100 x the account rate.
+	Comment:           BucketLimit{Every: 20 * time.Second, Burst: 6},
+	IPBackstopComment: BucketLimit{Every: 200 * time.Millisecond, Burst: 600},
+	Like:              BucketLimit{Every: 3 * time.Second, Burst: 30},
+	IPBackstopLike:    BucketLimit{Every: 30 * time.Millisecond, Burst: 3000},
 }
 
 // resolveRateLimits replaces every field equal to BucketLimit{} with the
@@ -377,6 +388,10 @@ func resolveRateLimits(l RateLimits) RateLimits {
 	fill(&l.IPBackstopFlag, RateLimitsDefault.IPBackstopFlag)
 	fill(&l.Share, RateLimitsDefault.Share)
 	fill(&l.IPBackstopShare, RateLimitsDefault.IPBackstopShare)
+	fill(&l.Comment, RateLimitsDefault.Comment)
+	fill(&l.Like, RateLimitsDefault.Like)
+	fill(&l.IPBackstopComment, RateLimitsDefault.IPBackstopComment)
+	fill(&l.IPBackstopLike, RateLimitsDefault.IPBackstopLike)
 	return l
 }
 
