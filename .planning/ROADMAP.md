@@ -840,7 +840,7 @@ Phases execute in the owner's build order (2026-10-16): 1 → 1.1 → 2 → 3 �
 | 7. Address search box for report location | 4/4 | Complete | 2026-09-29 |
 | 7.1 Password sign in and usernames | 23/23 | In Progress (built, reviewed and fixed, waiting for the owner's check) | - |
 | 8. Report page and comments | 20/20 | In Progress (built, reviewed and fixed, waiting for the owner's check) | - |
-| 9. Followable reporter profiles | 0/29 | Planned | - |
+| 9. Followable reporter profiles | 29/29 | In Progress (built, reviewed and fixed, waiting for the owner's check) | - |
 
 ## Backlog
 
@@ -1241,65 +1241,65 @@ Plans:
 
 **Wave 1**
 
-- [ ] 09-01-PLAN.md: The Reliable bar moves from 75 to 70 (3.5 stars) with the star display helpers and every pinned test and doc line (wave 1)
-- [ ] 09-02-PLAN.md: Data for opt in profiles, follows that end softly, and blocks (wave 1)
-- [ ] 09-03-PLAN.md: One seam in front of every reporter tag read (wave 1)
+- [x] 09-01-PLAN.md: The Reliable bar moves from 75 to 70 (3.5 stars) with the star display helpers and every pinned test and doc line (wave 1)
+- [x] 09-02-PLAN.md: Data for opt in profiles, follows that end softly, and blocks (wave 1)
+- [x] 09-03-PLAN.md: One seam in front of every reporter tag read (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 09-04-PLAN.md: The people service: opt in, follow, unfollow, remove followers, block, the lists and the header (wave 2)
-- [ ] 09-05-PLAN.md: A profile's recent reports, finished ones coarse and date only (wave 2)
-- [ ] 09-06-PLAN.md: Follows end when the tag falls away (wave 2)
+- [x] 09-04-PLAN.md: The people service: opt in, follow, unfollow, remove followers, block, the lists and the header (wave 2)
+- [x] 09-05-PLAN.md: A profile's recent reports, finished ones coarse and date only (wave 2)
+- [x] 09-06-PLAN.md: Follows end when the tag falls away (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 09-07-PLAN.md: The people routes (wave 3)
+- [x] 09-07-PLAN.md: The people routes (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 09-08-PLAN.md: The profile page (wave 4)
-- [ ] 09-09-PLAN.md: See this reporter in the trust block; no profile link on finished reports (wave 4)
+- [x] 09-08-PLAN.md: The profile page (wave 4)
+- [x] 09-09-PLAN.md: See this reporter in the trust block; no profile link on finished reports (wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 09-10-PLAN.md: Block hides the blocked person's comments (needs Phase 8) (wave 5)
-- [ ] 09-11-PLAN.md: The Followers and Following lists and Recent reports on the profile (wave 5)
+- [x] 09-10-PLAN.md: Block hides the blocked person's comments (needs Phase 8) (wave 5)
+- [x] 09-11-PLAN.md: The Followers and Following lists and Recent reports on the profile (wave 5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 09-12-PLAN.md: Settings rows, My profile in the person menu and View my profile on the phone (wave 6)
+- [x] 09-12-PLAN.md: Settings rows, My profile in the person menu and View my profile on the phone (wave 6)
 
 **Wave 7 to 9: ratings** *(each blocked on the wave before)*
 
-- [ ] 09-13-PLAN.md: Tapped star ratings counted by distinct place, and their effect on the tag (wave 7)
-- [ ] 09-14-PLAN.md: Ratings in every tag reader at once (wave 8)
-- [ ] 09-15-PLAN.md: The moderator ratings screen (wave 9)
-- [ ] 09-16-PLAN.md: Stars and the rating control on the profile (wave 9)
-- [ ] 09-29-PLAN.md: "Includes ratings by N people." in the trust panel (wave 9)
+- [x] 09-13-PLAN.md: Tapped star ratings counted by distinct place, and their effect on the tag (wave 7)
+- [x] 09-14-PLAN.md: Ratings in every tag reader at once (wave 8)
+- [x] 09-15-PLAN.md: The moderator ratings screen (wave 9)
+- [x] 09-16-PLAN.md: Stars and the rating control on the profile (wave 9)
+- [x] 09-29-PLAN.md: "Includes ratings by N people." in the trust panel (wave 9)
 
 **Wave 10: star box**
 
-- [ ] 09-17-PLAN.md: The skippable star box after "Yes, mark resolved" (wave 10)
+- [x] 09-17-PLAN.md: The skippable star box after "Yes, mark resolved" (wave 10)
 
 **Waves 11 to 13: mute**
 
-- [ ] 09-18-PLAN.md: Person mute (wave 11)
-- [ ] 09-19-PLAN.md: Mute routes (wave 12)
-- [ ] 09-20-PLAN.md: Mute in the More menu and Settings (wave 13)
+- [x] 09-18-PLAN.md: Person mute (wave 11)
+- [x] 09-19-PLAN.md: Mute routes (wave 12)
+- [x] 09-20-PLAN.md: Mute in the More menu and Settings (wave 13)
 
 **Waves 14 to 16: follow notes in the bell**
 
-- [ ] 09-21-PLAN.md: The Notify me flag and the follow note kind (wave 14)
-- [ ] 09-22-PLAN.md: Writing the follow note in the bell (wave 15)
-- [ ] 09-23-PLAN.md: Notify me on and off (wave 15)
-- [ ] 09-24-PLAN.md: The Notify me bell on the profile (wave 16)
+- [x] 09-21-PLAN.md: The Notify me flag and the follow note kind (wave 14)
+- [x] 09-22-PLAN.md: Writing the follow note in the bell (wave 15)
+- [x] 09-23-PLAN.md: Notify me on and off (wave 15)
+- [x] 09-24-PLAN.md: The Notify me bell on the profile (wave 16)
 
 **Waves 17 and 18: follow notes on the phone**
 
-- [ ] 09-25-PLAN.md: The follow kind in the phone pipeline (wave 17)
-- [ ] 09-26-PLAN.md: Send time checks and cleanup for follow notes (wave 18)
+- [x] 09-25-PLAN.md: The follow kind in the phone pipeline (wave 17)
+- [x] 09-26-PLAN.md: Send time checks and cleanup for follow notes (wave 18)
 
 **Waves 19 and 20**
 
-- [ ] 09-27-PLAN.md: Docs, the Policy edit and the terms bump (wave 19)
-- [ ] 09-28-PLAN.md: The viewing seed, the final gate and the owner's checks (wave 20)
+- [x] 09-27-PLAN.md: Docs, the Policy edit and the terms bump (wave 19)
+- [x] 09-28-PLAN.md: The viewing seed, the final gate and the owner's checks (wave 20)
