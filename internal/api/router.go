@@ -1070,7 +1070,7 @@ func NewRouter(deps Deps) *chi.Mux {
 		// that does not offer it leaves the handler a nil reader and a plain 503.
 		pinsReader, _ := deps.Official.(handlers.OfficialPinsReader)
 		r.Get("/api/official/pins", handlers.OfficialPins(pinsReader))
-		r.Get("/settings", handlers.SettingsPage(deps.Template, accounts, mutes, page))
+		r.Get("/settings", handlers.SettingsPage(deps.Template, accounts, mutes, people, page))
 		// Phase 9 plan 08 (D-04, UI-SPEC Surface 1): the profile page, one for
 		// your own profile and for anyone else's, and /me which answers a 303 to
 		// /u/{your username}. Gated like /settings and given no rate bucket:
