@@ -62,7 +62,7 @@ func TestProfileComplete(t *testing.T) {
 	if ProfileIncompleteMessage != "Add your username, name and home area." {
 		t.Errorf("ProfileIncompleteMessage = %q", ProfileIncompleteMessage)
 	}
-	if strings.ContainsAny(ProfileIncompleteMessage, "—–") {
+	if strings.ContainsRune(ProfileIncompleteMessage, rune(0x2014)) || strings.ContainsRune(ProfileIncompleteMessage, rune(0x2013)) {
 		t.Errorf("ProfileIncompleteMessage contains a dash character")
 	}
 	if ErrProfileIncomplete == nil || !errors.Is(ErrProfileIncomplete, ErrProfileIncomplete) {

@@ -14,7 +14,7 @@ func TestUsernameNormalize(t *testing.T) {
 		{"", ""},
 		{"  @Asha_1\t", "asha_1"},
 		// Case folding is ASCII only: a non ASCII capital stays as typed.
-		{"RÁVI", "rÁvi"},
+		{"R" + string(rune(0xc1)) + "VI", "r" + string(rune(0xc1)) + "vi"},
 	}
 	for _, c := range cases {
 		if got := NormalizeUsername(c.in); got != c.want {
@@ -49,9 +49,9 @@ func TestUsernameClassify(t *testing.T) {
 		{"double full stop", "ra..vi", UsernameInvalid},
 		{"space inside", "ravi k", UsernameInvalid},
 		{"hyphen", "ravi-k", UsernameInvalid},
-		{"non ASCII letter", "rávi", UsernameInvalid},
-		{"zero width space", "ravi​", UsernameInvalid},
-		{"devanagari", "raviक", UsernameInvalid},
+		{"non ASCII letter", "r" + string(rune(0xe1)) + "vi", UsernameInvalid},
+		{"zero width space U+200B", "ravi" + string(rune(0x200b)), UsernameInvalid},
+		{"devanagari", "ravi" + string(rune(0x0915)), UsernameInvalid},
 		{"two at signs", "@@ravi", UsernameInvalid},
 		{"markup", "<b>ravi</b>", UsernameInvalid},
 
@@ -143,7 +143,7 @@ func TestUsernameMessages(t *testing.T) {
 		if c.got != c.want {
 			t.Errorf("message = %q, want %q", c.got, c.want)
 		}
-		if strings.ContainsAny(c.got, "—–") {
+		if strings.ContainsRune(c.got, rune(0x2014)) || strings.ContainsRune(c.got, rune(0x2013)) {
 			t.Errorf("message %q contains a dash character", c.got)
 		}
 	}
