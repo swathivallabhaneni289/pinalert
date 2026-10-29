@@ -1185,22 +1185,6 @@ definitions:
         example: reliable
         type: string
     type: object
-  handlers.RequestLinkRequest:
-    properties:
-      email:
-        description: |-
-          Email is the address to verify. Server-side validation (RFC 5322
-          address parsing, no display-name form) happens in
-          service.AuthService.RequestLink — never trust client-side validation.
-        example: visitor@example.com
-        type: string
-    type: object
-  handlers.RequestLinkResponse:
-    properties:
-      email:
-        example: visitor@example.com
-        type: string
-    type: object
   handlers.ResendRequest:
     type: object
   handlers.ResetCodeRequest:
@@ -1539,8 +1523,8 @@ info:
     Crowd-reported local emergency feed for floods, cyclones, and other disasters.
     Reports are posted by nearby people and confirmed or disputed by other nearby
     people; this API is the read/write surface for that data. Reading and writing
-    reports both require a session verified by email through the magic-link flow —
-    an unverified caller is refused with 401. Pinalert is an unofficial,
+    reports both require a signed in session, an account signed in with an email
+    and a password, and a session that is not signed in is refused with 401. Pinalert is an unofficial,
     unaffiliated project and is not a substitute for contacting emergency services.
     This document is Swagger 2.0 — swag (the generator behind this spec) does not
     emit OpenAPI 3.x, so tooling that expects OpenAPI 3.x specifically should account
@@ -1594,43 +1578,6 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       summary: Send the code again
-      tags:
-      - auth
-  /auth/request-link:
-    post:
-      consumes:
-      - application/json
-      description: |-
-        Validates the given email address, mints a single-use 5-minute magic-link
-        token, persists its hash, and hands the raw link to the configured mailer.
-        The response never carries a session identifier.
-      parameters:
-      - description: Email to verify
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/handlers.RequestLinkRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/handlers.RequestLinkResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-        "429":
-          description: Too Many Requests
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-      summary: Request a magic-link verification email
       tags:
       - auth
   /auth/reset:
@@ -1863,8 +1810,8 @@ paths:
     get:
       description: |-
         Searches Photon first, which matches close spellings and half typed words, and
-        returns at most five matches, in India only. Requires a session verified by email
-        through the magic-link flow. The optional lat and lon (both or neither, the report
+        returns at most five matches, in India only. Requires a signed in session (an account signed in
+        with an email and a password); a session that is not signed in is refused with 401. The optional lat and lon (both or neither, the report
         pin) make Photon prefer nearby places. With lat and lon, only places within 50 km of the pin are
         returned, and a city or town named as typed; a search that finds only farther places
         returns an empty list, and a shorter text of one word is not tried. Without them the search covers all
@@ -2538,8 +2485,9 @@ paths:
         approximate is true and distance_km is measured to that point. A live Rescue report and
         finished Flood, Shelter and Power reports stay exact.
         Every report carries your_vote, your_resolution, undos_left and is_own_report relative to
-        the calling verified account. Requires a session verified by email through the
-        magic-link flow; an unverified caller receives 401 and no report data.
+        the calling verified account. Requires a signed in
+        session (an account signed in with an email and a password); a session that is not
+        signed in is refused with 401 and receives no report data.
         Every report also carries a trust object: how many people at different nearby spots confirmed and disputed it, counted once per spot and not once per vote.
         lat, lon and radius_km must be finite numbers; NaN is refused with 400 and the name of the parameter.
       parameters:
@@ -2620,9 +2568,9 @@ paths:
       consumes:
       - application/json
       description: |-
-        Creates a location-tagged report under the caller's session. Requires a session
-        verified by email through the magic-link flow (POST /auth/request-link, then
-        GET /auth/verify) — an unverified caller receives 401. id, geohash, created_at
+        Creates a location-tagged report under the caller's session. Requires a signed in
+        session (an account signed in with an email and a password); a session that is not
+        signed in is refused with 401. id, geohash, created_at
         and expires_at are computed server-side and can never be set by the client.
         The description is checked before anything is stored. Text that looks hateful, like harassment, sexual, or like random characters is refused with 422 naming the problem, and nothing is stored.
         When the check cannot finish in time, a critical report is published at once and checked again in the background; any other report is stored but held off every feed until a background check finishes, and held is true.
@@ -2695,8 +2643,8 @@ paths:
         has no standing resolve on the report. The poster's reopen and every take back share
         one limit of two per report; past it the answer is 409. A non poster's reopen is an
         ordinary claim and is never limited.
-        Requires a session verified by email through the magic-link flow; an unverified
-        caller receives 401. The reporter receives 403 on confirm/dispute but may resolve
+        Requires a signed in session (an account signed in with an email and a password); a session that is not
+        signed in is refused with 401. The reporter receives 403 on confirm/dispute but may resolve
         or reopen their own report instantly. The response carries the freshly recomputed
         visibility and reason so the client can render the outcome without guessing.
         A voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose
@@ -2777,8 +2725,8 @@ paths:
         has no standing resolve on the report. The poster's reopen and every take back share
         one limit of two per report; past it the answer is 409. A non poster's reopen is an
         ordinary claim and is never limited.
-        Requires a session verified by email through the magic-link flow; an unverified
-        caller receives 401. The reporter receives 403 on confirm/dispute but may resolve
+        Requires a signed in session (an account signed in with an email and a password); a session that is not
+        signed in is refused with 401. The reporter receives 403 on confirm/dispute but may resolve
         or reopen their own report instantly. The response carries the freshly recomputed
         visibility and reason so the client can render the outcome without guessing.
         A voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose
@@ -2971,8 +2919,8 @@ paths:
         has no standing resolve on the report. The poster's reopen and every take back share
         one limit of two per report; past it the answer is 409. A non poster's reopen is an
         ordinary claim and is never limited.
-        Requires a session verified by email through the magic-link flow; an unverified
-        caller receives 401. The reporter receives 403 on confirm/dispute but may resolve
+        Requires a signed in session (an account signed in with an email and a password); a session that is not
+        signed in is refused with 401. The reporter receives 403 on confirm/dispute but may resolve
         or reopen their own report instantly. The response carries the freshly recomputed
         visibility and reason so the client can render the outcome without guessing.
         A voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose
@@ -3053,8 +3001,8 @@ paths:
         has no standing resolve on the report. The poster's reopen and every take back share
         one limit of two per report; past it the answer is 409. A non poster's reopen is an
         ordinary claim and is never limited.
-        Requires a session verified by email through the magic-link flow; an unverified
-        caller receives 401. The reporter receives 403 on confirm/dispute but may resolve
+        Requires a signed in session (an account signed in with an email and a password); a session that is not
+        signed in is refused with 401. The reporter receives 403 on confirm/dispute but may resolve
         or reopen their own report instantly. The response carries the freshly recomputed
         visibility and reason so the client can render the outcome without guessing.
         A voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose
@@ -3174,8 +3122,8 @@ paths:
         has no standing resolve on the report. The poster's reopen and every take back share
         one limit of two per report; past it the answer is 409. A non poster's reopen is an
         ordinary claim and is never limited.
-        Requires a session verified by email through the magic-link flow; an unverified
-        caller receives 401. The reporter receives 403 on confirm/dispute but may resolve
+        Requires a signed in session (an account signed in with an email and a password); a session that is not
+        signed in is refused with 401. The reporter receives 403 on confirm/dispute but may resolve
         or reopen their own report instantly. The response carries the freshly recomputed
         visibility and reason so the client can render the outcome without guessing.
         A voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose

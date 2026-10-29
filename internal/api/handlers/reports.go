@@ -424,9 +424,9 @@ type ErrorResponse struct {
 
 // SubmitReport handles POST /api/reports: decode, validate, check the posting
 // limits, screen the description and persist under the caller's session id.
-// Reaching this handler at all requires a session verified by email through the
-// magic link flow, and the access gate in internal/api/gate.go (01.1-04)
-// refuses an unverified caller with 401 before this function ever runs. The
+// Reaching this handler at all requires a signed in session (an account signed
+// in with an email and a password), and the access gate in internal/api/gate.go
+// (01.1-04) refuses a caller who is not signed in with 401 before this function ever runs. The
 // order is the specification: an optional expected_account_id that is not the
 // signed in account is refused with 409 straight after decoding, before
 // anything else (WR-W09), then validation (a 400 costs nothing), then the
@@ -445,9 +445,9 @@ type ErrorResponse struct {
 // not serious (D-02).
 //
 // @Summary Submit a new emergency report
-// @Description Creates a location-tagged report under the caller's session. Requires a session
-// @Description verified by email through the magic-link flow (POST /auth/request-link, then
-// @Description GET /auth/verify) — an unverified caller receives 401. id, geohash, created_at
+// @Description Creates a location-tagged report under the caller's session. Requires a signed in
+// @Description session (an account signed in with an email and a password); a session that is not
+// @Description signed in is refused with 401. id, geohash, created_at
 // @Description and expires_at are computed server-side and can never be set by the client.
 // @Description The description is checked before anything is stored. Text that looks hateful, like harassment, sexual, or like random characters is refused with 422 naming the problem, and nothing is stored.
 // @Description When the check cannot finish in time, a critical report is published at once and checked again in the background; any other report is stored but held off every feed until a background check finishes, and held is true.
@@ -664,8 +664,9 @@ func writeSubmitError(w http.ResponseWriter, err error) {
 // @Description approximate is true and distance_km is measured to that point. A live Rescue report and
 // @Description finished Flood, Shelter and Power reports stay exact.
 // @Description Every report carries your_vote, your_resolution, undos_left and is_own_report relative to
-// @Description the calling verified account. Requires a session verified by email through the
-// @Description magic-link flow; an unverified caller receives 401 and no report data.
+// @Description the calling verified account. Requires a signed in
+// @Description session (an account signed in with an email and a password); a session that is not
+// @Description signed in is refused with 401 and receives no report data.
 // @Description Every report also carries a trust object: how many people at different nearby spots confirmed and disputed it, counted once per spot and not once per vote.
 // @Description lat, lon and radius_km must be finite numbers; NaN is refused with 400 and the name of the parameter.
 // @Tags reports
@@ -729,7 +730,7 @@ func nearbyHandler(svc *service.ReportService, viewer func(*http.Request) (int64
 		// itself.
 		//
 		// Deliberately NOT set inside writeJSON: that helper is also called
-		// by auth.go's link-request route, this file's own submit route
+		// by auth.go's routes, this file's own submit route
 		// and error helper, and votes.go's cast-vote route, six call
 		// sites across three files nobody examined for this change.
 		// Blanket-applying a cache directive there would silently change

@@ -81,11 +81,9 @@ func newGateTestServer(t *testing.T) (*httptest.Server, *pgxpool.Pool, *gateFake
 
 // gateGenerousBucket and gateGenerousRateLimits open every Phase 4 bucket so
 // the existing gate suites never hit a limit. The limit tests set their own
-// buckets through the tweak hook of newGateTestServerWith. The request link
-// limiter is left at its default on purpose: the spoof test relies on it.
-// Amended 2026-10-29 by Phase 7.1 plan 08: that is still true. The sign in
-// helper no longer touches the request link limiter, and plan 09 re-aims the
-// spoof test at the new send routes.
+// buckets through the tweak hook of newGateTestServerWith.
+// Amended 2026-10-29 by Phase 7.1 plan 14d: the old note about the request
+// link limiter is gone, because plan 14c removed that limiter.
 var gateGenerousBucket = BucketLimit{Every: time.Millisecond, Burst: 1000}
 
 var gateGenerousRateLimits = RateLimits{
@@ -368,7 +366,7 @@ func TestAccessGateBlocksUnverified(t *testing.T) {
 }
 
 // TestAccessGateAllowsVerified proves the gate does not regress Phase 1's
-// walking skeleton: a session verified through the real magic-link flow
+// walking skeleton: a session signed in through the real password flow
 // gets the app shell from GET / and report data from GET /api/reports,
 // exactly as it did before this plan.
 func TestAccessGateAllowsVerified(t *testing.T) {

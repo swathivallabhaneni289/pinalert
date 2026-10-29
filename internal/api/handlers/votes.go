@@ -98,8 +98,8 @@ func parseReportID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 // @Description has no standing resolve on the report. The poster's reopen and every take back share
 // @Description one limit of two per report; past it the answer is 409. A non poster's reopen is an
 // @Description ordinary claim and is never limited.
-// @Description Requires a session verified by email through the magic-link flow; an unverified
-// @Description caller receives 401. The reporter receives 403 on confirm/dispute but may resolve
+// @Description Requires a signed in session (an account signed in with an email and a password); a session that is not
+// @Description signed in is refused with 401. The reporter receives 403 on confirm/dispute but may resolve
 // @Description or reopen their own report instantly. The response carries the freshly recomputed
 // @Description visibility and reason so the client can render the outcome without guessing.
 // @Description A voter more than 1 km from the report (service.MaxVoteDistanceKm) gets 403 whose

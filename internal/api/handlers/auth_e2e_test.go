@@ -665,8 +665,8 @@ func TestLogoutReturnsToLoginGate(t *testing.T) {
 // afterward restores the full report history.
 //
 // Amended 2026-10-29 by Phase 7.1 plan 14: the second sign in is a real
-// POST /api/auth/sign-in with the password. It used to insert a magic link
-// token row and open GET /auth/verify.
+// POST /api/auth/sign-in with the password. It used to insert a sign in
+// link token row and open GET /auth/verify.
 func TestLogoutPreservesReportHistory(t *testing.T) {
 	srv, _, mailer := newAuthE2EServer(t)
 	client := newJarClient(t)

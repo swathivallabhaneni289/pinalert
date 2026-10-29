@@ -126,8 +126,8 @@ func parseGeocodeQuery(w http.ResponseWriter, r *http.Request) (string, bool) {
 //
 // @Summary Search for a place or address by free-text query
 // @Description Searches Photon first, which matches close spellings and half typed words, and
-// @Description returns at most five matches, in India only. Requires a session verified by email
-// @Description through the magic-link flow. The optional lat and lon (both or neither, the report
+// @Description returns at most five matches, in India only. Requires a signed in session (an account signed in
+// @Description with an email and a password); a session that is not signed in is refused with 401. The optional lat and lon (both or neither, the report
 // @Description pin) make Photon prefer nearby places. With lat and lon, only places within 50 km of the pin are
 // @Description returned, and a city or town named as typed; a search that finds only farther places
 // @Description returns an empty list, and a shorter text of one word is not tried. Without them the search covers all
