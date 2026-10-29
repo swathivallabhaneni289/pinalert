@@ -170,6 +170,18 @@ type Deps struct {
 	// under handlers.RefreshTokenMinLen characters. The value never appears in a
 	// log or a page.
 	OfficialRefreshToken string
+	// Credentials is the server side of Create account, the typed code, Sign in,
+	// Resend and Forgot password (Phase 7.1, plan 07). cmd/server/main.go builds
+	// it with keys derived from SESSION_SECRET. Additive, as the fields above were:
+	// a Deps{} literal that omits it still compiles and still serves every other
+	// route, and the six auth routes then answer 503 with a plain message rather
+	// than panic.
+	Credentials *service.CredentialService
+	// AuthLimits holds the device and network buckets of those six routes. A zero
+	// field takes its AuthLimitsDefault value; cmd/server/main.go sets every field
+	// from its constants block. The network buckets are used only when
+	// ClientIPHeader is set.
+	AuthLimits AuthLimits
 }
 
 // requestLogger returns the access log middleware. It replaces chi's
@@ -344,6 +356,48 @@ func resolveRateLimits(l RateLimits) RateLimits {
 	return l
 }
 
+// AuthLimits is an alias of the handlers type, like RateLimits above.
+type AuthLimits = handlers.AuthLimits
+
+// AuthLimitsDefault mirrors the auth bucket constants block in cmd/server/main.go
+// (Phase 7.1, plan 07, D-02). It is used for any field a Deps literal leaves
+// zero. The per device numbers are what one person at one browser needs; the
+// network numbers are loose on purpose, because India's carrier NAT puts many
+// phones behind one address, and they are used only with CLIENT_IP_HEADER.
+var AuthLimitsDefault = AuthLimits{
+	SignInDevice:     BucketLimit{Every: time.Minute, Burst: 8},
+	SignInIP:         BucketLimit{Every: 2 * time.Second, Burst: 300},
+	CodeSendDevice:   BucketLimit{Every: time.Minute, Burst: 5},
+	CodeSendIP:       BucketLimit{Every: 10 * time.Second, Burst: 60},
+	CodeSendNoCookie: BucketLimit{Every: time.Minute, Burst: 10},
+	CodeTryDevice:    BucketLimit{Every: 30 * time.Second, Burst: 10},
+	UsernameCheck:    BucketLimit{Every: time.Second, Burst: 10},
+	UsernameSave:     BucketLimit{Every: 10 * time.Second, Burst: 5},
+}
+
+// resolveAuthLimits replaces every field equal to BucketLimit{} with the
+// AuthLimitsDefault field of the same name.
+func resolveAuthLimits(l AuthLimits) AuthLimits {
+	fill := func(got *BucketLimit, def BucketLimit) {
+		if *got == (BucketLimit{}) {
+			*got = def
+		}
+	}
+	fill(&l.SignInDevice, AuthLimitsDefault.SignInDevice)
+	fill(&l.SignInIP, AuthLimitsDefault.SignInIP)
+	fill(&l.CodeSendDevice, AuthLimitsDefault.CodeSendDevice)
+	fill(&l.CodeSendIP, AuthLimitsDefault.CodeSendIP)
+	fill(&l.CodeSendNoCookie, AuthLimitsDefault.CodeSendNoCookie)
+	fill(&l.CodeTryDevice, AuthLimitsDefault.CodeTryDevice)
+	fill(&l.UsernameCheck, AuthLimitsDefault.UsernameCheck)
+	fill(&l.UsernameSave, AuthLimitsDefault.UsernameSave)
+	return l
+}
+
+// The CredentialService is the login state the sign in page reads; a mismatch
+// of the interface fails the build here.
+var _ handlers.LoginState = (*service.CredentialService)(nil)
+
 // @title        Pinalert API
 // @version      1.0
 // @description  Crowd-reported local emergency feed for floods, cyclones, and other disasters.
@@ -433,6 +487,16 @@ var compressibleContentTypes = []string{"text/html", "text/css", "text/javascrip
 // limiter wraps only the POST path of a configured route, so the limiter never
 // shows a hidden route.
 //
+// Amended 2026-10-29 by Phase 7.1 plan 07 (D-03): six more exact POST paths join
+// the exempt set, the code and password routes: /api/auth/sign-up,
+// /api/auth/sign-up/code, /api/auth/code/resend, /api/auth/sign-in,
+// /api/auth/reset and /api/auth/reset/code. They are how a person gets an
+// account and a session in the first place, so they cannot sit behind the gate.
+// Each one is wrapped by net/http CrossOriginProtection and takes a strict
+// application/json body of at most 4 KB. They do NOT skip the session
+// middleware: the typed code row and the new session binding are keyed on the
+// browser's session id. The older link routes stay until the cleanup plans.
+//
 // The route table has a third part, the moderator group (D-08), which is the
 // one exception to "every other route" above. It sits outside the access gate
 // and answers a plain 404 that is byte equal to an unknown route to everyone
@@ -496,6 +560,14 @@ func NewRouter(deps Deps) *chi.Mux {
 	auth.Chrome = deps.Chrome
 	// My activity reads Ended nearby with the same radius as Nearby (D-18).
 	auth.DefaultRadiusKm = deps.Page.DefaultRadiusKm
+	// The sign in page's login state and the session manager (Phase 7.1, plan 07).
+	// Login is assigned only when the service exists: a typed nil pointer stored
+	// in the interface would not be a nil interface (the PlaceSearch comment says
+	// the same).
+	if deps.Credentials != nil {
+		auth.Login = deps.Credentials
+	}
+	auth.Session = deps.Session
 
 	limiterClock := deps.LimiterClock
 	if limiterClock == nil {
@@ -516,7 +588,14 @@ func NewRouter(deps Deps) *chi.Mux {
 	}
 	flags := service.NewFlagService(deps.Sessions, flagOpts...)
 	// Same for the account service behind the /api/me routes (plan 03.4-01).
-	accounts := service.NewAccountService(deps.Sessions)
+	// Its name and home area edits go through the report service's text screener,
+	// like a flag note does (Phase 7.1, plan 06); without a report service they
+	// are not screened.
+	var accountOpts []service.AccountOption
+	if deps.Reports != nil {
+		accountOpts = append(accountOpts, service.WithAccountScreener(deps.Reports.Screener()))
+	}
+	accounts := service.NewAccountService(deps.Sessions, accountOpts...)
 	// Phase 3.3 (plan 08): the phone alert subscription service, from the same
 	// sessions store and the push service allowlist.
 	pushSubs := service.NewPushSubscriptionService(deps.Sessions, push.DefaultEndpointPolicy())
@@ -532,7 +611,13 @@ func NewRouter(deps Deps) *chi.Mux {
 	mutes := service.NewMuteService(deps.Sessions)
 	// Delete my account (plan 03.2-09): built from the sessions store and the
 	// optional transaction seam.
-	deletions := service.NewAccountDeletionService(deps.Sessions, deps.AccountTx)
+	// With a CredentialService, deleting an account also clears the sign in
+	// throttle row of the address, through the service's own keyed hash.
+	var deleteOpts []service.AccountDeleteOption
+	if deps.Credentials != nil {
+		deleteOpts = append(deleteOpts, service.WithThrottleKeyer(deps.Credentials.ThrottleKey))
+	}
+	deletions := service.NewAccountDeletionService(deps.Sessions, deps.AccountTx, deleteOpts...)
 	// Log out of all devices (plan 03.2-16): built from the sessions store.
 	sessionsSvc := service.NewSessionService(deps.Sessions)
 	// Nearby and the Low data view start at the account's home area cell centre
@@ -623,6 +708,25 @@ func NewRouter(deps Deps) *chi.Mux {
 	}
 	requestLinkLimiter := ratelimit.NewPerIP(requestLinkLimit.Every, requestLinkLimit.Burst)
 	r.With(requestLinkLimiter.Middleware()).Post("/api/auth/request-link", handlers.RequestLink(deps.AuthService))
+
+	// The six code and password routes (Phase 7.1, plan 07, D-03). Flat literal
+	// paths next to the link route, outside the gate: they are how a person gets
+	// an account and a session in the first place. They are always registered, so
+	// the exempt list is constant; a router built without Deps.Credentials answers
+	// each with a 503. cop rejects a cross site browser POST (login CSRF, research
+	// Pattern 4) and lets a request without Origin and Sec-Fetch-Site through,
+	// which is every script and every same site fetch. None of the six skips the
+	// session middleware: the code row and the new session binding are keyed on
+	// the browser's session id (research section 7). The buckets are the device
+	// and, with CLIENT_IP_HEADER, the network ones of handlers.AuthGate.
+	authGate := handlers.NewAuthGate(resolveAuthLimits(deps.AuthLimits), limiterClock, deps.ClientIPHeader)
+	cop := http.NewCrossOriginProtection()
+	r.With(cop.Handler).Post("/api/auth/sign-up", handlers.SignUp(deps.Credentials, authGate))
+	r.With(cop.Handler).Post("/api/auth/sign-up/code", handlers.ConfirmSignUp(deps.Credentials, authGate, deps.Session))
+	r.With(cop.Handler).Post("/api/auth/code/resend", handlers.ResendCode(deps.Credentials, authGate))
+	r.With(cop.Handler).Post("/api/auth/sign-in", handlers.SignIn(deps.Credentials, authGate, deps.Session))
+	r.With(cop.Handler).Post("/api/auth/reset", handlers.RequestReset(deps.Credentials, authGate))
+	r.With(cop.Handler).Post("/api/auth/reset/code", handlers.ConfirmReset(deps.Credentials, authGate))
 
 	// The external cron's door (plan 05-12, D-15, research G1). Outside the gate,
 	// because the cron has no account; its own bearer token is the guard, and the

@@ -27,6 +27,15 @@ func TestSearchBudgetsMatchTheRouterDefaults(t *testing.T) {
 	}
 }
 
+// TestAuthLimitsMatchTheRouterDefaults keeps the auth bucket block of this
+// program equal to api.AuthLimitsDefault (Phase 7.1, plan 07), so the numbers a
+// reader finds beside the defaults are the ones that run.
+func TestAuthLimitsMatchTheRouterDefaults(t *testing.T) {
+	if got := authLimits(); got != api.AuthLimitsDefault {
+		t.Errorf("auth limits = %+v, want %+v", got, api.AuthLimitsDefault)
+	}
+}
+
 // TestOnboardingGateIsSwitchedOn pins that the real program turns the first-time
 // flow gate on (Phase 3.4 plan 10, D-27, orchestrator decision 5). The Deps
 // literal is built inside main, so the check reads the source: a refactor that
