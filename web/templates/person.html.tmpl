@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  {{template "app_head" .AssetVersion}}
+  <title>{{.PageTitle}}</title>
+  <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/app-bar.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/places.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/legal.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/window.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/updates.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/phone.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/person.css?v={{.AssetVersion}}">
+  <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
+</head>
+<body class="has-app-bar">
+  <div class="top-chrome">
+    {{template "app_topbar" .}}
+  </div>
+  <div id="notice-live" class="visually-hidden" role="status" aria-live="polite"></div>
+
+  <div class="app-content">
+  {{/* Phase 9 plan 08 (D-04, UI-SPEC Surface 1): one page for your own profile and for anyone else's. data-username and data-self are written only when there is a profile, so the not found page carries nothing from the request and is the same bytes for every cause (T-09-30). Every value below goes through html/template escaping. */}}
+  <main id="person-page" class="person-page"{{if not .NotFound}} data-username="{{.Profile.Username}}" data-self="{{if .Profile.IsSelf}}true{{else}}false{{end}}"{{end}}>
+    {{if .NotFound}}
+    <section id="person-not-found" class="person-state" aria-labelledby="person-not-found-title">
+      <h2 class="person-state__title" id="person-not-found-title" tabindex="-1">Profile not found</h2>
+      <p class="person-state__line">There is no public profile with this username. It may have been made private, or the username may have changed.</p>
+      <a class="btn" href="/">Go to Nearby</a>
+    </section>
+    {{else}}
+    {{if not .BlockedByYou}}
+    <header id="person-header" class="person-header">
+      <div class="person-ident">
+        <span id="person-disc" class="person-disc" aria-hidden="true">{{.Profile.Initial}}</span>
+        <div class="person-ident__text">
+          <h1 id="person-username" class="person-username">{{.Profile.Username}}</h1>
+          {{if .Profile.Name}}<p id="person-name" class="person-name">{{.Profile.Name}}</p>{{end}}
+        </div>
+      </div>
+      {{if .Profile.StarsNumber}}
+      <div id="person-stars" class="person-stars" role="group" aria-label="{{.Profile.StarsLabel}}">
+        <span class="person-stars__icon" aria-hidden="true"></span>
+        <span class="person-stars__total"><span class="person-stars__number">{{.Profile.StarsNumber}}</span> <span class="person-stars__word">stars</span></span>
+      </div>
+      {{end}}
+      <div class="person-tag-group">
+        <span id="person-tag" class="person-tag">{{.Profile.TagWord}}</span>
+        <p id="person-tag-sentence" class="person-tag-sentence">{{.Profile.TagSentence}}</p>
+      </div>
+      <p id="person-member-since" class="person-meta">{{.Profile.MemberSince}}</p>
+      {{if .Profile.HomeAreaName}}
+      <p id="person-home-area" class="person-meta person-meta--area"><span class="app-icon app-icon--map-pin person-meta__icon" aria-hidden="true"></span><span>{{.Profile.HomeAreaName}}</span></p>
+      {{end}}
+      <div class="person-counts">
+        <button type="button" id="person-followers-button" class="person-count" aria-haspopup="dialog" aria-label="{{.Profile.FollowersText}}"><span id="person-followers-count" class="person-count__number">{{.Profile.FollowersCount}}</span> <span id="person-followers-word" class="person-count__word">{{.Profile.FollowersWord}}</span></button>
+        <button type="button" id="person-following-button" class="person-count" aria-haspopup="dialog" aria-label="{{.Profile.FollowingText}}"><span id="person-following-count" class="person-count__number">{{.Profile.FollowingCount}}</span> <span id="person-following-word" class="person-count__word">{{.Profile.FollowingWord}}</span></button>
+      </div>
+      {{if .Profile.IsSelf}}
+      <div id="person-actions" class="person-actions">
+        <a id="person-edit" class="btn" href="/settings">Edit in Settings</a>
+      </div>
+      <p id="person-state-line" class="person-state-line" role="status">{{.Profile.StateLine}}</p>
+      {{else}}
+      {{/* Follow and Following are both drawn and the server hides the one that does not apply, so the script only toggles the hidden flags and moves no markup. */}}
+      <div id="person-actions" class="person-actions">
+        <button type="button" id="person-follow" class="btn btn--primary"{{if not .Profile.CanFollow}} hidden{{end}}>Follow</button>
+        <button type="button" id="person-unfollow" class="btn" aria-pressed="true"{{if not .Profile.Following}} hidden{{end}}>Following</button>
+        <button type="button" id="person-more" class="btn person-more" aria-haspopup="menu" aria-expanded="false" aria-controls="person-more-menu"><span>More</span><span class="person-more__chevron" aria-hidden="true"></span></button>
+        <div id="person-more-menu" class="person-menu" role="menu" aria-label="More" hidden>
+          <button type="button" id="person-remove-follower" class="person-menu__item" role="menuitem"{{if not .Profile.FollowsYou}} hidden{{end}}>Remove follower</button>
+          <button type="button" id="person-block" class="person-menu__item" role="menuitem">Block</button>
+        </div>
+      </div>
+      {{end}}
+      <p id="person-action-error" class="inline-error" role="alert" hidden></p>
+    </header>
+
+    <section id="person-reports-section" class="person-reports" aria-labelledby="person-reports-title">
+      <h2 id="person-reports-title" class="person-reports__title">Recent reports</h2>
+      <p class="person-reports__line">Reports from the last 30 days, newest first.</p>
+      <div id="person-reports" class="person-reports__list"></div>
+    </section>
+    {{end}}
+
+    {{if not .Profile.IsSelf}}
+    {{/* The You blocked face. It is drawn by the server for a person you blocked, and hidden on a normal page for the script to fill and show after a confirmed Block. */}}
+    <section id="person-blocked" class="person-state" aria-labelledby="person-blocked-title"{{if not .BlockedByYou}} hidden{{end}}>
+      <h2 class="person-state__title" id="person-blocked-title" tabindex="-1">{{if .BlockedByYou}}You blocked {{.Profile.Username}}{{end}}</h2>
+      <p class="person-state__line">They can't see your profile or follow you. Their reports still show in the feed.</p>
+      <button type="button" id="person-unblock" class="btn">Unblock</button>
+    </section>
+    {{end}}
+    {{end}}
+  </main>
+  </div>
+
+  {{if and (not .NotFound) (not .Profile.IsSelf)}}
+  {{/* The Block and Remove follower box, a native dialog with the Log out box classes, structured exactly like #settings-delete-confirm. It sits outside every window as a direct child of the body. The script fills the title and the text with textContent. */}}
+  <dialog id="person-confirm" class="logout-confirm" aria-labelledby="person-confirm-title" aria-describedby="person-confirm-text">
+    <div class="logout-confirm__body">
+      <h2 class="logout-confirm__title" id="person-confirm-title" tabindex="-1"></h2>
+      <div class="logout-confirm__text" id="person-confirm-text"></div>
+      <p class="inline-error" id="person-confirm-error" role="alert" hidden></p>
+      <div class="logout-confirm__actions">
+        <button type="button" class="btn" id="person-confirm-cancel">Cancel</button>
+        <button type="button" class="btn btn--destructive" id="person-confirm-go"></button>
+      </div>
+    </div>
+  </dialog>
+  {{end}}
+
+  {{template "reader_dialog.html.tmpl" .}}
+
+  {{template "app_bottombar" .}}
+
+  <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/app-bar.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/updates.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/reader.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/person.js?v={{.AssetVersion}}" defer></script>
+</body>
+</html>

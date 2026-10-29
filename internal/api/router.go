@@ -1071,6 +1071,13 @@ func NewRouter(deps Deps) *chi.Mux {
 		pinsReader, _ := deps.Official.(handlers.OfficialPinsReader)
 		r.Get("/api/official/pins", handlers.OfficialPins(pinsReader))
 		r.Get("/settings", handlers.SettingsPage(deps.Template, accounts, mutes, page))
+		// Phase 9 plan 08 (D-04, UI-SPEC Surface 1): the profile page, one for
+		// your own profile and for anyone else's, and /me which answers a 303 to
+		// /u/{your username}. Gated like /settings and given no rate bucket:
+		// the page load is already behind the access gate, and its actions
+		// pass through the people buckets of the JSON routes above.
+		r.Get("/u/{username}", handlers.PersonPage(deps.Template, people, page))
+		r.Get("/me", handlers.MyProfilePage(people))
 		// Phase 3.4 (D-27, plan 10): the first-time flow. It sits in this gated
 		// group because it belongs to the signed in account, and the onboarding
 		// middleware above lets this exact path through so the redirect to it

@@ -30,6 +30,27 @@ func TestAccessGateBlocksPeopleRoutes(t *testing.T) {
 		{http.MethodGet, "/api/me/blocked"},
 		{http.MethodPatch, "/api/me/visibility"},
 	}
+	// Plan 09-08: the two HTML routes are gated like every page, so an
+	// anonymous caller is sent to /login and never sees a profile.
+	pages := []string{"/u/someone", "/me"}
+	for _, path := range pages {
+		resp, err := client.Get(srv.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		raw, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusFound {
+			t.Errorf("GET %s status = %d, want 302: %s", path, resp.StatusCode, raw)
+			continue
+		}
+		if loc := resp.Header.Get("Location"); loc != "/login" {
+			t.Errorf("GET %s Location = %q, want /login", path, loc)
+		}
+		if strings.Contains(string(raw), "someone") {
+			t.Errorf("GET %s body carries the requested name: %s", path, raw)
+		}
+	}
 	for _, rt := range routes {
 		var body io.Reader
 		if rt.method != http.MethodGet {
