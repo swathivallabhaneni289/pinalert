@@ -628,6 +628,43 @@ func TestPersonColumnHeadsAndHoverKeepContrast(t *testing.T) {
 	}
 }
 
+// TestPersonPageHasOneH1AtEachSize pins review fix IN-T02 (2026-10-30). Under
+// 900px the top bar title is the h1, so the username there is a plain line and
+// the username h1 is not drawn; from 900px the top bar title is not drawn, so
+// the username h1 shows. The not found and You blocked states draw no username,
+// so on the laptop the top bar title is clipped in, never display none, the way
+// app-bar.css does it for Nearby.
+func TestPersonPageHasOneH1AtEachSize(t *testing.T) {
+	tmpl := p421ReadTemplate(t, "person.html.tmpl")
+	if !strings.Contains(tmpl, `<p class="person-username person-username--phone">{{.Profile.Username}}</p>`) {
+		t.Errorf("person.html.tmpl lacks the phone username line (IN-T02)")
+	}
+	rules := p26Rules(t, "person.css")
+	if !p26Has(rules, "", "h1.person-username", "display", "none") {
+		t.Errorf("person.css: the username h1 must be hidden under 900px (IN-T02)")
+	}
+	if !p26Has(rules, "min-width: 900px", "h1.person-username", "display", "block") {
+		t.Errorf("person.css: the username h1 must show from 900px (IN-T02)")
+	}
+	if !p26Has(rules, "min-width: 900px", ".person-username--phone", "display", "none") {
+		t.Errorf("person.css: the phone username line must be hidden from 900px (IN-T02)")
+	}
+	for _, head := range []string{
+		"body:has(#person-not-found) .app-topbar__title",
+		"body:has(#person-blocked:not([hidden])) .app-topbar__title",
+	} {
+		found := p26Find(rules, "min-width: 900px", head)
+		if len(found) == 0 {
+			t.Errorf("person.css: no laptop rule %q seats the top bar title as the h1 of a state page (IN-T02)", head)
+		}
+		for _, r := range found {
+			if r.Decls["display"] != "block" || r.Decls["clip"] != "rect(0, 0, 0, 0)" || r.Decls["position"] != "absolute" {
+				t.Errorf("person.css: the state heading rule must clip, not remove, the title: %v (IN-T02)", r.Decls)
+			}
+		}
+	}
+}
+
 // TestListWindowCommentsNameMutedPeople pins review fix IN-T06 (2026-10-30):
 // since plan 09-20 the shared list window also serves Muted people, so the
 // comments that describe it must not list only three kinds.

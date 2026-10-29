@@ -71,6 +71,14 @@
   overflow-wrap: anywhere;
 }
 
+/* Review fix IN-T02: one h1 per page at each size. Under 900px the top bar title
+   (Profile or My profile) is the h1, so the username there is a plain line; from
+   900px the top bar title is not drawn and the username is the h1. The laptop
+   block below swaps which of the two shows. */
+h1.person-username {
+  display: none;
+}
+
 .person-name {
   margin: 0;
   color: var(--color-text-muted);
@@ -753,6 +761,32 @@ a.person-report__body:hover .person-report__label {
 
   .person-header {
     gap: var(--space-lg);
+  }
+
+  h1.person-username {
+    display: block;
+  }
+
+  .person-username--phone {
+    display: none;
+  }
+
+  /* Review fix IN-T02: the not found and You blocked states draw no username, so
+     the laptop page would have no h1. The top bar title takes the seat, hidden
+     by clipping and not by display none, as it does on Nearby (app-bar.css), so
+     a screen reader still finds the page heading and nothing moves. */
+  body:has(#person-not-found) .app-topbar__title,
+  body:has(#person-blocked:not([hidden])) .app-topbar__title {
+    position: absolute;
+    display: block;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   .person-state {

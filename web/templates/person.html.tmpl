@@ -40,6 +40,8 @@
         <span id="person-disc" class="person-disc" aria-hidden="true">{{.Profile.Initial}}</span>
         <div class="person-ident__text">
           <h1 id="person-username" class="person-username">{{.Profile.Username}}</h1>
+          {{/* Review fix IN-T02: under 900px the top bar title is the page's h1, so the username there is this plain line; person.css shows one of the two at each size. */}}
+          <p class="person-username person-username--phone">{{.Profile.Username}}</p>
           {{if .Profile.Name}}<p id="person-name" class="person-name">{{.Profile.Name}}</p>{{end}}
         </div>
       </div>
