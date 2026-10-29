@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"pinalert/internal/api"
+	"pinalert/internal/mailer"
 )
 
 // TestSearchBudgetsMatchTheRouterDefaults keeps the two search budgets this
@@ -33,6 +34,22 @@ func TestSearchBudgetsMatchTheRouterDefaults(t *testing.T) {
 func TestAuthLimitsMatchTheRouterDefaults(t *testing.T) {
 	if got := authLimits(); got != api.AuthLimitsDefault {
 		t.Errorf("auth limits = %+v, want %+v", got, api.AuthLimitsDefault)
+	}
+}
+
+// TestCeilingLimitsMatchTheMailerDefaults keeps the send ceiling block of this
+// program equal to mailer.DefaultCeilingLimits (review CR-S03), and checks that
+// main wires the paced ceiling, not the plain daily one.
+func TestCeilingLimitsMatchTheMailerDefaults(t *testing.T) {
+	if got := ceilingLimits(); got != mailer.DefaultCeilingLimits {
+		t.Errorf("ceiling limits = %+v, want %+v", got, mailer.DefaultCeilingLimits)
+	}
+	raw, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("reading main.go: %v", err)
+	}
+	if !strings.Contains(string(raw), "mailer.NewSendCeiling(mail, ceilingLimits(), time.Now)") {
+		t.Error("main must wrap the mailer with mailer.NewSendCeiling(mail, ceilingLimits(), time.Now)")
 	}
 }
 

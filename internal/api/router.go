@@ -349,6 +349,7 @@ var AuthLimitsDefault = AuthLimits{
 	CodeSendDevice:   BucketLimit{Every: time.Minute, Burst: 5},
 	CodeSendIP:       BucketLimit{Every: 10 * time.Second, Burst: 60},
 	CodeSendNoCookie: BucketLimit{Every: time.Minute, Burst: 10},
+	SignInNoCookie:   BucketLimit{Every: time.Minute, Burst: 10},
 	CodeTryDevice:    BucketLimit{Every: 30 * time.Second, Burst: 10},
 	UsernameCheck:    BucketLimit{Every: time.Second, Burst: 10},
 	UsernameSave:     BucketLimit{Every: 10 * time.Second, Burst: 5},
@@ -367,6 +368,7 @@ func resolveAuthLimits(l AuthLimits) AuthLimits {
 	fill(&l.CodeSendDevice, AuthLimitsDefault.CodeSendDevice)
 	fill(&l.CodeSendIP, AuthLimitsDefault.CodeSendIP)
 	fill(&l.CodeSendNoCookie, AuthLimitsDefault.CodeSendNoCookie)
+	fill(&l.SignInNoCookie, AuthLimitsDefault.SignInNoCookie)
 	fill(&l.CodeTryDevice, AuthLimitsDefault.CodeTryDevice)
 	fill(&l.UsernameCheck, AuthLimitsDefault.UsernameCheck)
 	fill(&l.UsernameSave, AuthLimitsDefault.UsernameSave)
@@ -419,7 +421,8 @@ var compressibleContentTypes = []string{"text/html", "text/css", "text/javascrip
 // to the group is protected by construction; a route added outside it is
 // visibly, by construction, unprotected (threat T-01-70).
 //
-// The exempt set is exactly: /static/*, /swagger/*, GET /login, the six POST
+// The exempt set is exactly: /static/*, /swagger/*, GET /login, POST /login (a
+// fixed 303 back to GET /login that never reads the body, review WR-T04), the six POST
 // /api/auth routes (sign-up, sign-up/code, code/resend, sign-in, reset and
 // reset/code), GET /auth/verify (the retired emailed link redirect), GET
 // /disclaimer and GET /policy, the ten app asset paths, and Phase 5's entries
@@ -619,6 +622,10 @@ func NewRouter(deps Deps) *chi.Mux {
 	// --- Exempt: reachable without a verified account. ---
 
 	r.Get("/login", handlers.LoginGate(deps.Template, auth))
+	// The card's forms post to /login when the page script has not loaded yet
+	// (review WR-T04): a fixed 303 back to the page, no-store, and the body,
+	// which carries a plaintext password, is never read.
+	r.Post("/login", handlers.LoginFormFallback())
 	// The retired emailed link (Phase 7.1 plan 14, D-12): an old link already in
 	// somebody's inbox still reaches this path, so it stays public and GET only,
 	// and answers a 303 to /login?done=old-link, where the sign in page shows the

@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -173,6 +174,41 @@ func TestPasswordlessSessionCanSignInAgain(t *testing.T) {
 // TestSeedPasswordMatchesHelper pins that the password the seed helpers store is
 // the one the e2e helpers type, so verifySession's sign in first path works for
 // seeded accounts.
+// TestSwitchNoticeKeepsDeviceBucket is the second half of WR-S01 of the Phase
+// 7.1 review: the switch notice must leave the browser with a fresh valid
+// cookie, not clear it. Before the fix the notice cleared the cookie, the
+// next Create account arrived with none, and the person landed in the one
+// small bucket shared by every cookieless sender on the server; once another
+// client had drained it, the person was refused.
+func TestSwitchNoticeKeepsDeviceBucket(t *testing.T) {
+	const email = "passwordless-notice@example.com"
+	const sid = "passwordless-notice-session"
+	srv, mail, pool := newE2EServerWith(t, func(d *api.Deps, _ *sqlcgen.Queries) {
+		d.AuthLimits.CodeSendNoCookie = api.BucketLimit{Every: time.Hour, Burst: 1}
+	})
+	passwordlessSeed(t, pool, email, sid)
+	c := passwordlessBrowser(t, srv.URL, sid)
+
+	resp, body := welcomeGet(t, c, srv.URL, "/login")
+	if resp.StatusCode != http.StatusOK || !strings.Contains(body, passwordlessSwitchLine) {
+		t.Fatalf("GET /login = %d, notice shown %v; want 200 with the switch notice", resp.StatusCode, strings.Contains(body, passwordlessSwitchLine))
+	}
+
+	// Another client with no cookie at all drains the shared bucket.
+	stranger := &http.Client{}
+	if got, _, _ := postAuthJSON(t, stranger, srv, "/api/auth/sign-up",
+		map[string]string{"email": "stranger@example.com", "password": e2eTestPassword}); got != http.StatusOK {
+		t.Fatalf("the cookieless stranger's sign up = %d, want 200", got)
+	}
+
+	if got := signUpRequest(t, c, srv, email, e2eTestPassword); got != http.StatusOK {
+		t.Fatalf("Create account after the switch notice = %d, want 200: the notice must leave a valid cookie", got)
+	}
+	if got := confirmSignUpCode(t, c, srv, mail.codeFor(t, email)); got != http.StatusOK {
+		t.Fatalf("typing the code after the notice = %d, want 200", got)
+	}
+}
+
 func TestSeedPasswordMatchesHelper(t *testing.T) {
 	if e2eTestPassword != testutil.TestAccountPassword {
 		t.Fatalf("e2eTestPassword = %q but testutil.TestAccountPassword = %q; they must be equal", e2eTestPassword, testutil.TestAccountPassword)

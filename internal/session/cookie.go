@@ -117,6 +117,7 @@ func (m *Manager) Middleware(persist func(ctx context.Context, id string) error)
 			}
 
 			ctx := context.WithValue(r.Context(), ctxKey{}, id)
+			ctx = context.WithValue(ctx, mintedKey{}, needsCookie)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -160,6 +161,19 @@ func (m *Manager) resolveID(r *http.Request) (id string, needsCookie bool) {
 func FromContext(ctx context.Context) (string, bool) {
 	id, ok := ctx.Value(ctxKey{}).(string)
 	return id, ok
+}
+
+// mintedKey is the context key of the flag Middleware stores beside the id.
+type mintedKey struct{}
+
+// Minted reports whether Middleware had to draw a fresh id for this request
+// because its cookie was absent, malformed or wrongly signed (Phase 7.1 review
+// WR-S01). The auth buckets key their shared cookieless bucket on it, so a
+// junk cookie cannot buy a fresh device bucket on every request. known is
+// false when the request never went through Middleware.
+func Minted(ctx context.Context) (minted bool, known bool) {
+	minted, known = ctx.Value(mintedKey{}).(bool)
+	return minted, known
 }
 
 // ClearCookie writes a cookie that deletes the browser's pinalert_session

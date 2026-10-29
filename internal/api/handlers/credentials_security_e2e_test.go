@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -28,6 +29,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"pinalert/internal/api"
+	"pinalert/internal/auth"
 	"pinalert/internal/mailer"
 	"pinalert/internal/service"
 	sqlcgen "pinalert/internal/store/sqlc"
@@ -1099,4 +1101,277 @@ func TestSignInCleansReplacedSessionPush(t *testing.T) {
 	if got := reportsStatus(t, phone, srv); got != http.StatusOK {
 		t.Errorf("the phone after signing in as B: GET /api/reports = %d, want 200", got)
 	}
+}
+
+// ---- Review fix round 1: the new limiters --------------------------------
+
+// headerTransport sets fixed headers on every request, so a test client can
+// send a junk cookie (with no jar to replace it) or a client address.
+type headerTransport struct {
+	base    http.RoundTripper
+	headers map[string]string
+}
+
+func (h headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	r := req.Clone(req.Context())
+	for k, v := range h.headers {
+		r.Header.Set(k, v)
+	}
+	return h.base.RoundTrip(r)
+}
+
+// newHeaderClient is a client with no cookie jar, response compression off and
+// the given headers on every request.
+func newHeaderClient(t *testing.T, headers map[string]string) *http.Client {
+	t.Helper()
+	tr := &http.Transport{DisableCompression: true}
+	t.Cleanup(tr.CloseIdleConnections)
+	return &http.Client{Transport: headerTransport{base: tr, headers: headers}}
+}
+
+// TestEnumerationCookielessBucketsIdentical covers the two shared cookieless
+// buckets of review WR-S01 (CodeSendNoCookie, now keyed on a minted session id,
+// and the new SignInNoCookie): once a junk cookie script has spent them, the
+// refusal for a known address and for an unknown one is the same answer, on
+// sign in and on Create account.
+func TestEnumerationCookielessBucketsIdentical(t *testing.T) {
+	srv, mail, pool := newE2EServerWith(t, func(d *api.Deps, _ *sqlcgen.Queries) {
+		limits := e2eGenerousAuthLimits
+		limits.CodeSendNoCookie = api.BucketLimit{Every: time.Hour, Burst: 1}
+		limits.SignInNoCookie = api.BucketLimit{Every: time.Hour, Burst: 1}
+		d.AuthLimits = limits
+	})
+	const (
+		knownAddr   = "enum-junk-known@example.com"
+		unknownAddr = "enum-junk-unknown@example.com"
+	)
+	// A browser that opened /login first carries a valid cookie, so making the
+	// known account spends neither shared bucket.
+	verifySession(t, newLoginClient(t, srv), srv, mail, knownAddr)
+	ageClaim(t, pool, knownAddr)
+
+	junk := newHeaderClient(t, map[string]string{"Cookie": "pinalert_session=x"})
+	// Spend both shared buckets.
+	if a := doAuth(t, junk, srv, "/api/auth/sign-up", map[string]string{"email": "enum-junk-spend@example.com", "password": e2eTestPassword}); a.status != http.StatusOK {
+		t.Fatalf("the first junk cookie sign up = %d, want 200: %s", a.status, a.body)
+	}
+	if a := doAuth(t, junk, srv, "/api/auth/sign-in", map[string]string{"email": "enum-junk-spend@example.com", "password": secWrongPassword}); a.status != http.StatusBadRequest {
+		t.Fatalf("the first junk cookie sign in = %d, want 400: %s", a.status, a.body)
+	}
+
+	for _, path := range []string{"/api/auth/sign-in", "/api/auth/sign-up"} {
+		body := func(addr string) map[string]string {
+			return map[string]string{"email": addr, "password": secWrongPassword}
+		}
+		known := doAuth(t, junk, srv, path, body(knownAddr))
+		unknown := doAuth(t, junk, srv, path, body(unknownAddr))
+		expectError(t, path+" known address after the shared bucket is spent", known, http.StatusTooManyRequests, "email", secMinuteSentence)
+		compareAuthAnswers(t, path+" junk cookie: known vs unknown address", known, unknown)
+	}
+}
+
+// ceilingClock is a clock the send ceiling reads, moved by the test.
+type ceilingClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func newCeilingClock() *ceilingClock {
+	// 01:00 UTC, so no test run crosses a UTC midnight.
+	return &ceilingClock{t: time.Date(2026, 10, 30, 1, 0, 0, 0, time.UTC)}
+}
+
+func (c *ceilingClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+func (c *ceilingClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
+}
+
+// secCeilingHeader is the client address header of the ceiling tests.
+const secCeilingHeader = "X-Test-Client-IP"
+
+// newCeilingServer is the e2e server with the production send ceiling (the
+// given limits) between the service and a recording mailer, on a clock the test
+// moves. A non empty header turns the network buckets and the sender share on.
+func newCeilingServer(t *testing.T, limits mailer.CeilingLimits, header string) (*httptest.Server, *recordingMailer, *pgxpool.Pool, *ceilingClock) {
+	t.Helper()
+	rec := &recordingMailer{}
+	clk := newCeilingClock()
+	srv, _, pool := newE2EServerWith(t, func(d *api.Deps, q *sqlcgen.Queries) {
+		credLimits := service.DefaultCredentialLimits
+		credLimits.SendCooldown = time.Millisecond
+		d.Credentials = service.NewCredentialService(q, mailer.NewSendCeiling(rec, limits, clk.Now),
+			service.WithHasher(auth.NewHasher(auth.TestParams())),
+			service.WithCodeKey(bytes.Repeat([]byte("c"), 32)),
+			service.WithThrottleKey(bytes.Repeat([]byte("t"), 32)),
+			service.WithCredentialLimits(credLimits),
+		)
+		d.ClientIPHeader = header
+	})
+	return srv, rec, pool, clk
+}
+
+// freshBrowser is a new browser that opened /login, so it holds a valid fresh
+// cookie, sending from the given client address (none when ip is empty).
+func freshBrowser(t *testing.T, srv *httptest.Server, ip string) *http.Client {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("constructing cookie jar: %v", err)
+	}
+	tr := &http.Transport{DisableCompression: true}
+	t.Cleanup(tr.CloseIdleConnections)
+	headers := map[string]string{}
+	if ip != "" {
+		headers[secCeilingHeader] = ip
+	}
+	c := &http.Client{Jar: jar, Transport: headerTransport{base: tr, headers: headers}}
+	getLoginPage(t, c, srv)
+	return c
+}
+
+// floodSend sends one Create account or one Forgot password for a made up
+// address from a fresh browser, the shape of a script that fetches a fresh
+// cookie before every request.
+func floodSend(t *testing.T, srv *httptest.Server, ip, path string, i int) authAnswer {
+	t.Helper()
+	addr := fmt.Sprintf("flood-%s-%d@example.com", strings.TrimPrefix(path, "/api/auth/"), i)
+	body := map[string]string{"email": addr}
+	if path == "/api/auth/sign-up" {
+		body["password"] = e2eTestPassword
+	}
+	return doAuth(t, freshBrowser(t, srv, ip), srv, path, body)
+}
+
+// TestMailCeilingPacesBurst is CR-S03 part 1: a burst of sends from fresh
+// browsers in one minute must not spend the whole day's mail. The ceiling
+// paces sends per 10 minutes, so a real person who asks for a reset code a few
+// minutes later gets it.
+func TestMailCeilingPacesBurst(t *testing.T) {
+	srv, rec, pool, clk := newCeilingServer(t, mailer.DefaultCeilingLimits, "")
+	const real = "pace-real@example.com"
+	testutil.SeedReporterAccount(t, pool, real)
+
+	for i := 0; i < 70; i++ {
+		floodSend(t, srv, "", "/api/auth/sign-up", i)
+	}
+	for i := 0; i < 20; i++ {
+		floodSend(t, srv, "", "/api/auth/reset", i)
+	}
+	clk.Advance(11 * time.Minute)
+	got := doAuth(t, freshBrowser(t, srv, ""), srv, "/api/auth/reset", map[string]string{"email": real})
+	if got.status != http.StatusOK {
+		t.Fatalf("a real reset 11 minutes after a burst = %d, want 200: %s", got.status, got.body)
+	}
+	if mailKind(t, rec, real) != mailer.KindCodeReset {
+		t.Fatalf("the real reset sent no code")
+	}
+}
+
+// TestMailReserveSurvivesOneNetwork is CR-S03 part 2: one network that spends
+// the day's sign up mail and then floods Forgot password for made up addresses
+// (each a "no account" note) must not spend the reset reserve, so a real
+// person on another network can still get back in.
+func TestMailReserveSurvivesOneNetwork(t *testing.T) {
+	srv, rec, pool, clk := newCeilingServer(t, mailer.DefaultCeilingLimits, secCeilingHeader)
+	const real = "reserve-real@example.com"
+	testutil.SeedReporterAccount(t, pool, real)
+	const attacker = "198.51.100.7"
+
+	// Two minutes apart, so the per 10 minute pacing never bites and only the
+	// day's budget is under test.
+	for i := 0; i < 70; i++ {
+		floodSend(t, srv, attacker, "/api/auth/sign-up", i)
+		clk.Advance(2 * time.Minute)
+	}
+	for i := 0; i < 20; i++ {
+		floodSend(t, srv, attacker, "/api/auth/reset", i)
+		clk.Advance(2 * time.Minute)
+	}
+	got := doAuth(t, freshBrowser(t, srv, "203.0.113.20"), srv, "/api/auth/reset", map[string]string{"email": real})
+	if got.status != http.StatusOK {
+		t.Fatalf("a real reset from another network after the flood = %d, want 200: %s", got.status, got.body)
+	}
+	if mailKind(t, rec, real) != mailer.KindCodeReset {
+		t.Fatalf("the real reset sent no code")
+	}
+}
+
+// ceilingProbe runs one boundary probe on a fresh server: fill sends, then the
+// boundary request for addr, then one more request for a made up address. It
+// returns the two answers. Every request comes from a fresh browser on ip.
+func ceilingProbe(t *testing.T, limits mailer.CeilingLimits, header, ip string, fill []string, path, addr string) (boundary, next authAnswer) {
+	t.Helper()
+	srv, _, pool, _ := newCeilingServer(t, limits, header)
+	testutil.SeedReporterAccount(t, pool, "probe-known@example.com")
+	for i, p := range fill {
+		if a := floodSend(t, srv, ip, p, i); a.status != http.StatusOK {
+			t.Fatalf("fill send %d (%s) = %d, want 200: %s", i, p, a.status, a.body)
+		}
+	}
+	body := func(email string) map[string]string {
+		b := map[string]string{"email": email}
+		if path == "/api/auth/sign-up" {
+			b["password"] = e2eTestPassword
+		}
+		return b
+	}
+	boundary = doAuth(t, freshBrowser(t, srv, ip), srv, path, body(addr))
+	next = doAuth(t, freshBrowser(t, srv, ip), srv, path, body("probe-after@example.com"))
+	return boundary, next
+}
+
+func repeatPath(path string, n int) []string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = path
+	}
+	return out
+}
+
+// TestEnumerationCeilingWindowIdentical is the comparison test of the send
+// pacing (review CR-S03): with the window one send below its cap, the boundary
+// request for a known and for an unknown address, and the request after it,
+// answer the same, for both Create account (the code or the account exists
+// note) and Forgot password (the reset code or the no account note). The
+// answers after the boundary are the refusal, so the cap is really reached.
+func TestEnumerationCeilingWindowIdentical(t *testing.T) {
+	limits := mailer.CeilingLimits{PerDay: 90, ResetReserve: 20, Window: 10 * time.Minute, PerWindow: 4, WindowResetReserve: 1}
+	for _, path := range []string{"/api/auth/sign-up", "/api/auth/reset"} {
+		// The other class stops at 3 in the window and the reset class at 4.
+		fill := repeatPath(path, 2)
+		if path == "/api/auth/reset" {
+			fill = repeatPath(path, 3)
+		}
+		knownB, knownN := ceilingProbe(t, limits, "", "", fill, path, "probe-known@example.com")
+		unknownB, unknownN := ceilingProbe(t, limits, "", "", fill, path, "probe-unknown@example.com")
+		if knownB.status != http.StatusOK || knownN.status != http.StatusServiceUnavailable {
+			t.Fatalf("%s at the window edge: boundary %d, next %d; want 200 then 503", path, knownB.status, knownN.status)
+		}
+		compareAuthAnswers(t, path+" window boundary: known vs unknown", knownB, unknownB)
+		compareAuthAnswers(t, path+" after the window boundary: known vs unknown", knownN, unknownN)
+	}
+}
+
+// TestEnumerationCeilingShareIdentical is the comparison test of the sender
+// share (review CR-S03): with the other class spent, one network's reserved
+// slot taken by a reset for a known address or for an unknown one leaves the
+// same answers, for the boundary request and for the one after it.
+func TestEnumerationCeilingShareIdentical(t *testing.T) {
+	limits := mailer.CeilingLimits{PerDay: 6, ResetReserve: 4, SenderReserveShare: 1}
+	const network = "198.51.100.9"
+	fill := repeatPath("/api/auth/sign-up", 2)
+	knownB, knownN := ceilingProbe(t, limits, secCeilingHeader, network, fill, "/api/auth/reset", "probe-known@example.com")
+	unknownB, unknownN := ceilingProbe(t, limits, secCeilingHeader, network, fill, "/api/auth/reset", "probe-unknown@example.com")
+	if knownB.status != http.StatusOK || knownN.status != http.StatusServiceUnavailable {
+		t.Fatalf("at the share edge: boundary %d, next %d; want 200 then 503", knownB.status, knownN.status)
+	}
+	compareAuthAnswers(t, "share boundary: known vs unknown", knownB, unknownB)
+	compareAuthAnswers(t, "after the share boundary: known vs unknown", knownN, unknownN)
 }

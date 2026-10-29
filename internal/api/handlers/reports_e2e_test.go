@@ -54,6 +54,7 @@ var e2eGenerousAuthLimits = api.AuthLimits{
 	CodeSendDevice:   e2eGenerousBucket,
 	CodeSendIP:       e2eGenerousBucket,
 	CodeSendNoCookie: e2eGenerousBucket,
+	SignInNoCookie:   e2eGenerousBucket,
 	CodeTryDevice:    e2eGenerousBucket,
 	UsernameCheck:    e2eGenerousBucket,
 	UsernameSave:     e2eGenerousBucket,
@@ -101,7 +102,7 @@ func newE2EServerWith(t *testing.T, tweak func(d *api.Deps, q *sqlcgen.Queries))
 		RateLimits:  e2eGenerousRateLimits,
 		// The code and password service, with the fast test hasher and open
 		// buckets (Phase 7.1, plan 07).
-		Credentials: newTestCredentials(queries, fm),
+		Credentials: newTestCredentials(queries, fm, service.WithCredentialTx(service.PgxCredentialTx(pool))),
 		AuthLimits:  e2eGenerousAuthLimits,
 		// The moderator routes run their writes in the real transaction, as
 		// cmd/server/main.go wires them.

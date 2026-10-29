@@ -52,6 +52,10 @@ type LoginState interface {
 	SignedIn(ctx context.Context, sessionID string) (bool, error)
 	LiveCode(ctx context.Context, sessionID string) (service.LiveCode, bool, error)
 	EndedByPasswordSwitch(ctx context.Context, sessionID string) (bool, error)
+	// CodeTTL and ResendCooldown are the numbers the service enforces, so the
+	// page counts down the same ones (review IN-S02).
+	CodeTTL() time.Duration
+	ResendCooldown() time.Duration
 }
 
 // loginGateViewModel is exactly what login_gate.html.tmpl reads and nothing
@@ -79,7 +83,9 @@ type loginGateViewModel struct {
 	CodeEmail       string
 	CodeSecondsLeft int
 	// CodeDigits, CodeTTLSeconds and ResendSeconds are the numbers the script
-	// reads from data attributes.
+	// reads from data attributes. ResendSeconds is the full resend cooldown
+	// when there is no live code and the seconds left of it when there is one
+	// (review WR-B02); CodeSecondsLeft is the seconds left of a live code.
 	CodeDigits     int
 	CodeTTLSeconds int
 	ResendSeconds  int
@@ -137,9 +143,10 @@ func lowDataChosen(r *http.Request) bool {
 // (T-07.1-23). Then the done word is compared exactly with the closed list
 // (T-07.1-20), then a live code row restores the code screen, and only when
 // neither applies a browser whose own session the switch to passwords ended
-// sees the switch notice once, in the same response that clears its cookie
-// (a Set-Cookie after the body is silently dropped, so ClearCookie runs before
-// the template; D-12, UI-SPEC Surfaces 3, 6 and 9). A LoginState error is
+// sees the switch notice once, in the same response that replaces its cookie
+// with a fresh id (review WR-S01; a Set-Cookie after the body is silently
+// dropped, so SetCookie runs before the template; D-12, UI-SPEC Surfaces 3, 6
+// and 9). A LoginState error is
 // logged without the address and the page renders the entry panels. The page
 // varies per device and sets cookies, so every response is no-store (T-04-12),
 // and Referrer-Policy same-origin keeps the page address out of the globe's
@@ -155,6 +162,14 @@ func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 			ResendSeconds:  int(service.DefaultCredentialLimits.SendCooldown.Seconds()),
 			PasswordMin:    auth.PasswordMinRunes,
 			PasswordMax:    auth.PasswordMaxRunes,
+		}
+		// The service's own numbers when there is one (review IN-S02). With no
+		// live code, data-resend-seconds is the full wait after the first send,
+		// which the page script counts from; with a live code it becomes the
+		// seconds left (below).
+		if cfg.Login != nil {
+			vm.CodeTTLSeconds = int(cfg.Login.CodeTTL() / time.Second)
+			vm.ResendSeconds = int(cfg.Login.ResendCooldown() / time.Second)
 		}
 
 		vm.LowDataDefault = lowDataChosen(r)
@@ -209,7 +224,11 @@ func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 					vm.CodeMode = loginCodeReset
 				}
 				vm.CodeEmail = live.Email
+				// Review WR-B02: both clocks are the integer seconds left,
+				// clamped at 0, from the stored send and expiry, so a reload
+				// or a return from the mail app never restarts the full wait.
 				vm.CodeSecondsLeft = live.SecondsLeft
+				vm.ResendSeconds = live.ResendSecondsLeft
 			} else if vm.DoneLine == "" {
 				ended, err := login.EndedByPasswordSwitch(r.Context(), sessionID)
 				if err != nil {
@@ -218,7 +237,11 @@ func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 					vm.DoneLine = loginSwitchNoticeLine
 					vm.StartPanel = loginStartCreate
 					if cfg.Session != nil {
-						cfg.Session.ClearCookie(w)
+						// A fresh valid cookie, never a cleared one (review
+						// WR-S01): the next Create account then has a device
+						// bucket of its own, and the next visit no longer shows
+						// the notice because the new id is unbound.
+						cfg.Session.SetCookie(w, cfg.Session.NewID())
 					}
 				}
 			}
@@ -252,6 +275,23 @@ func RetiredLink() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		http.Redirect(w, r, retiredLinkTarget, http.StatusSeeOther)
+	}
+}
+
+// LoginFormFallback handles POST /login (Phase 7.1 review WR-T04). The card's
+// panels are real POST forms to /login (D-10), so a person on a slow phone who
+// taps a button before auth.js has loaded posts the form here. The answer is a
+// fixed 303 to /login with no-store, where the page comes back with the script
+// loaded. The body carries a plaintext password, so it is never read, parsed or
+// logged, and nothing from the request goes into the answer.
+//
+// Deliberately carries no swag annotation: the route sits outside the /api base
+// path and is an HTML redirect, not a JSON operation.
+func LoginFormFallback() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Location", "/login")
+		w.WriteHeader(http.StatusSeeOther)
 	}
 }
 

@@ -137,13 +137,20 @@ sender is the first):
 7. Set `OPENAI_API_KEY` and check that a fresh zero balance key is accepted by running the
    recorder once (see [docs/MODERATION.md](./docs/MODERATION.md)).
 8. Have a lawyer or mentor read the Disclaimer and Policy pages before any wide promotion.
+9. On the day of the first public deploy, move the Policy "Last updated" date and
+   `service.CurrentTermsVersion` (in `internal/service/profile.go`) together to that day, so every
+   account agrees again to the text that ships (`TestTermsVersionFollowsPolicyDate` keeps the two
+   equal).
 
 Resend's free tier is also quota-limited (roughly 100 sends/day at the time this was written;
 re-check the current figure in your own Resend dashboard rather than trusting this document). The
 server holds a daily ceiling of **90 sends a day** (UTC days, all four emails together) so the
-free 100 is never used up, and keeps 20 of those 90 for Forgot password emails so an attacker
-spending the rest on Create account cannot stop a real person getting back in. A person is also
-limited to one code email every 45 seconds and 5 an hour for each address. A send past the
+free 100 is never used up, and keeps 20 of those 90 for Forgot password emails. Sends are also
+paced at 15 in any 10 minutes (5 kept for Forgot password), and once the other emails are spent one
+sender (a client network with `CLIENT_IP_HEADER`, or every request without a valid cookie) may take
+only 3 of the kept slots a day, so one network cannot spend the reserve. Several networks working
+together still can; see "Signing in" in [docs/TRUST-MODEL.md](./docs/TRUST-MODEL.md). A person is
+also limited to one code email every 45 seconds and 5 an hour for each address. A send past the
 ceiling shows the person "Something went wrong. Try again." and says nothing about why.
 
 ### Signing in: client address header and hashing speed
@@ -196,7 +203,7 @@ email and password (on the same device or a new one) restores the full report hi
 An account made before Phase 7.1 with the old emailed link has no password. Its sign in stops
 working when migration 00014 runs. The person uses **Create account** with the same email, types
 the code, chooses a password and fills in the username, name and home area once; their reports are
-still theirs. Passwords, usernames and typed codes need migrations 00014 and 00015, so run
+still theirs. Passwords, usernames and typed codes need migrations 00014, 00015 and 00016, so run
 `make migrate` once on an existing database after pulling (run the migration first, then start the
 new server).
 

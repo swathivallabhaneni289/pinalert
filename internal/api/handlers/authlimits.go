@@ -20,6 +20,7 @@ package handlers
 // cmd/server/main.go and in its mirror api.AuthLimitsDefault.
 
 import (
+	"context"
 	"net/http"
 	"net/netip"
 	"strings"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/go-chi/chi/v5/middleware"
 
+	"pinalert/internal/mailer"
 	"pinalert/internal/ratelimit"
 	"pinalert/internal/session"
 )
@@ -46,10 +48,17 @@ type AuthLimits struct {
 	// CLIENT_IP_HEADER.
 	CodeSendIP BucketLimit
 	// CodeSendNoCookie is one small bucket shared by every code send that
-	// arrived with no session cookie at all. A browser on the sign in page always
-	// has the cookie GET /login set, so only a script that drops cookies lands
-	// here, and it cannot dodge the device bucket by getting a fresh id each time.
+	// arrived without a valid session cookie: none at all, a malformed one or a
+	// wrongly signed one, so the session middleware had to mint a fresh id
+	// (review WR-S01). A browser on the sign in page always has the cookie GET
+	// /login set, so only a script lands here, and a junk cookie cannot buy it a
+	// fresh device bucket each time. A script that first GETs /login for a valid
+	// fresh cookie is bounded by the network bucket and the mail pacing instead.
 	CodeSendNoCookie BucketLimit
+	// SignInNoCookie is the same shared bucket for sign in tries (review
+	// IN-S05), so a script without a valid cookie cannot keep the password hash
+	// slots busy from a fresh device bucket on every request.
+	SignInNoCookie BucketLimit
 	// CodeTryDevice is the allowance of typed code tries per browser.
 	CodeTryDevice BucketLimit
 	// UsernameCheck and UsernameSave are per account allowances for the
@@ -58,8 +67,8 @@ type AuthLimits struct {
 	UsernameSave  BucketLimit
 }
 
-// cookielessKey is the one key of the shared bucket for code sends that carry
-// no session cookie.
+// cookielessKey is the one key of the shared buckets for requests that carry
+// no valid session cookie.
 const cookielessKey = "no-cookie"
 
 // AuthGate holds the auth route buckets.
@@ -69,6 +78,7 @@ type AuthGate struct {
 	codeSendDevice   *ratelimit.PerKey
 	codeSendIP       *ratelimit.PerKey
 	codeSendNoCookie *ratelimit.PerKey
+	signInNoCookie   *ratelimit.PerKey
 	codeTryDevice    *ratelimit.PerKey
 	usernameCheck    *ratelimit.PerKey
 	usernameSave     *ratelimit.PerKey
@@ -87,6 +97,7 @@ func NewAuthGate(l AuthLimits, clock func() time.Time, clientIPHeader string) *A
 		codeSendDevice:   ratelimit.NewPerKey(bucketConfig(l.CodeSendDevice, clock)),
 		codeSendIP:       ratelimit.NewPerKey(bucketConfig(l.CodeSendIP, clock)),
 		codeSendNoCookie: ratelimit.NewPerKey(bucketConfig(l.CodeSendNoCookie, clock)),
+		signInNoCookie:   ratelimit.NewPerKey(bucketConfig(l.SignInNoCookie, clock)),
 		codeTryDevice:    ratelimit.NewPerKey(bucketConfig(l.CodeTryDevice, clock)),
 		usernameCheck:    ratelimit.NewPerKey(bucketConfig(l.UsernameCheck, clock)),
 		usernameSave:     ratelimit.NewPerKey(bucketConfig(l.UsernameSave, clock)),
@@ -127,9 +138,14 @@ func ipBucketKey(ip string) string {
 	return prefix.String()
 }
 
-// arrivedWithoutCookie reports whether the request carried no session cookie at
-// all.
-func arrivedWithoutCookie(r *http.Request) bool {
+// arrivedWithoutValidCookie reports whether the request carried no valid
+// session cookie: the session middleware minted a fresh id because the cookie
+// was absent, malformed or wrongly signed (review WR-S01). A request that never
+// went through the middleware (only a test) falls back to cookie presence.
+func arrivedWithoutValidCookie(r *http.Request) bool {
+	if minted, known := session.Minted(r.Context()); known {
+		return minted
+	}
 	_, err := r.Cookie(session.CookieName)
 	return err != nil
 }
@@ -174,46 +190,70 @@ func both(ds ...ratelimit.Decision) ratelimit.Decision {
 }
 
 // ReserveSignIn takes one sign in token for the browser, then one for the
-// network. The network refusal gives the device token back. The handler calls
-// Cancel on a good sign in, so only wrong guesses spend the allowance.
+// network, then, when the request carried no valid session cookie, one of the
+// shared cookieless sign in bucket (review WR-S01, IN-S05). A later refusal
+// gives the earlier tokens back. The handler calls Cancel on a good sign in, so
+// only wrong guesses spend the allowance.
 func (g *AuthGate) ReserveSignIn(r *http.Request) ratelimit.Decision {
 	if g == nil {
 		return admitted()
 	}
-	device := g.signInDevice.Reserve(deviceKey(sessionIDOf(r)))
-	if !device.OK {
-		return device
-	}
-	network := g.reserveIP(r, g.signInIP)
-	if !network.OK {
-		return refuse(network, device)
-	}
-	return both(device, network)
+	return g.reserveDeviceNetworkShared(r, g.signInDevice, g.signInIP, g.signInNoCookie)
 }
 
 // ReserveCodeSend takes one code send token for the browser, then one for the
-// network, then, when the request carried no session cookie, one of the shared
-// cookieless bucket. A later refusal gives the earlier tokens back.
+// network, then, when the request carried no valid session cookie, one of the
+// shared cookieless bucket. A later refusal gives the earlier tokens back.
 func (g *AuthGate) ReserveCodeSend(r *http.Request) ratelimit.Decision {
 	if g == nil {
 		return admitted()
 	}
-	device := g.codeSendDevice.Reserve(deviceKey(sessionIDOf(r)))
+	return g.reserveDeviceNetworkShared(r, g.codeSendDevice, g.codeSendIP, g.codeSendNoCookie)
+}
+
+// reserveDeviceNetworkShared takes a device token, a network token and, for a
+// request without a valid cookie, a token of the shared bucket, in that order.
+func (g *AuthGate) reserveDeviceNetworkShared(r *http.Request, deviceBucket, ipBucket, sharedBucket *ratelimit.PerKey) ratelimit.Decision {
+	device := deviceBucket.Reserve(deviceKey(sessionIDOf(r)))
 	if !device.OK {
 		return device
 	}
-	network := g.reserveIP(r, g.codeSendIP)
+	network := g.reserveIP(r, ipBucket)
 	if !network.OK {
 		return refuse(network, device)
 	}
-	if arrivedWithoutCookie(r) {
-		shared := g.codeSendNoCookie.Reserve(cookielessKey)
+	if arrivedWithoutValidCookie(r) {
+		shared := sharedBucket.Reserve(cookielessKey)
 		if !shared.OK {
 			return refuse(shared, device, network)
 		}
 		return both(device, network, shared)
 	}
 	return both(device, network)
+}
+
+// MailSender is the sender key of a code sending request for the mail
+// ceiling's share of the reset reserve (review CR-S03): the client network
+// (IPv4 address or IPv6 /64) when CLIENT_IP_HEADER is set, the one shared
+// cookieless key for a request without a valid session cookie, and "" (no
+// share) otherwise. It never depends on the typed address, so the share treats
+// a known and an unknown address alike.
+func (g *AuthGate) MailSender(r *http.Request) string {
+	if g != nil && g.backstopOn {
+		if key := ipBucketKey(middleware.GetClientIP(r.Context())); key != "" {
+			return "net:" + key
+		}
+	}
+	if arrivedWithoutValidCookie(r) {
+		return cookielessKey
+	}
+	return ""
+}
+
+// withMailSender is the request context with the sender key for the mail
+// ceiling.
+func withMailSender(r *http.Request, gate *AuthGate) context.Context {
+	return mailer.WithSender(r.Context(), gate.MailSender(r))
 }
 
 // ReserveCodeTry takes one typed code try token for the browser. There is no

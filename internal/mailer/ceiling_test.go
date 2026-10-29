@@ -135,6 +135,93 @@ func TestMailerCeilingConcurrent(t *testing.T) {
 	}
 }
 
+// TestMailerCeilingPacesPerWindow pins the pacing of review CR-S03: at most
+// PerWindow sends in any Window, WindowResetReserve of them kept for the reset
+// class, and the window slides, so a refused person gets in minutes later.
+func TestMailerCeilingPacesPerWindow(t *testing.T) {
+	ctx := context.Background()
+	clock := ceilingDay
+	next := &countingMailer{}
+	m := NewSendCeiling(next, CeilingLimits{PerDay: 100, ResetReserve: 10, Window: 10 * time.Minute, PerWindow: 4, WindowResetReserve: 1},
+		func() time.Time { return clock })
+	for i, msg := range []AuthEmail{signupMsg, existsMsg, signupMsg} {
+		if err := m.SendAuthEmail(ctx, "a@example.com", msg); err != nil {
+			t.Fatalf("send %d: %v", i+1, err)
+		}
+	}
+	for _, msg := range []AuthEmail{signupMsg, existsMsg} {
+		if err := m.SendAuthEmail(ctx, "a@example.com", msg); !errors.Is(err, ErrDailyCeiling) {
+			t.Fatalf("a fourth Create account email in the window: %v, want ErrDailyCeiling", err)
+		}
+	}
+	if err := m.SendAuthEmail(ctx, "a@example.com", noAcctMsg); err != nil {
+		t.Fatalf("the window's kept reset slot: %v", err)
+	}
+	for _, msg := range []AuthEmail{resetMsg, noAcctMsg} {
+		if err := m.SendAuthEmail(ctx, "a@example.com", msg); !errors.Is(err, ErrDailyCeiling) {
+			t.Fatalf("a fifth send in the window: %v, want ErrDailyCeiling", err)
+		}
+	}
+	clock = clock.Add(9 * time.Minute)
+	if err := m.SendAuthEmail(ctx, "a@example.com", resetMsg); !errors.Is(err, ErrDailyCeiling) {
+		t.Fatalf("9 minutes later the window is still full: %v", err)
+	}
+	clock = clock.Add(time.Minute)
+	if err := m.SendAuthEmail(ctx, "a@example.com", signupMsg); err != nil {
+		t.Fatalf("10 minutes later the window has slid: %v", err)
+	}
+	if next.total() != 5 {
+		t.Errorf("wrapped mailer called %d times, want 5", next.total())
+	}
+}
+
+// TestMailerCeilingSenderShare pins the sender share of review CR-S03: once the
+// other class is refused, one sender takes at most SenderReserveShare of the
+// kept slots a day, both reset kinds alike, while another sender and a send
+// with no sender still get in.
+func TestMailerCeilingSenderShare(t *testing.T) {
+	clock := ceilingDay
+	next := &countingMailer{}
+	m := NewSendCeiling(next, CeilingLimits{PerDay: 10, ResetReserve: 5, SenderReserveShare: 2},
+		func() time.Time { return clock })
+	a := WithSender(context.Background(), "net:198.51.100.7")
+	b := WithSender(context.Background(), "net:203.0.113.20")
+	// Before the other class is full, reset sends take no share.
+	for i := 0; i < 5; i++ {
+		msg := signupMsg
+		if i == 0 {
+			msg = noAcctMsg
+		}
+		if err := m.SendAuthEmail(a, "a@example.com", msg); err != nil {
+			t.Fatalf("send %d: %v", i+1, err)
+		}
+	}
+	for i, msg := range []AuthEmail{noAcctMsg, resetMsg} {
+		if err := m.SendAuthEmail(a, "a@example.com", msg); err != nil {
+			t.Fatalf("sender A's kept slot %d: %v", i+1, err)
+		}
+	}
+	for _, msg := range []AuthEmail{noAcctMsg, resetMsg} {
+		if err := m.SendAuthEmail(a, "a@example.com", msg); !errors.Is(err, ErrDailyCeiling) {
+			t.Fatalf("sender A past its share: %v, want ErrDailyCeiling", err)
+		}
+	}
+	if err := m.SendAuthEmail(b, "b@example.com", resetMsg); err != nil {
+		t.Fatalf("sender B: %v", err)
+	}
+	if err := m.SendAuthEmail(context.Background(), "c@example.com", resetMsg); err != nil {
+		t.Fatalf("a send with no sender: %v", err)
+	}
+	// The next UTC day the shares start again.
+	clock = clock.Add(24 * time.Hour)
+	for i := 0; i < 5; i++ {
+		_ = m.SendAuthEmail(a, "a@example.com", signupMsg)
+	}
+	if err := m.SendAuthEmail(a, "a@example.com", noAcctMsg); err != nil {
+		t.Fatalf("sender A the next day: %v", err)
+	}
+}
+
 func TestMailerCeilingReservesResetSends(t *testing.T) {
 	ctx := context.Background()
 

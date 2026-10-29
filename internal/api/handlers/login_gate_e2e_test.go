@@ -6,12 +6,19 @@
 package handlers_test
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"pinalert/internal/api"
+	"pinalert/internal/auth"
+	"pinalert/internal/service"
+	sqlcgen "pinalert/internal/store/sqlc"
 	"pinalert/internal/testutil"
 )
 
@@ -159,6 +166,69 @@ func TestLoginGateComesBackToCode(t *testing.T) {
 	})
 }
 
+// gateAttr reads one integer data attribute of the sign in card.
+func gateAttr(t *testing.T, body, name string) int {
+	t.Helper()
+	m := regexp.MustCompile(name + `="(\d+)"`).FindStringSubmatch(body)
+	if m == nil {
+		t.Fatalf("the page carries no %s", name)
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil {
+		t.Fatalf("%s = %q: %v", name, m[1], err)
+	}
+	return n
+}
+
+// TestLoginGateClockAttributes is the server half of review WR-B02 and IN-S02.
+// The page reads the service's own numbers, not the defaults. With no live code,
+// data-resend-seconds is the full cooldown and data-code-ttl-seconds the code
+// lifetime. With a live code, data-resend-seconds and data-code-seconds-left are
+// the integer seconds left, from the stored send and expiry, so a reload or a
+// return from the mail app never restarts the full wait.
+func TestLoginGateClockAttributes(t *testing.T) {
+	clk := &ceilingClock{t: time.Now()}
+	limits := service.DefaultCredentialLimits
+	limits.CodeTTL = 7 * time.Minute
+	limits.SendCooldown = 50 * time.Second
+	rec := &recordingMailer{}
+	srv, _, _ := newE2EServerWith(t, func(d *api.Deps, q *sqlcgen.Queries) {
+		d.Credentials = service.NewCredentialService(q, rec,
+			service.WithHasher(auth.NewHasher(auth.TestParams())),
+			service.WithCodeKey(bytes.Repeat([]byte("c"), 32)),
+			service.WithThrottleKey(bytes.Repeat([]byte("t"), 32)),
+			service.WithCredentialLimits(limits),
+			service.WithCredentialClock(clk.Now),
+		)
+	})
+
+	browser := newJarClient(t)
+	_, body := loginGatePage(t, revNoFollow(browser), srv, "")
+	if got := gateAttr(t, body, "data-resend-seconds"); got != 50 {
+		t.Errorf("entry panel data-resend-seconds = %d, want the full cooldown 50", got)
+	}
+	if got := gateAttr(t, body, "data-code-ttl-seconds"); got != 420 {
+		t.Errorf("entry panel data-code-ttl-seconds = %d, want the service's 420", got)
+	}
+
+	if status := signUpRequest(t, browser, srv, "gate-clock@example.com", e2eTestPassword); status != http.StatusOK {
+		t.Fatalf("sign up status = %d, want 200", status)
+	}
+	clk.Advance(30 * time.Second)
+	_, body = loginGatePage(t, revNoFollow(browser), srv, "")
+	if got := gateAttr(t, body, "data-resend-seconds"); got != 20 {
+		t.Errorf("30 s after the send data-resend-seconds = %d, want the 20 left", got)
+	}
+	if got := gateAttr(t, body, "data-code-seconds-left"); got != 390 {
+		t.Errorf("30 s after the send data-code-seconds-left = %d, want 390", got)
+	}
+	clk.Advance(2 * time.Minute)
+	_, body = loginGatePage(t, revNoFollow(browser), srv, "")
+	if got := gateAttr(t, body, "data-resend-seconds"); got != 0 {
+		t.Errorf("after the cooldown data-resend-seconds = %d, want 0", got)
+	}
+}
+
 func TestLoginGateSwitchNoticeOnce(t *testing.T) {
 	srv, mailer, pool := newE2EServer(t)
 	const email = "gate-switch@example.com"
@@ -183,14 +253,20 @@ func TestLoginGateSwitchNoticeOnce(t *testing.T) {
 	if !gatePanelShown(gatePanelTag(t, body, "auth-panel-create")) {
 		t.Errorf("the switch notice does not open on Create account")
 	}
-	cleared := false
+	// Review WR-S01: the notice replaces the ended session's cookie with a fresh
+	// valid one instead of clearing it, so the next Create account carries a
+	// device of its own and never lands in the shared cookieless bucket.
+	replaced := false
 	for _, c := range resp.Cookies() {
+		if c.Name == "pinalert_session" && c.MaxAge > 0 && c.Value != "" {
+			replaced = true
+		}
 		if c.Name == "pinalert_session" && c.MaxAge < 0 {
-			cleared = true
+			t.Errorf("the first visit cleared the pinalert_session cookie; it must replace it")
 		}
 	}
-	if !cleared {
-		t.Errorf("the first visit did not clear the pinalert_session cookie")
+	if !replaced {
+		t.Errorf("the first visit did not replace the pinalert_session cookie with a fresh one")
 	}
 
 	_, body = loginGatePage(t, revNoFollow(browser), srv, "")

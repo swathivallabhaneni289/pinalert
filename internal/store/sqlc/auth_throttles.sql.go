@@ -132,8 +132,10 @@ type RecordAuthFailureRow struct {
 // for the 60 minute cap, never a reset to 1. Once the failures pass
 // free_failures the lock is base_lock_seconds doubled for each failure beyond
 // the first locked one, capped at max_lock_seconds: with 5 free, 300 s base and
-// 3600 s cap the waits are 5, 10, 20, 40, 60, 60 minutes. The service refuses a
-// locked attempt before this runs, so a refused attempt never extends the wait.
+// 3600 s cap the waits are 5, 10, 20, 40, 60, 60 minutes. The sign in path
+// counts its tries with ReserveSignInTry below, the same arithmetic with the
+// lock guard on it (Phase 7.1 review CR-S01); this unguarded form is kept for
+// the store tests and for seeding a throttle row.
 func (q *Queries) RecordAuthFailure(ctx context.Context, arg RecordAuthFailureParams) (RecordAuthFailureRow, error) {
 	row := q.db.QueryRow(ctx, recordAuthFailure,
 		arg.Scope,
@@ -145,6 +147,84 @@ func (q *Queries) RecordAuthFailure(ctx context.Context, arg RecordAuthFailurePa
 		arg.ForgetCutoff,
 	)
 	var i RecordAuthFailureRow
+	err := row.Scan(&i.Failures, &i.LockedUntil)
+	return i, err
+}
+
+const reserveSignInTry = `-- name: ReserveSignInTry :one
+INSERT INTO auth_throttles AS t (scope, key_hash, failures, last_failure_at, locked_until)
+VALUES (
+    $1, $2, 1, $3::timestamptz,
+    CASE WHEN 1 > $4::int
+         THEN $3::timestamptz
+              + make_interval(secs => LEAST($5::int::float8, $6::int::float8))
+         ELSE NULL END
+)
+ON CONFLICT (scope, key_hash) DO UPDATE
+SET failures = CASE
+        WHEN t.last_failure_at <= $7::timestamptz
+         AND (t.locked_until IS NULL OR t.locked_until <= $7::timestamptz)
+            THEN 1
+        ELSE t.failures + 1
+    END,
+    last_failure_at = $3::timestamptz,
+    locked_until = CASE
+        WHEN (CASE
+                WHEN t.last_failure_at <= $7::timestamptz
+                 AND (t.locked_until IS NULL OR t.locked_until <= $7::timestamptz)
+                    THEN 1
+                ELSE t.failures + 1
+              END) > $4::int
+            THEN $3::timestamptz
+                 + make_interval(secs => LEAST(
+                       $5::int::float8,
+                       $6::int::float8 * power(2::float8, LEAST(30, (CASE
+                           WHEN t.last_failure_at <= $7::timestamptz
+                            AND (t.locked_until IS NULL OR t.locked_until <= $7::timestamptz)
+                               THEN 1
+                           ELSE t.failures + 1
+                         END) - $4::int - 1)::float8)))
+        ELSE NULL
+    END
+WHERE t.locked_until IS NULL OR t.locked_until <= $3::timestamptz
+RETURNING failures, locked_until
+`
+
+type ReserveSignInTryParams struct {
+	Scope           string
+	KeyHash         string
+	Now             time.Time
+	FreeFailures    int32
+	MaxLockSeconds  int32
+	BaseLockSeconds int32
+	ForgetCutoff    time.Time
+}
+
+type ReserveSignInTryRow struct {
+	Failures    int32
+	LockedUntil pgtype.Timestamptz
+}
+
+// Counts one sign in try BEFORE the password is checked (Phase 7.1 review
+// CR-S01), the way BumpAuthCodeAttempt counts a code try before the compare.
+// It is RecordAuthFailure with one more guard on the DO UPDATE: an address
+// that is locked right now gets no update and no row back (pgx.ErrNoRows), so
+// a refused try never extends the lock. The row lock of the upsert serialises
+// a parallel burst for one address, so the burst gets exactly free_failures + 1
+// password checks before the lock is in place. A right password then clears
+// the row with ClearAuthThrottle. Every address, known or unknown, takes this
+// same statement, so the count never tells whether an account exists.
+func (q *Queries) ReserveSignInTry(ctx context.Context, arg ReserveSignInTryParams) (ReserveSignInTryRow, error) {
+	row := q.db.QueryRow(ctx, reserveSignInTry,
+		arg.Scope,
+		arg.KeyHash,
+		arg.Now,
+		arg.FreeFailures,
+		arg.MaxLockSeconds,
+		arg.BaseLockSeconds,
+		arg.ForgetCutoff,
+	)
+	var i ReserveSignInTryRow
 	err := row.Scan(&i.Failures, &i.LockedUntil)
 	return i, err
 }

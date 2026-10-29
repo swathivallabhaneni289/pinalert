@@ -63,11 +63,13 @@ type credAccount struct {
 	email        string
 	passwordHash *string
 	deleted      bool
+	epoch        int64
 }
 
 type credSession struct {
 	account *int64
 	revoked bool
+	epoch   int64
 }
 
 type credClaim struct {
@@ -164,6 +166,19 @@ func (f *credFakeQuerier) ClaimAuthEmailSend(_ context.Context, arg sqlcgen.Clai
 	return sqlcgen.ClaimAuthEmailSendRow{LastRequestedAt: c.last, WindowSends: c.sends}, nil
 }
 
+func (f *credFakeQuerier) RefundAuthEmailSend(_ context.Context, arg sqlcgen.RefundAuthEmailSendParams) error {
+	f.log("RefundAuthEmailSend")
+	c, ok := f.claims[arg.Email]
+	if !ok || !c.last.Equal(arg.ClaimedAt) {
+		return nil
+	}
+	c.last = arg.Released
+	if c.sends > 0 {
+		c.sends--
+	}
+	return nil
+}
+
 func (f *credFakeQuerier) GetAuthEmailSendWindow(_ context.Context, email string) (sqlcgen.GetAuthEmailSendWindowRow, error) {
 	f.log("GetAuthEmailSendWindow")
 	c, ok := f.claims[email]
@@ -194,6 +209,17 @@ func (f *credFakeQuerier) IssueAuthCode(_ context.Context, arg sqlcgen.IssueAuth
 		created: now, expires: arg.ExpiresAt,
 	})
 	return f.nextCode, nil
+}
+
+func (f *credFakeQuerier) RetireAuthCode(_ context.Context, id int64) error {
+	f.log("RetireAuthCode")
+	for i := range f.codes {
+		if f.codes[i].id == id && f.codes[i].used == nil {
+			u := f.clk.Now()
+			f.codes[i].used = &u
+		}
+	}
+	return nil
 }
 
 func (f *credFakeQuerier) BumpAuthCodeAttempt(_ context.Context, arg sqlcgen.BumpAuthCodeAttemptParams) (sqlcgen.BumpAuthCodeAttemptRow, error) {
@@ -284,14 +310,18 @@ func (f *credFakeQuerier) GetAuthThrottle(_ context.Context, arg sqlcgen.GetAuth
 	return row, nil
 }
 
-// RecordAuthFailure follows the SQL: the count restarts only when both the last
+// ReserveSignInTry follows the SQL: a row locked at now is refused with no
+// write (pgx.ErrNoRows); otherwise the count restarts only when both the last
 // failure and the end of the last lock are at or before the forget cutoff.
-func (f *credFakeQuerier) RecordAuthFailure(_ context.Context, arg sqlcgen.RecordAuthFailureParams) (sqlcgen.RecordAuthFailureRow, error) {
-	f.log("RecordAuthFailure")
+func (f *credFakeQuerier) ReserveSignInTry(_ context.Context, arg sqlcgen.ReserveSignInTryParams) (sqlcgen.ReserveSignInTryRow, error) {
+	f.log("ReserveSignInTry")
 	if arg.Scope != "sign_in" {
-		return sqlcgen.RecordAuthFailureRow{}, fmt.Errorf("fake: bad throttle scope %q", arg.Scope)
+		return sqlcgen.ReserveSignInTryRow{}, fmt.Errorf("fake: bad throttle scope %q", arg.Scope)
 	}
 	t, ok := f.throttles[arg.KeyHash]
+	if ok && t.locked != nil && t.locked.After(arg.Now) {
+		return sqlcgen.ReserveSignInTryRow{}, pgx.ErrNoRows
+	}
 	n := int32(1)
 	if ok {
 		forget := !t.last.After(arg.ForgetCutoff) && (t.locked == nil || !t.locked.After(arg.ForgetCutoff))
@@ -312,7 +342,7 @@ func (f *credFakeQuerier) RecordAuthFailure(_ context.Context, arg sqlcgen.Recor
 		locked = &l
 	}
 	f.throttles[arg.KeyHash] = &credThrottle{failures: n, last: arg.Now, locked: locked}
-	row := sqlcgen.RecordAuthFailureRow{Failures: n}
+	row := sqlcgen.ReserveSignInTryRow{Failures: n}
 	if locked != nil {
 		row.LockedUntil = pgtype.Timestamptz{Time: *locked, Valid: true}
 	}
@@ -337,7 +367,72 @@ func (f *credFakeQuerier) GetAccountForSignIn(_ context.Context, email string) (
 	if !ok || a.deleted {
 		return sqlcgen.GetAccountForSignInRow{}, pgx.ErrNoRows
 	}
-	return sqlcgen.GetAccountForSignInRow{ID: a.id, PasswordHash: a.passwordHash}, nil
+	return sqlcgen.GetAccountForSignInRow{ID: a.id, PasswordHash: a.passwordHash, PasswordEpoch: a.epoch}, nil
+}
+
+func (f *credFakeQuerier) LockAccountForPassword(_ context.Context, email string) (sqlcgen.LockAccountForPasswordRow, error) {
+	f.log("LockAccountForPassword")
+	a, ok := f.accounts[email]
+	if !ok || a.deleted {
+		return sqlcgen.LockAccountForPasswordRow{}, pgx.ErrNoRows
+	}
+	return sqlcgen.LockAccountForPasswordRow{ID: a.id, PasswordHash: a.passwordHash, PasswordEpoch: a.epoch}, nil
+}
+
+func (f *credFakeQuerier) accountByID(id int64) *credAccount {
+	for _, a := range f.accounts {
+		if a.id == id && !a.deleted {
+			return a
+		}
+	}
+	return nil
+}
+
+func (f *credFakeQuerier) SetAccountPasswordNewEpoch(_ context.Context, arg sqlcgen.SetAccountPasswordNewEpochParams) (int64, error) {
+	f.log("SetAccountPasswordNewEpoch")
+	a := f.accountByID(arg.ID)
+	if a == nil {
+		return 0, pgx.ErrNoRows
+	}
+	h := arg.PasswordHash
+	a.passwordHash = &h
+	a.epoch++
+	return a.epoch, nil
+}
+
+func (f *credFakeQuerier) SetAccountPasswordIfEpoch(_ context.Context, arg sqlcgen.SetAccountPasswordIfEpochParams) (int64, error) {
+	f.log("SetAccountPasswordIfEpoch")
+	a := f.accountByID(arg.ID)
+	if a == nil || a.epoch != arg.PasswordEpoch {
+		return 0, nil
+	}
+	h := arg.PasswordHash
+	a.passwordHash = &h
+	return 1, nil
+}
+
+// BindSessionAccountAtEpoch follows the SQL: the account must be live at the
+// given epoch, and an existing row is never moved to another account nor
+// revived. It logs as BindSessionAccount so the call order checks still read.
+func (f *credFakeQuerier) BindSessionAccountAtEpoch(_ context.Context, arg sqlcgen.BindSessionAccountAtEpochParams) (int64, error) {
+	f.log("BindSessionAccount:" + arg.SessionID)
+	a := f.accountByID(arg.AccountID)
+	if a == nil || a.epoch != arg.PasswordEpoch {
+		return 0, nil
+	}
+	s, ok := f.sessions[arg.SessionID]
+	if !ok {
+		id := arg.AccountID
+		f.sessions[arg.SessionID] = &credSession{account: &id, epoch: a.epoch}
+		return 1, nil
+	}
+	if s.revoked || (s.account != nil && *s.account != arg.AccountID) {
+		return 0, nil
+	}
+	id := arg.AccountID
+	s.account = &id
+	s.epoch = a.epoch
+	return 1, nil
 }
 
 func (f *credFakeQuerier) InsertAccount(_ context.Context, email string) error {
@@ -392,7 +487,7 @@ func (f *credFakeQuerier) GetAccountBySessionID(_ context.Context, sessionID str
 		return sqlcgen.GetAccountBySessionIDRow{}, pgx.ErrNoRows
 	}
 	for _, a := range f.accounts {
-		if a.id == *s.account && !a.deleted {
+		if a.id == *s.account && !a.deleted && a.epoch == s.epoch {
 			return sqlcgen.GetAccountBySessionIDRow{ID: a.id, Email: a.email, HasPassword: a.passwordHash != nil}, nil
 		}
 	}
@@ -771,6 +866,63 @@ func TestSignUpHashBusy(t *testing.T) {
 	}
 }
 
+// TestSignUpBusyKeepsClaim is IN-S01 of the review: when the hasher is busy,
+// the per address claim is given back, so a busy hasher spends neither the 45
+// second cooldown nor an hourly send, and the person's immediate retry goes
+// through. A refused claim still costs no hash (TestSignUpSendLimits).
+func TestSignUpBusyKeepsClaim(t *testing.T) {
+	r := newCredRig(t)
+	ctx := context.Background()
+	r.hasher.hashErr = auth.ErrHasherBusy
+	if err := r.svc.SignUp(ctx, "sess-a", credEmail, credPassword); !errors.Is(err, service.ErrBusy) {
+		t.Fatalf("err = %v, want ErrBusy", err)
+	}
+	r.hasher.hashErr = nil
+	if err := r.svc.SignUp(ctx, "sess-a", credEmail, credPassword); err != nil {
+		t.Fatalf("the retry right after a busy hasher: %v", err)
+	}
+	if c := r.q.claims[credEmail]; c == nil || c.sends != 1 {
+		t.Errorf("hourly sends after a busy try and a good one = %+v, want 1", c)
+	}
+}
+
+// TestFailedSendRetiresRow is the other half of IN-S01: when the email does
+// not go out (the ceiling refused it or the provider failed), the row is marked
+// used, so a reload of /login does not show a code screen for an email that
+// was never sent. The same holds for every branch of Create account and Forgot
+// password.
+func TestFailedSendRetiresRow(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name string
+		run  func(r *credRig) error
+	}{
+		{"sign up, new address", func(r *credRig) error { return r.svc.SignUp(ctx, "sess-a", credEmail, credPassword) }},
+		{"sign up, account exists", func(r *credRig) error {
+			r.addPasswordAccount(t, credEmail, credPassword)
+			return r.svc.SignUp(ctx, "sess-a", credEmail, credPassword)
+		}},
+		{"reset, known", func(r *credRig) error {
+			r.addPasswordAccount(t, credEmail, credPassword)
+			return r.svc.RequestReset(ctx, "sess-a", credEmail)
+		}},
+		{"reset, unknown", func(r *credRig) error { return r.svc.RequestReset(ctx, "sess-a", "ghost@example.com") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, sendErr := range []error{mailer.ErrDailyCeiling, errors.New("provider said no")} {
+				r := newCredRig(t)
+				r.mail.err = sendErr
+				if err := tc.run(r); err == nil {
+					t.Fatalf("a failed send answered nil")
+				}
+				if _, ok, err := r.svc.LiveCode(ctx, "sess-a"); err != nil || ok {
+					t.Errorf("after a failed send (%v) the code screen would show again: ok=%v err=%v", sendErr, ok, err)
+				}
+			}
+		})
+	}
+}
+
 func TestSignUpPrunesStaleRows(t *testing.T) {
 	r := newCredRig(t)
 	if err := r.svc.SignUp(context.Background(), "sess-a", credEmail, credPassword); err != nil {
@@ -1113,12 +1265,17 @@ func TestConfirmSignUpLegacyKeepsAccount(t *testing.T) {
 		if legacy.passwordHash == nil {
 			t.Error("the password was not set on the legacy account")
 		}
-		if r.q.count("RevokeAccountSessions") != 0 {
-			t.Error("no sessions are ended when there was no password to replace")
+		// Review WR-S02: a session the old binary bound from an emailed link is
+		// ended, and the password epoch moves, so it never passes the gate.
+		if r.q.count("RevokeAccountSessions") != 1 || legacy.epoch != 1 {
+			t.Errorf("legacy account: revokes %d, epoch %d; want 1 and 1", r.q.count("RevokeAccountSessions"), legacy.epoch)
+		}
+		if s := r.q.sessions[res.SessionID]; s == nil || s.epoch != legacy.epoch {
+			t.Error("the fresh session must be bound at the new epoch")
 		}
 	})
 
-	t.Run("an account that gained a password meanwhile has every session ended first", func(t *testing.T) {
+	t.Run("an account that gained a password meanwhile has every session ended", func(t *testing.T) {
 		r := newCredRig(t)
 		acct := r.q.addAccount(credEmail, nil)
 		code := r.signUpAndCode(t, "sess-a", credEmail, credPassword)
@@ -1128,9 +1285,11 @@ func TestConfirmSignUpLegacyKeepsAccount(t *testing.T) {
 		if _, err := r.svc.ConfirmSignUp(ctx, "sess-a", code, credSessionIDs("fresh")); err != nil {
 			t.Fatal(err)
 		}
-		logout, set := r.callIndex("RevokeAccountSessions"), r.callIndex("SetAccountPassword")
-		if logout < 0 || set < logout {
-			t.Errorf("LogOutAllDevices (%d) must run before the password is replaced (%d)", logout, set)
+		// Review CR-S02: inside one transaction the password and its epoch move
+		// first, under the account row lock, then every session ends.
+		set, logout := r.callIndex("SetAccountPasswordNewEpoch"), r.callIndex("RevokeAccountSessions")
+		if set < 0 || logout < set {
+			t.Errorf("the password (%d) must be set with a new epoch before the sessions end (%d)", set, logout)
 		}
 		if !r.q.sessions["other-browser"].revoked {
 			t.Error("the other browser's session must be revoked")
@@ -1392,8 +1551,11 @@ func TestSignInHashBusy(t *testing.T) {
 	if !errors.Is(err, service.ErrBusy) {
 		t.Fatalf("err = %v, want ErrBusy", err)
 	}
-	if r.q.count("RecordAuthFailure") != 0 {
-		t.Error("a busy hasher is not a wrong password")
+	// The try is counted before the check (Phase 7.1 review CR-S01), so a busy
+	// hasher keeps the counted try, the same for every address.
+	if r.q.count("ReserveSignInTry") != 1 || r.q.count("BindSessionAccount") != 0 {
+		t.Errorf("a busy sign in: tries counted %d, binds %d; want 1 and 0",
+			r.q.count("ReserveSignInTry"), r.q.count("BindSessionAccount"))
 	}
 }
 
@@ -1444,7 +1606,8 @@ func TestSignInLockedRefusedBeforeHash(t *testing.T) {
 			t.Fatalf("attempt %d: %v", i, err)
 		}
 	}
-	verifies, lookups, failures := len(r.hasher.verified), r.q.count("GetAccountForSignIn"), r.q.count("RecordAuthFailure")
+	verifies, lookups := len(r.hasher.verified), r.q.count("GetAccountForSignIn")
+	before := *r.q.throttles[r.svc.ThrottleKey(credEmail)]
 
 	_, err := r.svc.SignIn(ctx, "sess-c", credEmail, credPassword, credSessionIDs("f"))
 	var locked service.SignInLockedError
@@ -1454,8 +1617,10 @@ func TestSignInLockedRefusedBeforeHash(t *testing.T) {
 	if locked.Wait <= 0 || locked.Wait > 5*time.Minute {
 		t.Errorf("wait = %v, want up to 5 minutes", locked.Wait)
 	}
-	if len(r.hasher.verified) != verifies || r.q.count("GetAccountForSignIn") != lookups || r.q.count("RecordAuthFailure") != failures {
-		t.Error("a locked address is refused before any hashing, lookup or failure record")
+	after := *r.q.throttles[r.svc.ThrottleKey(credEmail)]
+	if len(r.hasher.verified) != verifies || r.q.count("GetAccountForSignIn") != lookups ||
+		after.failures != before.failures || !after.last.Equal(before.last) || !after.locked.Equal(*before.locked) {
+		t.Error("a locked address is refused before any hashing or lookup, and the refused try changes nothing")
 	}
 	// The lock ends: the right password works again.
 	r.clk.Advance(5*time.Minute + time.Second)
@@ -1651,6 +1816,25 @@ func TestLiveCode(t *testing.T) {
 		lc, ok, _ = r.svc.LiveCode(ctx, "sess-a")
 		if !ok || lc.SecondsLeft != 0 {
 			t.Errorf("expired row: ok=%v live=%+v, want shown with 0 seconds", ok, lc)
+		}
+	})
+
+	// Review WR-B02 (server half): the resend wait a reload shows is what is
+	// left of the cooldown since the stored send, rounded up, never negative.
+	t.Run("resend seconds left follow the stored send", func(t *testing.T) {
+		r := newCredRig(t)
+		r.signUpAndCode(t, "sess-a", credEmail, credPassword)
+		cooldown := int(service.DefaultCredentialLimits.SendCooldown / time.Second)
+		if lc, _, _ := r.svc.LiveCode(ctx, "sess-a"); lc.ResendSecondsLeft != cooldown {
+			t.Errorf("right after the send: resend left %d, want %d", lc.ResendSecondsLeft, cooldown)
+		}
+		r.clk.Advance(20*time.Second + 300*time.Millisecond)
+		if lc, _, _ := r.svc.LiveCode(ctx, "sess-a"); lc.ResendSecondsLeft != cooldown-20 {
+			t.Errorf("20.3 s later: resend left %d, want %d (rounded up)", lc.ResendSecondsLeft, cooldown-20)
+		}
+		r.clk.Advance(2 * time.Minute)
+		if lc, _, _ := r.svc.LiveCode(ctx, "sess-a"); lc.ResendSecondsLeft != 0 {
+			t.Errorf("after the cooldown: resend left %d, want 0", lc.ResendSecondsLeft)
 		}
 	})
 

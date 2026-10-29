@@ -28,6 +28,7 @@ func authTestLimits() AuthLimits {
 		CodeSendDevice:   wide,
 		CodeSendIP:       wide,
 		CodeSendNoCookie: wide,
+		SignInNoCookie:   wide,
 		CodeTryDevice:    wide,
 		UsernameCheck:    wide,
 		UsernameSave:     wide,
@@ -226,6 +227,59 @@ func TestAuthGateNoCookieSendCap(t *testing.T) {
 	runAuthRequest(mgr, "fresh", "", func(r *http.Request) { ok = gate.ReserveCodeSend(r).OK })
 	if !ok {
 		t.Fatalf("a browser with the cookie was refused after the cookieless cap filled")
+	}
+}
+
+// runAuthRequestRawCookie is runAuthRequest with a pinalert_session cookie of
+// any value, signed or not.
+func runAuthRequestRawCookie(mgr *session.Manager, raw string, fn func(r *http.Request)) {
+	inner := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { fn(r) })
+	persist := func(context.Context, string) error { return nil }
+	h := middleware.ClientIPFromHeader(authTestIPHeader)(mgr.Middleware(persist)(inner))
+	req := httptest.NewRequest(http.MethodPost, "/x", nil)
+	req.AddCookie(&http.Cookie{Name: session.CookieName, Value: raw})
+	h.ServeHTTP(httptest.NewRecorder(), req)
+}
+
+// TestAuthGateJunkCookieSharesCookielessBucket is WR-S01 of the Phase 7.1
+// review: a request whose cookie is missing, malformed or wrongly signed gets a
+// freshly minted id from the session middleware, so it must land in the one
+// shared bucket, never in a fresh device bucket of its own. Before the fix the
+// shared bucket checked only that a cookie was present, so a script sending
+// pinalert_session=x skipped it on every request. Sign in has the same shared
+// bucket (review IN-S05).
+func TestAuthGateJunkCookieSharesCookielessBucket(t *testing.T) {
+	mgr := authTestManager(t)
+	l := authTestLimits()
+	l.CodeSendNoCookie = BucketLimit{Every: time.Minute, Burst: 2}
+	l.SignInNoCookie = BucketLimit{Every: time.Minute, Burst: 2}
+	gate := authTestGate(l, "")
+
+	junk := []string{"x", "not.signed", mgr.Sign("real-id") + "tampered"}
+	for _, raw := range junk {
+		gate = authTestGate(l, "")
+		var first, second, third bool
+		runAuthRequestRawCookie(mgr, raw, func(r *http.Request) { first = gate.ReserveCodeSend(r).OK })
+		runAuthRequestRawCookie(mgr, raw, func(r *http.Request) { second = gate.ReserveCodeSend(r).OK })
+		runAuthRequestRawCookie(mgr, raw, func(r *http.Request) { third = gate.ReserveCodeSend(r).OK })
+		if !first || !second || third {
+			t.Errorf("code sends with the cookie %q: %v %v %v, want the third refused by the shared bucket", raw, first, second, third)
+		}
+		runAuthRequestRawCookie(mgr, raw, func(r *http.Request) { first = gate.ReserveSignIn(r).OK })
+		runAuthRequestRawCookie(mgr, raw, func(r *http.Request) { second = gate.ReserveSignIn(r).OK })
+		runAuthRequestRawCookie(mgr, raw, func(r *http.Request) { third = gate.ReserveSignIn(r).OK })
+		if !first || !second || third {
+			t.Errorf("sign ins with the cookie %q: %v %v %v, want the third refused by the shared bucket", raw, first, second, third)
+		}
+	}
+	// A validly signed cookie is a device of its own and never meets the
+	// shared bucket.
+	for i := 0; i < 5; i++ {
+		var ok bool
+		runAuthRequest(mgr, fmt.Sprintf("signed-%d", i), "", func(r *http.Request) { ok = gate.ReserveCodeSend(r).OK && gate.ReserveSignIn(r).OK })
+		if !ok {
+			t.Fatalf("a request with a signed cookie was refused by the shared bucket")
+		}
 	}
 }
 

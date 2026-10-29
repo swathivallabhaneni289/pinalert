@@ -29,6 +29,10 @@ type LiveCode struct {
 	Purpose     string
 	Email       string
 	SecondsLeft int
+	// ResendSecondsLeft is what is left of the resend cooldown since the row's
+	// send, rounded up and never negative (review WR-B02), so a reload or a
+	// return from the mail app shows the wait that is really left.
+	ResendSecondsLeft int
 }
 
 // ThrottleKey is the stored form of an address in the sign in throttle: an
@@ -89,18 +93,29 @@ func (s *CredentialService) proveCode(ctx context.Context, sessionID, purpose, c
 	return row, nil
 }
 
+// inTx runs fn inside one transaction through the configured runner. Without a
+// runner (only the unit test fakes) fn runs on the service's own querier.
+func (s *CredentialService) inTx(ctx context.Context, fn func(q CredentialQuerier) error) error {
+	if s.tx == nil {
+		return fn(s.q)
+	}
+	return s.tx(ctx, fn)
+}
+
 // spend consumes the proven row exactly once and deletes every other code row
 // of the address, so a code still pending in another browser can no longer be
-// used (W9). 0 rows consumed means a parallel submit won.
-func (s *CredentialService) spend(ctx context.Context, row sqlcgen.BumpAuthCodeAttemptRow) error {
-	n, err := s.q.ConsumeAuthCode(ctx, row.ID)
+// used (W9). 0 rows consumed means a parallel submit won. It runs inside the
+// confirm transaction, so a later failure leaves the code usable (review
+// CR-S02, IN-S07).
+func spend(ctx context.Context, q CredentialQuerier, row sqlcgen.BumpAuthCodeAttemptRow) error {
+	n, err := q.ConsumeAuthCode(ctx, row.ID)
 	if err != nil {
 		return fmt.Errorf("service: consuming code: %w", err)
 	}
 	if n == 0 {
 		return ErrWrongCode
 	}
-	if err := s.q.DeleteAuthCodesForEmail(ctx, row.Email); err != nil {
+	if err := q.DeleteAuthCodesForEmail(ctx, row.Email); err != nil {
 		return fmt.Errorf("service: deleting spent codes: %w", err)
 	}
 	return nil
@@ -111,9 +126,14 @@ func (s *CredentialService) spend(ctx context.Context, row sqlcgen.BumpAuthCodeA
 // sets the password typed at Create account, clears the sign in throttle and
 // signs the browser in on a freshly drawn session id.
 //
-// If the account already has a password when the code is confirmed (a race
-// between two Create account requests), LogOutAllDevices runs before the
-// password is replaced, so no session opened with the old password survives.
+// Everything after the code is proved runs in one transaction (Phase 7.1
+// review CR-S02, IN-S07): the spend, the account, the password, the throttle
+// and the bind, so a failure leaves the code usable and nothing half written.
+// When the account already existed (made with the old link, or one that gained
+// a password meanwhile) the password is set with a new epoch, under the account
+// row lock, and every session and phone alert device of the account is ended,
+// so a session the old binary made from an emailed link, or one opened with a
+// replaced password, is never signed in (WR-S02).
 func (s *CredentialService) ConfirmSignUp(ctx context.Context, sessionID, rawCode string, newID func() string) (SignInResult, error) {
 	code, ok := cleanTypedCode(rawCode)
 	if !ok {
@@ -127,56 +147,69 @@ func (s *CredentialService) ConfirmSignUp(ctx context.Context, sessionID, rawCod
 		// A code row of delivery code always carries the password hash.
 		return SignInResult{}, ErrWrongCode
 	}
-	if err := s.spend(ctx, row); err != nil {
-		return SignInResult{}, err
-	}
-	if err := s.q.InsertAccount(ctx, row.Email); err != nil {
-		return SignInResult{}, fmt.Errorf("service: creating account: %w", err)
-	}
-	account, found, err := s.lookupAccount(ctx, row.Email)
+	var result SignInResult
+	err = s.inTx(ctx, func(q CredentialQuerier) error {
+		if err := spend(ctx, q, row); err != nil {
+			return err
+		}
+		var accountID, epoch int64
+		existing, err := q.LockAccountForPassword(ctx, row.Email)
+		switch {
+		case err == nil:
+			accountID = existing.ID
+			epoch, err = s.setPasswordNewEpoch(ctx, q, accountID, *row.PasswordHash)
+			if err != nil {
+				return err
+			}
+			if _, err := NewSessionService(q, WithSessionClock(s.now)).LogOutAllDevices(ctx, accountID); err != nil {
+				return err
+			}
+		case errors.Is(err, pgx.ErrNoRows):
+			if err := q.InsertAccount(ctx, row.Email); err != nil {
+				return fmt.Errorf("service: creating account: %w", err)
+			}
+			created, err := q.LockAccountForPassword(ctx, row.Email)
+			if err != nil {
+				return fmt.Errorf("service: reading the new account: %w", err)
+			}
+			accountID, epoch = created.ID, created.PasswordEpoch
+			if err := setPassword(ctx, q, accountID, *row.PasswordHash); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("service: locking account: %w", err)
+		}
+		if err := s.clearThrottle(ctx, q, row.Email); err != nil {
+			return err
+		}
+		result, err = s.rotate(ctx, q, sessionID, accountID, epoch, newID)
+		return err
+	})
 	if err != nil {
 		return SignInResult{}, err
 	}
-	if !found {
-		return SignInResult{}, errors.New("service: account missing after insert")
-	}
-	if account.PasswordHash != nil {
-		if _, err := s.sessions.LogOutAllDevices(ctx, account.ID); err != nil {
-			return SignInResult{}, err
-		}
-	}
-	if err := s.setPassword(ctx, account.ID, *row.PasswordHash); err != nil {
-		return SignInResult{}, err
-	}
-	if err := s.clearThrottle(ctx, row.Email); err != nil {
-		return SignInResult{}, err
-	}
-	return s.rotate(ctx, sessionID, account.ID, newID)
+	return result, nil
 }
 
-// SignIn takes the email and the password only. A locked address is refused
-// before any hashing. An unknown address and an account with no password are
-// verified against the dummy hash, so neither answers faster than a wrong
-// password, and all three get the one error. Failures are counted in the
-// database; a good sign in clears the count, upgrades an old hash and rotates
-// the session id. The per device and per network buckets are the handler's job.
+// SignIn takes the email and the password only. Every try is counted in the
+// database before the password is checked, in one guarded statement, so a
+// parallel burst cannot run more checks than the lock allows (Phase 7.1 review
+// CR-S01); a locked address is refused before any hashing. An unknown address
+// and an account with no password are counted and verified against the dummy
+// hash the same way, so neither answers faster than a wrong password, and all
+// three get the one error. A good sign in clears the count, upgrades an old
+// hash and rotates the session id. A busy hasher keeps the counted try, the
+// same for every address. The per device and per network buckets are the
+// handler's job.
 func (s *CredentialService) SignIn(ctx context.Context, sessionID, rawEmail, password string, newID func() string) (SignInResult, error) {
 	email, err := normalizeEmail(rawEmail)
 	if err != nil {
 		return SignInResult{}, ValidationError{Field: "email", Message: InvalidEmailMessage}
 	}
 	key := s.ThrottleKey(email)
-	now := s.now()
 
-	t, err := s.q.GetAuthThrottle(ctx, sqlcgen.GetAuthThrottleParams{Scope: throttleScope, KeyHash: key})
-	switch {
-	case err == nil:
-		if t.LockedUntil.Valid && t.LockedUntil.Time.After(now) {
-			return SignInResult{}, SignInLockedError{Wait: t.LockedUntil.Time.Sub(now)}
-		}
-	case errors.Is(err, pgx.ErrNoRows):
-	default:
-		return SignInResult{}, fmt.Errorf("service: reading sign in throttle: %w", err)
+	if err := s.reserveTry(ctx, key); err != nil {
+		return SignInResult{}, err
 	}
 
 	account, found, err := s.lookupAccount(ctx, email)
@@ -202,23 +235,74 @@ func (s *CredentialService) SignIn(ctx context.Context, sessionID, rawEmail, pas
 		good = false
 	}
 	if !(good && usable) {
-		if err := s.recordFailure(ctx, key); err != nil {
-			return SignInResult{}, err
-		}
+		// The try was already counted by reserveTry.
 		return SignInResult{}, ErrWrongCredentials
 	}
 
+	// Bind first, then clear the count, so a refused bind never clears a lock.
+	// The bind holds to the password epoch read before the check (review
+	// CR-S02): when a reset or a later Create account replaced the password
+	// while this one was being checked, nothing is bound and the answer is the
+	// one wrong credentials answer.
+	result, err := s.rotate(ctx, s.q, sessionID, account.ID, account.PasswordEpoch, newID)
+	if err != nil {
+		if errors.Is(err, errBindRefused) {
+			return SignInResult{}, ErrWrongCredentials
+		}
+		return SignInResult{}, err
+	}
 	if err := s.q.ClearAuthThrottle(ctx, sqlcgen.ClearAuthThrottleParams{Scope: throttleScope, KeyHash: key}); err != nil {
 		return SignInResult{}, fmt.Errorf("service: clearing sign in throttle: %w", err)
 	}
 	if needsRehash {
 		// Best effort: a failed upgrade, a busy hasher included, never fails a
-		// good sign in. The next sign in tries again.
+		// good sign in. The next sign in tries again. The write holds to the
+		// epoch too, so it never overwrites a password set meanwhile.
 		if fresh, err := s.hasher.Hash(ctx, normalized); err == nil {
-			_, _ = s.q.SetAccountPassword(ctx, sqlcgen.SetAccountPasswordParams{PasswordHash: fresh, ID: account.ID})
+			_, _ = s.q.SetAccountPasswordIfEpoch(ctx, sqlcgen.SetAccountPasswordIfEpochParams{
+				PasswordHash: fresh, ID: account.ID, PasswordEpoch: account.PasswordEpoch,
+			})
 		}
 	}
-	return s.rotate(ctx, sessionID, account.ID, newID)
+	return result, nil
+}
+
+// reserveTry counts one sign in try for the address before the password check
+// (CR-S01). It returns SignInLockedError when the address is locked. When the
+// guarded statement refused but a fresh read finds the address no longer
+// locked (a reset cleared it, or the lock ended in between), it tries once
+// more; a second refusal is answered as locked with at least one second to
+// wait, never a negative wait.
+func (s *CredentialService) reserveTry(ctx context.Context, key string) error {
+	for attempt := 0; attempt < 2; attempt++ {
+		now := s.now()
+		_, err := s.q.ReserveSignInTry(ctx, sqlcgen.ReserveSignInTryParams{
+			Scope:           throttleScope,
+			KeyHash:         key,
+			Now:             now,
+			ForgetCutoff:    now.Add(-s.limits.ForgetAfter),
+			FreeFailures:    int32(s.limits.FreeFailures),
+			BaseLockSeconds: int32(s.limits.BaseLock / time.Second),
+			MaxLockSeconds:  int32(s.limits.MaxLock / time.Second),
+		})
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("service: counting sign in try: %w", err)
+		}
+		t, err := s.q.GetAuthThrottle(ctx, sqlcgen.GetAuthThrottleParams{Scope: throttleScope, KeyHash: key})
+		switch {
+		case err == nil:
+			if t.LockedUntil.Valid && t.LockedUntil.Time.After(now) {
+				return SignInLockedError{Wait: t.LockedUntil.Time.Sub(now)}
+			}
+		case errors.Is(err, pgx.ErrNoRows):
+		default:
+			return fmt.Errorf("service: reading sign in throttle: %w", err)
+		}
+	}
+	return SignInLockedError{Wait: time.Second}
 }
 
 // ConfirmReset is the typed code of Forgot password, with the new password.
@@ -227,6 +311,13 @@ func (s *CredentialService) SignIn(ctx context.Context, sessionID, rawEmail, pas
 // every session and push subscription of the account, and clears the throttle
 // (a locked address can always be recovered this way). It never signs the
 // browser in: the person signs in with the new password.
+//
+// The writes run in one transaction, the password first (Phase 7.1 review
+// CR-S02): the password is set with a new epoch, which takes the account row
+// lock, then the code is spent, the throttle cleared and every session ended.
+// A sign in that read the old epoch cannot bind after it, and the gate refuses
+// any session still on the old epoch. A failure anywhere changes nothing and
+// leaves the code usable.
 func (s *CredentialService) ConfirmReset(ctx context.Context, sessionID, rawCode, newPassword string) error {
 	latest, err := s.q.GetLatestAuthCode(ctx, sqlcgen.GetLatestAuthCodeParams{
 		SessionID: sessionID,
@@ -265,24 +356,27 @@ func (s *CredentialService) ConfirmReset(ctx context.Context, sessionID, rawCode
 	if err != nil {
 		return s.hashError(err)
 	}
-	if err := s.spend(ctx, row); err != nil {
-		return err
-	}
-	if err := s.setPassword(ctx, account.ID, hash); err != nil {
-		return err
-	}
-	if err := s.clearThrottle(ctx, row.Email); err != nil {
-		return err
-	}
-	if _, err := s.sessions.LogOutAllDevices(ctx, account.ID); err != nil {
-		return err
-	}
-	return nil
+	return s.inTx(ctx, func(q CredentialQuerier) error {
+		if _, err := s.setPasswordNewEpoch(ctx, q, account.ID, hash); err != nil {
+			return err
+		}
+		if err := spend(ctx, q, row); err != nil {
+			return err
+		}
+		if err := s.clearThrottle(ctx, q, row.Email); err != nil {
+			return err
+		}
+		if _, err := NewSessionService(q, WithSessionClock(s.now)).LogOutAllDevices(ctx, account.ID); err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
-// setPassword stores a password hash; 0 rows means the account is deleted.
-func (s *CredentialService) setPassword(ctx context.Context, accountID int64, hash string) error {
-	n, err := s.q.SetAccountPassword(ctx, sqlcgen.SetAccountPasswordParams{PasswordHash: hash, ID: accountID})
+// setPassword stores the first password of a brand new account without moving
+// its epoch; 0 rows means the account is deleted.
+func setPassword(ctx context.Context, q CredentialQuerier, accountID int64, hash string) error {
+	n, err := q.SetAccountPassword(ctx, sqlcgen.SetAccountPasswordParams{PasswordHash: hash, ID: accountID})
 	if err != nil {
 		return fmt.Errorf("service: setting password of account %d: %w", accountID, err)
 	}
@@ -292,28 +386,30 @@ func (s *CredentialService) setPassword(ctx context.Context, accountID int64, ha
 	return nil
 }
 
-func (s *CredentialService) clearThrottle(ctx context.Context, email string) error {
-	if err := s.q.ClearAuthThrottle(ctx, sqlcgen.ClearAuthThrottleParams{Scope: throttleScope, KeyHash: s.ThrottleKey(email)}); err != nil {
+// setPasswordNewEpoch stores a password on an account that already existed and
+// moves its password epoch (review CR-S02), returning the new epoch.
+func (s *CredentialService) setPasswordNewEpoch(ctx context.Context, q CredentialQuerier, accountID int64, hash string) (int64, error) {
+	epoch, err := q.SetAccountPasswordNewEpoch(ctx, sqlcgen.SetAccountPasswordNewEpochParams{PasswordHash: hash, ID: accountID})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, fmt.Errorf("service: account %d is gone, password not set", accountID)
+		}
+		return 0, fmt.Errorf("service: setting password of account %d: %w", accountID, err)
+	}
+	return epoch, nil
+}
+
+func (s *CredentialService) clearThrottle(ctx context.Context, q CredentialQuerier, email string) error {
+	if err := q.ClearAuthThrottle(ctx, sqlcgen.ClearAuthThrottleParams{Scope: throttleScope, KeyHash: s.ThrottleKey(email)}); err != nil {
 		return fmt.Errorf("service: clearing sign in throttle: %w", err)
 	}
 	return nil
 }
 
-func (s *CredentialService) recordFailure(ctx context.Context, key string) error {
-	now := s.now()
-	if _, err := s.q.RecordAuthFailure(ctx, sqlcgen.RecordAuthFailureParams{
-		Scope:           throttleScope,
-		KeyHash:         key,
-		Now:             now,
-		ForgetCutoff:    now.Add(-s.limits.ForgetAfter),
-		FreeFailures:    int32(s.limits.FreeFailures),
-		BaseLockSeconds: int32(s.limits.BaseLock / time.Second),
-		MaxLockSeconds:  int32(s.limits.MaxLock / time.Second),
-	}); err != nil {
-		return fmt.Errorf("service: recording sign in failure: %w", err)
-	}
-	return nil
-}
+// errBindRefused means the fresh session id could not be bound: the account's
+// password epoch moved since it was read, the account is gone, or the id is
+// already bound elsewhere. SignIn answers it as wrong credentials.
+var errBindRefused = errors.New("service: binding a fresh session was refused")
 
 // rotate signs the browser in on a freshly drawn session id (research Pattern
 // 3). The request's own id is never bound, so a cookie planted before the sign
@@ -322,16 +418,17 @@ func (s *CredentialService) recordFailure(ctx context.Context, key string) error
 // revoked first, so the next person on a shared phone never gets the previous
 // person's alerts and the old cookie stops working (Pitfall 10, W8). A session
 // that is unbound, unstored or bound to the same account is left alone. The
-// handler sets the cookie.
-func (s *CredentialService) rotate(ctx context.Context, oldID string, accountID int64, newID func() string) (SignInResult, error) {
-	binding, err := s.q.GetSessionBinding(ctx, oldID)
+// fresh id is bound at the password epoch the caller read (review CR-S02); a
+// refused bind is errBindRefused. The handler sets the cookie.
+func (s *CredentialService) rotate(ctx context.Context, q CredentialQuerier, oldID string, accountID, epoch int64, newID func() string) (SignInResult, error) {
+	binding, err := q.GetSessionBinding(ctx, oldID)
 	switch {
 	case err == nil:
 		if binding.AccountID != nil && *binding.AccountID != accountID {
-			if _, err := s.q.DeletePushSubscriptionsForSession(ctx, oldID); err != nil {
+			if _, err := q.DeletePushSubscriptionsForSession(ctx, oldID); err != nil {
 				return SignInResult{}, fmt.Errorf("service: deleting push subscriptions of the replaced session: %w", err)
 			}
-			if _, err := s.q.RevokeSession(ctx, sqlcgen.RevokeSessionParams{Now: s.now(), SessionID: oldID}); err != nil {
+			if _, err := q.RevokeSession(ctx, sqlcgen.RevokeSessionParams{Now: s.now(), SessionID: oldID}); err != nil {
 				return SignInResult{}, fmt.Errorf("service: revoking the replaced session: %w", err)
 			}
 		}
@@ -342,12 +439,14 @@ func (s *CredentialService) rotate(ctx context.Context, oldID string, accountID 
 	}
 
 	id := newID()
-	n, err := s.q.BindSessionAccount(ctx, sqlcgen.BindSessionAccountParams{SessionID: id, AccountID: &accountID})
+	n, err := q.BindSessionAccountAtEpoch(ctx, sqlcgen.BindSessionAccountAtEpochParams{
+		SessionID: id, AccountID: accountID, PasswordEpoch: epoch,
+	})
 	if err != nil {
 		return SignInResult{}, fmt.Errorf("service: binding session to account %d: %w", accountID, err)
 	}
 	if n == 0 {
-		return SignInResult{}, fmt.Errorf("service: binding a fresh session to account %d was refused", accountID)
+		return SignInResult{}, errBindRefused
 	}
 	return SignInResult{AccountID: accountID, SessionID: id}, nil
 }
@@ -372,12 +471,25 @@ func (s *CredentialService) LiveCode(ctx context.Context, sessionID string) (Liv
 	if row.UsedAt.Valid {
 		return LiveCode{}, false, nil
 	}
-	left := row.ExpiresAt.Sub(now)
-	secs := int((left + time.Second - 1) / time.Second)
-	if left <= 0 || secs < 0 {
-		secs = 0
+	// The send time is the stored expiry minus the lifetime: both come from
+	// this service's clock, while created_at is the database's (review WR-B02).
+	sentAt := row.ExpiresAt.Add(-s.limits.CodeTTL)
+	return LiveCode{
+		Purpose:           row.Purpose,
+		Email:             row.Email,
+		SecondsLeft:       secondsUntil(now, row.ExpiresAt),
+		ResendSecondsLeft: secondsUntil(now, sentAt.Add(s.limits.SendCooldown)),
+	}, true, nil
+}
+
+// secondsUntil is the whole seconds from now to deadline, rounded up, and 0
+// once the deadline has passed.
+func secondsUntil(now, deadline time.Time) int {
+	left := deadline.Sub(now)
+	if left <= 0 {
+		return 0
 	}
-	return LiveCode{Purpose: row.Purpose, Email: row.Email, SecondsLeft: secs}, true, nil
+	return int((left + time.Second - 1) / time.Second)
 }
 
 // SignedIn is true only for a live session of an account that has a password

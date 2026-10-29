@@ -127,7 +127,7 @@ func newGateTestServerWith(t *testing.T, tweak func(d *Deps, q *sqlcgen.Queries)
 		// Amended 2026-10-29 by Phase 7.1 plan 08: the code and password
 		// service with the test hasher and open buckets, which
 		// gateVerifySession needs.
-		Credentials: newGateTestCredentials(queries, fm),
+		Credentials: newGateTestCredentials(queries, fm, service.WithCredentialTx(service.PgxCredentialTx(pool))),
 		AuthLimits:  gateGenerousAuthLimits,
 	}
 	if tweak != nil {
@@ -173,6 +173,7 @@ var gateGenerousAuthLimits = AuthLimits{
 	CodeSendDevice:   gateGenerousBucket,
 	CodeSendIP:       gateGenerousBucket,
 	CodeSendNoCookie: gateGenerousBucket,
+	SignInNoCookie:   gateGenerousBucket,
 	CodeTryDevice:    gateGenerousBucket,
 	UsernameCheck:    gateGenerousBucket,
 	UsernameSave:     gateGenerousBucket,
@@ -183,15 +184,16 @@ var gateGenerousAuthLimits = AuthLimits{
 // production never does. The keys are fixed 32 byte test values and
 // SendCooldown is one millisecond, so a sign up followed by a reset on the same
 // address in one test is not refused by the 45 second per address cooldown.
-func newGateTestCredentials(q *sqlcgen.Queries, m *gateFakeMailer) *service.CredentialService {
+func newGateTestCredentials(q *sqlcgen.Queries, m *gateFakeMailer, extra ...service.CredentialOption) *service.CredentialService {
 	limits := service.DefaultCredentialLimits
 	limits.SendCooldown = time.Millisecond
-	return service.NewCredentialService(q, m,
+	opts := []service.CredentialOption{
 		service.WithHasher(auth.NewHasher(auth.TestParams())),
 		service.WithCodeKey(bytes.Repeat([]byte("c"), 32)),
 		service.WithThrottleKey(bytes.Repeat([]byte("t"), 32)),
 		service.WithCredentialLimits(limits),
-	)
+	}
+	return service.NewCredentialService(q, m, append(opts, extra...)...)
 }
 
 // gatePostJSON posts body as JSON to path on srv with client and returns the
@@ -553,6 +555,43 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 			}
 		})
 	}
+
+	// Amended 2026-10-29 by the Phase 7.1 review fix (WR-T04): POST /login is
+	// exempt. The card's forms post there when the page script has not loaded
+	// yet, and the answer is a fixed 303 back to /login with no-store, never a
+	// 405 and never anything taken from the body, which carries a plaintext
+	// password.
+	t.Run("login form fallback", func(t *testing.T) {
+		client := newGateJarClient(t)
+		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		const email, password = "fallback-typed@example.com", "fallback secret words 31"
+		form := "email=" + url.QueryEscape(email) + "&password=" + url.QueryEscape(password)
+		req, err := http.NewRequest(http.MethodPost, srv.URL+"/login?next=https://evil.example", strings.NewReader(form))
+		if err != nil {
+			t.Fatalf("building request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("POST /login: %v", err)
+		}
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusSeeOther {
+			t.Fatalf("POST /login = %d, want 303", resp.StatusCode)
+		}
+		if got := resp.Header.Get("Location"); got != "/login" {
+			t.Errorf("POST /login Location = %q, want exactly /login", got)
+		}
+		if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+			t.Errorf("POST /login Cache-Control = %q, want no-store", got)
+		}
+		for _, secret := range []string{email, url.QueryEscape(email), password, url.QueryEscape(password)} {
+			if strings.Contains(string(raw), secret) || strings.Contains(resp.Header.Get("Location"), secret) {
+				t.Errorf("POST /login echoed what was typed (%q)", secret)
+			}
+		}
+	})
 
 	// Near misses of the app asset paths are not exempt: no prefix or suffix
 	// match opens a hole in the gate. They are not routes at all, so the answer

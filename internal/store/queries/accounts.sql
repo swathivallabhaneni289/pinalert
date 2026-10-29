@@ -124,17 +124,51 @@ WHERE id = sqlc.arg(id)
 -- Phase 7.1: the password sign in's one read of an account by its normalised
 -- address. A deleted account yields no row (its address was scrubbed anyway).
 -- password_hash is NULL for an account that has not set a password yet.
-SELECT id, password_hash, (display_name IS NOT NULL)::bool AS has_name
+-- password_epoch (migration 00016, review CR-S02) is read before the password
+-- is checked; the session bind and a rehash then hold to it.
+SELECT id, password_hash, (display_name IS NOT NULL)::bool AS has_name, password_epoch
 FROM accounts
 WHERE email = sqlc.arg(email) AND deleted_at IS NULL;
 
+-- name: LockAccountForPassword :one
+-- Inside the confirm transaction of Create account: the account of a
+-- normalised address, locked FOR UPDATE, so a parallel sign in bind waits for
+-- the new password and its epoch (review CR-S02). No row means no account yet.
+SELECT id, password_hash, password_epoch
+FROM accounts
+WHERE email = sqlc.arg(email) AND deleted_at IS NULL
+FOR UPDATE;
+
 -- name: SetAccountPassword :execrows
--- Stores an argon2id PHC string, never a password: after a confirmed sign up
--- code, a confirmed reset code, and the one time fill in of an older account.
--- 0 rows means the account is deleted.
+-- Stores an argon2id PHC string, never a password, without moving the password
+-- epoch: the first password of a brand new account inside the Create account
+-- transaction, and the store tests. 0 rows means the account is deleted.
 UPDATE accounts
 SET password_hash = sqlc.arg(password_hash)::text
 WHERE id = sqlc.arg(id) AND deleted_at IS NULL;
+
+-- name: SetAccountPasswordNewEpoch :one
+-- A password set by a typed code on an account that already existed: a reset,
+-- and Create account on an account made with the old link or one that gained a
+-- password meanwhile (review CR-S02, WR-S02). The epoch moves by one, so every
+-- session bound under the old epoch stops passing the gate and a sign in that
+-- read the old epoch cannot bind. The UPDATE takes the account row lock for the
+-- rest of the transaction. No row means the account is deleted.
+UPDATE accounts
+SET password_hash = sqlc.arg(password_hash)::text,
+    password_epoch = password_epoch + 1
+WHERE id = sqlc.arg(id) AND deleted_at IS NULL
+RETURNING password_epoch;
+
+-- name: SetAccountPasswordIfEpoch :execrows
+-- The best effort rehash after a cost change, during a good sign in. It never
+-- moves the epoch, and it writes only while the epoch is still the one the sign
+-- in read, so a rehash of the old password can never overwrite a password a
+-- reset set in the meantime (review CR-S02).
+UPDATE accounts
+SET password_hash = sqlc.arg(password_hash)::text
+WHERE id = sqlc.arg(id) AND deleted_at IS NULL
+  AND password_epoch = sqlc.arg(password_epoch)::bigint;
 
 -- name: SetAccountUsername :execrows
 -- The first set is free, and every later change starts the 7 day wait: the
