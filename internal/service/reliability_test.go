@@ -274,7 +274,7 @@ func TestReliabilityTable(t *testing.T) {
 		{"2 contradicted and 3 unconfirmed sit exactly on 25", relJoin(relOutcomes(relX, 2, 0), relOutcomes(relU, 3, 0)), service.ReporterUnreliable, 25, 5, 0},
 		{"1 corroborated and 4 contradicted", relJoin(relOutcomes(relC, 1, 0), relOutcomes(relX, 4, 0)), service.ReporterUnreliable, 29, 5, 1},
 		{"5 contradicted", relOutcomes(relX, 5, 0), service.ReporterUnreliable, 14, 5, 0},
-		{"8 corroborated and 2 contradicted score 75, still Reliable (no longer a boundary)",relJoin(relOutcomes(relC, 8, 0), relOutcomes(relX, 2, 0)), service.ReporterReliable, 75, 10, 8},
+		{"8 corroborated and 2 contradicted score 75, still Reliable (no longer a boundary)", relJoin(relOutcomes(relC, 8, 0), relOutcomes(relX, 2, 0)), service.ReporterReliable, 75, 10, 8},
 		{"6 corroborated and 12 contradicted sit exactly on 35", relJoin(relOutcomes(relC, 6, 0), relOutcomes(relX, 12, 0)), service.ReporterMixed, 35, 18, 6},
 		{"mixed ages across the half life", relJoin(
 			relOutcomes(relC, 1, 5*relDay), relOutcomes(relC, 1, 20*relDay), relOutcomes(relC, 1, 50*relDay),

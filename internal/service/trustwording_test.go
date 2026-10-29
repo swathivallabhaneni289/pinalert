@@ -432,7 +432,9 @@ func TestPanelWordingEveryState(t *testing.T) {
 		signals := ReporterSignals(ids, hist, votes, p10Now)
 		for id, w := range map[int64]rep{
 			101: {"Reliable reporter", "5 of their last 5 reports were confirmed.", "Score 86 out of 100."},
-			102: {"Mixed record", "4 of their last 5 reports were confirmed.", "Score 71 out of 100."},
+			// Amended 2026-10-29 by Phase 9 plan 01 (D-05): score 71 is now
+			// Reliable reporter.
+			102: {"Reliable reporter", "4 of their last 5 reports were confirmed.", "Score 71 out of 100."},
 			103: {"Unreliable reporter", "0 of their last 5 reports were confirmed.", "Score 32 out of 100."},
 			105: {"New reporter", needs, ""},
 			106: {"New reporter", needs, ""},

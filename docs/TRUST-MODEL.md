@@ -300,11 +300,15 @@ The code computes this as integer arithmetic and not as a floating point formula
 - the sums are 64 bit integers;
 - the score is an integer division that rounds half up.
 
-So the boundaries 75, 35 and 25 are exact (4 corroborated and 1 unconfirmed is exactly 5.25 / 7, which is 75), equal ages give equal weights, and the order of reports never changes the result. `ScoreReliability` is the one function that does this.
+So the boundaries 70, 35 and 25 are exact (6 corroborated and 2 contradicted is exactly 70, which is 7 / 10), equal ages give equal weights, and the order of reports never changes the result. `ScoreReliability` is the one function that does this.
 
 ### Tags and sentences
 
-Tags are cut from the rounded integer. 75 or more (`ReliableMinScore`) is Reliable reporter, 35 to 74 (`MixedMinScore`) is Mixed record, and 34 or less is Unreliable reporter. Fewer than 5 judged is New reporter with no number.
+Tags are cut from the rounded integer. 70 or more (`ReliableMinScore`) is Reliable reporter, 35 to 69 (`MixedMinScore`) is Mixed record, and 34 or less is Unreliable reporter. Fewer than 5 judged is New reporter with no number.
+
+Changed 2026-10-29 by Phase 9 (D-05): the Reliable reporter bar moved from 75 to 70.
+
+Stars are the score divided by 20, floored to one decimal from integers (`StarsTenths` and `StarsText` in `internal/service/stars.go`, never a float format), so 69 reads 3.4 and 70 reads 3.5. The bar is 3.5 stars, by the owner decision of 2026-10-17 (D-05), chosen over the advice of 4 stars. The two lowest cut points read the same way: 35 points (`MixedMinScore`) is 1.75 stars and shows as 1.7, so 34 and 35 both read 1.7 because the Mixed record floor falls between two tenths. A test walks every score from 0 to 100 and checks that the stars text is 3.5 or more exactly when the tag is Reliable reporter, so the number and the word cannot disagree. The tag is still cut in exactly one place, `reporterTagForScore`.
 
 New reporter never looks like a good tag. It is the same plain text as the others, with no check, star or colour. The feed row and the Activity page show the tag as plain words beside the state label, at the top of the report and outside the trust block's button, alone on that line when the report has no state label (03-UI-SPEC.md A75). The popup shows the tag as the title of the last row of its card, with the reporter sentence as the detail and, when the score is not null, the score sentence as the score line (A91, A92). The panel of a row shows the same reporter row without the score line.
 
@@ -326,8 +330,11 @@ Weights are fresh unless a row says otherwise. Uniform ageing gives the same sco
 |-------------|---|-------|-----|
 | 5 corroborated (any ages inside the window) | 1.00 | 86 | Reliable |
 | 30 corroborated | 1.00 | 97 | Reliable |
-| 4 corroborated, 1 unconfirmed (5) | 0.85 | 75 (exact boundary, 5.25 / 7) | Reliable |
-| 4 corroborated, 1 contradicted (5) | 0.80 | 71 | Mixed |
+| 4 corroborated, 1 unconfirmed (5) | 0.85 | 75 (5.25 / 7, no longer a boundary) | Reliable |
+| 4 corroborated, 1 contradicted (5) | 0.80 | 71 | Reliable |
+| 6 corroborated, 2 contradicted (8) | 0.75 | 70 (exact boundary, 7 / 10) | Reliable |
+| 9 corroborated, 2 contradicted, 2 unconfirmed (13) | 0.731 | 70 (exact boundary, 10.5 / 15) | Reliable |
+| 4 corroborated, 2 unconfirmed (6) | 0.75 | 69 (5.5 / 8 is 68.75, rounded up) | Mixed |
 | 3 corroborated, 2 unconfirmed (5) | 0.70 | 64 | Mixed |
 | 3 corroborated, 2 contradicted (5) | 0.60 | 57 | Mixed |
 | 5 corroborated, 5 unconfirmed (10) | 0.625 | 60 | Mixed |
@@ -338,7 +345,7 @@ Weights are fresh unless a row says otherwise. Uniform ageing gives the same sco
 | 2 contradicted, 3 unconfirmed (5) | 0.15 | 25 | Unreliable |
 | 1 corroborated, 4 contradicted (5) | 0.20 | 29 | Unreliable |
 | 5 contradicted (5) | 0.00 | 14 | Unreliable |
-| 8 corroborated, 2 contradicted (10) | 0.80 | 75 (exact) | Reliable |
+| 8 corroborated, 2 contradicted (10) | 0.80 | 75 (exact, no longer a boundary) | Reliable |
 | 6 corroborated, 12 contradicted (18) | 0.333 | 35 (exact) | Mixed |
 | corroborated at 5, 20, 50 days, contradicted at 10 days, unconfirmed at 40 days (5) | 0.6394 | 60 | Mixed |
 | 5 corroborated at 80 days, 2 contradicted at 1 day (7) | 0.287 | 33 | Unreliable |
@@ -704,7 +711,7 @@ The visible form of "confirmed by N nearby" is the counter `N confirmed`, with t
 | `ReliabilityRowCap` | `internal/service/reliability.go` | 30 |
 | `ReliabilityHistoryReadCap` | `internal/service/reliability.go` | 100 |
 | `UnconfirmedCredit` | `internal/service/reliability.go` | 0.25 |
-| `ReliableMinScore` | `internal/service/reliability.go` | 75 |
+| `ReliableMinScore` | `internal/service/reliability.go` | 70 |
 | `MixedMinScore` | `internal/service/reliability.go` | 35 |
 | `MaxReporterAccountsPerRead` | `internal/service/report.go` | 200 |
 | `UndoLimit` | `internal/service/takeback.go` | 2 |

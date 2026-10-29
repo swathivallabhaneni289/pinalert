@@ -252,7 +252,9 @@ func TestTrustFactsEveryState(t *testing.T) {
 		signals := ReporterSignals(ids, hist, votes, p10Now)
 		for id, want := range map[int64]TrustFact{
 			101: p31Fact(FactReporter, ToneGood, "Reliable reporter", "5 of their last 5 reports were confirmed.", "Score 86 out of 100."),
-			102: p31Fact(FactReporter, ToneCaution, "Mixed record", "4 of their last 5 reports were confirmed.", "Score 71 out of 100."),
+			// Amended 2026-10-29 by Phase 9 plan 01 (D-05): score 71 is now
+			// Reliable reporter, a good tone fact.
+			102: p31Fact(FactReporter, ToneGood, "Reliable reporter", "4 of their last 5 reports were confirmed.", "Score 71 out of 100."),
 			103: p31Fact(FactReporter, ToneBad, "Unreliable reporter", "0 of their last 5 reports were confirmed.", "Score 32 out of 100."),
 			105: p31Fact(FactReporter, ToneNeutral, "New reporter", needs, ""),
 			106: p31Fact(FactReporter, ToneNeutral, "New reporter", needs, ""),

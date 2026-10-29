@@ -209,7 +209,9 @@ func TestReporterSignalsGroupByAccount(t *testing.T) {
 	)
 	want := map[int64]ReporterSignal{
 		101: {Tag: ReporterReliable, Score: p10Int(86), Label: "Reliable reporter", Sentence: "5 of their last 5" + confirmedOf, ScoreSentence: "Score 86" + scoreTail, JudgedReports: 5, CorroboratedReports: 5},
-		102: {Tag: ReporterMixed, Score: p10Int(71), Label: "Mixed record", Sentence: "4 of their last 5" + confirmedOf, ScoreSentence: "Score 71" + scoreTail, JudgedReports: 5, CorroboratedReports: 4},
+		// Amended 2026-10-29 by Phase 9 plan 01 (D-05): the Reliable bar moved from
+		// 75 to 70, so account 102 at score 71 now reads Reliable reporter.
+		102: {Tag: ReporterReliable, Score: p10Int(71), Label: "Reliable reporter", Sentence: "4 of their last 5" + confirmedOf, ScoreSentence: "Score 71" + scoreTail, JudgedReports: 5, CorroboratedReports: 4},
 		103: {Tag: ReporterUnreliable, Score: p10Int(32), Label: "Unreliable reporter", Sentence: "0 of their last 5" + confirmedOf, ScoreSentence: "Score 32" + scoreTail, JudgedReports: 5, CorroboratedReports: 0},
 		104: {Tag: ReporterReliable, Score: p10Int(75), Label: "Reliable reporter", Sentence: "4 of their last 5" + confirmedOf, ScoreSentence: "Score 75" + scoreTail, JudgedReports: 5, CorroboratedReports: 4},
 		105: {Tag: ReporterNew, Label: "New reporter", Sentence: "Not rated yet. It needs 5 reports with a clear result.", JudgedReports: 4, CorroboratedReports: 4},
@@ -243,7 +245,9 @@ func TestReporterSignalsGroupByAccount(t *testing.T) {
 	})
 
 	t.Run("own resolve keeps the contradicted outcome", func(t *testing.T) {
-		if got[102].JudgedReports != 5 || got[102].CorroboratedReports != 4 || got[102].Tag != ReporterMixed {
+		// Amended 2026-10-29 by Phase 9 plan 01 (D-05): 102 at score 71 reads
+		// Reliable reporter now; the check still proves the resolve kept the record.
+		if got[102].JudgedReports != 5 || got[102].CorroboratedReports != 4 || got[102].Tag != ReporterReliable {
 			t.Errorf("102 resolve erased its record: %+v", got[102])
 		}
 	})
