@@ -314,7 +314,7 @@ SET removed_at = $1::timestamptz,
 WHERE rater_id = $3::bigint
   AND reporter_id = $4::bigint
   AND removed_at IS NULL
-RETURNING updated_at
+RETURNING created_at
 `
 
 type RemoveRatingParams struct {
@@ -326,9 +326,11 @@ type RemoveRatingParams struct {
 
 // A moderator removes one rating (D-14, G2). The row stays with removed_at and
 // removed_by, so it is an audit trail and the rater cannot write it back. It
-// returns the removed rating's updated_at, which the service uses as the time
-// from which the reporter's tag_lost follows may be restored. No row means there
-// was nothing left to remove.
+// returns the removed rating's created_at, which the service uses as the time
+// from which the reporter's tag_lost follows may be restored. It is the first
+// time the rating existed, not the last change, so changing the stars after the
+// follows ended cannot shrink the restore window (WR-S01, review 2026-10-30).
+// No row means there was nothing left to remove.
 func (q *Queries) RemoveRating(ctx context.Context, arg RemoveRatingParams) (time.Time, error) {
 	row := q.db.QueryRow(ctx, removeRating,
 		arg.Now,
@@ -336,9 +338,9 @@ func (q *Queries) RemoveRating(ctx context.Context, arg RemoveRatingParams) (tim
 		arg.RaterID,
 		arg.ReporterID,
 	)
-	var updated_at time.Time
-	err := row.Scan(&updated_at)
-	return updated_at, err
+	var created_at time.Time
+	err := row.Scan(&created_at)
+	return created_at, err
 }
 
 const removeRatingsByRater = `-- name: RemoveRatingsByRater :many
@@ -347,7 +349,7 @@ SET removed_at = $1::timestamptz,
     removed_by = $2::bigint
 WHERE rater_id = $3::bigint
   AND removed_at IS NULL
-RETURNING reporter_id, updated_at
+RETURNING reporter_id, created_at
 `
 
 type RemoveRatingsByRaterParams struct {
@@ -358,12 +360,12 @@ type RemoveRatingsByRaterParams struct {
 
 type RemoveRatingsByRaterRow struct {
 	ReporterID int64
-	UpdatedAt  time.Time
+	CreatedAt  time.Time
 }
 
 // A moderator removes every rating one rater gave (D-14, G2, W4). It returns the
-// reporter and the written time of each removed rating, so the service can
-// re-evaluate each affected reporter.
+// reporter and the first written time of each removed rating (created_at,
+// WR-S01), so the service can re-evaluate each affected reporter.
 func (q *Queries) RemoveRatingsByRater(ctx context.Context, arg RemoveRatingsByRaterParams) ([]RemoveRatingsByRaterRow, error) {
 	rows, err := q.db.Query(ctx, removeRatingsByRater, arg.Now, arg.ModeratorID, arg.RaterID)
 	if err != nil {
@@ -373,7 +375,7 @@ func (q *Queries) RemoveRatingsByRater(ctx context.Context, arg RemoveRatingsByR
 	var items []RemoveRatingsByRaterRow
 	for rows.Next() {
 		var i RemoveRatingsByRaterRow
-		if err := rows.Scan(&i.ReporterID, &i.UpdatedAt); err != nil {
+		if err := rows.Scan(&i.ReporterID, &i.CreatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

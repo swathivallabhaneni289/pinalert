@@ -325,7 +325,7 @@ func (s *RatingService) reevaluate(ctx context.Context, reporterID int64, now ti
 
 // reevaluateAfterRemoval reads the reporter's tag after a moderator removed
 // ratings. When it is Reliable reporter, the follows that ended with reason
-// tag_lost at or after since (the time the earliest removed rating was written)
+// tag_lost at or after since (the time the earliest removed rating was first written, WR-S01)
 // come back, up to each follower's following cap; otherwise the follows end, as
 // after any rating write (D-21, review W1).
 func (s *RatingService) reevaluateAfterRemoval(ctx context.Context, reporterID int64, since, now time.Time) error {
@@ -462,7 +462,7 @@ func (s *RatingService) ModeratorRemoveRater(ctx context.Context, moderatorID in
 	}
 	log.Printf("service: ratings: moderator %d removed %d ratings of one rater", moderatorID, len(removed))
 	for _, r := range removed {
-		if err := s.reevaluateAfterRemoval(ctx, r.ReporterID, r.UpdatedAt, now); err != nil {
+		if err := s.reevaluateAfterRemoval(ctx, r.ReporterID, r.CreatedAt, now); err != nil {
 			return int64(len(removed)), err
 		}
 	}
