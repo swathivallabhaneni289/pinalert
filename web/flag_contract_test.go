@@ -369,8 +369,13 @@ func TestFlagDialogLocksPage(t *testing.T) {
 	p424Contains(t, "dialog title tag", titleTag, `id="flag-dialog-title"`, `class="flag-dialog__title"`, `tabindex="-1"`)
 
 	flag := p424ReadJS(t, "static/js/flag.js")
+	// Amended 2026-10-29 by Phase 8 plan 18 (D-14): the open steps moved into
+	// showDialog, which openFlagDialog and openForComment both call; the order
+	// check now runs on showDialog and openFlagDialog must still reach it.
 	p424Ordered(t, "openFlagDialog", jsFunctionBody(t, flag, "openFlagDialog(opener)"),
-		"dialogRefs()", ".hidden = false", "Pinalert.lockPage(", ".focus(")
+		"dialogRefs()", "showDialog(r)")
+	p424Ordered(t, "showDialog", jsFunctionBody(t, flag, "showDialog(r)"),
+		".hidden = false", "Pinalert.lockPage(", ".focus(")
 	p424Ordered(t, "closeFlagDialog", jsFunctionBody(t, flag, "closeFlagDialog()"),
 		"if (sending)", ".hidden = true", "Pinalert.unlockPage(", "returnFocus(")
 	p424Contains(t, "onDialogKeydown", jsFunctionBody(t, flag, "onDialogKeydown(evt)"),
@@ -435,9 +440,14 @@ func TestFlagSendOutcomes(t *testing.T) {
 		t.Errorf("flag.js declares the timeout %d times, want 1", n)
 	}
 	s := jsFunctionBody(t, flag, "sendFlag(reasons, note)")
+	// Amended 2026-10-29 by Phase 8 plan 18 (D-14): the path moved into flagPath
+	// so the one request serves reports and comments. sendFlag still holds every
+	// other assertion; flagPath holds the report path text unchanged.
 	p424Contains(t, "sendFlag", s,
-		"'/api/reports/' + encodeURIComponent(", "'/flag'", "method: 'POST'", "'Content-Type': 'application/json'",
+		"fetch(flagPath()", "method: 'POST'", "'Content-Type': 'application/json'",
 		"JSON.stringify({ reasons: reasons, note: note })", "handleAnswer(", "setSending(true)")
+	p424Contains(t, "flagPath", jsFunctionBody(t, flag, "flagPath()"),
+		"'/api/reports/' + encodeURIComponent(", "'/flag'")
 	// The shared time limit of app.js, raced against the post and its body
 	// read, so a post whose aborted request never ends (WebKit) still shows
 	// the offline line at the limit.
@@ -463,7 +473,10 @@ func TestFlagSendOutcomes(t *testing.T) {
 		"'aria-describedby', 'flag-dialog-text-error'", "refs.text.focus()")
 	p424Lacks(t, "showTextError", jsFunctionBody(t, flag, "showTextError(message)"), ".value =", ".checked =")
 	p424Contains(t, "hideTextError", jsFunctionBody(t, flag, "hideTextError()"), "removeAttribute('role')", "removeAttribute('aria-invalid')")
-	p424Ordered(t, "openFlagDialog clears", jsFunctionBody(t, flag, "openFlagDialog(opener)"),
+	// Amended 2026-10-29 by Phase 8 plan 18 (D-14): the clearing moved from
+	// openFlagDialog into showDialog, which both openers call.
+	p424Contains(t, "openFlagDialog", jsFunctionBody(t, flag, "openFlagDialog(opener)"), "showDialog(r)")
+	p424Ordered(t, "showDialog clears", jsFunctionBody(t, flag, "showDialog(r)"),
 		".checked = false", "r.text.value = ''", "updateCount()", "hideChooseReason()", "hideTextError()")
 	p424Contains(t, "updateCount", jsFunctionBody(t, flag, "updateCount()"), "refs.text.value.length", "NOTE_COUNT_FROM", "NOTE_MAX", "refs.count.hidden")
 	p424Contains(t, "announce", jsFunctionBody(t, flag, "announce(text)"), "getElementById('notice-live')", "Pinalert.setText(")
@@ -662,6 +675,35 @@ func TestFlagDialogNoteGeometry(t *testing.T) {
 	p424WantDecls(t, "chrome.css", rules, ".flag-dialog__count", map[string]string{
 		"font-size": "var(--font-size-label)", "color": "var(--color-text-muted)",
 	})
+}
+
+// TestFlagDialogCommentMode pins Phase 8 plan 18 (D-14): flag.js exports
+// openForComment, holds the comment title and the comment repeat toast, posts
+// to the comment path, and the template still holds the report words.
+func TestFlagDialogCommentMode(t *testing.T) {
+	raw := p424ReadRaw(t, "static/js/flag.js")
+	flag := stripJSComments(raw)
+	p424Contains(t, "flag.js", flag,
+		"openForComment: openForComment", "function openForComment(opts)",
+		"'Why are you flagging this comment?'",
+		"'You already flagged this comment. Moderators will see it.'",
+		"'This comment is no longer available.'",
+		"'/api/comments/' + encodeURIComponent(current.commentId) + '/flag'",
+		"onSent")
+	p424Contains(t, "showDialog", jsFunctionBody(t, flag, "showDialog(r)"),
+		"FLAG_COMMENT_TITLE", "FLAG_REPORT_TITLE", "Pinalert.setText(r.title",
+		"r.dispute.hidden = comment", "removeAttribute('aria-describedby')",
+		"setAttribute('aria-describedby', 'flag-dialog-dispute')")
+	// Report words are unchanged and the comment words are not in the template.
+	partial := p424ReadTemplate(t, "flag_dialog.html.tmpl")
+	p424Contains(t, "flag_dialog.html.tmpl", partial,
+		">Why are you flagging this report?</h2>",
+		">If the report is just wrong, use Dispute instead.</p>")
+	p424Lacks(t, "flag_dialog.html.tmpl", partial, "flagging this comment")
+	if n := strings.Count(flag, "fetch("); n != 1 {
+		t.Errorf("flag.js makes %d request calls, want exactly 1", n)
+	}
+	p424NoDashes(t, "flag.js", raw)
 }
 
 // TestModerateShowsFlagNotesAsText pins the moderator half of plan 04-31:

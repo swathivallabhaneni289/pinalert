@@ -94,8 +94,11 @@ function load() {
   const backdrop = el('div', 'flag-dialog', 'modal-backdrop flag-dialog');
   backdrop.hidden = true;
   const panel = backdrop.appendChild(el('div', '', 'modal-panel flag-dialog__panel'));
-  panel.appendChild(el('h2', 'flag-dialog-title'));
-  panel.appendChild(el('p', 'flag-dialog-dispute'));
+  panel.setAttribute('aria-describedby', 'flag-dialog-dispute');
+  const title = panel.appendChild(el('h2', 'flag-dialog-title'));
+  title.textContent = 'Why are you flagging this report?';
+  const dispute = panel.appendChild(el('p', 'flag-dialog-dispute'));
+  dispute.textContent = 'If the report is just wrong, use Dispute instead.';
   const group = panel.appendChild(el('fieldset', 'flag-dialog-reasons'));
   const boxes = ['spam', 'abusive', 'false', 'dangerous', 'other'].map((slug) => {
     const label = group.appendChild(el('label', '', 'flag-dialog__reason'));
@@ -162,7 +165,7 @@ function load() {
   api.updateFlagControl(control, report);
   const open = () => control.el.fire('click');
   const flushTimers = () => { timers.splice(0).forEach((fn) => fn()); };
-  return { doc, backdrop, panel, group, boxes, choose, text, count, textError, error, send, back, live, control, fetches, toasts, locks, open, flushTimers };
+  return { doc, backdrop, panel, title, dispute, group, boxes, choose, text, count, textError, error, send, back, live, control, fetches, toasts, locks, open, flushTimers, api };
 }
 
 test('Send with nothing ticked sends nothing and asks for a reason on the group', () => {
@@ -322,4 +325,97 @@ test('Tab wraps from the last button to the first tick box, Shift Tab back, and 
   // Escape closes.
   t.text.fire('keydown', { key: 'Escape' });
   assert.equal(t.backdrop.hidden, true);
+});
+
+// Phase 8 plan 18 (D-14): the same window in comment mode. Added 2026-10-29.
+
+function openComment(t, extra = {}) {
+  const opener = new FakeEl(t.doc, 'button', 'comment-flag-7');
+  const calls = { sent: 0 };
+  t.api.openForComment({ commentId: 7, opener, onSent() { calls.sent += 1; }, ...extra });
+  return { opener, calls };
+}
+
+test('comment mode title', () => {
+  const t = load();
+  openComment(t);
+  assert.equal(t.backdrop.hidden, false);
+  assert.equal(t.title.textContent, 'Why are you flagging this comment?');
+  assert.deepEqual(t.locks[0], ['lock', 'flag-dialog']);
+  assert.equal(t.doc.activeElement.id, 'flag-dialog-title');
+});
+
+test('comment mode hides the dispute line', () => {
+  const t = load();
+  openComment(t);
+  assert.equal(t.dispute.hidden, true);
+  assert.equal(t.panel.getAttribute('aria-describedby'), null);
+});
+
+test('comment mode posts to the comment path', async () => {
+  const t = load();
+  const { opener, calls } = openComment(t);
+  t.boxes[0].checked = true;
+  t.boxes[2].checked = true;
+  t.text.value = 'not true';
+  t.send.fire('click');
+  assert.equal(t.fetches.length, 1);
+  const f = t.fetches[0];
+  assert.equal(f.url, '/api/comments/7/flag');
+  assert.equal(f.opts.method, 'POST');
+  assert.deepEqual(f.body, { reasons: ['spam', 'false'], note: 'not true' });
+  f.answer(201, { flagged: true });
+  await flush();
+  assert.equal(t.backdrop.hidden, true);
+  assert.deepEqual(t.toasts, ['Flag sent. Moderators will see it.']);
+  assert.equal(calls.sent, 1);
+  assert.equal(t.doc.activeElement, opener);
+  // A comment flag never touches a report control.
+  assert.equal(t.control.el.textContent, 'Flag this report');
+});
+
+test('comment mode repeat toast', async () => {
+  const t = load();
+  const { calls } = openComment(t);
+  t.boxes[1].checked = true;
+  t.send.fire('click');
+  t.fetches[0].answer(409, { error: { field: 'flag', message: 'x' } });
+  await flush();
+  assert.deepEqual(t.toasts, ['You already flagged this comment. Moderators will see it.']);
+  assert.equal(calls.sent, 1);
+});
+
+test('comment mode shows a refused note and a gone comment in its own words', async () => {
+  const t = load();
+  const { calls } = openComment(t);
+  t.boxes[1].checked = true;
+  t.send.fire('click');
+  const sentence = "This text looks hateful, so it can't be posted. Reword it and try again.";
+  t.fetches[0].answer(422, { error: { field: 'note', message: sentence } });
+  await flush();
+  assert.equal(t.textError.textContent, sentence);
+  assert.equal(t.backdrop.hidden, false);
+  t.send.fire('click');
+  t.fetches[1].answer(404, {});
+  await flush();
+  assert.equal(t.error.textContent, 'This comment is no longer available.');
+  assert.equal(calls.sent, 0);
+});
+
+test('report mode unchanged', async () => {
+  const t = load();
+  openComment(t);
+  t.back.fire('click');
+  assert.equal(t.backdrop.hidden, true);
+  t.open();
+  assert.equal(t.title.textContent, 'Why are you flagging this report?');
+  assert.equal(t.dispute.hidden, false);
+  assert.equal(t.panel.getAttribute('aria-describedby'), 'flag-dialog-dispute');
+  t.boxes[0].checked = true;
+  t.send.fire('click');
+  assert.equal(t.fetches[0].url, '/api/reports/41/flag');
+  t.fetches[0].answer(409, {});
+  await flush();
+  assert.deepEqual(t.toasts, ['You already flagged this report. Moderators will see it.']);
+  assert.equal(t.control.el.textContent, 'Flagged');
 });
