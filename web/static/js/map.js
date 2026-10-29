@@ -438,11 +438,17 @@ window.PinalertMap = (function () {
   // panelNoteClose runs on every close of a report popup. A close in the panel
   // is settled a turn later, so an open that follows at once (a pin tap) can
   // cancel it and the panel stays.
-  function panelNoteClose(opener) {
+  function panelNoteClose(opener, popupEl) {
     if (!panelOpen || hostSwitching) {
       return;
     }
     panelOpener = opener;
+    // The closing popup fades for 200ms where it stands. Without the panel's
+    // rules (after the exit) it would drift to the corner of the page, so it is
+    // hidden at once; panelNoteOpen shows the container again if it reopens.
+    if (popupEl) {
+      popupEl.style.visibility = 'hidden';
+    }
     if (panelExitTimer) {
       window.clearTimeout(panelExitTimer);
     }
@@ -451,7 +457,10 @@ window.PinalertMap = (function () {
 
   // panelNoteOpen runs on every open of a report popup: an open right after a
   // close in the panel is the switch to another report.
-  function panelNoteOpen() {
+  function panelNoteOpen(popupEl) {
+    if (popupEl) {
+      popupEl.style.visibility = '';
+    }
     if (panelExitTimer) {
       window.clearTimeout(panelExitTimer);
       panelExitTimer = 0;
@@ -1364,7 +1373,7 @@ window.PinalertMap = (function () {
     popupOpener = { id: id, kind: listOpenerId !== null && listOpenerId === id ? 'list' : 'marker' };
     listOpenerId = null;
     // An open right after a close in the laptop panel is a switch: the panel stays.
-    panelNoteOpen();
+    panelNoteOpen(container);
     // In the laptop panel the anchor is Back to the list; the phone's stays Back.
     if (close && panelOpen && !phoneDetail()) {
       close.setAttribute('aria-label', BACK_TO_LIST_LABEL);
@@ -1604,7 +1613,7 @@ window.PinalertMap = (function () {
     // A close in the laptop panel is settled a turn later (a pin tap is a
     // switch and keeps the panel); the host switch of enterPanel is no close.
     releasePanelPosition();
-    panelNoteClose(opener);
+    panelNoteClose(opener, el);
 
     document.documentElement.removeAttribute('data-popup-open');
     if (el) {

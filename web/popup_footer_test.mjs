@@ -254,3 +254,19 @@ test('the pan helpers leave the fixed panel alone', () => {
   const pan = between(mapSource, '  function panPopupIntoView(popup) {', '    if (map.dragging && map.dragging.moving()) {');
   assert.ok(/if \(panelOpen\) \{\s*return;/.test(pan));
 });
+
+test('a closing panel popup is hidden at once and shown again if it reopens', () => {
+  const t = load();
+  const { ctx } = t;
+  ctx.enterPanel('7');
+  const popupEl = new FakeNode('div');
+  ctx.panelNoteClose({ id: '7', kind: 'marker' }, popupEl);
+  assert.equal(popupEl.style.visibility, 'hidden', 'the fading popup does not drift to the corner of the page');
+  ctx.panelNoteOpen(popupEl);
+  assert.equal(popupEl.style.visibility, '', 'the same container is shown again on a reopen');
+  // The host switch itself never hides the popup.
+  const other = new FakeNode('div');
+  ctx.hostSwitching = true;
+  ctx.panelNoteClose({ id: '7', kind: 'marker' }, other);
+  assert.notEqual(other.style.visibility, 'hidden', 'the host switch leaves the popup alone');
+});
