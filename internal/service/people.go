@@ -1,8 +1,8 @@
 // people.go is the service behind public profiles, following and blocking
 // (Phase 9, plan 09-04, D-01, D-03, D-12). Every call is keyed by the account
 // id the verified gate passes in, never by a request value (T-09-12); every
-// username argument is normalised and shape checked before any query. Mute,
-// the Notify me bell and ratings are later plans.
+// username argument is normalised and shape checked before any query. Mute is
+// in people_mute.go (plan 09-18); the Notify me bell is a later plan.
 //
 // Every follow end goes through endFollowPair or endFollowsOf (review W1) and
 // is soft (D-21): the rows stay with a reason, so they can be restored.
@@ -71,6 +71,12 @@ type PeopleQuerier interface {
 	UnblockAccount(ctx context.Context, arg sqlcgen.UnblockAccountParams) (int64, error)
 	BlockedPeople(ctx context.Context, arg sqlcgen.BlockedPeopleParams) ([]sqlcgen.BlockedPeopleRow, error)
 	CountBlocked(ctx context.Context, blockerID int64) (int64, error)
+	// Phase 9 plan 18 (D-12, G4): person mute, in people_mute.go.
+	MutePerson(ctx context.Context, arg sqlcgen.MutePersonParams) error
+	UnmutePerson(ctx context.Context, arg sqlcgen.UnmutePersonParams) (int64, error)
+	PersonMuted(ctx context.Context, arg sqlcgen.PersonMutedParams) (bool, error)
+	MutedPeople(ctx context.Context, arg sqlcgen.MutedPeopleParams) ([]sqlcgen.MutedPeopleRow, error)
+	CountMutedPeople(ctx context.Context, muterID int64) (int64, error)
 	GetAccountIDByUsername(ctx context.Context, username string) (int64, error)
 	ReporterHistoryReports(ctx context.Context, arg sqlcgen.ReporterHistoryReportsParams) ([]sqlcgen.ReporterHistoryReportsRow, error)
 	CurrentVotesForReports(ctx context.Context, reportIds []int64) ([]sqlcgen.CurrentVotesForReportsRow, error)
