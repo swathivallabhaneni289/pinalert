@@ -31,7 +31,6 @@ type fakeDeleteQuerier struct {
 	// scrubRows is how many rows ScrubDeletedAccount reports changed.
 	scrubRows int64
 
-	emailFor    string
 	cooldown    string
 	codesFor    string
 	throttleArg sqlcgen.ClearAuthThrottleParams
@@ -65,11 +64,6 @@ func (f *fakeDeleteQuerier) AccountEmailForDelete(ctx context.Context, id int64)
 		return sqlcgen.AccountEmailForDeleteRow{}, err
 	}
 	return f.emailRow, f.emailErr
-}
-
-func (f *fakeDeleteQuerier) DeleteMagicLinkTokensForEmail(ctx context.Context, email string) error {
-	f.emailFor = email
-	return f.step("DeleteMagicLinkTokensForEmail")
 }
 
 func (f *fakeDeleteQuerier) DeleteEmailCooldownForEmail(ctx context.Context, email string) error {
@@ -151,9 +145,13 @@ func (f *fakeDeleteQuerier) ScrubDeletedAccount(ctx context.Context, arg sqlcgen
 // thirteen. ClearAuthThrottle runs right after it only when a throttle keyer is
 // set (WithThrottleKeyer), so it is not in this list; wantDeleteOrderKeyed has
 // it. Every old step and its order is kept.
+//
+// Amended 2026-10-29 by Phase 7.1 plan 16: the sign in link token delete step is
+// removed with its table, so the thirteen steps became twelve (eleven plus
+// ClearAuthThrottle in wantDeleteOrderKeyed). Every other step and its order is
+// kept.
 var wantDeleteOrder = []string{
 	"AccountEmailForDelete",
-	"DeleteMagicLinkTokensForEmail",
 	"DeleteEmailCooldownForEmail",
 	"DeleteAuthCodesForEmail",
 	"DeleteAccountUpdates",
@@ -170,7 +168,6 @@ var wantDeleteOrder = []string{
 // wantDeleteOrderKeyed is the order with a throttle keyer set.
 var wantDeleteOrderKeyed = []string{
 	"AccountEmailForDelete",
-	"DeleteMagicLinkTokensForEmail",
 	"DeleteEmailCooldownForEmail",
 	"DeleteAuthCodesForEmail",
 	"ClearAuthThrottle",
@@ -260,8 +257,10 @@ func TestDeleteAccountReadsEmailFirst(t *testing.T) {
 	if err := svc.DeleteAccount(context.Background(), 9); err != nil {
 		t.Fatalf("DeleteAccount: %v", err)
 	}
-	if q.emailFor != "real@example.com" || q.cooldown != "real@example.com" {
-		t.Errorf("token delete used %q and cooldown delete used %q, want the real address for both", q.emailFor, q.cooldown)
+	// Amended 2026-10-29 by Phase 7.1 plan 16: the sign in link token delete is
+	// gone with its table, so the code rows delete takes its place in this check.
+	if q.codesFor != "real@example.com" || q.cooldown != "real@example.com" {
+		t.Errorf("code rows delete used %q and cooldown delete used %q, want the real address for both", q.codesFor, q.cooldown)
 	}
 
 	done := newFakeDeleteQuerier("done")

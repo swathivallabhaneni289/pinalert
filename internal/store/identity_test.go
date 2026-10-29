@@ -3,7 +3,6 @@ package store_test
 import (
 	"context"
 	"errors"
-	"sync"
 	"testing"
 	"time"
 
@@ -15,14 +14,17 @@ import (
 
 // TestIdentitySchemaSupportsMagicLinks proves migration 00002 shipped the
 // shape 01.1-01-PLAN.md requires: sessions.account_id exists and is
-// nullable (T-01-56 / AR-27 — a valid signed cookie can exist with no
+// nullable (T-01-56 / AR-27: a valid signed cookie can exist with no
 // sessions row, let alone an account_id, so this column must never be NOT
-// NULL), and a magic_link_tokens row inserted via the generated Querier is
-// readable back by its token_hash.
+// NULL).
+//
+// Amended 2026-10-29 by Phase 7.1 plan 16: the second half of this test, which
+// inserted a sign in link token row and read it back by its hash, is removed
+// with the link token table (migration 00015). The test keeps its name so its
+// history stays easy to follow.
 func TestIdentitySchemaSupportsMagicLinks(t *testing.T) {
 	pool := testutil.NewTestDB(t)
 	ctx := context.Background()
-	q := sqlcgen.New(pool)
 
 	var isNullable string
 	err := pool.QueryRow(ctx, `
@@ -35,65 +37,40 @@ func TestIdentitySchemaSupportsMagicLinks(t *testing.T) {
 	if isNullable != "YES" {
 		t.Fatalf("sessions.account_id is_nullable = %q, want YES", isNullable)
 	}
-
-	expiresAt := time.Now().Add(5 * time.Minute).Truncate(time.Microsecond)
-	inserted, err := q.InsertMagicLinkToken(ctx, sqlcgen.InsertMagicLinkTokenParams{
-		TokenHash: "deadbeef",
-		Email:     "visitor@example.com",
-		ExpiresAt: expiresAt,
-	})
-	if err != nil {
-		t.Fatalf("InsertMagicLinkToken: %v", err)
-	}
-	if inserted.ID == 0 {
-		t.Fatalf("InsertMagicLinkToken returned zero ID")
-	}
-	if !inserted.ExpiresAt.Equal(expiresAt) {
-		t.Fatalf("InsertMagicLinkToken ExpiresAt = %v, want %v", inserted.ExpiresAt, expiresAt)
-	}
-
-	var readBackEmail string
-	err = pool.QueryRow(ctx, `SELECT email FROM magic_link_tokens WHERE token_hash = $1`, "deadbeef").Scan(&readBackEmail)
-	if err != nil {
-		t.Fatalf("reading back magic_link_tokens row by token_hash: %v", err)
-	}
-	if readBackEmail != "visitor@example.com" {
-		t.Fatalf("readBackEmail = %q, want visitor@example.com", readBackEmail)
-	}
 }
 
 // TestTruncateClearsIdentityTables proves testutil.Truncate's updated
-// statement actually empties accounts and magic_link_tokens, not just the
-// pre-existing reports/sessions tables (RESEARCH.md Pitfall 5: rows in the
+// statement actually empties accounts, auth_codes and auth_throttles, not just
+// the pre-existing reports/sessions tables (RESEARCH.md Pitfall 5: rows in the
 // new tables otherwise leak between packages under CI's `-p 1`).
+//
+// Amended 2026-10-29 by Phase 7.1 plan 16: the sign in link token row it used to
+// seed and check is gone with that table (migration 00015); it now seeds an
+// auth_codes row and an auth_throttles row instead. The accounts check is kept.
 func TestTruncateClearsIdentityTables(t *testing.T) {
 	pool := testutil.NewTestDB(t)
 	ctx := context.Background()
-	q := sqlcgen.New(pool)
 
-	if _, err := q.InsertMagicLinkToken(ctx, sqlcgen.InsertMagicLinkTokenParams{
-		TokenHash: "seed-hash",
-		Email:     "seed@example.com",
-		ExpiresAt: time.Now().Add(5 * time.Minute),
-	}); err != nil {
-		t.Fatalf("seeding magic_link_tokens: %v", err)
-	}
+	const hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	testutil.MustExec(t, pool, `INSERT INTO accounts (email) VALUES ($1)`, "seed@example.com")
+	testutil.MustExec(t, pool,
+		`INSERT INTO auth_codes (session_id, purpose, delivery, email, code_hash, expires_at)
+		 VALUES ('truncate-seed', 'signup', 'code', $1, $2, now() + interval '10 minutes')`,
+		"seed@example.com", hash)
+	testutil.MustExec(t, pool,
+		`INSERT INTO auth_throttles (scope, key_hash, failures, last_failure_at) VALUES ('sign_in', $1, 1, now())`,
+		hash)
 
 	testutil.Truncate(t, pool)
 
-	var accountCount, tokenCount int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM accounts`).Scan(&accountCount); err != nil {
-		t.Fatalf("counting accounts: %v", err)
-	}
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM magic_link_tokens`).Scan(&tokenCount); err != nil {
-		t.Fatalf("counting magic_link_tokens: %v", err)
-	}
-	if accountCount != 0 {
-		t.Fatalf("accounts has %d rows after Truncate, want 0", accountCount)
-	}
-	if tokenCount != 0 {
-		t.Fatalf("magic_link_tokens has %d rows after Truncate, want 0", tokenCount)
+	for _, table := range []string{"accounts", "auth_codes", "auth_throttles"} {
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM `+table).Scan(&n); err != nil {
+			t.Fatalf("counting %s: %v", table, err)
+		}
+		if n != 0 {
+			t.Fatalf("%s has %d rows after Truncate, want 0", table, n)
+		}
 	}
 }
 
@@ -167,111 +144,6 @@ func TestBindSessionAccountIsIdempotent(t *testing.T) {
 	}
 	if sessionRowCount != 1 {
 		t.Fatalf("sessions rows for repeat-session = %d, want 1", sessionRowCount)
-	}
-}
-
-// TestConsumeTokenIsSingleUse proves ConsumeToken returns the email on the
-// first call and pgx.ErrNoRows on a second call against the same hash.
-func TestConsumeTokenIsSingleUse(t *testing.T) {
-	pool := testutil.NewTestDB(t)
-	ctx := context.Background()
-	q := sqlcgen.New(pool)
-
-	if _, err := q.InsertMagicLinkToken(ctx, sqlcgen.InsertMagicLinkTokenParams{
-		TokenHash: "single-use-hash",
-		Email:     "onceonly@example.com",
-		ExpiresAt: time.Now().Add(5 * time.Minute),
-	}); err != nil {
-		t.Fatalf("InsertMagicLinkToken: %v", err)
-	}
-
-	email, err := q.ConsumeToken(ctx, "single-use-hash")
-	if err != nil {
-		t.Fatalf("first ConsumeToken: %v", err)
-	}
-	if email != "onceonly@example.com" {
-		t.Fatalf("first ConsumeToken email = %q, want onceonly@example.com", email)
-	}
-
-	_, err = q.ConsumeToken(ctx, "single-use-hash")
-	if !errors.Is(err, pgx.ErrNoRows) {
-		t.Fatalf("second ConsumeToken err = %v, want pgx.ErrNoRows", err)
-	}
-}
-
-// TestConsumeTokenRejectsExpired proves ConsumeToken reports no rows for a
-// token whose expires_at is already in the past, and that used_at is left
-// NULL — an expired token must never be marked used by a failed consume
-// attempt.
-func TestConsumeTokenRejectsExpired(t *testing.T) {
-	pool := testutil.NewTestDB(t)
-	ctx := context.Background()
-	q := sqlcgen.New(pool)
-
-	testutil.MustExec(t, pool,
-		`INSERT INTO magic_link_tokens (token_hash, email, expires_at) VALUES ($1, $2, $3)`,
-		"expired-hash", "expired@example.com", time.Now().Add(-1*time.Minute),
-	)
-
-	_, err := q.ConsumeToken(ctx, "expired-hash")
-	if !errors.Is(err, pgx.ErrNoRows) {
-		t.Fatalf("ConsumeToken on expired token err = %v, want pgx.ErrNoRows", err)
-	}
-
-	var usedAt *time.Time
-	if err := pool.QueryRow(ctx, `SELECT used_at FROM magic_link_tokens WHERE token_hash = $1`, "expired-hash").Scan(&usedAt); err != nil {
-		t.Fatalf("reading back used_at: %v", err)
-	}
-	if usedAt != nil {
-		t.Fatalf("used_at = %v after a failed expired consume, want NULL", *usedAt)
-	}
-}
-
-// TestConsumeTokenConcurrent proves exactly one of two simultaneous
-// ConsumeToken calls against one token succeeds — the atomic conditional
-// UPDATE's whole reason for existing over a read-then-write shape
-// (RESEARCH.md "Don't Hand-Roll" TOCTOU row).
-func TestConsumeTokenConcurrent(t *testing.T) {
-	pool := testutil.NewTestDB(t)
-	ctx := context.Background()
-	q := sqlcgen.New(pool)
-
-	if _, err := q.InsertMagicLinkToken(ctx, sqlcgen.InsertMagicLinkTokenParams{
-		TokenHash: "concurrent-hash",
-		Email:     "concurrent@example.com",
-		ExpiresAt: time.Now().Add(5 * time.Minute),
-	}); err != nil {
-		t.Fatalf("InsertMagicLinkToken: %v", err)
-	}
-
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	successCount := 0
-	noRowsCount := 0
-
-	for i := 0; i < 2; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_, err := q.ConsumeToken(ctx, "concurrent-hash")
-			mu.Lock()
-			defer mu.Unlock()
-			if err == nil {
-				successCount++
-			} else if errors.Is(err, pgx.ErrNoRows) {
-				noRowsCount++
-			} else {
-				t.Errorf("unexpected ConsumeToken error: %v", err)
-			}
-		}()
-	}
-	wg.Wait()
-
-	if successCount != 1 {
-		t.Fatalf("successCount = %d, want exactly 1", successCount)
-	}
-	if noRowsCount != 1 {
-		t.Fatalf("noRowsCount = %d, want exactly 1", noRowsCount)
 	}
 }
 

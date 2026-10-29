@@ -443,12 +443,9 @@ func TestExistingPagesRenderWithChrome(t *testing.T) {
 
 	t.Run("map", func(t *testing.T) { check(t, chromeServeMap(t, tmpl, PageConfig{}), true, 1) })
 	t.Run("login", func(t *testing.T) { check(t, chromeServeLogin(t, tmpl, AuthConfig{}), false, 0) })
-	t.Run("verify", func(t *testing.T) {
-		for _, outcome := range []string{"verified", "expired", "used", "malformed", "conflict"} {
-			vm := verifyOutcomeViewModel{Outcome: outcome, Email: "a@example.com", CurrentEmail: "b@example.com", Chrome: chrome}
-			check(t, chromeExecute(t, tmpl, verifyOutcomeTemplateName, vm), false, 0)
-		}
-	})
+	// Amended 2026-10-29 by Phase 7.1 plan 16 (orchestrator addition): the "verify"
+	// subtest rendered the link landing page, which is deleted (D-12), together
+	// with its template name and view model.
 	t.Run("profile", func(t *testing.T) {
 		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to
 		// D-21, T-34-32): the view model no longer carries the signed in address,

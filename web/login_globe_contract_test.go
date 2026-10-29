@@ -281,9 +281,8 @@ func TestLoginGlobeNotInAuthCSSOrThemeJS(t *testing.T) {
 	if _, err := StaticFS.ReadFile("static/img/globe.svg"); err == nil {
 		t.Errorf("static/img/globe.svg still ships; the flat picture globe is gone (D-13)")
 	}
-	if strings.Contains(p421ReadTemplate(t, "verify_outcome.html.tmpl"), "globe") {
-		t.Errorf("verify_outcome.html.tmpl still holds the flat globe markup")
-	}
+	// Amended 2026-10-29 by Phase 7.1 plan 16: the check that the link landing page
+	// holds no flat globe markup is removed, because that page is deleted (D-12).
 }
 
 // TestLoginRowTryTheDemo pins D-03 and UI-SPEC 4e: the quiet row reads Try the

@@ -131,9 +131,8 @@ func TestLoginLowDataPanelStyles(t *testing.T) {
 	if strings.Contains(panel, " hidden") {
 		t.Errorf("login-ways wrapper carries a hidden attribute")
 	}
-	if strings.Contains(p421ReadTemplate(t, "verify_outcome.html.tmpl"), "login-ways") {
-		t.Errorf("verify_outcome.html.tmpl carries the login row")
-	}
+	// Amended 2026-10-29 by Phase 7.1 plan 16: the check that the link landing page
+	// carries no login row is removed, because that page is deleted (D-12).
 
 	rules := parseCSSRules(p421ReadStatic(t, "css/auth.css"))
 	p421WantDecls(t, rules, ".login-column", map[string]string{
