@@ -191,10 +191,10 @@ func TestRatingRoutes(t *testing.T) {
 	}
 }
 
-// TestRatingRateLimit is V6 (T-09-54): with a small Rate bucket the next try
+// TestRatingRoutesRateLimit is V6 (T-09-54): with a small Rate bucket the next try
 // answers 429 with the rate_rating field, the limit is per account, and the 24
 // hour rule is a second, separate wall.
-func TestRatingRateLimit(t *testing.T) {
+func TestRatingRoutesRateLimit(t *testing.T) {
 	srv, mailer, pool := newE2EServerWith(t, func(d *api.Deps, _ *sqlcgen.Queries) {
 		d.RateLimits.PeopleRead = e2eGenerousBucket
 		d.RateLimits.PeopleAction = e2eGenerousBucket
