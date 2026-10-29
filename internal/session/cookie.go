@@ -20,6 +20,10 @@ import (
 // cookieName is the single cookie this package ever reads or sets.
 const cookieName = "pinalert_session"
 
+// CookieName is cookieName for other packages: the auth buckets ask whether a
+// request carried the cookie at all.
+const CookieName = cookieName
+
 // oneYear is the cookie MaxAge: there is no login flow to re-establish
 // identity if the cookie expires, so it is deliberately long-lived.
 const oneYear = 365 * 24 * time.Hour

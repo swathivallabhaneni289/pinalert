@@ -337,6 +337,23 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 		t.Errorf("docs/swagger.json is missing the /auth/request-link path")
 	}
 
+	// 2026-10-29, Phase 7.1 plan 07: the six code and password routes are
+	// documented, each as a post. The link path above stays until the cleanup
+	// plans remove the link flow.
+	for _, path := range []string{
+		"/auth/sign-up", "/auth/sign-up/code", "/auth/code/resend",
+		"/auth/sign-in", "/auth/reset", "/auth/reset/code",
+	} {
+		ops, ok := spec.Paths[path]
+		if !ok {
+			t.Errorf("docs/swagger.json is missing the %s path", path)
+			continue
+		}
+		if _, ok := ops["post"]; !ok {
+			t.Errorf("docs/swagger.json is missing the %s post operation", path)
+		}
+	}
+
 	// 02-03b's contribution to this same OPS-01 drift guard: four vote
 	// routes shipped, four vote routes documented, each with its 401 and
 	// 403 response declared — a mounted route that ships without a

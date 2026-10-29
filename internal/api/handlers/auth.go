@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,6 +37,27 @@ type AuthConfig struct {
 	// (Phase 3.4, D-18). It is a display setting for the browser's read and is
 	// not a trust figure.
 	DefaultRadiusKm float64
+	// Login answers the three questions the sign in page asks about the browser
+	// (Phase 7.1, plan 07). It is set by api.NewRouter only when the router has a
+	// CredentialService, so a nil value means the credential flow is not wired.
+	// LoginGate reads it from plan 11.
+	Login LoginState
+	// Session is the session manager, set by api.NewRouter. LoginGate reads it
+	// from plan 11 so that, once it has shown the notice of an ended session, it
+	// can clear that session's cookie through the one cookie writer (T-01-85).
+	Session *session.Manager
+}
+
+// LoginState is what the sign in page reads about the browser asking for it:
+// whether it is already signed in with a password, whether a code screen should
+// be shown again after a reload, and whether its session was ended by the switch
+// to passwords. service.CredentialService implements it. api.NewRouter assigns
+// it only when the service exists, because a typed nil pointer stored in an
+// interface is not a nil interface.
+type LoginState interface {
+	SignedIn(ctx context.Context, sessionID string) (bool, error)
+	LiveCode(ctx context.Context, sessionID string) (service.LiveCode, bool, error)
+	EndedByPasswordSwitch(ctx context.Context, sessionID string) (bool, error)
 }
 
 // loginGateViewModel is exactly what login_gate.html.tmpl (and the

@@ -45,6 +45,20 @@ var e2eGenerousRateLimits = api.RateLimits{
 	IPBackstopFlag:   e2eGenerousBucket,
 }
 
+// e2eGenerousAuthLimits opens every auth bucket of the code and password routes
+// (Phase 7.1, plan 07) for the same reason: the suites must never meet a limit,
+// and the limit tests set their own buckets through the tweak hook.
+var e2eGenerousAuthLimits = api.AuthLimits{
+	SignInDevice:     e2eGenerousBucket,
+	SignInIP:         e2eGenerousBucket,
+	CodeSendDevice:   e2eGenerousBucket,
+	CodeSendIP:       e2eGenerousBucket,
+	CodeSendNoCookie: e2eGenerousBucket,
+	CodeTryDevice:    e2eGenerousBucket,
+	UsernameCheck:    e2eGenerousBucket,
+	UsernameSave:     e2eGenerousBucket,
+}
+
 // newE2EServer builds a real router with every dependency the access gate
 // added in 01.1-04 needs, not just the reports slice — POST and GET
 // /api/reports are now both gated (D-05), so every caller of this helper
@@ -85,6 +99,10 @@ func newE2EServerWith(t *testing.T, tweak func(d *api.Deps, q *sqlcgen.Queries))
 		Auth:        handlers.AuthConfig{AssetVersion: "test"},
 		Template:    tmpl,
 		RateLimits:  e2eGenerousRateLimits,
+		// The code and password service, with the fast test hasher and open
+		// buckets (Phase 7.1, plan 07).
+		Credentials: newTestCredentials(queries, fm),
+		AuthLimits:  e2eGenerousAuthLimits,
 		// The moderator routes run their writes in the real transaction, as
 		// cmd/server/main.go wires them.
 		ModerationTx: service.PgxModerationTx(pool),

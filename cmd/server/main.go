@@ -24,6 +24,7 @@ import (
 	"pinalert/internal/api"
 	"pinalert/internal/api/handlers"
 	"pinalert/internal/areas"
+	"pinalert/internal/auth"
 	"pinalert/internal/geocode"
 	"pinalert/internal/mailer"
 	"pinalert/internal/moderation"
@@ -155,6 +156,71 @@ const (
 	ipBackstopFlagEvery   = 1200 * time.Millisecond
 )
 
+// The auth buckets of the code and password routes (Phase 7.1, plan 07, D-02).
+// Each bucket allows Burst at once and then one more every Every.
+//
+//   - Sign in: 8 wrong tries per browser, then one a minute. A good sign in
+//     gives its token back, so only wrong guesses spend it. The per address
+//     throttle in the database (5 free failures, then growing locks) is the real
+//     guard against guessing one account from many browsers.
+//   - Code sends (Create account, Resend, Forgot password): 5 per browser, then
+//     one a minute. One small bucket of 10, then one a minute, is shared by every
+//     send that arrived with no session cookie at all: a browser on the sign in
+//     page always has the cookie, so only a script that drops cookies lands there.
+//   - Code tries: 10 per browser, then one every 30 seconds, on top of the 5 tries
+//     one code row allows.
+//   - Username checks and saves: per account, for plan 10.
+//   - The network buckets (SignInIP, CodeSendIP) are on only when CLIENT_IP_HEADER
+//     is set. India's carrier NAT puts many phones behind one address, so they are
+//     loose: 300 sign in tries and 60 code sends per address before anyone
+//     is refused, keyed by IPv4 address or IPv6 /64.
+//
+// api.AuthLimitsDefault mirrors these values for Deps literals that leave a
+// field zero, and a test in this package pins the two together.
+const (
+	signInDeviceBurst     = 8
+	signInDeviceEvery     = time.Minute
+	signInIPBurst         = 300
+	signInIPEvery         = 2 * time.Second
+	codeSendDeviceBurst   = 5
+	codeSendDeviceEvery   = time.Minute
+	codeSendIPBurst       = 60
+	codeSendIPEvery       = 10 * time.Second
+	codeSendNoCookieBurst = 10
+	codeSendNoCookieEvery = time.Minute
+	codeTryDeviceBurst    = 10
+	codeTryDeviceEvery    = 30 * time.Second
+	usernameCheckBurst    = 10
+	usernameCheckEvery    = time.Second
+	usernameSaveBurst     = 5
+	usernameSaveEvery     = 10 * time.Second
+)
+
+// The daily email ceiling. The Resend free plan allows 100 emails a day, so the
+// program stops at 90 for headroom, counting the link emails and all four code
+// emails together. Of those, 20 are kept for the two Forgot password emails, so
+// a flood of sign ups can never stop a real person resetting a password. The
+// count is in memory: a restart resets it, and the provider enforces the true
+// limit.
+const (
+	authDailyEmailCeiling = 90
+	authResetEmailReserve = 20
+)
+
+// authLimits is the auth bucket block above as the Deps field.
+func authLimits() api.AuthLimits {
+	return api.AuthLimits{
+		SignInDevice:     api.BucketLimit{Every: signInDeviceEvery, Burst: signInDeviceBurst},
+		SignInIP:         api.BucketLimit{Every: signInIPEvery, Burst: signInIPBurst},
+		CodeSendDevice:   api.BucketLimit{Every: codeSendDeviceEvery, Burst: codeSendDeviceBurst},
+		CodeSendIP:       api.BucketLimit{Every: codeSendIPEvery, Burst: codeSendIPBurst},
+		CodeSendNoCookie: api.BucketLimit{Every: codeSendNoCookieEvery, Burst: codeSendNoCookieBurst},
+		CodeTryDevice:    api.BucketLimit{Every: codeTryDeviceEvery, Burst: codeTryDeviceBurst},
+		UsernameCheck:    api.BucketLimit{Every: usernameCheckEvery, Burst: usernameCheckBurst},
+		UsernameSave:     api.BucketLimit{Every: usernameSaveEvery, Burst: usernameSaveBurst},
+	}
+}
+
 func main() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -207,6 +273,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("loading mailer: %v", err)
 	}
+	// The daily ceiling wraps the mailer once, so the link emails and the code
+	// emails count together and 20 sends a day stay for Forgot password.
+	mail = mailer.NewDailyCeiling(mail, authDailyEmailCeiling, authResetEmailReserve, time.Now)
 
 	// LoadScreener selects the OpenAI moderation client when OPENAI_API_KEY is
 	// set, a pass everything screener with a WARNING in development, and fails
@@ -296,6 +365,15 @@ func main() {
 
 	queries := sqlcgen.New(pool)
 
+	// The code and password service. The code and throttle keys are derived from
+	// SESSION_SECRET with separate labels, so a code row and a throttle row survive
+	// a restart and neither key can stand in for the other or for the cookie
+	// signing key. The password hasher is the production default.
+	credentials := service.NewCredentialService(queries, mail,
+		service.WithCodeKey(auth.DeriveKey([]byte(secret), auth.CodeKeyLabel)),
+		service.WithThrottleKey(auth.DeriveKey([]byte(secret), auth.ThrottleKeyLabel)),
+	)
+
 	// The VAPID identity for phone notifications comes from the environment
 	// only. Both keys unset leaves push off: the server runs as before and every
 	// device reads unsupported. One key, a malformed key or a mismatched pair
@@ -375,6 +453,8 @@ func main() {
 		Reports:     reportService,
 		Votes:       voteService,
 		AuthService: service.NewAuthService(queries, mail, baseURL),
+		Credentials: credentials,
+		AuthLimits:  authLimits(),
 		Auth: handlers.AuthConfig{
 			AssetVersion: assetVersion,
 		},
