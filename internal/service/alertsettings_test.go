@@ -44,6 +44,48 @@ type fakeProfileQ struct {
 	officialUpserts []sqlcgen.UpsertOfficialPushSettingParams
 	disables        []sqlcgen.DisableReliableAlertsParams
 	profiles        []sqlcgen.UpdateAccountProfileParams
+
+	// Amended 2026-10-29 by Phase 7.1 plan 06 (D-07): the fake gained the three
+	// username methods. usernameSets records every SetAccountUsername call;
+	// usernameErr is returned by it; usernameZeroRows makes it report no row
+	// (too soon); usernameHolders maps a name to the account that holds it for
+	// GetAccountIDByUsername; usernameRows is what UsernamesByAccountIDs
+	// returns, and usernameReads counts those calls.
+	usernameSets     []sqlcgen.SetAccountUsernameParams
+	usernameErr      error
+	usernameZeroRows bool
+	usernameHolders  map[string]int64
+	usernameRows     []sqlcgen.UsernamesByAccountIDsRow
+	usernameReads    int
+}
+
+func (f *fakeProfileQ) SetAccountUsername(_ context.Context, a sqlcgen.SetAccountUsernameParams) (int64, error) {
+	f.usernameSets = append(f.usernameSets, a)
+	if f.usernameErr != nil {
+		return 0, f.usernameErr
+	}
+	if f.usernameZeroRows {
+		return 0, nil
+	}
+	name, screen := a.Username, a.UsernameScreen
+	if f.profile.Username != nil && *f.profile.Username != name {
+		f.profile.UsernameChangedAt = pgtype.Timestamptz{Time: a.Now, Valid: true}
+	}
+	f.profile.Username = &name
+	f.profile.UsernameScreen = &screen
+	return 1, nil
+}
+
+func (f *fakeProfileQ) GetAccountIDByUsername(_ context.Context, username string) (int64, error) {
+	if id, ok := f.usernameHolders[username]; ok {
+		return id, nil
+	}
+	return 0, pgx.ErrNoRows
+}
+
+func (f *fakeProfileQ) UsernamesByAccountIDs(context.Context, []int64) ([]sqlcgen.UsernamesByAccountIDsRow, error) {
+	f.usernameReads++
+	return f.usernameRows, nil
 }
 
 func (f *fakeProfileQ) GetOfficialPushSetting(context.Context, int64) (bool, error) {

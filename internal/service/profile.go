@@ -22,6 +22,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/mmcloughlin/geohash"
 	"golang.org/x/text/unicode/norm"
 
@@ -89,28 +91,41 @@ type HomeAreaChange struct {
 // when a name is first shown to anyone else (decided 2026-10-17 in Phase 3.2
 // planning, orchestrator decision 5). Until then the name is shown to its owner
 // only, and html/template escapes it.
+//
+// Amended 2026-10-29 by Phase 7.1 plan 06 (D-07): Username is the public,
+// unique name. A nil Username leaves it alone; there is no way to clear one.
+// Name and the home area can be changed but no longer emptied (D-15).
 type ProfileUpdate struct {
 	DisplayName *string
 	HomeArea    HomeAreaChange
+	Username    *string
 }
 
 // ValidatedProfile is a ProfileUpdate after validation: trimmed text and the
 // cell. Name nil with SetName true means clear; HomeName and HomeCell are nil
-// together when HomeAction is HomeAreaClear.
+// together when HomeAction is HomeAreaClear. SetUsername says Username holds
+// the normalised name to save.
 type ValidatedProfile struct {
-	SetName    bool
-	Name       *string
-	HomeAction HomeAreaAction
-	HomeName   *string
-	HomeCell   *string
+	SetName     bool
+	Name        *string
+	HomeAction  HomeAreaAction
+	HomeName    *string
+	HomeCell    *string
+	SetUsername bool
+	Username    string
 }
 
-// AccountProfile is what the service reads back about one account.
+// AccountProfile is what the service reads back about one account. Username,
+// UsernameScreen and UsernameChangedAt are nil until a username is set.
+// UsernameScreen is UsernameScreenClear or UsernameScreenPending.
 type AccountProfile struct {
-	DisplayName  *string
-	HomeAreaName *string
-	TermsVersion string
-	FirstRunDone bool
+	DisplayName       *string
+	HomeAreaName      *string
+	TermsVersion      string
+	FirstRunDone      bool
+	Username          *string
+	UsernameScreen    *string
+	UsernameChangedAt *time.Time
 }
 
 // Zero width joiner and non joiner, the two format characters that real text
@@ -204,6 +219,20 @@ const DisplayNameRuleMessage = "Use at least one letter or number in your name, 
 func ValidateProfileUpdate(u ProfileUpdate) (ValidatedProfile, error) {
 	var v ValidatedProfile
 
+	// The Username is judged first by the pure rules of plan 04: shape, then
+	// reserved. Neither calls the screening provider or writes anything.
+	if u.Username != nil {
+		name, class := ClassifyUsername(*u.Username)
+		switch class {
+		case UsernameInvalid:
+			return v, ValidationError{Field: "username", Message: UsernameRuleMessage}
+		case UsernameIsReserved:
+			return v, ValidationError{Field: "username", Message: UsernameReservedMessage}
+		}
+		v.SetUsername = true
+		v.Username = name
+	}
+
 	if u.DisplayName != nil {
 		name, ok := cleanText(*u.DisplayName)
 		if !ok || (name != "" && !hasLetterOrDigit(name)) {
@@ -255,6 +284,11 @@ type ProfileQuerier interface {
 	MarkFirstRunDone(ctx context.Context, id int64) error
 	UpdateAccountProfile(ctx context.Context, arg sqlcgen.UpdateAccountProfileParams) error
 	GetAccountProfile(ctx context.Context, id int64) (sqlcgen.GetAccountProfileRow, error)
+	// Phase 7.1 plan 06 (D-07): the username save, the live check's uniqueness
+	// read and the batched read Phases 8 and 9 use.
+	SetAccountUsername(ctx context.Context, arg sqlcgen.SetAccountUsernameParams) (int64, error)
+	GetAccountIDByUsername(ctx context.Context, username string) (int64, error)
+	UsernamesByAccountIDs(ctx context.Context, ids []int64) ([]sqlcgen.UsernamesByAccountIDsRow, error)
 	// The four methods below belong to the Reliable reporter alert settings of
 	// plan 03.2-13 (NOTIF-05, D-26).
 	GetAlertSettings(ctx context.Context, accountID int64) (sqlcgen.GetAlertSettingsRow, error)
@@ -274,12 +308,23 @@ type ProfileQuerier interface {
 // AccountService reads and writes the caller's own profile rows. Every method
 // takes the account id the gate resolved, never an id from a request body.
 type AccountService struct {
-	q   ProfileQuerier
-	now func() time.Time
+	q        ProfileQuerier
+	now      func() time.Time
+	screener TextScreener
 }
 
 // AccountOption configures an AccountService at construction time.
 type AccountOption func(*AccountService)
+
+// WithAccountScreener sets the text screener a username goes through on save.
+// It is the same screener the report description and the flag note go through
+// (the router passes deps.Reports.Screener(); WithFlagScreener has the same
+// shape). Without one a username passes the screen, as a note does.
+func WithAccountScreener(s TextScreener) AccountOption {
+	return func(a *AccountService) {
+		a.screener = s
+	}
+}
 
 // WithAccountClock overrides the clock. Tests use it to pin the time stamped on
 // the alert settings; production code never needs it.
@@ -309,6 +354,13 @@ func (s *AccountService) Profile(ctx context.Context, accountID int64) (AccountP
 		DisplayName:  row.DisplayName,
 		HomeAreaName: row.HomeAreaName,
 		FirstRunDone: row.FirstRunDoneAt.Valid,
+
+		Username:       row.Username,
+		UsernameScreen: row.UsernameScreen,
+	}
+	if row.UsernameChangedAt.Valid {
+		at := row.UsernameChangedAt.Time
+		p.UsernameChangedAt = &at
 	}
 	if row.TermsVersion != nil {
 		p.TermsVersion = *row.TermsVersion
@@ -375,6 +427,14 @@ func (s *AccountService) UpdateProfile(ctx context.Context, accountID int64, u P
 	if err != nil {
 		return AccountProfile{}, err
 	}
+	// The username is written first: when it fails, the name and the home area
+	// of the same request are left unsaved, so the person sees one clear
+	// refusal and nothing half applied.
+	if v.SetUsername {
+		if err := s.saveUsername(ctx, accountID, v.Username); err != nil {
+			return AccountProfile{}, err
+		}
+	}
 	setHome := v.HomeAction != HomeAreaUnchanged
 	if v.SetName || setHome {
 		// Clear leaves the home name and cell nil, which writes NULL to both
@@ -401,4 +461,98 @@ func (s *AccountService) UpdateProfile(ctx context.Context, accountID int64, u P
 		}
 	}
 	return s.Profile(ctx, accountID)
+}
+
+// saveUsername stores a username that ValidateProfileUpdate already judged
+// usable (shape and reserved words). The order is the specification:
+//
+//  1. The stored username is read. The same name again writes nothing.
+//  2. A change inside UsernameRenameGap of the last change is refused with the
+//     wait sentence, before any screening call (the first set is free).
+//  3. The name goes through ScreenAbuse, never CheckText, with underscores and
+//     full stops turned into spaces (UsernameScreenText), because the gibberish
+//     prefilter of CheckText rejects a single token such as a name (research
+//     Pitfall 1). ScreenAbuse runs one provider call inside InlineScreenTimeout.
+//  4. SetAccountUsername writes with the rename gap in SQL. A taken name that
+//     lost the race is SQLSTATE 23505, answered with the taken sentence; no row
+//     means the gap closed between the read and the write.
+//
+// D-16, decided here and followed by Phase 8 and Phase 9: a username the
+// provider REJECTS is refused at once (ErrUsernameRefused). A username the
+// provider cannot judge (borderline, an outage, a spent quota, a timeout) is
+// saved with the screen word pending and no message. Reasons: step 4 is
+// required for everybody (D-06), so a refusal on a provider outage would stop
+// every new person from finishing sign up during exactly the hours the
+// provider is down; nothing displays a username in Phase 7.1, so a pending name
+// costs nothing now; and a rejected name is still refused. Phase 8, which first
+// shows usernames on comments, must show only names whose screen word is clear
+// and must re-check pending ones before showing them; Phase 9 does the same for
+// profiles (UsernamesFor is the batched read both use).
+func (s *AccountService) saveUsername(ctx context.Context, accountID int64, name string) error {
+	row, err := s.q.GetAccountProfile(ctx, accountID)
+	if err != nil {
+		return fmt.Errorf("service: reading the username: %w", err)
+	}
+	now := s.now().UTC()
+	if row.Username != nil {
+		if *row.Username == name {
+			return nil
+		}
+		if days, wait := usernameWaitDays(row.UsernameChangedAt, now); wait {
+			return ValidationError{Field: "username", Message: UsernameWaitMessage(days)}
+		}
+	}
+
+	screen := UsernameScreenClear
+	switch ScreenAbuse(ctx, s.screener, UsernameScreenText(name)).Outcome {
+	case TextRejected:
+		return ErrUsernameRefused
+	case TextBorderline, TextUnfinished:
+		screen = UsernameScreenPending
+	}
+
+	rows, err := s.q.SetAccountUsername(ctx, sqlcgen.SetAccountUsernameParams{
+		Username:       name,
+		UsernameScreen: screen,
+		Now:            now,
+		ID:             accountID,
+		WaitCutoff:     now.Add(-UsernameRenameGap),
+	})
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return ValidationError{Field: "username", Message: UsernameTakenMessage(name)}
+		}
+		return fmt.Errorf("service: saving the username: %w", err)
+	}
+	if rows == 0 {
+		// The gap closed between the read and the write (or the account was
+		// deleted). Read the change time again for the days left.
+		days := int(UsernameRenameGap / (24 * time.Hour))
+		if again, rerr := s.q.GetAccountProfile(ctx, accountID); rerr == nil {
+			if d, wait := usernameWaitDays(again.UsernameChangedAt, now); wait {
+				days = d
+			}
+		}
+		return ValidationError{Field: "username", Message: UsernameWaitMessage(days)}
+	}
+	return nil
+}
+
+// usernameWaitDays says whether a change is still too soon after the last one
+// and, when it is, the days left rounded up (at least 1). No recorded change
+// means the first change is free.
+func usernameWaitDays(changedAt pgtype.Timestamptz, now time.Time) (int, bool) {
+	if !changedAt.Valid {
+		return 0, false
+	}
+	left := changedAt.Time.Add(UsernameRenameGap).Sub(now)
+	if left <= 0 {
+		return 0, false
+	}
+	days := int((left + 24*time.Hour - 1) / (24 * time.Hour))
+	if days < 1 {
+		days = 1
+	}
+	return days, true
 }
