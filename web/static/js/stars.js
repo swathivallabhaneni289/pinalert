@@ -294,6 +294,12 @@ window.PinalertStars = (function () {
     return {
       el: root,
       set: function (n) {
+        // A save or a removal is out: its own answer sets the value. A profile
+        // read that started earlier must not draw the old rating over it
+        // (09-REVIEW IN-B02).
+        if (busy) {
+          return;
+        }
         value = clampStars(n);
         draw();
       },

@@ -243,6 +243,23 @@ test('set redraws from a new server value and destroy takes the control out', ()
   assert.equal(parent.children.length, 0);
 });
 
+// 2026-10-30 (09-REVIEW IN-B02): set does nothing while a save is out, so a
+// profile read that started earlier cannot draw the old rating over the new one.
+test('set is ignored while a save is out and works again after it', async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const m = load({ route: () => gate.then(OK), current: 2 });
+  m.tap(5);
+  await flush();
+  m.control.set(2);
+  assert.deepEqual(m.pressed(), ['false', 'true', 'false', 'false', 'false'], 'no redraw while busy');
+  release();
+  await flush();
+  assert.deepEqual(m.pressed(), ['false', 'false', 'false', 'false', 'true'], 'the answer set the new value');
+  m.control.set(3);
+  assert.deepEqual(m.pressed(), ['false', 'false', 'true', 'false', 'false']);
+});
+
 test('no arrow key changes the value: the star buttons listen for click only', async () => {
   const m = load({ route: OK, current: 2 });
   for (const star of m.stars) {
