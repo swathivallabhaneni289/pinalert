@@ -56,6 +56,25 @@ func WithAccount(ctx context.Context, a Account) context.Context {
 	return context.WithValue(ctx, ctxKey{}, a)
 }
 
+// moderatorKey is the context key of the moderator marker. It is a type of its
+// own so the marker can never collide with the account value above.
+type moderatorKey struct{}
+
+// WithModerator returns a copy of ctx marked as having passed the moderator
+// gate. internal/api's requireModerator middleware is the one production
+// caller; the moderator handlers check the marker themselves through
+// IsModerator, so an account that merely passed the verified account gate is
+// never taken for a moderator (review WR-E03, 2026-10-30).
+func WithModerator(ctx context.Context) context.Context {
+	return context.WithValue(ctx, moderatorKey{}, true)
+}
+
+// IsModerator says whether ctx carries the marker WithModerator set.
+func IsModerator(ctx context.Context) bool {
+	v, _ := ctx.Value(moderatorKey{}).(bool)
+	return v
+}
+
 // FromContext returns the verified account WithAccount stored in the
 // request context, if any.
 func FromContext(ctx context.Context) (Account, bool) {

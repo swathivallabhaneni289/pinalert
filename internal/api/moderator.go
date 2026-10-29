@@ -59,7 +59,9 @@ func requireModerator(q *sqlcgen.Queries, allowed map[string]struct{}) func(http
 				http.NotFound(w, r)
 				return
 			}
-			ctx := account.WithAccount(r.Context(), account.Account{ID: row.ID, Email: row.Email})
+			// The marker is what the moderator handlers check (modGuard), so a
+			// handler mounted outside this group refuses every request.
+			ctx := account.WithModerator(account.WithAccount(r.Context(), account.Account{ID: row.ID, Email: row.Email}))
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

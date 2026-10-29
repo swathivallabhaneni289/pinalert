@@ -6,7 +6,9 @@
 // byte equal 404 before any handler runs and puts the moderator's account in the
 // request context. The RatingService moderator methods check no rights, so every
 // handler here starts with modGuard, which refuses a request that did not come
-// through the group. There are no swag directives on purpose: this is an
+// through the group: it checks the moderator marker only requireModerator sets
+// (review WR-E03, 2026-10-30), so a verified account that is not a moderator is
+// refused even if a route were mounted outside the group. There are no swag directives on purpose: this is an
 // internal surface and stays out of the public API reference. It is the only
 // place a rater's username is sent to anyone.
 
