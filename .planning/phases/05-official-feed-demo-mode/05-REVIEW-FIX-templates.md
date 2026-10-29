@@ -5,7 +5,7 @@ base: e2a20bdd
 fixed_at: 2026-10-29
 review_path: .planning/phases/05-official-feed-demo-mode/05-REVIEW-templates.md
 iteration: 1
-findings_in_scope: 12
+findings_in_scope: 13
 fixed: 7
 not_reproduced: 1
 blocked: 1
@@ -30,7 +30,7 @@ status: partial
 | WR-T07 | blocked, not changed | none | Needs a line in internal/ (see below). |
 | IN-T02 | fixed | 3717c3ea | TestDemoStripCopyAndExit (amended, dated). In the browser the label is 16px with a 24px line height, the button is 44px tall, and the strip does not overflow at 320px. |
 | IN-T05 | fixed | 9b89c228 | TestOfficialHazardLineSitsCloseOnBothSizes |
-| IN-T08 | not reproduced | none | Nearby has had no Past view since Phase 3.4 (`app.js` VIEWS is active, all and disputed), so the Demo map draws only live reports and an Expired pin never meets the Demo ring. |
+| IN-T08 | not reproduced | none | Nearby has had no Past view since Phase 3.4 (`app.js` VIEWS is active, all and disputed), so the Demo map draws only live reports and an Expired pin never meets the Demo ring. The data source agrees: the Demo store's NearbyReports (`internal/demo/memquerier.go:273`) returns only unexpired reports, and its expired set feeds the Activity history, not the map. |
 | IN-T09 | fixed | e0e308f3 | The Official alerts contract test (amended, dated) checks the tag in demo.css, that no other stylesheet defines `.demo-tag`, and that every Demo page loads demo.css. |
 | IN-T03 | recorded | none | As triaged: no page loads both official.css and official-pins.css today. |
 | IN-T04 | recorded | none | As triaged: the word and the icon carry the level. |
@@ -108,7 +108,7 @@ The complete fix, to apply in one commit after the merge:
 - **Browser setup:**
   - The real `api.NewRouter` ran from a throwaway Go test on 127.0.0.1:8798, with a literal throwaway session secret, a recording mailer, the Demo store and p5_fix_t. There was no official fetcher, so no SACHET or GDACS call.
   - Playwright 1.63 drove WebKit and Chromium at 320x568, 360x640, 390x844 and 1470x830, light and dark.
-  - The scratch Go file was deleted before the suite ran and before any commit. The probe scripts stay in the session scratchpad only.
+  - The scratch Go file was never staged or committed (every commit was path limited) and was deleted before the full suite ran. The probe scripts stay in the session scratchpad only.
 - **Clean up:** the server is stopped (port 8798 answers nothing), and p5_fix_t is dropped (`psql -lqt` shows no match).
 - **Dashes:** no long or short dash in any added line.
 
