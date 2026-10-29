@@ -8,7 +8,6 @@ import (
 	"html/template"
 	"log"
 	"net/http"
-	"net/mail"
 	"strings"
 	"time"
 
@@ -60,38 +59,65 @@ type LoginState interface {
 	EndedByPasswordSwitch(ctx context.Context, sessionID string) (bool, error)
 }
 
-// loginGateViewModel is exactly what login_gate.html.tmpl (and the
-// check_inbox.html.tmpl partial it includes) reads and nothing more.
-// ResendCooldownSeconds and LinkTTLSeconds are two independent durations —
-// D-03's resend cooldown and D-02's link expiry — sourced from
-// service.ResendCooldown and auth.TokenTTL respectively so the browser
-// never hard-codes a duration the server could change (UI-SPEC item 9: the
-// two timers are independent and must never be derived from one another).
+// loginGateViewModel is exactly what login_gate.html.tmpl reads and nothing
+// more. The code screen fields (CodeMode, CodeEmail, CodeSecondsLeft) are set
+// only when this browser has a live code row; the durations and the digit
+// count travel to the page as data attributes so the script never hard codes a
+// number the server could change (Phase 7.1 plan 11, UI-SPEC Surfaces 1 and 3).
 type loginGateViewModel struct {
-	AssetVersion          string
-	Email                 string
-	Sent                  bool
-	ResendCooldownSeconds int
-	LinkTTLSeconds        int
-	Chrome                Chrome
+	AssetVersion string
+	Chrome       Chrome
 	// LowDataDefault is true when this device's remembered choice is the Low
-	// data view; the login panel then shows the "is on" note instead of the
-	// link that turns it on (D-17, P4-A18).
+	// data view; the row under the card then offers Turn off low data view and
+	// the status line says the choice is on (D-17, P4-A18, UI-SPEC 1e).
 	LowDataDefault bool
 	// DoneLine is the one status line above the heading after an account action
-	// (Phase 3.2, UI-SPEC E3). It is set only from the closed list of two done
-	// words and is never built from the address value.
+	// (Phase 3.2, UI-SPEC E3; Phase 7.1 adds old-link and the switch notice). It
+	// is set only from closed lists and is never built from the address value.
 	DoneLine string
+	// StartPanel is the panel the card opens on: "create", "signin" or "code".
+	StartPanel string
+	// CodeMode is "create" or "reset" and is read only when StartPanel is code.
+	CodeMode string
+	// CodeEmail is the address a live code was sent to. It is page text only,
+	// never a URL, a form value or an attribute (D-05).
+	CodeEmail       string
+	CodeSecondsLeft int
+	// CodeDigits, CodeTTLSeconds and ResendSeconds are the numbers the script
+	// reads from data attributes.
+	CodeDigits     int
+	CodeTTLSeconds int
+	ResendSeconds  int
+	// PasswordMin and PasswordMax feed minlength and maxlength on the new
+	// password fields and the rule line.
+	PasswordMin int
+	PasswordMax int
 }
 
+// The start panels of the card and the two code modes.
+const (
+	loginStartCreate = "create"
+	loginStartSignIn = "signin"
+	loginStartCode   = "code"
+	loginCodeCreate  = "create"
+	loginCodeReset   = "reset"
+)
+
 // The done words of GET /login?done= and the lines they show (Phase 3.2,
-// P32-C27 and P32-C28). Settings lands on all-devices after Log out of all
-// devices and on deleted after Delete my account.
+// P32-C27 and P32-C28; Phase 7.1 adds old-link, D-12). Settings lands on
+// all-devices after Log out of all devices and on deleted after Delete my
+// account; an old emailed link lands on old-link. The list is closed: any
+// other value sets nothing and is never written into the page.
 const (
 	loginDoneAllDevices     = "all-devices"
 	loginDoneDeleted        = "deleted"
+	loginDoneOldLink        = "old-link"
 	loginDoneAllDevicesLine = "You are logged out of all devices."
 	loginDoneDeletedLine    = "Your account has been deleted."
+	loginDoneOldLinkLine    = "That sign in link no longer works. Choose Create account with the same email to set a password."
+	// loginSwitchNoticeLine is shown once to a browser whose own session the
+	// switch to passwords ended (UI-SPEC Surface 6, route 2).
+	loginSwitchNoticeLine = "Pinalert now uses passwords. Choose Create account with the same email to set yours. Your reports stay with you."
 )
 
 // lowDataChosen reports whether the request carries the remembered choice of
@@ -102,42 +128,38 @@ func lowDataChosen(r *http.Request) bool {
 	return err == nil && c.Value == "1"
 }
 
-// LoginGate renders the globe login gate at GET /login. A `sent` query
-// parameter is honored only when it parses as a bare email address via
-// net/mail — the same non-display-name rule service.RequestLink enforces —
-// so a manual "Check again" reload (or a bookmarked/shared URL) re-renders
-// the waiting state server-side without depending on JavaScript having run
-// first (UI-SPEC item 11).
+// LoginGate renders the sign in page at GET /login. It reads no address from
+// the URL (D-05): a browser that reloads while it holds a live code is shown the
+// code screen again from the server's own row for its session, with the address
+// as page text only. The page address never holds an email (T-07.1-08).
 //
-// The `low` query parameter sets and clears the remembered choice of the Low
-// data view (D-17, P4-A18): exactly 1 remembers it and exactly 0 forgets it,
-// and every other value changes nothing and is never written into the page
-// (T-04-13). The panel states a fact about the device, so it shows the "is on"
-// note whenever the cookie is present or low=1 has just set it. The page varies
-// per device and sets a cookie, so every response is no-store (T-04-12).
+// The order is fixed. The `low` query parameter is handled first, exactly as
+// before (D-17, P4-A18): exactly 1 remembers the Low data view and exactly 0
+// forgets it, and every other value changes nothing and is never written into
+// the page (T-04-13). Then a person who is already signed in is sent to / (or
+// the Low data page when its cookie is on) instead of seeing the form (D-10,
+// research Pitfall 16); the targets are constants, never a request value
+// (T-07.1-23). Then the done word is compared exactly with the closed list
+// (T-07.1-20), then a live code row restores the code screen, and only when
+// neither applies a browser whose own session the switch to passwords ended
+// sees the switch notice once, in the same response that clears its cookie
+// (a Set-Cookie after the body is silently dropped, so ClearCookie runs before
+// the template; D-12, UI-SPEC Surfaces 3, 6 and 9). A LoginState error is
+// logged without the address and the page renders the entry panels. The page
+// varies per device and sets cookies, so every response is no-store (T-04-12),
+// and Referrer-Policy same-origin keeps the page address out of the globe's
+// tile requests (plan 05-07, D-13).
 func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vm := loginGateViewModel{
-			AssetVersion:          cfg.AssetVersion,
-			ResendCooldownSeconds: int(service.ResendCooldown.Seconds()),
-			LinkTTLSeconds:        int(auth.TokenTTL.Seconds()),
-			Chrome:                cfg.Chrome.withDefaults(),
-		}
-
-		if raw := r.URL.Query().Get("sent"); raw != "" {
-			if addr, err := mail.ParseAddress(raw); err == nil && addr.Name == "" {
-				vm.Sent = true
-				vm.Email = addr.Address
-			}
-		}
-
-		// The done word is compared exactly with the two fixed words; any other
-		// value sets nothing and is never written into the page (T-03.2-15).
-		switch r.URL.Query().Get("done") {
-		case loginDoneAllDevices:
-			vm.DoneLine = loginDoneAllDevicesLine
-		case loginDoneDeleted:
-			vm.DoneLine = loginDoneDeletedLine
+			AssetVersion:   cfg.AssetVersion,
+			Chrome:         cfg.Chrome.withDefaults(),
+			StartPanel:     loginStartCreate,
+			CodeDigits:     auth.CodeDigits,
+			CodeTTLSeconds: int(service.DefaultCredentialLimits.CodeTTL.Seconds()),
+			ResendSeconds:  int(service.DefaultCredentialLimits.SendCooldown.Seconds()),
+			PasswordMin:    auth.PasswordMinRunes,
+			PasswordMax:    auth.PasswordMaxRunes,
 		}
 
 		vm.LowDataDefault = lowDataChosen(r)
@@ -150,14 +172,64 @@ func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 			vm.LowDataDefault = false
 		}
 
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
-		// The sign in globe's tile requests carry the page address as their
-		// referrer (MapLibre sets it itself), and the address holds the email
-		// after Send. same-origin sends no referrer to another host and still
-		// sends the Origin header on the same site POST (plan 05-07, D-13,
-		// sketch item 15).
 		w.Header().Set("Referrer-Policy", "same-origin")
+
+		sessionID, haveSession := session.FromContext(r.Context())
+		login := cfg.Login
+		if login != nil && haveSession {
+			signedIn, err := login.SignedIn(r.Context(), sessionID)
+			if err != nil {
+				log.Printf("handlers: LoginGate: reading sign in state: %v", err)
+			} else if signedIn {
+				target := "/"
+				if vm.LowDataDefault {
+					target = LowDataPath
+				}
+				http.Redirect(w, r, target, http.StatusSeeOther)
+				return
+			}
+		}
+
+		// The done word is compared exactly with the closed list; any other
+		// value sets nothing and is never written into the page (T-03.2-15).
+		switch r.URL.Query().Get("done") {
+		case loginDoneAllDevices:
+			vm.DoneLine = loginDoneAllDevicesLine
+			vm.StartPanel = loginStartSignIn
+		case loginDoneDeleted:
+			vm.DoneLine = loginDoneDeletedLine
+		case loginDoneOldLink:
+			vm.DoneLine = loginDoneOldLinkLine
+		}
+
+		if login != nil && haveSession {
+			live, found, err := login.LiveCode(r.Context(), sessionID)
+			if err != nil {
+				log.Printf("handlers: LoginGate: reading live code: %v", err)
+			} else if found {
+				vm.StartPanel = loginStartCode
+				vm.CodeMode = loginCodeCreate
+				if live.Purpose == service.PurposeReset {
+					vm.CodeMode = loginCodeReset
+				}
+				vm.CodeEmail = live.Email
+				vm.CodeSecondsLeft = live.SecondsLeft
+			} else if vm.DoneLine == "" {
+				ended, err := login.EndedByPasswordSwitch(r.Context(), sessionID)
+				if err != nil {
+					log.Printf("handlers: LoginGate: reading password switch: %v", err)
+				} else if ended {
+					vm.DoneLine = loginSwitchNoticeLine
+					vm.StartPanel = loginStartCreate
+					if cfg.Session != nil {
+						cfg.Session.ClearCookie(w)
+					}
+				}
+			}
+		}
+
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err := tmpl.ExecuteTemplate(w, loginGateTemplateName, vm); err != nil {
 			log.Printf("handlers: LoginGate: %v", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
