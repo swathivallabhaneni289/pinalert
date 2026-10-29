@@ -277,10 +277,22 @@ type VotingService struct {
 	q        VotingQuerier
 	now      func() time.Time
 	notifier ReportChangeNotifier
+
+	// signals supplies extra reporter tag inputs (plan 09-13). Nil reads outcomes only.
+	signals SignalSource
 }
 
 // VotingOption configures a VotingService at construction time.
 type VotingOption func(*VotingService)
+
+// WithVotingSignals hands the service the source of extra reporter tag inputs
+// (plan 09-13 is the first real one), so the vote response shows the same tag
+// as the feed. With none it reads outcomes only.
+func WithVotingSignals(src SignalSource) VotingOption {
+	return func(s *VotingService) {
+		s.signals = src
+	}
+}
 
 // WithVotingClock overrides the VotingService's clock. It is named apart from
 // WithClock, which already returns AuthOption (Pitfall 6). Tests use it to pin
@@ -588,7 +600,10 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 	// Build the tally and resolve.
 	tally := BuildVoteTally(rows, in.ReportID, rc.ReporterAccountID)
 	vis, reason := Resolve(meta, tally, now)
-	signals := ReporterSignals(accounts, history, rows, now)
+	signals, err := reporterSignalsWith(ctx, s.signals, accounts, history, rows, now)
+	if err != nil {
+		return CastVoteResult{}, err
+	}
 	trust := BuildTrust(TrustInput{
 		Rows:              rows,
 		ReportID:          in.ReportID,

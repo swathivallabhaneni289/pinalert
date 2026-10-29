@@ -211,7 +211,10 @@ func (s *ReportService) loadReadContext(ctx context.Context, ids []int64, now ti
 		extrasByReport:   extrasByReport,
 	}
 	if withSignals {
-		rc.signals = ReporterSignals(accounts, history, voteRows, now)
+		rc.signals, err = reporterSignalsWith(ctx, s.signals, accounts, history, voteRows, now)
+		if err != nil {
+			return readContext{}, err
+		}
 	}
 	return rc, nil
 }
