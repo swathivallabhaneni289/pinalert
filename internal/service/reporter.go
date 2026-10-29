@@ -36,6 +36,30 @@ type ReporterSignal struct {
 	// CorroboratedReports is C, how many of the judged reports were
 	// confirmed by people nearby.
 	CorroboratedReports int
+	// OutcomeScore, Raters and TappedHalves are set only when tapped ratings
+	// applied to this signal (plan 09-13, D-02, D-22): at least
+	// MinRatersForStars counted raters, and either the profile is on or the
+	// ratings only lowered the points. Score, Tag, Label and ScoreSentence
+	// then follow the combined points. OutcomeScore is the points the report
+	// outcomes alone gave, Raters is the number of counted raters (distinct
+	// voter cells, D-21), and TappedHalves is the tapped average rounded to
+	// half stars, in halves (review W5), never an exact average. When the
+	// ratings did not apply, OutcomeScore and TappedHalves are nil, Raters is 0
+	// and Score is the outcome points, so a signal built without ratings is
+	// exactly the signal every surface showed before ratings existed.
+	OutcomeScore *int
+	Raters       int
+	TappedHalves *int
+}
+
+// RatingTally is what the ratings read says about one reporter (plan 09-13,
+// D-21): how many raters count, counted by distinct voter cell with one rating
+// per cell, the sum of the counted stars, and whether the reporter's profile
+// is on. It carries no rater and no cell.
+type RatingTally struct {
+	Raters        int
+	TapSum        int
+	ProfilePublic bool
 }
 
 // reporterHistoryMeta converts a history row into the report metadata the
@@ -96,6 +120,14 @@ func reporterSignalFor(p *ReporterSignal) ReporterSignal {
 		score := *p.Score
 		out.Score = &score
 	}
+	if p.OutcomeScore != nil {
+		outcome := *p.OutcomeScore
+		out.OutcomeScore = &outcome
+	}
+	if p.TappedHalves != nil {
+		halves := *p.TappedHalves
+		out.TappedHalves = &halves
+	}
 	return out
 }
 
@@ -105,9 +137,50 @@ func reporterSignalFor(p *ReporterSignal) ReporterSignal {
 // so ReporterSignals stays pure: it reads nothing and holds no state.
 type SignalOption func(*signalConfig)
 
-// signalConfig is what the options fill in. It is empty until plan 09-13 adds
-// the ratings field; with nothing set ReporterSignals behaves as it always did.
-type signalConfig struct{}
+// signalConfig is what the options fill in. With nothing set ReporterSignals
+// behaves as it always did.
+type signalConfig struct {
+	// ratings is the tapped rating tally per reporter (plan 09-13).
+	ratings map[int64]RatingTally
+}
+
+// WithRatings supplies the counted tapped ratings of each reporter (plan 09-13,
+// D-02, D-21, D-22). For a reporter with a score and at least MinRatersForStars
+// counted raters the points become CombinePoints of the outcome score and the
+// tally, and the tag is cut from those points by reporterTagForScore, the one
+// place the Reliable line lives. A New reporter has no score, so ratings never
+// rate a reporter who has too few judged reports (Phase 3 D-13). While the
+// reporter's profile is off the ratings can only lower the points: the points
+// are the smaller of the outcome score and the combined points, so switching
+// the profile off never raises the tag (D-22).
+func WithRatings(t map[int64]RatingTally) SignalOption {
+	return func(c *signalConfig) {
+		c.ratings = t
+	}
+}
+
+// applyRatings returns the signal of one reporter with the tapped ratings
+// applied when they apply, and the outcome only signal otherwise (see
+// WithRatings).
+func applyRatings(rel Reliability, tally RatingTally, ok bool) ReporterSignal {
+	if rel.Score == nil || !ok || tally.Raters < MinRatersForStars {
+		return newReporterSignal(rel)
+	}
+	outcome := *rel.Score
+	combined := CombinePoints(outcome, tally.Raters, tally.TapSum)
+	if !tally.ProfilePublic && combined > outcome {
+		return newReporterSignal(rel)
+	}
+	rated := rel
+	rated.Score = &combined
+	rated.Tag = reporterTagForScore(combined)
+	sig := newReporterSignal(rated)
+	sig.OutcomeScore = &outcome
+	sig.Raters = tally.Raters
+	halves := TappedHalfStars(tally.Raters, tally.TapSum)
+	sig.TappedHalves = &halves
+	return sig
+}
 
 // ReporterSignals rates every requested account from its history rows and a
 // batch of current vote rows (D-10, D-13, D-15, D-23, R-05).
@@ -141,7 +214,6 @@ func ReporterSignals(accountIDs []int64, history []sqlcgen.ReporterHistoryReport
 			opt(&cfg)
 		}
 	}
-	_ = cfg
 
 	requested := make(map[int64]struct{}, len(accountIDs))
 	for _, id := range accountIDs {
@@ -168,7 +240,8 @@ func ReporterSignals(accountIDs []int64, history []sqlcgen.ReporterHistoryReport
 
 	signals := make(map[int64]ReporterSignal, len(requested))
 	for id := range requested {
-		signals[id] = newReporterSignal(ScoreReliability(outcomes[id], now))
+		tally, ok := cfg.ratings[id]
+		signals[id] = applyRatings(ScoreReliability(outcomes[id], now), tally, ok)
 	}
 	return signals
 }

@@ -28,6 +28,8 @@ type Account struct {
 	PasswordEpoch     int64
 	ProfilePublic     bool
 	ProfilePublicAt   pgtype.Timestamptz
+	RaterRemovedAt    pgtype.Timestamptz
+	RaterRemovedBy    *int64
 }
 
 type AccountAlertSetting struct {
@@ -237,6 +239,17 @@ type PersonBlock struct {
 	BlockerID int64
 	BlockedID int64
 	CreatedAt time.Time
+}
+
+type ProfileRating struct {
+	RaterID    int64
+	ReporterID int64
+	Stars      int16
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+	ClearedAt  pgtype.Timestamptz
+	RemovedAt  pgtype.Timestamptz
+	RemovedBy  *int64
 }
 
 type PushOutbox struct {

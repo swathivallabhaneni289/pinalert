@@ -58,6 +58,9 @@ type AccountDeleteQuerier interface {
 	// directions, are hard deleted.
 	DeleteAccountFollows(ctx context.Context, accountID int64) (int64, error)
 	DeleteAccountBlocks(ctx context.Context, accountID int64) (int64, error)
+	// Phase 9 plan 13 (research G6, Pitfall 11): the ratings the account gave and
+	// the ratings it received are hard deleted.
+	DeleteAccountRatings(ctx context.Context, accountID int64) (int64, error)
 	RevokeAccountSessions(ctx context.Context, arg sqlcgen.RevokeAccountSessionsParams) (int64, error)
 	ScrubDeletedAccount(ctx context.Context, arg sqlcgen.ScrubDeletedAccountParams) (int64, error)
 }
@@ -159,12 +162,20 @@ func DeletedEmailFor(accountID int64) string {
 // person's lists: a follower's following list and a followee's follower list
 // each lose the row.
 //
-// Its effect on other people: none beyond the follow and block rows above.
+// Amended 2026-10-29 by Phase 9 plan 13 (research G6, Pitfall 11): right after
+// the follows and blocks, the star ratings the person gave and the ratings they
+// received are hard deleted. A rating the person gave stops moving the rated
+// reporter's stars at once, so deleting an account can change another
+// reporter's score by removing one tapped rating (and can end that reporter's
+// follows the next time the tag is read, if the tag drops).
+//
+// Its effect on other people: none beyond the follow, block and rating rows above.
 // Reports and votes are not touched, so they
 // stay attributed to a row nobody can identify. Every confirmed count, every
 // Resolve answer, every ClassifyOutcome result and every reporter rating that
 // another account sees is unchanged, because the inputs of all of them (votes,
-// sessions.account_id, report authorship) are unchanged. Stated plainly, the
+// sessions.account_id, report authorship) are unchanged, except that a
+// reporter's tapped ratings lose the ones this person gave (plan 09-13). Stated plainly, the
 // report text the person wrote and the voter cell at precision 7 remain. A
 // moderator's moderation_actions rows stay valid, and MODERATOR_EMAILS no
 // longer matches the scrubbed address.
@@ -249,6 +260,12 @@ func (s *AccountDeletionService) DeleteAccount(ctx context.Context, accountID in
 		}
 		if _, err := q.DeleteAccountBlocks(ctx, accountID); err != nil {
 			return fmt.Errorf("service: DeleteAccount: account %d: deleting blocks: %w", accountID, err)
+		}
+		// Phase 9 plan 13 (research G6, Pitfall 11): the ratings the person gave
+		// stop moving other people's stars, and the ratings they received go with
+		// their profile. Same transaction, before the scrub.
+		if _, err := q.DeleteAccountRatings(ctx, accountID); err != nil {
+			return fmt.Errorf("service: DeleteAccount: account %d: deleting ratings: %w", accountID, err)
 		}
 		now := pgtype.Timestamptz{Time: s.now(), Valid: true}
 		if _, err := q.RevokeAccountSessions(ctx, sqlcgen.RevokeAccountSessionsParams{Now: now, AccountID: &accountID}); err != nil {
