@@ -151,6 +151,46 @@ func (q *Queries) RecordAuthFailure(ctx context.Context, arg RecordAuthFailurePa
 	return i, err
 }
 
+const refundSignInTry = `-- name: RefundSignInTry :execrows
+UPDATE auth_throttles
+SET failures = failures - 1,
+    locked_until = NULL
+WHERE scope = $1 AND key_hash = $2
+  AND failures = $3
+  AND failures > 0
+  AND last_failure_at = $4::timestamptz
+`
+
+type RefundSignInTryParams struct {
+	Scope         string
+	KeyHash       string
+	Failures      int32
+	LastFailureAt time.Time
+}
+
+// Gives back one try ReserveSignInTry counted when the password was never
+// checked because the hasher was busy (Phase 7.1 review fix skeptic SK-02). It
+// is guarded on the row the reserve returned: it changes the row only while its
+// failures and last_failure_at are still that try's, so it never undoes a later
+// try. failures goes down by one and the lock goes. Clearing the lock is the
+// state before the try: the reserve only updates a row whose lock had already
+// ended (or never existed), and an ended lock and no lock read the same to the
+// reserve's guard. The forget rule also reads the same, because last_failure_at
+// is kept at this try's time, which is never before an ended lock. Every
+// address, known or unknown, takes this same statement.
+func (q *Queries) RefundSignInTry(ctx context.Context, arg RefundSignInTryParams) (int64, error) {
+	result, err := q.db.Exec(ctx, refundSignInTry,
+		arg.Scope,
+		arg.KeyHash,
+		arg.Failures,
+		arg.LastFailureAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const reserveSignInTry = `-- name: ReserveSignInTry :one
 INSERT INTO auth_throttles AS t (scope, key_hash, failures, last_failure_at, locked_until)
 VALUES (
@@ -187,7 +227,7 @@ SET failures = CASE
         ELSE NULL
     END
 WHERE t.locked_until IS NULL OR t.locked_until <= $3::timestamptz
-RETURNING failures, locked_until
+RETURNING failures, locked_until, last_failure_at
 `
 
 type ReserveSignInTryParams struct {
@@ -201,8 +241,9 @@ type ReserveSignInTryParams struct {
 }
 
 type ReserveSignInTryRow struct {
-	Failures    int32
-	LockedUntil pgtype.Timestamptz
+	Failures      int32
+	LockedUntil   pgtype.Timestamptz
+	LastFailureAt time.Time
 }
 
 // Counts one sign in try BEFORE the password is checked (Phase 7.1 review
@@ -225,6 +266,6 @@ func (q *Queries) ReserveSignInTry(ctx context.Context, arg ReserveSignInTryPara
 		arg.ForgetCutoff,
 	)
 	var i ReserveSignInTryRow
-	err := row.Scan(&i.Failures, &i.LockedUntil)
+	err := row.Scan(&i.Failures, &i.LockedUntil, &i.LastFailureAt)
 	return i, err
 }

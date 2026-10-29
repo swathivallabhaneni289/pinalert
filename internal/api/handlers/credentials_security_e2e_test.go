@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -343,6 +344,62 @@ func TestEnumerationLockIdentical(t *testing.T) {
 	if !bytes.Equal(known.body, unknown.body) {
 		t.Errorf("lock bodies differ: %q vs %q", known.body, unknown.body)
 	}
+}
+
+// switchBusyHasher answers ErrHasherBusy to every Verify while busy is set.
+type switchBusyHasher struct {
+	*auth.Hasher
+	busy atomic.Bool
+}
+
+func (h *switchBusyHasher) Verify(ctx context.Context, encoded, password string) (bool, bool, error) {
+	if h.busy.Load() {
+		return false, false, auth.ErrHasherBusy
+	}
+	return h.Hasher.Verify(ctx, encoded, password)
+}
+
+// TestEnumerationBusyHasherIdentical is the comparison test of the busy give
+// back (Phase 7.1 review fix round 2, skeptic SK-02): six sign ins answered
+// busy for a known and for an unknown address answer the same, and both give
+// their tries back, so the next wrong password is the plain wrong credentials
+// answer for both, never the lock. Before the fix the busy tries stayed counted
+// and that next try was the 5 minute lock.
+func TestEnumerationBusyHasherIdentical(t *testing.T) {
+	h := &switchBusyHasher{Hasher: auth.NewHasher(auth.TestParams())}
+	rec := &recordingMailer{}
+	srv, _, _ := newE2EServerWith(t, func(d *api.Deps, q *sqlcgen.Queries) {
+		d.Credentials = newTestCredentials(q, rec, service.WithHasher(h))
+	})
+	const (
+		knownAddr   = "enum-busy-known@example.com"
+		unknownAddr = "enum-busy-unknown@example.com"
+	)
+	createAccountViaCode(t, srv, rec, knownAddr)
+
+	h.busy.Store(true)
+	busy := func(addr string) []authAnswer {
+		c := newLoginClient(t, srv)
+		var out []authAnswer
+		for i := 0; i < 6; i++ {
+			out = append(out, doAuth(t, c, srv, "/api/auth/sign-in", map[string]string{"email": addr, "password": secWrongPassword}))
+		}
+		return out
+	}
+	known := busy(knownAddr)
+	unknown := busy(unknownAddr)
+	for i := range known {
+		if known[i].status != http.StatusServiceUnavailable {
+			t.Fatalf("busy try %d = %d, want 503: %s", i+1, known[i].status, known[i].body)
+		}
+		compareAuthAnswers(t, fmt.Sprintf("busy try %d: known vs unknown", i+1), known[i], unknown[i])
+	}
+
+	h.busy.Store(false)
+	knownNext := doAuth(t, newLoginClient(t, srv), srv, "/api/auth/sign-in", map[string]string{"email": knownAddr, "password": secWrongPassword})
+	unknownNext := doAuth(t, newLoginClient(t, srv), srv, "/api/auth/sign-in", map[string]string{"email": unknownAddr, "password": secWrongPassword})
+	expectError(t, "the wrong password after six busy tries", knownNext, http.StatusBadRequest, "credentials", secWrongCredentialsSentence)
+	compareAuthAnswers(t, "after the busy tries: known vs unknown", knownNext, unknownNext)
 }
 
 func TestEnumerationResendIdentical(t *testing.T) {

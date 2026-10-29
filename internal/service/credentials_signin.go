@@ -198,9 +198,10 @@ func (s *CredentialService) ConfirmSignUp(ctx context.Context, sessionID, rawCod
 // and an account with no password are counted and verified against the dummy
 // hash the same way, so neither answers faster than a wrong password, and all
 // three get the one error. A good sign in clears the count, upgrades an old
-// hash and rotates the session id. A busy hasher keeps the counted try, the
-// same for every address. The per device and per network buckets are the
-// handler's job.
+// hash and rotates the session id. A busy hasher never checked the password,
+// so it gives the counted try back (review fix skeptic SK-02), the same for
+// every address; the lock punishes wrong passwords only. The per device and
+// per network buckets are the handler's job.
 func (s *CredentialService) SignIn(ctx context.Context, sessionID, rawEmail, password string, newID func() string) (SignInResult, error) {
 	email, err := normalizeEmail(rawEmail)
 	if err != nil {
@@ -208,7 +209,8 @@ func (s *CredentialService) SignIn(ctx context.Context, sessionID, rawEmail, pas
 	}
 	key := s.ThrottleKey(email)
 
-	if err := s.reserveTry(ctx, key); err != nil {
+	try, err := s.reserveTry(ctx, key)
+	if err != nil {
 		return SignInResult{}, err
 	}
 
@@ -225,6 +227,15 @@ func (s *CredentialService) SignIn(ctx context.Context, sessionID, rawEmail, pas
 	good, needsRehash, err := s.hasher.Verify(ctx, stored, normalized)
 	if err != nil {
 		if errors.Is(err, auth.ErrHasherBusy) {
+			// Best effort: a failed give back still answers ErrBusy, so
+			// every address gets the same answer. The guarded statement
+			// never undoes a later try.
+			_, _ = s.q.RefundSignInTry(ctx, sqlcgen.RefundSignInTryParams{
+				Scope:         throttleScope,
+				KeyHash:       key,
+				Failures:      try.Failures,
+				LastFailureAt: try.LastFailureAt,
+			})
 			return SignInResult{}, ErrBusy
 		}
 		if !errors.Is(err, auth.ErrMalformedHash) {
@@ -272,11 +283,12 @@ func (s *CredentialService) SignIn(ctx context.Context, sessionID, rawEmail, pas
 // guarded statement refused but a fresh read finds the address no longer
 // locked (a reset cleared it, or the lock ended in between), it tries once
 // more; a second refusal is answered as locked with at least one second to
-// wait, never a negative wait.
-func (s *CredentialService) reserveTry(ctx context.Context, key string) error {
+// wait, never a negative wait. The counted row comes back so a busy hasher can
+// give the try back with RefundSignInTry.
+func (s *CredentialService) reserveTry(ctx context.Context, key string) (sqlcgen.ReserveSignInTryRow, error) {
 	for attempt := 0; attempt < 2; attempt++ {
 		now := s.now()
-		_, err := s.q.ReserveSignInTry(ctx, sqlcgen.ReserveSignInTryParams{
+		row, err := s.q.ReserveSignInTry(ctx, sqlcgen.ReserveSignInTryParams{
 			Scope:           throttleScope,
 			KeyHash:         key,
 			Now:             now,
@@ -286,23 +298,23 @@ func (s *CredentialService) reserveTry(ctx context.Context, key string) error {
 			MaxLockSeconds:  int32(s.limits.MaxLock / time.Second),
 		})
 		if err == nil {
-			return nil
+			return row, nil
 		}
 		if !errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("service: counting sign in try: %w", err)
+			return sqlcgen.ReserveSignInTryRow{}, fmt.Errorf("service: counting sign in try: %w", err)
 		}
 		t, err := s.q.GetAuthThrottle(ctx, sqlcgen.GetAuthThrottleParams{Scope: throttleScope, KeyHash: key})
 		switch {
 		case err == nil:
 			if t.LockedUntil.Valid && t.LockedUntil.Time.After(now) {
-				return SignInLockedError{Wait: t.LockedUntil.Time.Sub(now)}
+				return sqlcgen.ReserveSignInTryRow{}, SignInLockedError{Wait: t.LockedUntil.Time.Sub(now)}
 			}
 		case errors.Is(err, pgx.ErrNoRows):
 		default:
-			return fmt.Errorf("service: reading sign in throttle: %w", err)
+			return sqlcgen.ReserveSignInTryRow{}, fmt.Errorf("service: reading sign in throttle: %w", err)
 		}
 	}
-	return SignInLockedError{Wait: time.Second}
+	return sqlcgen.ReserveSignInTryRow{}, SignInLockedError{Wait: time.Second}
 }
 
 // ConfirmReset is the typed code of Forgot password, with the new password.

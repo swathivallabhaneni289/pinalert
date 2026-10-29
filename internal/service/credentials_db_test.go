@@ -487,6 +487,78 @@ func TestSignUpBusyRefundsClaimOnDatabase(t *testing.T) {
 	}
 }
 
+// switchBusyHasher answers ErrHasherBusy to every Verify while busy is set,
+// and checks for real otherwise.
+type switchBusyHasher struct {
+	*auth.Hasher
+	busy atomic.Bool
+}
+
+func (h *switchBusyHasher) Verify(ctx context.Context, encoded, password string) (bool, bool, error) {
+	if h.busy.Load() {
+		return false, false, auth.ErrHasherBusy
+	}
+	return h.Hasher.Verify(ctx, encoded, password)
+}
+
+// TestSignInBusyGivesTryBack is SK-02 of the Phase 7.1 review fix skeptic: a
+// sign in try is counted before the password check (CR-S01), and a busy hasher
+// never checked the password, so it must give the counted try back. Otherwise a
+// person pressing Sign in with the right password during a rush is locked out
+// on the sixth busy answer. The give back is the same for a known and an
+// unknown address. Before the fix the busy tries stayed counted and the right
+// password then got SignInLockedError.
+func TestSignInBusyGivesTryBack(t *testing.T) {
+	h := &switchBusyHasher{Hasher: auth.NewHasher(auth.TestParams())}
+	r := newCredDBRig(t, h)
+	ctx := context.Background()
+	r.createAccount(t, credEmail, credPassword)
+	const unknown = "nobody-here@example.com"
+
+	failures := func(email string) int {
+		t.Helper()
+		var n int
+		err := r.pool.QueryRow(ctx, `SELECT failures FROM auth_throttles WHERE scope = 'sign_in' AND key_hash = $1`,
+			r.svc.ThrottleKey(email)).Scan(&n)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0
+		}
+		if err != nil {
+			t.Fatalf("reading the throttle row: %v", err)
+		}
+		return n
+	}
+
+	h.busy.Store(true)
+	tries := service.DefaultCredentialLimits.FreeFailures + 1
+	for _, email := range []string{credEmail, unknown} {
+		for i := 1; i <= tries; i++ {
+			_, err := r.svc.SignIn(ctx, "sess-busy", email, credPassword, credSessionIDs(fmt.Sprintf("busy-%d", i)))
+			if !errors.Is(err, service.ErrBusy) {
+				t.Fatalf("%s busy try %d: %v, want ErrBusy", email, i, err)
+			}
+		}
+		if n := failures(email); n != 0 {
+			t.Errorf("%s: failures after %d busy tries = %d, want 0", email, tries, n)
+		}
+	}
+
+	// A wrong password after the busy tries still counts from nothing.
+	h.busy.Store(false)
+	if _, err := r.svc.SignIn(ctx, "sess-busy", credEmail, "not the password 12", credSessionIDs("wrong")); !errors.Is(err, service.ErrWrongCredentials) {
+		t.Fatalf("a wrong password after the busy tries: %v, want ErrWrongCredentials", err)
+	}
+	if n := failures(credEmail); n != 1 {
+		t.Errorf("failures after one wrong password = %d, want 1", n)
+	}
+	if _, err := r.svc.SignIn(ctx, "sess-busy", credEmail, credPassword, credSessionIDs("good")); err != nil {
+		t.Fatalf("the right password after %d busy tries: %v", tries, err)
+	}
+	if n := failures(credEmail); n != 0 {
+		t.Errorf("failures after a good sign in = %d, want 0", n)
+	}
+}
+
 // TestConfirmSignUpKeepsCodeOnFailure is IN-S07: a database error after the
 // code is proved must not spend it, so the person can type it again.
 func TestConfirmSignUpKeepsCodeOnFailure(t *testing.T) {

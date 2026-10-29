@@ -342,11 +342,24 @@ func (f *credFakeQuerier) ReserveSignInTry(_ context.Context, arg sqlcgen.Reserv
 		locked = &l
 	}
 	f.throttles[arg.KeyHash] = &credThrottle{failures: n, last: arg.Now, locked: locked}
-	row := sqlcgen.ReserveSignInTryRow{Failures: n}
+	row := sqlcgen.ReserveSignInTryRow{Failures: n, LastFailureAt: arg.Now}
 	if locked != nil {
 		row.LockedUntil = pgtype.Timestamptz{Time: *locked, Valid: true}
 	}
 	return row, nil
+}
+
+// RefundSignInTry follows the SQL (review fix skeptic SK-02): only while the
+// row still holds the reserved try, failures goes down by one and the lock goes.
+func (f *credFakeQuerier) RefundSignInTry(_ context.Context, arg sqlcgen.RefundSignInTryParams) (int64, error) {
+	f.log("RefundSignInTry")
+	t, ok := f.throttles[arg.KeyHash]
+	if !ok || t.failures != arg.Failures || t.failures <= 0 || !t.last.Equal(arg.LastFailureAt) {
+		return 0, nil
+	}
+	t.failures--
+	t.locked = nil
+	return 1, nil
 }
 
 func (f *credFakeQuerier) ClearAuthThrottle(_ context.Context, arg sqlcgen.ClearAuthThrottleParams) error {
@@ -1551,11 +1564,16 @@ func TestSignInHashBusy(t *testing.T) {
 	if !errors.Is(err, service.ErrBusy) {
 		t.Fatalf("err = %v, want ErrBusy", err)
 	}
-	// The try is counted before the check (Phase 7.1 review CR-S01), so a busy
-	// hasher keeps the counted try, the same for every address.
-	if r.q.count("ReserveSignInTry") != 1 || r.q.count("BindSessionAccount") != 0 {
-		t.Errorf("a busy sign in: tries counted %d, binds %d; want 1 and 0",
-			r.q.count("ReserveSignInTry"), r.q.count("BindSessionAccount"))
+	// The try is counted before the check (Phase 7.1 review CR-S01).
+	// Amended 2026-10-29 by the Phase 7.1 review fix round 2 (skeptic SK-02): a
+	// busy hasher checked no password, so it gives the counted try back, the
+	// same for every address, and binds nothing.
+	if r.q.count("ReserveSignInTry") != 1 || r.q.count("RefundSignInTry") != 1 || r.q.count("BindSessionAccount") != 0 {
+		t.Errorf("a busy sign in: tries counted %d, given back %d, binds %d; want 1, 1 and 0",
+			r.q.count("ReserveSignInTry"), r.q.count("RefundSignInTry"), r.q.count("BindSessionAccount"))
+	}
+	if th, ok := r.q.throttles[r.svc.ThrottleKey(credEmail)]; ok && (th.failures != 0 || th.locked != nil) {
+		t.Errorf("a busy sign in left failures %d and a lock %v; want neither", th.failures, th.locked)
 	}
 }
 
