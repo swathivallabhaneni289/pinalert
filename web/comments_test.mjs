@@ -1353,3 +1353,34 @@ test('IN-B07: an Enter with keyCode 229 ends the composition and does not post',
   page.input.fire('keydown', { key: 'Enter', keyCode: 13 });
   assert.equal(posts(env).length, before + 1, 'a plain Enter posts');
 });
+
+// ---- review fix IN-B02 (2026-10-29): a post with no readable answer asks for
+// the list again, so a comment the server did store shows before a second press. ----
+
+test('IN-B02: a post that timed out asks for the list again', async () => {
+  const env = load();
+  const page = await start(env, [cm(1)]);
+  type(page, 'Shelter is open');
+  page.post.fire('click');
+  env.advance(10000);
+  await flush();
+  const last = lastFetch(env);
+  assert.equal(last.opts.method, 'GET', 'the list is asked for after the unknown outcome');
+  last.reply(200, body([cm(1), cm(2, { is_own: true, author: 'me.k', words: 'Shelter is open' })]));
+  await flush();
+  assert.equal(page.items().length, 2, 'the stored comment shows');
+  assert.equal(page.input.value, 'Shelter is open', 'the words stay');
+});
+
+test('IN-B02: a 201 whose body cannot be read asks for the list again', async () => {
+  const env = load();
+  const page = await start(env, [cm(1)]);
+  type(page, 'Shelter is open');
+  page.post.fire('click');
+  lastFetch(env).stall(201);
+  await flush();
+  env.advance(10000);
+  await flush();
+  assert.equal(lastFetch(env).opts.method, 'GET');
+  assert.equal(page.error.textContent, "Couldn't post your comment. Try again.");
+});

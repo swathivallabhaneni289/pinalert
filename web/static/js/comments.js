@@ -1395,6 +1395,10 @@ window.PinalertComments = (function () {
         return;
       }
       showComposerError(POST_ERROR);
+      // The outcome is unknown (an unreadable answer, a 201 whose body never
+      // came): the list is asked for again, so a comment the server did store
+      // shows before a second press posts it twice (review fix IN-B02).
+      load();
     }
 
     function submit() {
@@ -1422,6 +1426,7 @@ window.PinalertComments = (function () {
         posting = false;
         writePostState();
         showComposerError(navigator.onLine === false ? OFFLINE_POST : POST_ERROR);
+        load();
       });
     }
 
