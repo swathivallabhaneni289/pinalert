@@ -84,9 +84,11 @@ type sendCeiling struct {
 //
 // The Resend free plan allows 100 emails a day and 3,000 a month; the caller
 // wires 90 so there is headroom (cmd/server/main.go only). The counts live in
-// memory, so a restart resets them. That is accepted because the provider
-// enforces the true limit. A send the wrapped mailer fails still counts, as
-// the provider may have counted it.
+// memory, so a restart, or a free host waking from sleep, resets them. That is
+// accepted as part of T-07.1-09 in docs/TRUST-MODEL.md: after a reset the
+// provider's own day limit is the only cap, and once it is spent the provider
+// refuses every email, Forgot password included. A send the wrapped mailer
+// fails still counts, as the provider may have counted it.
 //
 // The pacing means a burst cannot spend the whole day: a person refused in a
 // busy window gets in a few minutes later, not the next day. The sender share

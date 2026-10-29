@@ -246,7 +246,8 @@ and the backstop block beside it holds 6 more.
   sits behind a proxy, the existing per address limits (the sign in and code buckets and place search)
   see one shared address for every visitor. Amended 2026-10-29 by Phase 7.1: the login link
   requests this line once named are gone; the sign in limits are in TRUST-MODEL.md, "Signing in". Set it only after the host canary shows which header
-  carries the visitor address.
+  carries the visitor address. Amended 2026-10-29 by the Phase 7.1 review fix: outside
+  `ENV=development` the server will not start without it.
 - Every 429 carries a `Retry-After` header and a JSON body with `retry_after_seconds`,
   `serious` and, for a blocked serious report, `emergency_number`, the configured primary number.
 - For a report post, a 400, a text or gibberish reject, any failed post and a replay cost nothing
