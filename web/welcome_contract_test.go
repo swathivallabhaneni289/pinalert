@@ -323,7 +323,12 @@ func TestWelcomeStep3And4Privacy(t *testing.T) {
 	// the home area is for in the owner's words.
 	p13MustNotContain(t, "step 4", page, "Filled in from your location.", "welcome-home-prefilled")
 	w10Count(t, "welcome.html.tmpl", page, `id="welcome-home-help"`, 1)
-	p13Ordered(t, page, "home area field", `id="welcome-home-input"`, "Used to send you alerts about this area.")
+	// Amended 2026-10-29 by Phase 7.1 plan 13: the help line under the home area now
+	// reads "A town or area, never your street. Used for alerts." (UI-SPEC Surface
+	// 7). The UI-SPEC also starts it with "Filled in from your location.", which
+	// stays out on purpose: nothing fills the home area from the device (plan 33),
+	// so the sentence would be untrue and the ban above is kept.
+	p13Ordered(t, page, "home area field", `id="welcome-home-input"`, "A town or area, never your street. Used for alerts.")
 
 	// Amended 2026-10-17 by Phase 3.4 plan 28: the lone pin tile and the lead
 	// sentence became three cards; the privacy fact (never shown, never stored)
@@ -349,11 +354,13 @@ func TestWelcomeStep3And4Privacy(t *testing.T) {
 	p13MustNotContain(t, "welcome.html.tmpl", page,
 		"welcome-search", "welcome__search", "welcome-continue-3", "Type my location instead", "Type your location",
 		"Koramangala", "welcome__tile", "Search a place")
+	// Amended 2026-10-29 by Phase 7.1 plan 13: the optional lead and the Skip button
+	// are gone (step 4 is required, see TestWelcomeStep4Required); the name and home
+	// area inputs keep their placeholders and stored values, and Continue stays.
 	p13MustContain(t, "step 4", page,
-		"Both are optional. They show only if you later let others follow you.",
 		`placeholder="For example: Ravi Kumar"`,
 		`value="{{.DisplayName}}"`, `value="{{.HomeAreaName}}"`,
-		`id="welcome-continue-4">Continue</button>`, `id="welcome-skip">Skip</button>`)
+		`id="welcome-continue-4" aria-disabled="true">Continue</button>`)
 
 	raw := p421ReadStatic(t, "js/welcome.js")
 	js := stripJSComments(raw)
@@ -440,8 +447,10 @@ func TestWelcomeStepsAreFreelyNavigable(t *testing.T) {
 		"window.history.replaceState({ pinalertStep: n }, '', stepAddress(n))",
 		"window.addEventListener('popstate'", "goTo(n, 'none')",
 		"var CONSENT_STEP = 2;")
-	finish := jsFunctionBody(t, js, "finish(save)")
-	p13Ordered(t, finish, "finish", "if (!agreed) {", "goTo(CONSENT_STEP);", "showLine(consentError, MESSAGE_AGREE_FIRST);", "setFinishing(true);")
+	// Amended 2026-10-29 by Phase 7.1 plan 13: finish takes no argument (there is no
+	// Skip), and it checks the three fields after the agreement and before it sends.
+	finish := jsFunctionBody(t, js, "finishStep4()")
+	p13Ordered(t, finish, "finish", "if (!agreed) {", "goTo(CONSENT_STEP);", "showLine(consentError, MESSAGE_AGREE_FIRST);", "if (!allGood()) {", "setFinishing(true);")
 	// An address step never skips the agreement for an account that has not agreed.
 	first := jsFunctionBody(t, js, "firstStep(serverStep)")
 	p13MustContain(t, "firstStep", first, "serverStep > CONSENT_STEP ? stepCount : CONSENT_STEP", "return serverStep;")
@@ -458,14 +467,16 @@ func TestWelcomeStepsAreFreelyNavigable(t *testing.T) {
 func TestWelcomeScriptsAndStyles(t *testing.T) {
 	page := w10Template(t)
 
-	// The theme script is in the head, the two scripts load deferred in order.
+	// The theme script is in the head, the scripts load deferred in order.
+	// Amended 2026-10-29 by Phase 7.1 plan 13: username-check.js loads between
+	// position.js and welcome.js, so PinalertUsernameCheck exists when welcome.js runs.
 	p13Ordered(t, page, "scripts", `/static/js/theme.js?v={{.AssetVersion}}"></script>`, "</head>",
-		`/static/js/position.js?v={{.AssetVersion}}" defer></script>`, `/static/js/welcome.js?v={{.AssetVersion}}" defer></script>`)
+		`/static/js/position.js?v={{.AssetVersion}}" defer></script>`, `/static/js/username-check.js?v={{.AssetVersion}}" defer></script>`, `/static/js/welcome.js?v={{.AssetVersion}}" defer></script>`)
 	// Amended 2026-10-27 by quick 261027-t5w: auth.css comes second, as in
 	// settings.html.tmpl, because the alerts pop-up reuses the Log out box rules.
 	p13Ordered(t, page, "stylesheets", "/static/css/main.css", "/static/css/auth.css", "/static/css/chrome.css", "/static/css/app-bar.css", "/static/css/legal.css", "/static/css/window.css", "/static/css/welcome.css")
 
-	for _, name := range []string{"js/welcome.js", "js/position.js"} {
+	for _, name := range []string{"js/welcome.js", "js/position.js", "js/username-check.js"} {
 		js := stripJSComments(p421ReadStatic(t, name))
 		for _, sink := range []string{"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function", "DOMParser"} {
 			if strings.Contains(js, sink) {
@@ -498,6 +509,7 @@ func TestWelcomeScriptsAndStyles(t *testing.T) {
 		"templates/welcome.html.tmpl": stripReadTemplate(t, "welcome.html.tmpl"),
 		"js/welcome.js":               p421ReadStatic(t, "js/welcome.js"),
 		"js/position.js":              p421ReadStatic(t, "js/position.js"),
+		"js/username-check.js":        p421ReadStatic(t, "js/username-check.js"),
 		"css/welcome.css":             p421ReadStatic(t, "css/welcome.css"),
 	}
 	for name, text := range files {
@@ -704,8 +716,9 @@ func TestWelcomeAlertsScript(t *testing.T) {
 	// The flow is recorded as done from one sender, and a finish attempt reaches
 	// it once: finish only ends through endFlow.
 	w10Count(t, "welcome.js", js, "request(DONE_URL", 1)
-	p13MustNotContain(t, "finish", jsFunctionBody(t, js, "finish(save)"), "postDone(")
-	p13MustContain(t, "finish", jsFunctionBody(t, js, "finish(save)"), "endFlow(")
+	// Amended 2026-10-29 by Phase 7.1 plan 13: finish(save) is finish().
+	p13MustNotContain(t, "finish", jsFunctionBody(t, js, "finishStep4()"), "postDone(")
+	p13MustContain(t, "finish", jsFunctionBody(t, js, "finishStep4()"), "endFlow(")
 	post := jsFunctionBody(t, js, "postDone()")
 	p13MustContain(t, "postDone", post, "answer.status === 409", "goTo(2);", "MESSAGE_AGREE_FIRST", "doneFailed();", "profileError")
 
@@ -714,4 +727,146 @@ func TestWelcomeAlertsScript(t *testing.T) {
 		"'Alerts'", "TITLE_LATER", "ALERTS_STEP", "alertsStep", "alertsSeq", "setAlertsBusy", "drawAlerts", "enterAlerts",
 		"toAlerts", "alertsDone", "welcome-step-5", "welcome-alerts-status", "welcome-alerts-nohome", "hasHomeArea", "doneErrorLine",
 		"'Install to get alerts'", "MESSAGE_ALERTS_")
+}
+
+// TestWelcomeStep4Required pins Phase 7.1 plan 13 (D-06, D-08, UI-SPEC Surface 7):
+// step 4 About you asks for a Username, a Name and a Home area, all three
+// required. There is no Skip and no optional lead, the lead follows the account
+// that is filling in, Continue is the only button and starts switched off with
+// aria-disabled (the shared btn--off look), the alerts pop-up and the "of 4"
+// count are as built, and the script keeps a 409 with field profile on step 4.
+func TestWelcomeStep4Required(t *testing.T) {
+	page := w10Template(t)
+	step4 := regexp.MustCompile(`(?s)<section class="welcome__step" id="welcome-step-4".*?</section>`).FindString(page)
+	if step4 == "" {
+		t.Fatalf("no step 4 section in welcome.html.tmpl")
+	}
+
+	// Nothing optional is left: no Skip button, no id, no optional lead.
+	p13MustNotContain(t, "step 4", step4, "welcome-skip", ">Skip<", "Both are optional", "They show only if you later let others follow you")
+	p13MustNotContain(t, "welcome.html.tmpl", page, "welcome-skip", ">Skip<", "Both are optional")
+
+	// The two leads, switched on the account that is filling in.
+	p13Ordered(t, step4, "step 4 lead", `<p class="welcome__lead">{{if .FillingIn}}`,
+		"Pinalert now asks everyone for a username, a name and a home area. Fill in what is missing.",
+		"{{else}}", "All three are needed to finish signing up. You can change them later in Settings.", "{{end}}</p>")
+
+	// The three fields in order, with their labels and their small lines.
+	p13Ordered(t, step4, "step 4 fields",
+		`<label class="app-window__label" for="welcome-username-input">Username</label>`,
+		`id="welcome-username-status"`,
+		`id="welcome-username-help">Shown on your comments, to everyone.</p>`,
+		`<label class="app-window__label" for="welcome-name-input">Name</label>`,
+		`id="welcome-name-help">Shown only if you let others follow you.</p>`,
+		`<label class="app-window__label" for="welcome-home-input">Home area</label>`,
+		`id="welcome-home-help">A town or area, never your street. Used for alerts.</p>`,
+		`id="welcome-error-4"`, `id="welcome-continue-4"`)
+	p13MustNotContain(t, "step 4", step4, ">Your name<", "Used to send you alerts about this area.")
+	p13MustContain(t, "step 4", step4,
+		`placeholder="For example: ravi.k"`, `value="{{.Username}}"`,
+		`placeholder="For example: Ravi Kumar"`, `maxlength="60"`, `autocomplete="name"`,
+		`id="welcome-name-help"`, `aria-describedby="welcome-name-help"`)
+
+	// The live line: a status that announces politely, empty until the script writes it.
+	p13MustContain(t, "step 4", step4,
+		`<p class="username-status" id="welcome-username-status" role="status" aria-live="polite"></p>`)
+
+	// Continue is the only button of the step's actions, switched off by aria-disabled
+	// and never by the disabled attribute, in the shared full contrast look.
+	actions := regexp.MustCompile(`(?s)<div class="welcome__actions">.*?</div>`).FindString(step4)
+	if actions == "" {
+		t.Fatalf("no actions row in step 4")
+	}
+	w10Count(t, "step 4 actions", actions, "<button", 1)
+	p13MustContain(t, "step 4 actions", actions,
+		`<button type="button" class="btn btn--off" id="welcome-continue-4" aria-disabled="true">Continue</button>`)
+	p13MustNotContain(t, "step 4 actions", actions, "disabled>", " disabled ", "btn--primary", "btn--destructive")
+	w10Count(t, "step 4", step4, `class="btn`, 1)
+
+	// The server names the step Agree leads to.
+	p13MustContain(t, "flow root", page, `data-after-terms-step="{{.AfterTermsStep}}"`)
+
+	// The end of the flow is as built: four steps counted of 4, the alerts pop-up
+	// with Not now and Allow, and no ask for a home area after step 4.
+	w10Count(t, "welcome.html.tmpl", page, ` of 4</p>`, 4)
+	p13MustNotContain(t, "welcome.html.tmpl", page, " of 5", "Step 5", "welcome-alerts-nohome")
+	p13MustContain(t, "alerts pop-up", page,
+		`<dialog id="welcome-alerts-ask"`, `id="welcome-alerts-later">Not now</button>`, `id="welcome-alerts-allow">Allow</button>`)
+
+	// The script: no Skip, the three checks, the off look, the guide line and the
+	// 409 profile branch that returns to step 4.
+	js := stripJSComments(p421ReadStatic(t, "js/welcome.js"))
+	p13MustNotContain(t, "welcome.js", js, "welcome-skip", "skipButton")
+	p13MustContain(t, "welcome.js", js,
+		"var MESSAGE_ADD_ALL = 'Add your username, name and home area.';",
+		"function updateContinue()", "continueButton.setAttribute('aria-disabled', 'true');",
+		"continueButton.removeAttribute('aria-disabled');", "'btn--off'", "'btn--primary'",
+		"function focusFirstMissing()", "PinalertUsernameCheck.attach(", "mode: 'signup'",
+		"root.getAttribute('data-after-terms-step')", "goTo(afterTermsStep);")
+	p13MustNotContain(t, "welcome.js", js, ".disabled = !", "continueButton.setAttribute('disabled'")
+	post := jsFunctionBody(t, js, "postDone()")
+	p13Ordered(t, post, "postDone", "doneFailed();", "answer.status === 409 && answer.body", "answer.body.error.field === 'profile'", "goTo(4);", "showLine(profileError", "goTo(2);")
+	body := jsFunctionBody(t, js, "profileBody()")
+	p13MustContain(t, "profileBody", body, "body.username = username;", "storedUsername")
+
+	// The shared look: the box, the @ and the status line, each display rule
+	// guarded for hidden, no !important and the tone classes by name.
+	css := stripCSSComments(p421ReadStatic(t, "css/chrome.css"))
+	p13MustContain(t, "chrome.css", css,
+		".username-field {", ".username-field:focus-within {", ".username-field__at {", ".username-field__input {",
+		".username-status:not([hidden]) {", ".username-status--good {", ".username-status--bad {",
+		"min-height: var(--touch-target-min);", "color: var(--color-tone-good);", "color: var(--color-tone-bad);")
+	block := css[strings.Index(css, ".username-field {"):]
+	if strings.Contains(block, "!important") {
+		t.Errorf("the username rules in chrome.css use !important")
+	}
+}
+
+// TestWelcomeUsernameNotLoginField pins T-07.1-30: a password manager must never
+// save the Username as the login. The input is autocomplete off (never username),
+// is not named username, switches off capitals, correction and spell check, holds
+// a plain @ in front of it inside one box, and the page has no password field.
+func TestWelcomeUsernameNotLoginField(t *testing.T) {
+	page := w10Template(t)
+	w10Count(t, "welcome.html.tmpl", page, `id="welcome-username-input"`, 1)
+	input := regexp.MustCompile(`<input[^>]*id="welcome-username-input"[^>]*>`).FindString(page)
+	if input == "" {
+		t.Fatalf("no Username input in welcome.html.tmpl")
+	}
+	p13MustContain(t, "username input", input,
+		`autocomplete="off"`, `autocapitalize="none"`, `autocorrect="off"`, `spellcheck="false"`,
+		`inputmode="text"`, `enterkeyhint="next"`, `maxlength="20"`, `type="text"`, `name="handle"`)
+	p13MustNotContain(t, "username input", input, `autocomplete="username"`, `name="username"`, `type="email"`, `type="password"`)
+	p13MustNotContain(t, "welcome.html.tmpl", page, `autocomplete="username"`, `type="password"`, `autocomplete="current-password"`, `autocomplete="new-password"`)
+	// The plain @ is decoration inside the same box, ahead of the input.
+	p13MustMatch(t, "username box", page, `(?s)<div class="username-field">\s*<span class="username-field__at" aria-hidden="true">@</span>\s*`+regexp.QuoteMeta(input)+`\s*</div>`)
+}
+
+// TestWelcomeNoTaglineAdded pins the owner rules for this plan: no tagline, no
+// hint and no sentence is added to the laptop step panel. The panel keeps the
+// elements it had before plan 13, in order, and the one tagline that was already
+// there.
+func TestWelcomeNoTaglineAdded(t *testing.T) {
+	page := w10Template(t)
+	w10Count(t, "welcome.html.tmpl", page, "welcome__tagline", 1)
+	w10Count(t, "welcome.html.tmpl", page, "welcome__wordmark", 1)
+
+	side := regexp.MustCompile(`(?s)<aside class="welcome__side">.*?</aside>`).FindString(page)
+	if side == "" {
+		t.Fatalf("no laptop step panel in welcome.html.tmpl")
+	}
+	var tags []string
+	for _, m := range regexp.MustCompile(`<([a-z][a-z0-9]*)`).FindAllStringSubmatch(side, -1) {
+		tags = append(tags, m[1])
+	}
+	// The list recorded before this plan: the panel, the wordmark, the tagline and
+	// the step list (one item per step: the button, the dot with its number and its
+	// tick, and the name).
+	want := []string{"aside", "p", "p", "ol", "li", "button", "span", "span", "span", "span"}
+	if strings.Join(tags, " ") != strings.Join(want, " ") {
+		t.Errorf("the laptop step panel holds the elements %v, want exactly %v", tags, want)
+	}
+	p13MustContain(t, "laptop step panel", side,
+		`<p class="welcome__wordmark">Pinalert</p>`,
+		`<p class="welcome__tagline">Live emergency updates from people nearby, confirmed by others who are there.</p>`)
 }

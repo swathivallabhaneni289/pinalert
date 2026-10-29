@@ -15,7 +15,11 @@
 //     search, and both go to step 4 whatever the browser answers;
 //   - step 4's home area comes only from a picked search result of its own,
 //     never from step 3 and never from the device fix; nothing is saved until
-//     Continue; Skip saves nothing;
+//     Continue (amended 2026-10-29 by Phase 7.1 plan 13: there is no Skip);
+//   - step 4 asks for a Username (with the shared live check), a Name and a Home
+//     area, all three required: Continue is switched off until all three are
+//     good, guides when pressed while off, sends the changed fields in one
+//     profile request and shows a refusal of the username under the Username;
 //   - finishing step 4 sends the profile (only what the person filled), then opens
 //     the alerts pop-up (the default fake device can show alerts); Not now in
 //     the pop-up sends first-run-done and lands on / with the search focus flag
@@ -36,6 +40,9 @@ import vm from 'node:vm';
 
 const here = path.dirname(url.fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.join(here, 'static', 'js', 'welcome.js'), 'utf8');
+// Amended 2026-10-29 by Phase 7.1 plan 13: step 4 asks for a Username with the
+// shared live check, so the page loads username-check.js first, as the template does.
+const checkSource = fs.readFileSync(path.join(here, 'static', 'js', 'username-check.js'), 'utf8');
 
 class FakeEl {
   constructor(doc, tag, id) {
@@ -120,7 +127,9 @@ class FakeEl {
 const STEP_NAMES = ['Welcome', 'Disclaimer and policy', 'Your location', 'About you'];
 
 // The markup of welcome.html.tmpl, as the ids and nesting welcome.js reads.
-function buildPage({ start = 1, name = '', home = '', marker = true } = {}) {
+// Amended 2026-10-29 by Phase 7.1 plan 13: username is the name the account has
+// already (the value the template draws), afterTerms is data-after-terms-step.
+function buildPage({ start = 1, name = '', home = '', username = '', afterTerms = 3, marker = true } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -141,6 +150,7 @@ function buildPage({ start = 1, name = '', home = '', marker = true } = {}) {
   const root = make('div', 'welcome', doc.body);
   root.setAttribute('data-start-step', String(start));
   root.setAttribute('data-step', String(start));
+  root.setAttribute('data-after-terms-step', String(afterTerms));
 
   const side = make('aside', '', root, 'welcome__side');
   const list = make('ol', '', side, 'welcome__steps');
@@ -196,6 +206,12 @@ function buildPage({ start = 1, name = '', home = '', marker = true } = {}) {
   make('button', 'welcome-allow-location', steps[2]);
   make('button', 'welcome-not-now', steps[2]);
 
+  // Amended 2026-10-29 by Phase 7.1 plan 13: the Username, its live line and the
+  // box round them (the .username-field box the script puts a click on).
+  const userBox = make('div', '', steps[3], 'username-field');
+  const userInput = make('input', 'welcome-username-input', userBox);
+  userInput.value = username;
+  make('p', 'welcome-username-status', steps[3], 'username-status');
   const nameInput = make('input', 'welcome-name-input', steps[3]);
   nameInput.value = name;
   const form4 = make('form', 'welcome-home-form', steps[3]);
@@ -204,8 +220,10 @@ function buildPage({ start = 1, name = '', home = '', marker = true } = {}) {
   make('p', 'welcome-home-status', steps[3]).hidden = true;
   make('ul', 'welcome-home-results', steps[3]).hidden = true;
   make('p', 'welcome-error-4', steps[3]).hidden = true;
-  make('button', 'welcome-continue-4', steps[3]);
-  make('button', 'welcome-skip', steps[3]);
+  // Amended 2026-10-29 by Phase 7.1 plan 13: Continue starts off (aria-disabled and
+  // btn--off, as the template draws it) and there is no Skip button any more.
+  const continue4 = make('button', 'welcome-continue-4', steps[3], 'btn btn--off');
+  continue4.setAttribute('aria-disabled', 'true');
 
   // The alerts pop-up (quick 261027-t5w): a native dialog that is a direct child
   // of body and a sibling of the flow root, shaped like the one in
@@ -243,6 +261,10 @@ function load(options) {
     disconnect() { this.disconnected = true; }
   }
   const requests = [];
+  // Amended 2026-10-29 by Phase 7.1 plan 13: the live username checks are kept
+  // apart from the other requests, so the assertions on the requests of the flow
+  // itself keep their order and their count.
+  const checks = [];
   const positionCalls = [];
   const saved = [];
   const asked = [];
@@ -277,7 +299,8 @@ function load(options) {
     document: page.doc,
     fetch(target, init) {
       return new Promise((resolve, reject) => {
-        requests.push({ url: String(target), init: init || {}, resolve, reject, at: now });
+        const list = String(target).startsWith('/api/username/check') ? checks : requests;
+        list.push({ url: String(target), init: init || {}, resolve, reject, at: now });
       });
     },
     setTimeout(fn, ms) { const id = nextId++; timers.set(id, { fn, at: now + ms }); return id; },
@@ -316,9 +339,10 @@ function load(options) {
   if (options && options.observer) { sandbox.IntersectionObserver = FakeIO; }
   sandbox.window = sandbox;
   vm.createContext(sandbox);
+  vm.runInContext(checkSource, sandbox, { filename: 'username-check.js' });
   vm.runInContext(source, sandbox, { filename: 'welcome.js' });
   const popTo = (state) => (listeners.popstate || []).forEach((fn) => fn({ type: 'popstate', state }));
-  return { ...page, api: sandbox.PinalertWelcome, requests, positionCalls, saved, asked, replaced, session, advance, sandbox, pushes, stateReplaces, popTo, observers };
+  return { ...page, api: sandbox.PinalertWelcome, requests, checks, positionCalls, saved, asked, replaced, session, advance, sandbox, pushes, stateReplaces, popTo, observers };
 }
 
 const flush = async () => { for (let i = 0; i < 8; i++) { await new Promise((r) => setImmediate(r)); } };
@@ -350,6 +374,43 @@ const PLACES = [
   { name: 'Indiranagar', display_name: 'Indiranagar, Bengaluru, Karnataka, India', lat: 12.9784, lon: 77.6408, area: 'Indiranagar' },
   { name: 'Indira Nagar', display_name: 'Indira Nagar, Lucknow, Uttar Pradesh, India', lat: 26.8806, lon: 80.9946, area: 'Indira Nagar' }
 ];
+
+// Amended 2026-10-29 by Phase 7.1 plan 13: fillStep4 does what a person does on
+// step 4 now that Username, Name and Home area are all required: type a username
+// and let the 300 ms pause pass, answer its live check with available, type a
+// name, and search for and pick a home area. It leaves Continue for the test to
+// press. A part set to null is skipped (the page already holds it). The live
+// checks are kept apart from the other requests (page.checks), and the home area
+// search request is taken out of page.requests again, so the assertions of a test
+// on the requests that come after keep their order and their count.
+async function fillStep4(page, options = {}) {
+  const o = { username: 'ravi.k', name: 'Ravi Kumar', place: PLACES[0], ...options };
+  if (o.username !== null) {
+    const user = byId(page, 'welcome-username-input');
+    user.value = o.username;
+    fire(user, 'input');
+    page.advance(300);
+    answer(page.checks[page.checks.length - 1], 200, { state: 'available', message: o.username + ' is available.' });
+    await flush();
+  }
+  if (o.name !== null) {
+    const name = byId(page, 'welcome-name-input');
+    name.value = o.name;
+    fire(name, 'input');
+  }
+  if (o.place !== null) {
+    byId(page, 'welcome-home-input').value = o.place.name;
+    fire(byId(page, 'welcome-home-form'), 'submit');
+    const search = page.requests[page.requests.length - 1];
+    answer(search, 200, { results: [o.place] });
+    await flush();
+    fire(byId(page, 'welcome-home-results').children[0].children[0], 'click');
+    page.requests.splice(page.requests.indexOf(search), 1);
+  }
+}
+
+// A page whose account already holds all three, so Continue is on and saves nothing.
+const STORED = { username: 'asha.k', name: 'Asha', home: 'Whitefield' };
 
 // Walk to step 4 through the buttons, the way a person does.
 async function walkToStep4(page) {
@@ -571,7 +632,9 @@ test('step 3 never fills or empties step 4: the home area is left as the page dr
   click(empty, 'welcome-not-now');
   assert.equal(byId(empty, 'welcome-home-input').value, '');
 
-  const stored = load({ start: 3, home: 'Whitefield' });
+  // Amended 2026-10-29 by Phase 7.1 plan 13: Continue needs all three, so the
+  // stored page holds a username and a name too.
+  const stored = load({ start: 3, ...STORED });
   click(stored, 'welcome-not-now');
   assert.equal(byId(stored, 'welcome-home-input').value, 'Whitefield', 'a stored home area stays');
   // Amended 2026-10-27 by quick 261027-t5w: step 4's Continue opens the alerts
@@ -618,14 +681,19 @@ test('Not now is not a way past the agreement: finishing still needs Agree', asy
   const page = load({ start: 1 });
   fire(listButton(page, 3), 'click');
   click(page, 'welcome-not-now');
-  click(page, 'welcome-skip');
-  assert.equal(visibleStep(page), 2, 'Skip before Agree shows step 2');
+  // Amended 2026-10-29 by Phase 7.1 plan 13: there is no Skip; Continue is held
+  // to the same rule.
+  click(page, 'welcome-continue-4');
+  assert.equal(visibleStep(page), 2, 'Continue before Agree shows step 2');
   assert.equal(page.requests.length, 0);
 });
 
+// Amended 2026-10-29 by Phase 7.1 plan 13: the page holds a username and a home
+// area already, so the one changed field is the name.
 test('step 4 Continue sends only the filled fields, then first-run-done, then lands on / with the search flag', async () => {
-  const page = load({ start: 4 });
+  const page = load({ start: 4, username: 'ravi.k', home: 'Whitefield' });
   byId(page, 'welcome-name-input').value = '  Ravi Kumar  ';
+  fire(byId(page, 'welcome-name-input'), 'input');
   click(page, 'welcome-continue-4');
   click(page, 'welcome-continue-4');
 
@@ -656,34 +724,38 @@ test('step 4 Continue sends only the filled fields, then first-run-done, then la
 
 // Amended 2026-10-27 by quick 261027-t5w: both ways on from step 4 open the
 // alerts pop-up, whose Not now sends first-run-done.
-test('with both fields empty there is no profile request, and Skip sends only first-run-done', async () => {
-  const empty = load({ start: 4 });
-  click(empty, 'welcome-continue-4');
-  assert.equal(empty.requests.length, 0);
-  assert.equal(empty.dialog.open, true);
-  click(empty, 'welcome-alerts-later');
-  assert.equal(empty.requests.length, 1);
-  assert.equal(empty.requests[0].url, '/api/me/first-run-done');
-  answer(empty.requests[0], 204);
+// Amended 2026-10-29 by Phase 7.1 plan 13: there is no Skip and no empty Continue.
+// An account that already holds all three presses Continue and nothing is saved;
+// a Continue pressed while a field is missing sends nothing and guides.
+test('with the username, name and home area all stored there is no profile request, and Continue sends only first-run-done', async () => {
+  const stored = load({ start: 4, ...STORED });
+  assert.equal(byId(stored, 'welcome-continue-4').getAttribute('aria-disabled'), null, 'Continue is on');
+  click(stored, 'welcome-continue-4');
+  assert.equal(stored.requests.length, 0);
+  assert.equal(stored.dialog.open, true);
+  click(stored, 'welcome-alerts-later');
+  assert.equal(stored.requests.length, 1);
+  assert.equal(stored.requests[0].url, '/api/me/first-run-done');
+  answer(stored.requests[0], 204);
   await flush();
-  assert.deepEqual(empty.replaced, ['/']);
+  assert.deepEqual(stored.replaced, ['/']);
+  assert.equal(stored.session['pinalert.focusSearch'], '1');
+});
 
-  const skipped = load({ start: 4 });
-  byId(skipped, 'welcome-name-input').value = 'Typed but skipped';
-  click(skipped, 'welcome-skip');
-  assert.equal(skipped.requests.length, 0);
-  assert.equal(skipped.dialog.open, true);
-  click(skipped, 'welcome-alerts-later');
-  assert.equal(skipped.requests.length, 1, 'Skip saves nothing the person typed');
-  assert.equal(skipped.requests[0].url, '/api/me/first-run-done');
-  answer(skipped.requests[0], 204);
-  await flush();
-  assert.equal(skipped.session['pinalert.focusSearch'], '1');
-  assert.deepEqual(skipped.replaced, ['/']);
+test('Continue pressed while a field is missing sends nothing, opens nothing and says what to add', async () => {
+  const page = load({ start: 4 });
+  byId(page, 'welcome-name-input').value = 'Typed but not enough';
+  fire(byId(page, 'welcome-name-input'), 'input');
+  click(page, 'welcome-continue-4');
+  assert.equal(page.requests.length, 0);
+  assert.equal(page.dialog.open, false);
+  assert.equal(visibleStep(page), 4);
+  assert.equal(byId(page, 'welcome-error-4').textContent, 'Add your username, name and home area.');
+  assert.equal(byId(page, 'welcome-error-4').hidden, false);
 });
 
 test('a stored name and home area left alone are not sent again', async () => {
-  const page = load({ start: 4, name: 'Asha', home: 'Whitefield' });
+  const page = load({ start: 4, ...STORED });
   click(page, 'welcome-continue-4');
   assert.equal(page.requests.length, 0);
   click(page, 'welcome-alerts-later');
@@ -691,8 +763,10 @@ test('a stored name and home area left alone are not sent again', async () => {
   assert.equal(page.requests[0].url, '/api/me/first-run-done');
 });
 
+// Amended 2026-10-29 by Phase 7.1 plan 13: the account holds a username and a
+// name, so the home area is the one thing picked here.
 test('the home area sent is the picked place with its own point, never the device fix, and typed text alone is not sent', async () => {
-  const page = load({ start: 3 });
+  const page = load({ start: 3, username: STORED.username, name: STORED.name });
   click(page, 'welcome-allow-location');
   page.positionCalls[0].ok({ coords: { latitude: 1.5, longitude: 2.5 } });
   await flush();
@@ -713,18 +787,21 @@ test('the home area sent is the picked place with its own point, never the devic
   assert.deepEqual(body, { home_area: { name: 'Whitefield', lat: 12.9698, lon: 77.7499 } });
   assert.equal(JSON.stringify(page.requests.map((r) => r.init.body)).includes('1.5'), false, 'the device fix is in no request');
 
-  const typed = load({ start: 4 });
+  // Amended 2026-10-29 by Phase 7.1 plan 13: text that was never picked is not a
+  // home area, so Continue stays off and sends nothing at all.
+  const typed = load({ start: 4, username: STORED.username, name: STORED.name });
   byId(typed, 'welcome-home-input').value = 'Somewhere I typed';
+  fire(byId(typed, 'welcome-home-input'), 'input');
   click(typed, 'welcome-continue-4');
-  assert.equal(typed.requests.length, 0);
-  click(typed, 'welcome-alerts-later');
-  assert.equal(typed.requests.length, 1, 'text that was never picked from a search is not a home area');
-  assert.equal(typed.requests[0].url, '/api/me/first-run-done');
+  assert.equal(typed.requests.length, 0, 'text that was never picked from a search is not a home area');
+  assert.equal(typed.dialog.open, false);
+  assert.equal(byId(typed, 'welcome-error-4').textContent, 'Add your username, name and home area.');
 });
 
 test('a refused profile keeps step 4 with the server sentence and does not finish', async () => {
-  const page = load({ start: 4 });
+  const page = load({ start: 4, username: 'ravi.k', home: 'Whitefield' });
   byId(page, 'welcome-name-input').value = 'Ravi';
+  fire(byId(page, 'welcome-name-input'), 'input');
   click(page, 'welcome-continue-4');
   answer(page.requests[0], 400, { error: { field: 'display_name', message: 'Use letters, numbers and spaces in your name.' } });
   await flush();
@@ -745,16 +822,51 @@ test('a refused profile keeps step 4 with the server sentence and does not finis
   assert.deepEqual(page.replaced, []);
 });
 
+// Amended 2026-10-29 by Phase 7.1 plan 13: Skip is gone, so the flow is finished
+// with fillStep4 and Continue.
 test('first-run-done refused for missing consent sends the person back to step 2 and does not leave', async () => {
   const page = load({ start: 4 });
-  click(page, 'welcome-skip');
+  await fillStep4(page);
+  click(page, 'welcome-continue-4');
+  answer(page.requests[0], 200);
+  await flush();
   click(page, 'welcome-alerts-later');
-  answer(page.requests[0], 409, { error: { field: 'terms', message: 'Agree first.' } });
+  answer(page.requests[1], 409, { error: { field: 'terms', message: 'Agree first.' } });
   await flush();
   assert.equal(visibleStep(page), 2);
   assert.equal(byId(page, 'welcome-error-2').textContent, 'Please agree to the Disclaimer and policy to continue.');
   assert.deepEqual(page.replaced, []);
   assert.equal(page.session['pinalert.focusSearch'], undefined);
+});
+
+// Phase 7.1 plan 13: first-run-done answers 409 with field profile while the
+// username, the name or the home area is still missing on the server. That is not
+// the agreement: the pop-up is put away and the person is back on step 4.
+test('a 409 with field profile from first-run-done closes the pop-up and returns to step 4 with its sentence', async () => {
+  const page = load({ start: 4, ...STORED });
+  click(page, 'welcome-continue-4');
+  assert.equal(page.dialog.open, true);
+  click(page, 'welcome-alerts-later');
+  answer(page.requests[0], 409, { error: { field: 'profile', message: 'Add your username, name and home area.' } });
+  await flush();
+  assert.equal(page.dialog.open, false, 'the pop-up is closed');
+  assert.equal(visibleStep(page), 4, 'not step 2');
+  const line = byId(page, 'welcome-error-4');
+  assert.equal(line.hidden, false);
+  assert.equal(line.textContent, 'Add your username, name and home area.');
+  assert.equal(byId(page, 'welcome-error-2').hidden, true, 'no agree line');
+  assert.deepEqual(page.replaced, []);
+  assert.equal(byId(page, 'welcome-continue-4').disabled, false, 'Continue is free again');
+});
+
+test('a 409 with any other field still goes back to step 2 with the agree line', async () => {
+  const page = load({ start: 4, ...STORED });
+  click(page, 'welcome-continue-4');
+  click(page, 'welcome-alerts-later');
+  answer(page.requests[0], 409, { error: { field: 'terms', message: 'Agree first.' } });
+  await flush();
+  assert.equal(visibleStep(page), 2);
+  assert.equal(byId(page, 'welcome-error-2').textContent, 'Please agree to the Disclaimer and policy to continue.');
 });
 
 test('Escape does nothing and Tab stays inside the current step', () => {
@@ -1107,21 +1219,24 @@ test('Finish before Agree shows step 2 with a line asking to agree first, and se
   assert.equal(line.textContent, AGREE_FIRST);
   assert.equal(page.replaced.length, 0, 'the person did not leave the flow');
 
-  // The line goes when the person moves on, and Skip is held to the same rule.
+  // The line goes when the person moves on, and a second press is held to the same
+  // rule (amended 2026-10-29 by Phase 7.1 plan 13: there is no Skip).
   fire(listButton(page, 4), 'click');
   assert.equal(line.hidden, true);
-  click(page, 'welcome-skip');
+  click(page, 'welcome-continue-4');
   assert.equal(visibleStep(page), 2);
   assert.equal(line.textContent, AGREE_FIRST);
   assert.equal(page.requests.length, 0);
 
   // The public hook is held to it too.
   page.api.goTo(4);
-  page.api.finish(true);
+  page.api.finish();
   assert.equal(visibleStep(page), 2);
   assert.equal(page.requests.length, 0);
 });
 
+// Amended 2026-10-29 by Phase 7.1 plan 13: Skip is gone; the three fields are
+// filled with fillStep4 and Continue saves them before the pop-up.
 test('after Agree, Finish works from step 4 even when the person came back to step 2 first', async () => {
   const page = load();
   click(page, 'welcome-continue-1');
@@ -1131,18 +1246,21 @@ test('after Agree, Finish works from step 4 even when the person came back to st
   click(page, 'welcome-back-3');
   assert.equal(visibleStep(page), 2);
   fire(listButton(page, 4), 'click');
-  click(page, 'welcome-skip');
+  await fillStep4(page);
+  click(page, 'welcome-continue-4');
+  answer(page.requests[1], 200);
+  await flush();
   click(page, 'welcome-alerts-later');
-  assert.equal(page.requests.length, 2);
-  assert.equal(page.requests[1].url, '/api/me/first-run-done');
-  answer(page.requests[1], 204);
+  assert.equal(page.requests.length, 3);
+  assert.equal(page.requests[2].url, '/api/me/first-run-done');
+  answer(page.requests[2], 204);
   await flush();
   assert.deepEqual(page.replaced, ['/']);
 });
 
 test('the server consent rule still holds: a 409 from first-run-done sends the person back to step 2', async () => {
-  const page = load({ start: 4 });
-  click(page, 'welcome-skip');
+  const page = load({ start: 4, ...STORED });
+  click(page, 'welcome-continue-4');
   click(page, 'welcome-alerts-later');
   answer(page.requests[0], 409, { error: { message: 'agree first' } });
   await flush();
@@ -1214,8 +1332,10 @@ test('an address step is honoured only when the account may see it', () => {
   assert.equal(loaded.stateReplaces[0].address, '?step=4', 'the entry names the step actually shown');
 });
 
+// Amended 2026-10-29 by Phase 7.1 plan 13: the account holds a username, so the
+// name and the home area are what this walk fills and sends.
 test('what was typed or picked is kept while moving between steps', async () => {
-  const page = load();
+  const page = load({ username: STORED.username });
   fire(listButton(page, 3), 'click');
   fire(listButton(page, 4), 'click');
   assert.equal(byId(page, 'welcome-home-input').value, '', 'step 3 leaves nothing in the home area');
@@ -1282,7 +1402,7 @@ test('the typed row shows first as Use "name" with the town on the second line',
 });
 
 test('picking the typed row puts the cleaned name in the field and saves it with the row position', async () => {
-  const page = load({ start: 4 });
+  const page = load({ start: 4, username: STORED.username, name: STORED.name });
   typeHome(page, OWNER_TEXT);
   page.advance(400);
   answer(page.requests[0], 200, { results: [TYPED_ROW, ...PLACES] });
@@ -1690,4 +1810,237 @@ test('WR-B05: a hidden input or a control with tabindex -1 is never a Tab stop',
   reread.focus();
   assert.equal(fire(page.root, 'keydown', { key: 'Tab' }).prevented, true);
   assert.ok(page.doc.activeElement === logout, 'Tab from Read again passes over the hidden input and the tabindex -1 button to Log out');
+});
+
+// ---- Phase 7.1 plan 13: step 4 asks for all three ---------------------------
+
+const continueOff = (page) => byId(page, 'welcome-continue-4').getAttribute('aria-disabled') === 'true';
+const classesOf = (page, id) => byId(page, id).className.split(/\s+/);
+const userLine = (page) => byId(page, 'welcome-username-status');
+
+test('Continue starts switched off with aria-disabled and btn--off, never the disabled attribute', () => {
+  const page = load({ start: 4 });
+  assert.equal(continueOff(page), true);
+  assert.ok(classesOf(page, 'welcome-continue-4').includes('btn--off'));
+  assert.ok(!classesOf(page, 'welcome-continue-4').includes('btn--primary'));
+  assert.equal(byId(page, 'welcome-continue-4').disabled, false, 'still reachable by keyboard');
+  assert.equal(userLine(page).textContent, 'Use 3 to 20 letters, numbers, dots or underscores.', 'the rule already shows');
+});
+
+test('Continue switches on only when the username, the name and the home area are all good, and off again when one goes', async () => {
+  const page = load({ start: 4 });
+  await fillStep4(page, { name: null, place: null });
+  assert.equal(continueOff(page), true, 'a username alone is not enough');
+  await fillStep4(page, { username: null, place: null });
+  assert.equal(continueOff(page), true, 'a name and a username are not enough');
+  await fillStep4(page, { username: null, name: null });
+  assert.equal(continueOff(page), false, 'all three are good');
+  assert.ok(classesOf(page, 'welcome-continue-4').includes('btn--primary'));
+  assert.ok(!classesOf(page, 'welcome-continue-4').includes('btn--off'));
+  assert.equal(byId(page, 'welcome-continue-4').getAttribute('aria-disabled'), null);
+
+  // Emptying the name, retyping the username or editing the picked place switches it off.
+  const name = byId(page, 'welcome-name-input');
+  name.value = '  ';
+  fire(name, 'input');
+  assert.equal(continueOff(page), true, 'a name with no letter or digit is not a name');
+  name.value = 'Ravi';
+  fire(name, 'input');
+  assert.equal(continueOff(page), false);
+  const user = byId(page, 'welcome-username-input');
+  user.value = 'ravi.kk';
+  fire(user, 'input');
+  assert.equal(continueOff(page), true, 'a new username is good only after its check says so');
+  const home = byId(page, 'welcome-home-input');
+  home.value = 'Indiranagar, edited';
+  fire(home, 'input');
+  assert.equal(continueOff(page), true);
+});
+
+test('only an available username counts: taken, reserved, invalid and a failed check keep Continue off', async () => {
+  for (const [status, body] of [[200, { state: 'taken', message: 'ravi.k is taken. Try another.' }],
+    [200, { state: 'reserved', message: 'That name is kept for official use.' }],
+    [200, { state: 'invalid', message: 'Use 3 to 20 letters, numbers, dots or underscores.' }],
+    [429, { error: { field: 'username', message: 'Too many tries.' } }]]) {
+    const page = load({ start: 4, name: 'Ravi', home: 'Whitefield' });
+    const user = byId(page, 'welcome-username-input');
+    user.value = 'ravi.k';
+    fire(user, 'input');
+    page.advance(300);
+    answer(page.checks[0], status, body);
+    await flush();
+    assert.equal(continueOff(page), true, JSON.stringify(body));
+  }
+});
+
+test('the check asks 300 ms after typing stops, folds capitals and drops a typed @', () => {
+  const page = load({ start: 4 });
+  const user = byId(page, 'welcome-username-input');
+  user.value = '@Ravi.K';
+  fire(user, 'input');
+  assert.equal(user.value, 'ravi.k');
+  assert.equal(page.checks.length, 0);
+  page.advance(299);
+  assert.equal(page.checks.length, 0);
+  page.advance(1);
+  assert.equal(page.checks.length, 1);
+  assert.equal(page.checks[0].url, '/api/username/check?u=ravi.k');
+  assert.equal(page.requests.length, 0, 'the check is not a request of the flow');
+});
+
+test('a press on Continue while it is off moves focus to the first field that is not good and says what to add', async () => {
+  const page = load({ start: 4 });
+  click(page, 'welcome-continue-4');
+  assert.ok(page.doc.activeElement === byId(page, 'welcome-username-input'), 'the username comes first');
+  assert.equal(byId(page, 'welcome-error-4').textContent, 'Add your username, name and home area.');
+  assert.equal(page.requests.length, 0);
+
+  await fillStep4(page, { name: null, place: null });
+  click(page, 'welcome-continue-4');
+  assert.ok(page.doc.activeElement === byId(page, 'welcome-name-input'), 'then the name');
+
+  await fillStep4(page, { username: null, place: null });
+  click(page, 'welcome-continue-4');
+  assert.ok(page.doc.activeElement === byId(page, 'welcome-home-input'), 'then the home area');
+  assert.equal(page.requests.length, 0);
+  assert.equal(page.dialog.open, false);
+});
+
+test('the line goes when the last missing field is filled in', async () => {
+  const page = load({ start: 4 });
+  click(page, 'welcome-continue-4');
+  assert.equal(byId(page, 'welcome-error-4').hidden, false);
+  await fillStep4(page);
+  assert.equal(byId(page, 'welcome-error-4').hidden, true);
+});
+
+test('Continue sends the username, the name and the home area in one profile request, then the pop-up', async () => {
+  const page = load({ start: 4 });
+  await fillStep4(page, { username: 'ravi.k', name: '  Ravi Kumar ', place: PLACES[0] });
+  click(page, 'welcome-continue-4');
+  click(page, 'welcome-continue-4');
+  assert.equal(page.requests.length, 1, 'one request, however often it is pressed');
+  assert.equal(page.requests[0].url, '/api/me/profile');
+  assert.equal(page.requests[0].init.method, 'PATCH');
+  assert.deepEqual(JSON.parse(page.requests[0].init.body), {
+    username: 'ravi.k',
+    display_name: 'Ravi Kumar',
+    home_area: { name: 'Indiranagar', lat: 12.9784, lon: 77.6408 }
+  });
+  answer(page.requests[0], 200);
+  await flush();
+  assert.equal(page.dialog.open, true, 'the end of the flow is as built: the pop-up');
+  click(page, 'welcome-alerts-later');
+  assert.equal(page.requests[1].url, '/api/me/first-run-done');
+  answer(page.requests[1], 204);
+  await flush();
+  assert.deepEqual(page.replaced, ['/']);
+});
+
+test('a username the account already has is not sent again and counts as filled in', async () => {
+  const page = load({ start: 4, username: 'ravi.k' });
+  assert.equal(continueOff(page), true, 'the name and the home area are still missing');
+  await fillStep4(page, { username: null });
+  assert.equal(continueOff(page), false);
+  click(page, 'welcome-continue-4');
+  assert.deepEqual(Object.keys(JSON.parse(page.requests[0].init.body)).sort(), ['display_name', 'home_area']);
+});
+
+test('a username refused on save shows its sentence under the Username and keeps step 4', async () => {
+  const cases = [
+    [400, { error: { field: 'username', message: 'ravi.k is taken. Try another.' } }, 'ravi.k is taken. Try another.'],
+    [400, { error: { field: 'username', message: 'You can change your username again in 3 days.' } }, 'You can change your username again in 3 days.'],
+    [422, { error: { field: 'username', message: 'That username can\'t be used. Try another.' } }, 'That username can\'t be used. Try another.']
+  ];
+  for (const [status, body, sentence] of cases) {
+    const page = load({ start: 4 });
+    await fillStep4(page);
+    click(page, 'welcome-continue-4');
+    answer(page.requests[0], status, body);
+    await flush();
+    assert.equal(visibleStep(page), 4);
+    assert.equal(userLine(page).textContent, sentence);
+    assert.ok(userLine(page).className.split(/\s+/).includes('username-status--bad'));
+    assert.equal(byId(page, 'welcome-error-4').hidden, true, 'nothing is written in the general line');
+    assert.equal(continueOff(page), true, 'the same name is not good again until it is typed again');
+    assert.ok(page.doc.activeElement === byId(page, 'welcome-username-input'));
+    assert.equal(page.dialog.open, false);
+    assert.equal(page.requests.length, 1, 'first-run-done is not sent');
+    assert.equal(byId(page, 'welcome-continue-4').disabled, false);
+  }
+});
+
+test('another refusal of the profile (a 400 for the name, a 429) shows in the general line', async () => {
+  const name = load({ start: 4 });
+  await fillStep4(name);
+  click(name, 'welcome-continue-4');
+  answer(name.requests[0], 400, { error: { field: 'display_name', message: 'Use letters, numbers and spaces in your name.' } });
+  await flush();
+  assert.equal(byId(name, 'welcome-error-4').textContent, 'Use letters, numbers and spaces in your name.');
+
+  const limited = load({ start: 4 });
+  await fillStep4(limited);
+  click(limited, 'welcome-continue-4');
+  answer(limited.requests[0], 429, { error: { field: 'username', message: 'Too many tries. Wait a moment.' } });
+  await flush();
+  assert.equal(byId(limited, 'welcome-error-4').textContent, 'Too many tries. Wait a moment.');
+  assert.equal(continueOff(limited), false, 'the name is still good, so a later press can try again');
+});
+
+test('after a save the same values are not sent again on a retry', async () => {
+  const page = load({ start: 4 });
+  await fillStep4(page);
+  click(page, 'welcome-continue-4');
+  answer(page.requests[0], 200);
+  await flush();
+  click(page, 'welcome-alerts-later');
+  answer(page.requests[1], 409, { error: { field: 'profile', message: 'Add your username, name and home area.' } });
+  await flush();
+  assert.equal(visibleStep(page), 4);
+  click(page, 'welcome-continue-4');
+  assert.equal(page.requests.length, 3, 'nothing changed, so the next request is first-run-done again, not a second profile request');
+  assert.equal(page.requests[2].url, '/api/me/first-run-done');
+  assert.equal(page.dialog.open, false, 'the pop-up is not asked twice');
+});
+
+test('Agree goes to step 3 by default and straight to step 4 when the server says so', async () => {
+  const first = load();
+  click(first, 'welcome-continue-1');
+  click(first, 'welcome-agree');
+  answer(first.requests[0], 204);
+  await flush();
+  assert.equal(visibleStep(first), 3);
+
+  const returning = load({ start: 2, afterTerms: 4 });
+  click(returning, 'welcome-agree');
+  answer(returning.requests[0], 204);
+  await flush();
+  assert.equal(visibleStep(returning), 4, 'an account that finished before fills in in one pass');
+  assert.equal(returning.doc.activeElement, byId(returning, 'welcome-step-4-title'));
+
+  const odd = load({ start: 2, afterTerms: 7 });
+  click(odd, 'welcome-agree');
+  answer(odd.requests[0], 204);
+  await flush();
+  assert.equal(visibleStep(odd), 3, 'a value that is not 3 or 4 means 3');
+});
+
+test('a page that starts at step 4 for an account that has agreed works as the flow of a returning account', () => {
+  const page = load({ start: 4, afterTerms: 4, username: 'asha.k' });
+  assert.equal(visibleStep(page), 4);
+  assert.deepEqual(stepStates(page), ['done', 'done', 'done', 'current']);
+  assert.equal(page.requests.length, 0);
+});
+
+test('the Username box is wired to the shared check and Continue keeps its place in the Tab loop while off', () => {
+  const page = load({ start: 4 });
+  byId(page, 'welcome-continue-4').focus();
+  const forward = fire(page.root, 'keydown', { key: 'Tab' });
+  assert.equal(forward.prevented, true, 'the page moves focus itself from the last control');
+  const stops = [];
+  for (let i = 0; i < 12; i++) {
+    stops.push(page.doc.activeElement.id);
+    fire(page.root, 'keydown', { key: 'Tab' });
+  }
+  assert.ok(stops.includes('welcome-continue-4'), 'an aria-disabled Continue is still a Tab stop');
 });

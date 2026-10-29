@@ -319,6 +319,27 @@ test('the script holds no markup sink', () => {
   assert.ok(source.includes('encodeURIComponent'), 'the value goes through encodeURIComponent');
 });
 
+test('a press on the @ in the box puts the cursor in the input', () => {
+  const sandbox = { console };
+  sandbox.window = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(source, sandbox, { filename: 'username-check.js' });
+  const input = new FakeInput();
+  let focused = 0;
+  input.focus = () => { focused += 1; };
+  const handlers = [];
+  input.parentNode = { className: 'username-field', addEventListener(type, fn) { handlers.push({ type, fn }); } };
+  sandbox.PinalertUsernameCheck.attach(input, new FakeLine(), {
+    setTimer() { return 1; }, clearTimer() {}, fetchFn() { return new Promise(() => {}); }
+  });
+  assert.equal(handlers.length, 1);
+  assert.equal(handlers[0].type, 'click');
+  handlers[0].fn({ target: {} });
+  assert.equal(focused, 1);
+  handlers[0].fn({ target: input });
+  assert.equal(focused, 1, 'a press on the input itself is left alone');
+});
+
 test('a value already in the field when the script attaches is checked without a keystroke', () => {
   const sandbox = { console };
   sandbox.window = sandbox;

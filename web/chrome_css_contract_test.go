@@ -634,6 +634,7 @@ func TestPhase4ContrastPairs(t *testing.T) {
 	needed := []string{
 		"--color-bg", "--color-surface", "--color-border", "--color-text", "--color-text-muted",
 		"--color-severity-critical", "--color-severity-low-bg", "--color-severity-medium-bg", "--color-severity-critical-bg",
+		"--color-tone-good", "--color-tone-bad",
 	}
 	light1, light2, dark1, dark2 := extractThemeTokens(parseCSSRules(p408ReadStatic(t, "static/css/main.css")), needed)
 	sources := []struct {
@@ -655,11 +656,30 @@ func TestPhase4ContrastPairs(t *testing.T) {
 		{"--color-text-muted", "--color-bg"},
 		{"--color-bg", "--color-text-muted"},
 		{"--color-bg", "--color-severity-critical"},
+		// Amended 2026-10-29 by Phase 7.1 plan 13: the Username live check line draws
+		// its available look in the good tone and its taken, reserved and failed looks
+		// in the bad tone, as text on the page background (also on step 4 and in the
+		// Settings window), so both must stay readable in both themes.
+		{"--color-tone-good", "--color-bg"},
+		{"--color-tone-bad", "--color-bg"},
+	}
+	// Amended 2026-10-29 by Phase 7.1 plan 13: --color-tone-bad is an alias of
+	// --color-severity-critical in main.css, so a token whose value is a single
+	// var(--name) is followed once to the token it names.
+	resolve := func(tokens themeTokens, name string) (string, bool) {
+		value, ok := tokens[name]
+		if !ok {
+			return "", false
+		}
+		if m := regexp.MustCompile(`^var\((--[a-z0-9-]+)\)$`).FindStringSubmatch(strings.TrimSpace(value)); m != nil {
+			value, ok = tokens[m[1]]
+		}
+		return value, ok
 	}
 	for _, src := range sources {
 		for _, p := range pairs {
-			fg, okFg := src.tokens[p[0]]
-			bg, okBg := src.tokens[p[1]]
+			fg, okFg := resolve(src.tokens, p[0])
+			bg, okBg := resolve(src.tokens, p[1])
 			if !okFg || !okBg {
 				t.Errorf("%s: %s or %s does not resolve", src.name, p[0], p[1])
 				continue

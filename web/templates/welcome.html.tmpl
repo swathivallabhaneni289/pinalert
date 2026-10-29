@@ -39,13 +39,22 @@
   until the end of the text has been seen, which welcome.js does (the marker is
   the last child of the text box; the hold is never written here). The install
   guide lives only in Settings (the device guide partial, shown in its window).
+  Phase 7.1 plan 13 (D-06, D-07, D-08, UI-SPEC Surface 7) makes step 4 the
+  required About you: a Username with its live check (username-check.js), a Name
+  and a Home area, no Skip, and Continue switched off (aria-disabled, btn--off)
+  until welcome.js finds all three good. The lead follows .FillingIn (an account
+  that is filling in), data-after-terms-step names the step Agree leads to (4 for
+  an account that finished the flow before), and the Username is never
+  autocomplete username or named username, so a password manager cannot save it
+  as the login. The home area help does not say "Filled in from your location":
+  nothing fills the home area from the device (plan 03.4-33), so it would be untrue.
   Plan 05-18 (D-03, UI-SPEC 4e and 4f) offers the Demo here: Try the demo beside
   Continue on step 1 and as the third control of the step 2 Disagree box, whose
   lead gains the restored second sentence. Both are plain links to
   /demo?from=welcome (the Demo's Exit returns to this flow); welcome.js does
   not handle them and no step is added.
 */}}
-  <div class="welcome" id="welcome" role="dialog" aria-modal="true" aria-labelledby="welcome-step-{{.StartStep}}-title" data-start-step="{{.StartStep}}" data-step="{{.StartStep}}" data-account-id="{{.AccountID}}" data-push-key="{{.PushPublicKey}}">
+  <div class="welcome" id="welcome" role="dialog" aria-modal="true" aria-labelledby="welcome-step-{{.StartStep}}-title" data-start-step="{{.StartStep}}" data-after-terms-step="{{.AfterTermsStep}}" data-step="{{.StartStep}}" data-account-id="{{.AccountID}}" data-push-key="{{.PushPublicKey}}">
     <div class="welcome__progress" aria-hidden="true"><div class="welcome__progress-fill"></div></div>
 
     <aside class="welcome__side">
@@ -161,24 +170,33 @@
           <p class="welcome__label">Step 4 of 4</p>
         </div>
         <h1 class="welcome__title" id="welcome-step-4-title" tabindex="-1">About you</h1>
-        <p class="welcome__lead">Both are optional. They show only if you later let others follow you.</p>
+        <p class="welcome__lead">{{if .FillingIn}}Pinalert now asks everyone for a username, a name and a home area. Fill in what is missing.{{else}}All three are needed to finish signing up. You can change them later in Settings.{{end}}</p>
         <div class="welcome__field">
-          <label class="app-window__label" for="welcome-name-input">Your name</label>
-          <input class="app-window__field" type="text" id="welcome-name-input" name="display_name" maxlength="60" autocomplete="name" placeholder="For example: Ravi Kumar" value="{{.DisplayName}}">
+          <label class="app-window__label" for="welcome-username-input">Username</label>
+          <div class="username-field">
+            <span class="username-field__at" aria-hidden="true">@</span>
+            <input class="username-field__input" type="text" id="welcome-username-input" name="handle" maxlength="20" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" enterkeyhint="next" placeholder="For example: ravi.k" value="{{.Username}}" aria-describedby="welcome-username-status welcome-username-help">
+          </div>
+          <p class="username-status" id="welcome-username-status" role="status" aria-live="polite"></p>
+          <p class="app-window__help" id="welcome-username-help">Shown on your comments, to everyone.</p>
+        </div>
+        <div class="welcome__field">
+          <label class="app-window__label" for="welcome-name-input">Name</label>
+          <input class="app-window__field" type="text" id="welcome-name-input" name="display_name" maxlength="60" autocomplete="name" enterkeyhint="next" placeholder="For example: Ravi Kumar" value="{{.DisplayName}}" aria-describedby="welcome-name-help">
+          <p class="app-window__help" id="welcome-name-help">Shown only if you let others follow you.</p>
         </div>
         <div class="welcome__field">
           <form id="welcome-home-form" novalidate>
             <label class="app-window__label" for="welcome-home-input">Home area</label>
             <input class="app-window__field" type="search" id="welcome-home-input" name="q" maxlength="200" autocomplete="off" enterkeyhint="search" placeholder="For example: Indiranagar, Bengaluru" value="{{.HomeAreaName}}" aria-describedby="welcome-home-help welcome-home-status">
           </form>
-          <p class="app-window__help" id="welcome-home-help">Used to send you alerts about this area.</p>
+          <p class="app-window__help" id="welcome-home-help">A town or area, never your street. Used for alerts.</p>
           <p class="app-window__status" id="welcome-home-status" role="status" aria-live="polite" hidden></p>
           <ul class="app-window__results" id="welcome-home-results" role="listbox" aria-label="Places found" hidden></ul>
         </div>
         <p class="inline-error" id="welcome-error-4" role="alert" hidden></p>
         <div class="welcome__actions">
-          <button type="button" class="btn btn--primary" id="welcome-continue-4">Continue</button>
-          <button type="button" class="btn" id="welcome-skip">Skip</button>
+          <button type="button" class="btn btn--off" id="welcome-continue-4" aria-disabled="true">Continue</button>
         </div>
       </section>
 
@@ -205,6 +223,7 @@
     </div>
   </dialog>
   <script src="/static/js/position.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/username-check.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/welcome.js?v={{.AssetVersion}}" defer></script>
 </body>
 </html>

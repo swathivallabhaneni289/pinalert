@@ -216,6 +216,15 @@
     };
 
     input.addEventListener('input', judge);
+    // A press anywhere in the box, the @ included, puts the cursor in the input.
+    var box = input.parentNode;
+    if (box && typeof box.addEventListener === 'function' && (' ' + String(box.className) + ' ').indexOf(' username-field ') !== -1) {
+      box.addEventListener('click', function (e) {
+        if (e.target !== input && typeof input.focus === 'function') {
+          input.focus();
+        }
+      });
+    }
     judge();
     return controller;
   }
