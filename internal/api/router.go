@@ -9,7 +9,9 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -232,7 +234,7 @@ func (f *pathOnlyLogFormatter) NewLogEntry(r *http.Request) middleware.LogEntry 
 		logger: f.logger,
 		reqID:  middleware.GetReqID(r.Context()),
 		method: r.Method,
-		path:   loggedPath(r.URL.EscapedPath()),
+		path:   loggedPath(r.URL),
 	}
 }
 
@@ -240,12 +242,15 @@ func (f *pathOnlyLogFormatter) NewLogEntry(r *http.Request) middleware.LogEntry 
 // share token, a capability that opens a report's public page and can never be
 // revoked, so the line names the route instead (review WR-S01, T-08-19). The
 // redaction sits here, in the formatter, so every route and the Panic line are
-// covered, whatever follows the prefix.
-func loggedPath(path string) string {
-	if strings.HasPrefix(path, "/r/") {
+// covered, whatever follows the prefix. A path that only resolves under /r/
+// (//r/, /%72/, /./r/, /%2Fr/) still carries the token, so the decoded path is
+// cleaned and checked as well (review fix round 2, SK-04).
+func loggedPath(u *url.URL) string {
+	escaped := u.EscapedPath()
+	if strings.HasPrefix(escaped, "/r/") || strings.HasPrefix(path.Clean("/"+u.Path), "/r/") {
 		return "/r/{token}"
 	}
-	return path
+	return escaped
 }
 
 type pathOnlyLogEntry struct {
