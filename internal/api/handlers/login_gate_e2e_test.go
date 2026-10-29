@@ -183,14 +183,20 @@ func TestLoginGateSwitchNoticeOnce(t *testing.T) {
 	if !gatePanelShown(gatePanelTag(t, body, "auth-panel-create")) {
 		t.Errorf("the switch notice does not open on Create account")
 	}
-	cleared := false
+	// Review WR-S01: the notice replaces the ended session's cookie with a fresh
+	// valid one instead of clearing it, so the next Create account carries a
+	// device of its own and never lands in the shared cookieless bucket.
+	replaced := false
 	for _, c := range resp.Cookies() {
+		if c.Name == "pinalert_session" && c.MaxAge > 0 && c.Value != "" {
+			replaced = true
+		}
 		if c.Name == "pinalert_session" && c.MaxAge < 0 {
-			cleared = true
+			t.Errorf("the first visit cleared the pinalert_session cookie; it must replace it")
 		}
 	}
-	if !cleared {
-		t.Errorf("the first visit did not clear the pinalert_session cookie")
+	if !replaced {
+		t.Errorf("the first visit did not replace the pinalert_session cookie with a fresh one")
 	}
 
 	_, body = loginGatePage(t, revNoFollow(browser), srv, "")

@@ -137,9 +137,10 @@ func lowDataChosen(r *http.Request) bool {
 // (T-07.1-23). Then the done word is compared exactly with the closed list
 // (T-07.1-20), then a live code row restores the code screen, and only when
 // neither applies a browser whose own session the switch to passwords ended
-// sees the switch notice once, in the same response that clears its cookie
-// (a Set-Cookie after the body is silently dropped, so ClearCookie runs before
-// the template; D-12, UI-SPEC Surfaces 3, 6 and 9). A LoginState error is
+// sees the switch notice once, in the same response that replaces its cookie
+// with a fresh id (review WR-S01; a Set-Cookie after the body is silently
+// dropped, so SetCookie runs before the template; D-12, UI-SPEC Surfaces 3, 6
+// and 9). A LoginState error is
 // logged without the address and the page renders the entry panels. The page
 // varies per device and sets cookies, so every response is no-store (T-04-12),
 // and Referrer-Policy same-origin keeps the page address out of the globe's
@@ -218,7 +219,11 @@ func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 					vm.DoneLine = loginSwitchNoticeLine
 					vm.StartPanel = loginStartCreate
 					if cfg.Session != nil {
-						cfg.Session.ClearCookie(w)
+						// A fresh valid cookie, never a cleared one (review
+						// WR-S01): the next Create account then has a device
+						// bucket of its own, and the next visit no longer shows
+						// the notice because the new id is unbound.
+						cfg.Session.SetCookie(w, cfg.Session.NewID())
 					}
 				}
 			}

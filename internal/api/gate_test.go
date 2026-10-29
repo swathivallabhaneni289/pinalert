@@ -173,6 +173,7 @@ var gateGenerousAuthLimits = AuthLimits{
 	CodeSendDevice:   gateGenerousBucket,
 	CodeSendIP:       gateGenerousBucket,
 	CodeSendNoCookie: gateGenerousBucket,
+	SignInNoCookie:   gateGenerousBucket,
 	CodeTryDevice:    gateGenerousBucket,
 	UsernameCheck:    gateGenerousBucket,
 	UsernameSave:     gateGenerousBucket,

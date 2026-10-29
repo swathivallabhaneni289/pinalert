@@ -54,6 +54,7 @@ var e2eGenerousAuthLimits = api.AuthLimits{
 	CodeSendDevice:   e2eGenerousBucket,
 	CodeSendIP:       e2eGenerousBucket,
 	CodeSendNoCookie: e2eGenerousBucket,
+	SignInNoCookie:   e2eGenerousBucket,
 	CodeTryDevice:    e2eGenerousBucket,
 	UsernameCheck:    e2eGenerousBucket,
 	UsernameSave:     e2eGenerousBucket,

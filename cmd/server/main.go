@@ -153,8 +153,10 @@ const (
 //     guard against guessing one account from many browsers.
 //   - Code sends (Create account, Resend, Forgot password): 5 per browser, then
 //     one a minute. One small bucket of 10, then one a minute, is shared by every
-//     send that arrived with no session cookie at all: a browser on the sign in
-//     page always has the cookie, so only a script that drops cookies lands there.
+//     send that arrived without a valid session cookie (none, malformed or
+//     wrongly signed, review WR-S01): a browser on the sign in page always has
+//     the cookie, so only a script lands there. Sign in has the same shared
+//     bucket of its own (review IN-S05).
 //   - Code tries: 10 per browser, then one every 30 seconds, on top of the 5 tries
 //     one code row allows.
 //   - Username checks and saves: per account, for plan 10.
@@ -176,6 +178,8 @@ const (
 	codeSendIPEvery       = 10 * time.Second
 	codeSendNoCookieBurst = 10
 	codeSendNoCookieEvery = time.Minute
+	signInNoCookieBurst   = 10
+	signInNoCookieEvery   = time.Minute
 	codeTryDeviceBurst    = 10
 	codeTryDeviceEvery    = 30 * time.Second
 	usernameCheckBurst    = 10
@@ -203,6 +207,7 @@ func authLimits() api.AuthLimits {
 		CodeSendDevice:   api.BucketLimit{Every: codeSendDeviceEvery, Burst: codeSendDeviceBurst},
 		CodeSendIP:       api.BucketLimit{Every: codeSendIPEvery, Burst: codeSendIPBurst},
 		CodeSendNoCookie: api.BucketLimit{Every: codeSendNoCookieEvery, Burst: codeSendNoCookieBurst},
+		SignInNoCookie:   api.BucketLimit{Every: signInNoCookieEvery, Burst: signInNoCookieBurst},
 		CodeTryDevice:    api.BucketLimit{Every: codeTryDeviceEvery, Burst: codeTryDeviceBurst},
 		UsernameCheck:    api.BucketLimit{Every: usernameCheckEvery, Burst: usernameCheckBurst},
 		UsernameSave:     api.BucketLimit{Every: usernameSaveEvery, Burst: usernameSaveBurst},

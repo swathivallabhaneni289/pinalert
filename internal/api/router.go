@@ -349,6 +349,7 @@ var AuthLimitsDefault = AuthLimits{
 	CodeSendDevice:   BucketLimit{Every: time.Minute, Burst: 5},
 	CodeSendIP:       BucketLimit{Every: 10 * time.Second, Burst: 60},
 	CodeSendNoCookie: BucketLimit{Every: time.Minute, Burst: 10},
+	SignInNoCookie:   BucketLimit{Every: time.Minute, Burst: 10},
 	CodeTryDevice:    BucketLimit{Every: 30 * time.Second, Burst: 10},
 	UsernameCheck:    BucketLimit{Every: time.Second, Burst: 10},
 	UsernameSave:     BucketLimit{Every: 10 * time.Second, Burst: 5},
@@ -367,6 +368,7 @@ func resolveAuthLimits(l AuthLimits) AuthLimits {
 	fill(&l.CodeSendDevice, AuthLimitsDefault.CodeSendDevice)
 	fill(&l.CodeSendIP, AuthLimitsDefault.CodeSendIP)
 	fill(&l.CodeSendNoCookie, AuthLimitsDefault.CodeSendNoCookie)
+	fill(&l.SignInNoCookie, AuthLimitsDefault.SignInNoCookie)
 	fill(&l.CodeTryDevice, AuthLimitsDefault.CodeTryDevice)
 	fill(&l.UsernameCheck, AuthLimitsDefault.UsernameCheck)
 	fill(&l.UsernameSave, AuthLimitsDefault.UsernameSave)
