@@ -94,6 +94,7 @@
       <h2 class="person-state__title" id="person-blocked-title" tabindex="-1">{{if .BlockedByYou}}You blocked {{.Profile.Username}}{{end}}</h2>
       <p class="person-state__line">They can't see your profile or follow you. Their reports still show in the feed.</p>
       <button type="button" id="person-unblock" class="btn">Unblock</button>
+      <p id="person-blocked-error" class="inline-error" role="alert" hidden></p>
     </section>
     {{end}}
     {{end}}
