@@ -48,9 +48,18 @@ func (f *bodyVoteFake) ReportVoteContext(ctx context.Context, reportID int64) (s
 	}, nil
 }
 
-func (f *bodyVoteFake) InsertVote(ctx context.Context, arg sqlcgen.InsertVoteParams) error {
-	f.inserted = append(f.inserted, arg)
-	return nil
+// InsertVoteExtending records the vote part of the argument, as an
+// InsertVoteParams, and returns the same one hour from now fade time that
+// ReportVoteContext gives (backlog 999.12).
+func (f *bodyVoteFake) InsertVoteExtending(ctx context.Context, arg sqlcgen.InsertVoteExtendingParams) (time.Time, error) {
+	f.inserted = append(f.inserted, sqlcgen.InsertVoteParams{
+		ReportID:    arg.ReportID,
+		AccountID:   arg.AccountID,
+		Kind:        arg.Kind,
+		Value:       arg.Value,
+		GeohashCell: arg.GeohashCell,
+	})
+	return time.Now().Add(time.Hour), nil
 }
 
 func (f *bodyVoteFake) CurrentVotesForReports(ctx context.Context, reportIDs []int64) ([]sqlcgen.CurrentVotesForReportsRow, error) {

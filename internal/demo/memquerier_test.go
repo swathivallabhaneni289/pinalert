@@ -422,3 +422,180 @@ func TestInsertModerationCheckStoresNothingVisible(t *testing.T) {
 		t.Fatalf("extras = %+v", extras)
 	}
 }
+
+// TestMemQuerierExtendsLikeSQL pins the twin of extend.sql (backlog 999.12) with
+// no database: the same cases as the database test, driven through the querier
+// with a clock the test moves. The stored fade time is read back through
+// ReportVoteContext.
+func TestMemQuerierExtendsLikeSQL(t *testing.T) {
+	ctx := context.Background()
+	const life = 8 * time.Hour
+	const limit = 24 * time.Hour
+
+	storedExpiry := func(t *testing.T, q *memQuerier, id int64) (created, expires time.Time) {
+		t.Helper()
+		rc, err := q.ReportVoteContext(ctx, id)
+		if err != nil {
+			t.Fatalf("ReportVoteContext: %v", err)
+		}
+		return rc.CreatedAt, rc.ExpiresAt
+	}
+	voteWith := func(t *testing.T, q *memQuerier, id, account int64, value, cell string, extend bool, lifeD, capD time.Duration) time.Time {
+		t.Helper()
+		var reporter *int64
+		if rc, err := q.ReportVoteContext(ctx, id); err == nil {
+			reporter = rc.ReporterAccountID
+		}
+		got, err := q.InsertVoteExtending(ctx, sqlcgen.InsertVoteExtendingParams{
+			ReportID: id, AccountID: account, Kind: "content", Value: value, GeohashCell: cell,
+			CapSeconds: int64(capD / time.Second), LifeSeconds: int64(lifeD / time.Second),
+			Extend: extend, ReporterAccountID: reporter,
+		})
+		if err != nil {
+			t.Fatalf("InsertVoteExtending: %v", err)
+		}
+		_, stored := storedExpiry(t, q, id)
+		if !got.Equal(stored) {
+			t.Fatalf("returned %v but stored %v", got, stored)
+		}
+		return got
+	}
+	vote := func(t *testing.T, q *memQuerier, id, account int64, value, cell string, extend bool) time.Time {
+		t.Helper()
+		return voteWith(t, q, id, account, value, cell, extend, life, limit)
+	}
+
+	t.Run("a new spot extends to the vote time plus the lifetime", func(t *testing.T) {
+		q, c := newTestQuerier()
+		q.BindSession("demo-1", 1)
+		id := insertAt(t, q, c, baseLat, baseLon, 6*time.Hour)
+		created, before := storedExpiry(t, q, id)
+		c.advance(2 * time.Hour)
+		got := vote(t, q, id, 2, "confirm", "cellaaa", true)
+		want := service.ExtendedExpiry(created, before, c.now(), life, limit)
+		if !got.Equal(want) || !got.After(before) || !got.Equal(c.now().Add(life)) {
+			t.Fatalf("got %v, want %v (vote time plus 8h, later than %v)", got, want, before)
+		}
+	})
+
+	t.Run("the same cell by another account does not extend", func(t *testing.T) {
+		q, c := newTestQuerier()
+		id := insertAt(t, q, c, baseLat, baseLon, 6*time.Hour)
+		c.advance(time.Hour)
+		first := vote(t, q, id, 2, "confirm", "cellaaa", true)
+		c.advance(time.Hour)
+		if got := vote(t, q, id, 3, "confirm", "cellaaa", true); !got.Equal(first) {
+			t.Fatalf("got %v, want unchanged %v", got, first)
+		}
+	})
+
+	t.Run("the same account from another cell does not extend", func(t *testing.T) {
+		q, c := newTestQuerier()
+		id := insertAt(t, q, c, baseLat, baseLon, 6*time.Hour)
+		c.advance(time.Hour)
+		first := vote(t, q, id, 2, "confirm", "cellaaa", true)
+		c.advance(time.Hour)
+		if got := vote(t, q, id, 2, "confirm", "cellbbb", true); !got.Equal(first) {
+			t.Fatalf("got %v, want unchanged %v", got, first)
+		}
+	})
+
+	t.Run("a dispute then a confirm from a taken back spot never extends twice", func(t *testing.T) {
+		q, c := newTestQuerier()
+		id := insertAt(t, q, c, baseLat, baseLon, 6*time.Hour)
+		c.advance(time.Hour)
+		first := vote(t, q, id, 2, "confirm", "cellaaa", true)
+		c.advance(time.Hour)
+		vote(t, q, id, 2, "dispute", "cellaaa", false)
+		c.advance(time.Hour)
+		if got := vote(t, q, id, 3, "confirm", "cellaaa", true); !got.Equal(first) {
+			t.Fatalf("a second account in a taken back spot: got %v, want unchanged %v", got, first)
+		}
+	})
+
+	t.Run("Extend false never extends", func(t *testing.T) {
+		q, c := newTestQuerier()
+		id := insertAt(t, q, c, baseLat, baseLon, 6*time.Hour)
+		_, before := storedExpiry(t, q, id)
+		c.advance(time.Hour)
+		if got := vote(t, q, id, 2, "confirm", "cellaaa", false); !got.Equal(before) {
+			t.Fatalf("got %v, want unchanged %v", got, before)
+		}
+	})
+
+	t.Run("the medium cap holds", func(t *testing.T) {
+		q, c := newTestQuerier()
+		id := insertAt(t, q, c, baseLat, baseLon, 21*time.Hour)
+		created, _ := storedExpiry(t, q, id)
+		c.advance(20 * time.Hour)
+		got := vote(t, q, id, 2, "confirm", "cellaaa", true)
+		if !got.Equal(created.Add(24 * time.Hour)) {
+			t.Fatalf("medium got %v, want created plus 24h", got)
+		}
+		if got := vote(t, q, id, 3, "confirm", "cellbbb", true); !got.Equal(created.Add(24 * time.Hour)) {
+			t.Fatalf("second new spot at the cap got %v", got)
+		}
+	})
+
+	t.Run("the Critical lifetime and cap hold", func(t *testing.T) {
+		const critLife, critCap = 24 * time.Hour, 48 * time.Hour
+		q, c := newTestQuerier()
+		id := insertAt(t, q, c, baseLat, baseLon, 20*time.Hour)
+		created, _ := storedExpiry(t, q, id)
+		c.advance(10 * time.Hour)
+		if got := voteWith(t, q, id, 2, "confirm", "cellaaa", true, critLife, critCap); !got.Equal(c.now().Add(critLife)) {
+			t.Fatalf("critical under its cap got %v, want vote time plus 24h = %v", got, c.now().Add(critLife))
+		}
+		c.advance(15 * time.Hour)
+		if got := voteWith(t, q, id, 3, "confirm", "cellbbb", true, critLife, critCap); !got.Equal(created.Add(critCap)) {
+			t.Fatalf("critical near its cap got %v, want created plus 48h = %v", got, created.Add(critCap))
+		}
+	})
+
+	t.Run("never earlier than the current fade time", func(t *testing.T) {
+		q, c := newTestQuerier()
+		id := insertAt(t, q, c, baseLat, baseLon, 20*time.Hour)
+		_, before := storedExpiry(t, q, id)
+		c.advance(time.Hour)
+		if got := vote(t, q, id, 2, "confirm", "cellaaa", true); !got.Equal(before) {
+			t.Fatalf("got %v, want unchanged %v", got, before)
+		}
+	})
+
+	t.Run("a faded report is not revived", func(t *testing.T) {
+		q, c := newTestQuerier()
+		id := insertAt(t, q, c, baseLat, baseLon, time.Hour)
+		_, before := storedExpiry(t, q, id)
+		c.advance(2 * time.Hour)
+		if got := vote(t, q, id, 2, "confirm", "cellaaa", true); !got.Equal(before) {
+			t.Fatalf("got %v, want unchanged %v", got, before)
+		}
+	})
+
+	t.Run("the reporter's own earlier confirm in a cell does not block a stranger", func(t *testing.T) {
+		q, c := newTestQuerier()
+		q.BindSession("demo-1", 1)
+		id := insertAt(t, q, c, baseLat, baseLon, 6*time.Hour)
+		if err := q.InsertVote(ctx, sqlcgen.InsertVoteParams{ReportID: id, AccountID: 1, Kind: "content", Value: "confirm", GeohashCell: "cellaaa"}); err != nil {
+			t.Fatal(err)
+		}
+		_, before := storedExpiry(t, q, id)
+		c.advance(time.Hour)
+		if got := vote(t, q, id, 2, "confirm", "cellaaa", true); !got.After(before) {
+			t.Fatalf("got %v, want later than %v", got, before)
+		}
+	})
+
+	t.Run("a missing report and a full world behave as InsertVote does", func(t *testing.T) {
+		q, c := newTestQuerier()
+		if _, err := q.InsertVoteExtending(ctx, sqlcgen.InsertVoteExtendingParams{ReportID: 99, AccountID: 2, Kind: "content", Value: "confirm", GeohashCell: "cellaaa", Extend: true}); err == nil {
+			t.Fatal("a vote on a missing report must fail")
+		}
+		id := insertAt(t, q, c, baseLat, baseLon, 6*time.Hour)
+		q.votes = make([]memVote, MaxVotesPerWorld)
+		_, err := q.InsertVoteExtending(ctx, sqlcgen.InsertVoteExtendingParams{ReportID: id, AccountID: 2, Kind: "content", Value: "confirm", GeohashCell: "cellaaa", Extend: true})
+		if !errors.Is(err, ErrWorldFull) {
+			t.Fatalf("a full world gave %v, want ErrWorldFull", err)
+		}
+	})
+}

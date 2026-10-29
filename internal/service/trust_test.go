@@ -390,8 +390,9 @@ func TestBuildVoteTallyFeedsResolveEndToEnd(t *testing.T) {
 
 // fakeVotingQuerier is the recording fake CastVote's tests drive — the
 // exact shape auth_test.go's fakeAuthQuerier established: one programmable
-// return value (plus error) per method, every InsertVoteParams it
-// received recorded verbatim, and an ordered call log every method
+// return value (plus error) per method, the vote part of every
+// InsertVoteExtending call recorded as an InsertVoteParams (the full argument
+// goes to extendArgs), and an ordered call log every method
 // appends to, which is what makes
 // TestCastVoteReturnsFreshlyResolvedVisibility's ordering assertion and
 // every "zero calls recorded" assertion mechanical rather than inferred.
@@ -406,6 +407,12 @@ type fakeVotingQuerier struct {
 
 	insertVoteErr error
 	insertedVotes []sqlcgen.InsertVoteParams
+
+	// extendArgs is the full argument of every InsertVoteExtending call, and
+	// writeExpiry the fade time the write returns (zero means the context row's
+	// ExpiresAt), backlog 999.12.
+	extendArgs  []sqlcgen.InsertVoteExtendingParams
+	writeExpiry time.Time
 
 	// currentVotesIDs is the id slice the last CurrentVotesForReports call
 	// received.
@@ -465,10 +472,28 @@ func (f *fakeVotingQuerier) ReportVoteContext(ctx context.Context, reportID int6
 	return f.voteContextRow, nil
 }
 
-func (f *fakeVotingQuerier) InsertVote(ctx context.Context, arg sqlcgen.InsertVoteParams) error {
+// InsertVoteExtending records the call under the label "InsertVote" and the
+// vote part of its argument as an InsertVoteParams, so every call log and
+// insertedVotes count the older tests pin stays valid (backlog 999.12). The full
+// argument goes to extendArgs. It returns writeExpiry when that is set and
+// otherwise the context row's ExpiresAt, with insertVoteErr.
+func (f *fakeVotingQuerier) InsertVoteExtending(ctx context.Context, arg sqlcgen.InsertVoteExtendingParams) (time.Time, error) {
 	f.calls = append(f.calls, "InsertVote")
-	f.insertedVotes = append(f.insertedVotes, arg)
-	return f.insertVoteErr
+	f.insertedVotes = append(f.insertedVotes, sqlcgen.InsertVoteParams{
+		ReportID:    arg.ReportID,
+		AccountID:   arg.AccountID,
+		Kind:        arg.Kind,
+		Value:       arg.Value,
+		GeohashCell: arg.GeohashCell,
+	})
+	f.extendArgs = append(f.extendArgs, arg)
+	if f.insertVoteErr != nil {
+		return time.Time{}, f.insertVoteErr
+	}
+	if !f.writeExpiry.IsZero() {
+		return f.writeExpiry, nil
+	}
+	return f.voteContextRow.ExpiresAt, nil
 }
 
 func (f *fakeVotingQuerier) CurrentVotesForReports(ctx context.Context, reportIDs []int64) ([]sqlcgen.CurrentVotesForReportsRow, error) {
@@ -495,6 +520,135 @@ func (f *fakeVotingQuerier) ReporterHistoryReports(ctx context.Context, arg sqlc
 		}
 	}
 	return out, nil
+}
+
+// TestCastVoteExtendsOnlyOnConfirm pins what CastVote hands the one write for
+// backlog 999.12: Extend is true only for a content confirm on a report that is
+// still live, the lifetime and cap are the severity's, the reporter is passed
+// for the reporter's-own-rows rule, and the answer's trust is built from the
+// fade time the write returned, never the one read before it.
+func TestCastVoteExtendsOnlyOnConfirm(t *testing.T) {
+	now := p12CastNow
+	reporter := acctPtr(7)
+	contextFor := func(sev Severity) sqlcgen.ReportVoteContextRow {
+		return sqlcgen.ReportVoteContextRow{
+			Severity:          string(sev),
+			Category:          string(CategoryFlood),
+			ExpiresAt:         now.Add(time.Hour),
+			ReporterAccountID: reporter,
+			Latitude:          testReportLat,
+			Longitude:         testReportLon,
+			CreatedAt:         now.Add(-time.Hour),
+		}
+	}
+	cast := func(q *fakeVotingQuerier, acct int64, kind VoteKind, value VoteValue) (CastVoteResult, error) {
+		svc := NewVotingService(q, WithVotingClock(func() time.Time { return now }))
+		return svc.CastVote(context.Background(), CastVoteInput{
+			ReportID: 1, AccountID: acct, Kind: kind, Value: value,
+			Latitude: testReportLat, Longitude: testReportLon,
+		})
+	}
+
+	t.Run("a confirm passes Extend, the lifetime, the cap and the reporter", func(t *testing.T) {
+		q := &fakeVotingQuerier{voteContextRow: contextFor(SeverityMedium), writeExpiry: now.Add(-time.Hour).Add(8 * time.Hour)}
+		res, err := cast(q, 8, VoteKindContent, VoteConfirm)
+		if err != nil {
+			t.Fatalf("CastVote: %v", err)
+		}
+		if len(q.extendArgs) != 1 {
+			t.Fatalf("InsertVoteExtending called %d times, want 1", len(q.extendArgs))
+		}
+		got := q.extendArgs[0]
+		wantCell := geohash.EncodeWithPrecision(testReportLat, testReportLon, voterGeohashPrecision)
+		if got.Kind != "content" || got.Value != "confirm" || !got.Extend || got.LifeSeconds != 28800 || got.CapSeconds != 86400 ||
+			got.GeohashCell != wantCell || got.ReporterAccountID == nil || *got.ReporterAccountID != 7 {
+			t.Fatalf("write argument = %+v, want a confirm with Extend true, life 28800, cap 86400, cell %s and reporter 7", got, wantCell)
+		}
+		if !res.ExpiresAt.Equal(q.writeExpiry) {
+			t.Fatalf("ExpiresAt = %v, want what the write returned, %v", res.ExpiresAt, q.writeExpiry)
+		}
+		if res.Trust.Currency.WindowMinutes != 120 {
+			t.Fatalf("WindowMinutes = %d, want 120 (built from the 8 hour life the write returned; from the 2 hour life read before it would be 30)", res.Trust.Currency.WindowMinutes)
+		}
+	})
+
+	t.Run("a critical confirm gets the critical lifetime and cap", func(t *testing.T) {
+		q := &fakeVotingQuerier{voteContextRow: contextFor(SeverityCritical)}
+		if _, err := cast(q, 8, VoteKindContent, VoteConfirm); err != nil {
+			t.Fatalf("CastVote: %v", err)
+		}
+		got := q.extendArgs[0]
+		if !got.Extend || got.LifeSeconds != 86400 || got.CapSeconds != 172800 {
+			t.Fatalf("write argument = %+v, want Extend true, life 86400, cap 172800", got)
+		}
+	})
+
+	t.Run("a dispute, a resolve, a reopen and a take back never extend", func(t *testing.T) {
+		standingResolve := voteRow(1, 9, VoteKindResolution, VoteResolve, "p64cellz")
+		standingResolve.CreatedAt = now.Add(-time.Minute)
+		cases := []struct {
+			name    string
+			acct    int64
+			kind    VoteKind
+			value   VoteValue
+			current []sqlcgen.CurrentVotesForReportsRow
+		}{
+			{"dispute", 8, VoteKindContent, VoteDispute, nil},
+			{"resolve", 8, VoteKindResolution, VoteResolve, nil},
+			{"reopen", 8, VoteKindResolution, VoteReopen, nil},
+			{"take back", 9, VoteKindResolution, VoteUnresolve, []sqlcgen.CurrentVotesForReportsRow{standingResolve}},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				q := &fakeVotingQuerier{voteContextRow: contextFor(SeverityMedium), currentVotesRows: tc.current, writeExpiry: now.Add(90 * time.Minute)}
+				res, err := cast(q, tc.acct, tc.kind, tc.value)
+				if err != nil {
+					t.Fatalf("CastVote: %v", err)
+				}
+				if len(q.extendArgs) != 1 || q.extendArgs[0].Extend {
+					t.Fatalf("write arguments = %+v, want one with Extend false", q.extendArgs)
+				}
+				if !res.ExpiresAt.Equal(q.writeExpiry) {
+					t.Fatalf("ExpiresAt = %v, want what the write returned, %v", res.ExpiresAt, q.writeExpiry)
+				}
+			})
+		}
+	})
+
+	t.Run("a confirm on a report the reporter resolved gets Extend false (amendment A1)", func(t *testing.T) {
+		standing := voteRow(1, 7, VoteKindResolution, VoteResolve, "p64cellr")
+		standing.CreatedAt = now.Add(-time.Minute)
+		q := &fakeVotingQuerier{voteContextRow: contextFor(SeverityMedium), currentVotesRows: []sqlcgen.CurrentVotesForReportsRow{standing}}
+		res, err := cast(q, 8, VoteKindContent, VoteConfirm)
+		if err != nil {
+			t.Fatalf("CastVote: %v", err)
+		}
+		if len(q.extendArgs) != 1 || q.extendArgs[0].Extend {
+			t.Fatalf("write arguments = %+v, want one with Extend false", q.extendArgs)
+		}
+		if res.Visibility != VisibilityRetracted {
+			t.Fatalf("visibility = %s, want retracted", res.Visibility)
+		}
+	})
+
+	t.Run("a confirm reads the votes once before the write and a dispute does not", func(t *testing.T) {
+		q := &fakeVotingQuerier{voteContextRow: contextFor(SeverityMedium)}
+		if _, err := cast(q, 8, VoteKindContent, VoteConfirm); err != nil {
+			t.Fatalf("CastVote: %v", err)
+		}
+		want := []string{"ReportVoteContext", "ReporterHistoryReports", "CurrentVotesForReports", "InsertVote", "CurrentVotesForReports"}
+		if !slices.Equal(q.calls, want) {
+			t.Fatalf("confirm calls = %v, want %v", q.calls, want)
+		}
+		q = &fakeVotingQuerier{voteContextRow: contextFor(SeverityMedium)}
+		if _, err := cast(q, 8, VoteKindContent, VoteDispute); err != nil {
+			t.Fatalf("CastVote: %v", err)
+		}
+		want = []string{"ReportVoteContext", "ReporterHistoryReports", "InsertVote", "CurrentVotesForReports"}
+		if !slices.Equal(q.calls, want) {
+			t.Fatalf("dispute calls = %v, want %v", q.calls, want)
+		}
+	})
 }
 
 // p12CastNow is the clock of the plan 03-12 vote tests.
@@ -553,7 +707,9 @@ func TestCastVoteReadsReporterHistoryOnce(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CastVote: %v", err)
 		}
-		wantCalls := []string{"ReportVoteContext", "ReporterHistoryReports", "InsertVote", "CurrentVotesForReports"}
+		// Amended 2026-10-30 by quick task 261030-64q (amendment A1): a content
+		// confirm reads the votes once before the write to decide Extend.
+		wantCalls := []string{"ReportVoteContext", "ReporterHistoryReports", "CurrentVotesForReports", "InsertVote", "CurrentVotesForReports"}
 		if !slices.Equal(q.calls, wantCalls) {
 			t.Fatalf("calls = %v, want %v", q.calls, wantCalls)
 		}
@@ -581,7 +737,8 @@ func TestCastVoteReadsReporterHistoryOnce(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CastVote: %v", err)
 		}
-		wantCalls := []string{"ReportVoteContext", "InsertVote", "CurrentVotesForReports"}
+		// Amended 2026-10-30 by quick task 261030-64q (amendment A1): the pre write read.
+		wantCalls := []string{"ReportVoteContext", "CurrentVotesForReports", "InsertVote", "CurrentVotesForReports"}
 		if !slices.Equal(q.calls, wantCalls) {
 			t.Fatalf("calls = %v, want %v", q.calls, wantCalls)
 		}
@@ -1041,17 +1198,20 @@ func TestCastVoteReturnsFreshlyResolvedVisibility(t *testing.T) {
 		if err != nil {
 			t.Fatalf("err = %v, want nil", err)
 		}
+		// Amended 2026-10-30 by quick task 261030-64q (amendment A1): a confirm
+		// also reads the votes once BEFORE the write to decide Extend, so the read
+		// that carries the post vote state is the last one.
 		insertIdx, votesIdx := -1, -1
 		for i, c := range q.calls {
 			if c == "InsertVote" && insertIdx == -1 {
 				insertIdx = i
 			}
-			if c == "CurrentVotesForReports" && votesIdx == -1 {
+			if c == "CurrentVotesForReports" {
 				votesIdx = i
 			}
 		}
 		if insertIdx == -1 || votesIdx == -1 || votesIdx < insertIdx {
-			t.Errorf("call log = %v, want InsertVote before CurrentVotesForReports", q.calls)
+			t.Errorf("call log = %v, want InsertVote before the last CurrentVotesForReports", q.calls)
 		}
 	})
 }
@@ -1344,6 +1504,13 @@ func TestCastVoteCheckOrder(t *testing.T) {
 			q := live(&reporterID)
 			if err := near(q, 9, VoteKindContent, v); err != nil {
 				t.Fatalf("err = %v, want nil", err)
+			}
+			// Amended 2026-10-30 by quick task 261030-64q (amendment A1): a
+			// confirm reads the votes once before the write; a dispute keeps
+			// the sequence it always had.
+			if v == VoteConfirm {
+				wantCalls(t, q, "ReportVoteContext", "ReporterHistoryReports", "CurrentVotesForReports", "InsertVote", "CurrentVotesForReports")
+				return
 			}
 			wantCalls(t, q, "ReportVoteContext", "ReporterHistoryReports", "InsertVote", "CurrentVotesForReports")
 		})

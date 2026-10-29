@@ -31,12 +31,16 @@ import (
 // truncatable later and a coarser one would force a backfill.
 const geohashPrecision = 8
 
-// Severity-tiered expiry durations (D-14): a flat Phase 1 default, keyed on
-// severity rather than category. Per-category and trust-weighted tuning
-// arrive once confirm/dispute exists in Phase 2/3.
+// Severity-tiered expiry durations (D-14): a flat default, keyed on severity
+// rather than category. The two lifetimes are a report's normal life, both from
+// posting and from each confirmation made from a new spot (backlog 999.12). The
+// two caps are the latest a report can fade, counted from posting, so a group
+// of accounts cannot keep a false report alive forever.
 const (
-	criticalExpiry = 24 * time.Hour
-	defaultExpiry  = 8 * time.Hour
+	criticalExpiry    = 24 * time.Hour
+	defaultExpiry     = 8 * time.Hour
+	criticalExpiryCap = 48 * time.Hour
+	defaultExpiryCap  = 24 * time.Hour
 )
 
 // maxHeadcount is the upper bound on shelter_headcount — large enough for
@@ -407,14 +411,26 @@ func ValidateSubmitInput(in SubmitInput) error {
 	return nil
 }
 
-// ExpiryDuration returns D-14's two-tier default: 24 hours for critical, 8
-// hours for low and medium. This is explicitly a Phase 1 default; per-
-// category and trust-weighted tuning arrive once confirm/dispute exists.
+// ExpiryDuration returns D-14's two-tier normal life: 24 hours for critical, 8
+// hours for low and medium. It is a report's life from posting and the amount a
+// confirmation from a new spot gives again (backlog 999.12). Keyed on severity
+// only.
 func ExpiryDuration(s Severity) time.Duration {
 	if s == SeverityCritical {
 		return criticalExpiry
 	}
 	return defaultExpiry
+}
+
+// ExpiryCap returns the longest a report can live, counted from posting: 48
+// hours for critical, 24 hours for low and medium. A confirmation from a new
+// spot can push the fade time back but never past created_at plus this cap.
+// Keyed on severity only, the same as ExpiryDuration.
+func ExpiryCap(s Severity) time.Duration {
+	if s == SeverityCritical {
+		return criticalExpiryCap
+	}
+	return defaultExpiryCap
 }
 
 // BoundingBox converts a center point and radius into a lat/lon box for the

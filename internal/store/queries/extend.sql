@@ -1,0 +1,81 @@
+-- name: InsertVoteExtending :one
+-- Appends one vote and, for a confirmation from a new spot, moves the report's
+-- fade time later, all in this one statement (backlog 999.12). Six points a
+-- later reader would otherwise "correct":
+--
+-- (a) What it does. The new_vote step inserts the vote exactly as InsertVote
+-- does (created_at comes from the column default). The extended step runs only
+-- when the caller passed extend, the report has not faded at the vote's time
+-- and the vote is from a new spot and a new person. It sets
+-- reports.expires_at to the later of the current value and the earlier of
+-- (created_at plus cap_seconds) and (the vote's created_at plus life_seconds).
+-- This statement is the only writer of a moved fade time. The query returns the
+-- fade time as it stands after the statement, so CastVote builds its answer from
+-- the value the feed will read.
+--
+-- (b) Why one statement. A single statement is a single transaction, so the
+-- vote and the move commit together or not at all. Every part of it sees the
+-- same snapshot, so NOT EXISTS sees only earlier votes and never the row being
+-- inserted, and the final SELECT sees the old expires_at unless extended
+-- returned the new one. The UPDATE takes the report row's lock and, under read
+-- committed, re-reads a row a concurrent statement just committed, and GREATEST
+-- can only move the time later, so two concurrent extensions never lose one.
+--
+-- (c) The new spot and one person rules. A spot is new when no earlier confirm
+-- row on this report, from any account other than the reporter, carries the
+-- same precision 7 cell. A person extends at most once: no earlier confirm row
+-- on this report may belong to the same account. Both read the whole append
+-- only log, not the standing votes, so a confirm, dispute, confirm toggle can
+-- never extend twice from one cell, and taking a confirmation back never
+-- shortens the time. The reporter's own rows never use up a spot, because a
+-- stranger standing where the reporter once confirmed is still a new voice.
+--
+-- (d) Why the vocabulary, the lifetime and the cap come from Go. The kind and
+-- value words stay in Go, as VotedReportsByAccount already does: Go decides
+-- extend, and this statement only compares the new row's own kind and value
+-- with earlier rows. life_seconds is ExpiryDuration of the severity and
+-- cap_seconds is ExpiryCap of it, so the two numbers live in one place. Go also
+-- decides that a resolved or finished report is never extended (it passes
+-- extend false), so this statement holds no visibility rule. The one check here
+-- is that expires_at is still after the vote's time, so a faded report is never
+-- revived.
+--
+-- (e) Why its own file. votes.sql is guarded as append only and holds no
+-- UPDATE; this statement updates a report row, so it lives here.
+--
+-- (f) The accepted race. Two confirms from one new spot in flight at the same
+-- instant can both count as new, because neither sees the other. The result is
+-- the later of their two times plus the lifetime, so the overshoot is at most
+-- the gap between them and never passes the cap.
+WITH new_vote AS (
+    INSERT INTO votes (report_id, account_id, kind, value, geohash_cell)
+    VALUES (sqlc.arg(report_id), sqlc.arg(account_id), sqlc.arg(kind), sqlc.arg(value), sqlc.arg(geohash_cell))
+    RETURNING report_id, account_id, kind, value, geohash_cell, created_at
+),
+extended AS (
+    UPDATE reports r
+    SET expires_at = GREATEST(
+        r.expires_at,
+        LEAST(
+            r.created_at + sqlc.arg(cap_seconds)::bigint * interval '1 second',
+            nv.created_at + sqlc.arg(life_seconds)::bigint * interval '1 second'
+        )
+    )
+    FROM new_vote nv
+    WHERE r.id = nv.report_id
+      AND sqlc.arg(extend)::boolean
+      AND r.expires_at > nv.created_at
+      AND NOT EXISTS (
+          SELECT 1
+          FROM votes v
+          WHERE v.report_id = nv.report_id
+            AND v.kind = nv.kind
+            AND v.value = nv.value
+            AND (v.geohash_cell = nv.geohash_cell OR v.account_id = nv.account_id)
+            AND v.account_id IS DISTINCT FROM sqlc.narg(reporter_account_id)::bigint
+      )
+    RETURNING r.expires_at
+)
+SELECT COALESCE((SELECT e.expires_at FROM extended e), r.expires_at)::timestamptz AS expires_at
+FROM reports r
+WHERE r.id = sqlc.arg(report_id);

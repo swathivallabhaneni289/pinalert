@@ -130,8 +130,10 @@ var seedReports = []seedReport{
 	{placeSingh, 350, 90, 30 * time.Minute, service.CategoryRoadBlocked, service.SeverityMedium,
 		"The main bridge is fully blocked and nobody can cross.",
 		"", "", 0, 3},
-	// The Ended report: posted nine hours before the world start, so its eight
-	// hour life ended an hour before it.
+	// The Ended report: posted nine hours before the world start. Its two
+	// confirmations, two and four minutes after posting, each pushed the fade
+	// time back, so it faded 56 minutes before the world start instead of an
+	// hour, and it still reads as ended inside the Past window.
 	{placeAjit, 80, 270, 9 * time.Hour, service.CategoryFlood, service.SeverityMedium,
 		"Water crossed the lane early in the day and has since gone down.",
 		"", "", 2, 0},

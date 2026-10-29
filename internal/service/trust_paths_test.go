@@ -59,8 +59,8 @@ func (f *p05VotingFake) ResolutionUndoCounts(ctx context.Context, arg sqlcgen.Re
 	return f.undoRows, nil
 }
 
-func (f *p05VotingFake) InsertVote(ctx context.Context, arg sqlcgen.InsertVoteParams) error {
-	return nil
+func (f *p05VotingFake) InsertVoteExtending(ctx context.Context, arg sqlcgen.InsertVoteExtendingParams) (time.Time, error) {
+	return f.voteContext.ExpiresAt, nil
 }
 
 func (f *p05VotingFake) ReportVoteContext(ctx context.Context, reportID int64) (sqlcgen.ReportVoteContextRow, error) {
