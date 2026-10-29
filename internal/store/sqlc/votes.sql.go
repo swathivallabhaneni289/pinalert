@@ -185,7 +185,7 @@ type TimelineVoteLogRow struct {
 }
 
 // The whole append only vote log of one report, oldest first, for the report
-// page's history "What happened so far" (Phase 8, PAGE-01, SC2). Three points a
+// page's history "What happened so far" (Phase 8, PAGE-01, SC2). Four points a
 // later reader would otherwise "correct":
 //
 // (a) Why not CurrentVotesForReports. That read keeps only the latest row per
@@ -208,6 +208,9 @@ type TimelineVoteLogRow struct {
 // (push.sql, read by the push worker, with no id column and no cap). This read
 // adds the id and the cap and keeps its own name so the worker query stays as
 // shipped.
+//
+// It sits above VotedReportsByAccount on purpose: TestVotedReportsByAccountUsesTheAccountIndex
+// reads the file from that query's name to the end of the file as one statement.
 func (q *Queries) TimelineVoteLog(ctx context.Context, arg TimelineVoteLogParams) ([]TimelineVoteLogRow, error) {
 	rows, err := q.db.Query(ctx, timelineVoteLog, arg.ReportID, arg.RowCap)
 	if err != nil {

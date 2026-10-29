@@ -144,7 +144,11 @@ func BuildTimeline(in TimelineInput) []TimelineEvent {
 	index := make(map[timelineKey]int)
 	var standing []sqlcgen.CurrentVotesForReportsRow
 
-	prevVis, _ := Resolve(in.Meta, VoteTally{}, in.CreatedAt)
+	// The meta is rebuilt field by field so the report's moderation state is
+	// visibly passed to the resolver (R-01, TestResolveCallersMentionModeration).
+	meta := ReportMeta{Severity: in.Meta.Severity, Category: in.Meta.Category, Moderation: in.Meta.Moderation}
+
+	prevVis, _ := Resolve(meta, VoteTally{}, in.CreatedAt)
 	// A report that is Live from the start (critical) is never "shown to
 	// everyone" at a later step.
 	shown := prevVis == VisibilityLive
@@ -171,7 +175,7 @@ func BuildTimeline(in TimelineInput) []TimelineEvent {
 		}
 
 		tally := BuildVoteTally(standing, in.ReportID, in.ReporterAccountID)
-		vis, _ := Resolve(in.Meta, tally, row.CreatedAt)
+		vis, _ := Resolve(meta, tally, row.CreatedAt)
 		at := row.CreatedAt
 
 		closureSaysYou := false
