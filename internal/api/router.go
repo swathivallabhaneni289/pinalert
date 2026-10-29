@@ -1076,7 +1076,7 @@ func NewRouter(deps Deps) *chi.Mux {
 		// /u/{your username}. Gated like /settings and given no rate bucket:
 		// the page load is already behind the access gate, and its actions
 		// pass through the people buckets of the JSON routes above.
-		r.Get("/u/{username}", handlers.PersonPage(deps.Template, people, page))
+		r.Get("/u/{username}", handlers.PersonPage(deps.Template, people, deps.Reports, page))
 		r.Get("/me", handlers.MyProfilePage(people))
 		// Phase 3.4 (D-27, plan 10): the first-time flow. It sits in this gated
 		// group because it belongs to the signed in account, and the onboarding

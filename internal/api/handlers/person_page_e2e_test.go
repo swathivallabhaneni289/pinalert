@@ -8,11 +8,17 @@ package handlers_test
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"pinalert/internal/service"
 	"pinalert/internal/testutil"
 )
 
@@ -212,5 +218,155 @@ func TestPersonPageBlockedByYou(t *testing.T) {
 	status, again, _ := p907Do(t, viewer, http.MethodGet, srv.URL+"/u/blk_other", "")
 	if status != http.StatusOK || !strings.Contains(again, `id="person-header"`) {
 		t.Errorf("after Unblock the page must draw the profile again (status %d)", status)
+	}
+}
+
+// p911RowPattern matches the li elements of the Recent reports list.
+var p911RowPattern = regexp.MustCompile(`(?s)<li class="person-report [^"]*">.*?</li>`)
+
+// p911Setup seeds one public reporter (six finished reports from
+// SeedPublicReporter), one live report nobody has voted on, one live report
+// three people dispute, and one report 40 days old that is out of the window.
+// It returns the live ids, the old id and the signed in viewer's page body.
+func p911Setup(t *testing.T) (body string, liveID, disputedID, oldID int64) {
+	t.Helper()
+	srv, mailer, pool := p907Server(t)
+	viewer, _ := p907Person(t, srv, mailer, pool, "p911-viewer@example.com", "p911_viewer", false)
+	now := time.Now().UTC()
+	testutil.SeedPublicReporter(t, pool, "p911-owner@example.com", "p911_owner", "sess-p911-owner", now)
+
+	liveID = testutil.SeedHistoryReport(t, pool, "sess-p911-owner", "medium", "flood", now.Add(2*time.Hour))
+	disputedID = testutil.SeedHistoryReport(t, pool, "sess-p911-owner", "low", "flood", now.Add(3*time.Hour))
+	p911Dispute(t, pool, disputedID, now)
+	oldID = testutil.SeedHistoryReport(t, pool, "sess-p911-owner", "low", "flood", now.Add(-40*24*time.Hour))
+
+	status, page, _ := p907Do(t, viewer, http.MethodGet, srv.URL+"/u/p911_owner", "")
+	if status != http.StatusOK {
+		t.Fatalf("GET /u/p911_owner: status = %d, want 200", status)
+	}
+	return page, liveID, disputedID, oldID
+}
+
+// p911Dispute adds three disputes from three voters in three cells.
+func p911Dispute(t *testing.T, pool *pgxpool.Pool, reportID int64, now time.Time) {
+	t.Helper()
+	cells := []string{"tdr1v8y", "tdr1vc3", "tdr1vd2"}
+	for i, cell := range cells {
+		voter := testutil.SeedReporterAccount(t, pool, "p911-disputer-"+strconv.Itoa(i)+"@example.com")
+		if _, err := pool.Exec(context.Background(),
+			`INSERT INTO votes (report_id, account_id, kind, value, geohash_cell, created_at)
+			 VALUES ($1, $2, 'content', 'dispute', $3, $4)`,
+			reportID, voter, cell, now.Add(-30*time.Minute),
+		); err != nil {
+			t.Fatalf("seeding a dispute on report %d: %v", reportID, err)
+		}
+	}
+}
+
+// TestPersonPageRecentReports is V10 for the page: a live report is a link to
+// the Phase 8 report link, a disputed one is listed with its line and its word,
+// the finished ones are listed, and a report older than 30 days is absent.
+func TestPersonPageRecentReports(t *testing.T) {
+	body, liveID, disputedID, _ := p911Setup(t)
+	rows := p911RowPattern.FindAllString(body, -1)
+
+	var live, finished int
+	var sawLive, sawDisputed bool
+	for _, row := range rows {
+		switch {
+		case strings.Contains(row, "person-report--live"):
+			live++
+			if !strings.Contains(row, `<a class="person-report__body" href="/?report=`) {
+				t.Errorf("a live row is not a link to the report link: %s", row)
+			}
+			if strings.Contains(row, `href="/?report=`+strconv.FormatInt(liveID, 10)+`"`) {
+				sawLive = true
+				if !strings.Contains(row, "Not confirmed yet") || !strings.Contains(row, "Posted ") {
+					t.Errorf("the live row lacks its status word or its time: %s", row)
+				}
+			}
+			if strings.Contains(row, `href="/?report=`+strconv.FormatInt(disputedID, 10)+`"`) {
+				sawDisputed = true
+				if !strings.Contains(row, "Disputed: may not be true") || !strings.Contains(row, `person-chip--grey">Disputed<`) {
+					t.Errorf("the disputed row lacks its line or its chip: %s", row)
+				}
+			}
+		case strings.Contains(row, "person-report--finished"):
+			finished++
+		default:
+			t.Errorf("a row is neither live nor finished: %s", row)
+		}
+	}
+	if !sawLive || !sawDisputed {
+		t.Errorf("live row listed = %v, disputed row listed = %v, want both", sawLive, sawDisputed)
+	}
+	if live != 2 {
+		t.Errorf("live rows = %d, want 2", live)
+	}
+	// SeedPublicReporter files six finished reports; the 40 day old one is not
+	// among the rows, so the list holds six finished rows and no more.
+	if finished != 6 {
+		t.Errorf("finished rows = %d, want 6 (the report from 40 days ago must be absent)", finished)
+	}
+	for _, want := range []string{"Recent reports", "Reports from the last 30 days, newest first.", ">Report<", ">Status<", ">When<", ">Distance<"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the section lacks %q", want)
+		}
+	}
+}
+
+// TestPersonPageFinishedRowsAreCoarse is T-09-40 and D-20 for the page: a
+// finished row is not a link and holds no tabindex, no description, no id and no
+// time of day; its coordinates are the precision 5 cell centre, never the
+// stored point, and its When text is the word Ended and a date.
+func TestPersonPageFinishedRowsAreCoarse(t *testing.T) {
+	body, _, _, _ := p911Setup(t)
+	storedLat, storedLon := 12.9716, 77.5946
+	wantLat, wantLon, _ := service.CoarsePointAt(storedLat, storedLon, service.ProfileCoarsePrecision)
+	if wantLat == storedLat || wantLon == storedLon {
+		t.Fatalf("the coarse centre %v, %v equals the stored point: the test proves nothing", wantLat, wantLon)
+	}
+
+	latRe := regexp.MustCompile(`data-lat="([^"]+)" data-lon="([^"]+)" data-approx="([^"]+)"`)
+	whenRe := regexp.MustCompile(`<span class="person-report__when">([^<]*)</span>`)
+	dateRe := regexp.MustCompile(`^Ended [0-9]{1,2} [A-Z][a-z]+ [0-9]{4}$`)
+	seen := 0
+	for _, row := range p911RowPattern.FindAllString(body, -1) {
+		if !strings.Contains(row, "person-report--finished") {
+			continue
+		}
+		seen++
+		for _, banned := range []string{"<a ", "href=", "tabindex", "seeded history report", "app-icon--chevron-right", "data-report-id"} {
+			if strings.Contains(row, banned) {
+				t.Errorf("a finished row holds %q: %s", banned, row)
+			}
+		}
+		for _, banned := range []string{"12.9716", "77.5946"} {
+			if strings.Contains(row, banned) {
+				t.Errorf("a finished row holds the stored point %q: %s", banned, row)
+			}
+		}
+		m := latRe.FindStringSubmatch(row)
+		if m == nil {
+			t.Fatalf("a finished row has no coordinates: %s", row)
+		}
+		lat, _ := strconv.ParseFloat(m[1], 64)
+		lon, _ := strconv.ParseFloat(m[2], 64)
+		if math.Abs(lat-wantLat) > 1e-9 || math.Abs(lon-wantLon) > 1e-9 || m[3] != "true" {
+			t.Errorf("a finished row has %v, %v approx %s; want the cell centre %v, %v and true", lat, lon, m[3], wantLat, wantLon)
+		}
+		w := whenRe.FindStringSubmatch(row)
+		if w == nil || !dateRe.MatchString(w[1]) {
+			t.Errorf("a finished row's When text = %q, want Ended and a date with no time", w)
+		}
+		if strings.Contains(row, " ago") || regexp.MustCompile(`[0-9]:[0-9]{2}`).MatchString(row) || strings.Contains(row, "datetime") {
+			t.Errorf("a finished row carries a relative time or a time of day: %s", row)
+		}
+		if !strings.Contains(row, "Ended.") {
+			t.Errorf("a finished row's name must start with Ended.: %s", row)
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no finished row was listed, so nothing was checked")
 	}
 }

@@ -307,6 +307,237 @@
   line-height: var(--line-height-label);
 }
 
+/* Surface 5 (plan 09-11): the rows of Recent reports, written by the server.
+   The chip tints are the My activity values under page local names: the same
+   hex values activity.css checks at 4.5 to 1 in both themes
+   (TestPersonChipTintsMatchActivity pins them equal). No text is faded; a
+   finished row is marked by a grey disc, the word Ended in its name and the
+   absence of a link, never by opacity. */
+main.person-page {
+  --p-chip-critical-bg: #FAEDEC;
+  --p-chip-critical-ink: #BE433A;
+  --p-chip-medium-bg: #FAEFDD;
+  --p-chip-medium-ink: #946200;
+  --p-chip-low-bg: #E4F1EC;
+  --p-chip-low-ink: #39775A;
+}
+
+@media (prefers-color-scheme: dark) {
+  main.person-page {
+    --p-chip-critical-bg: var(--color-severity-critical-bg);
+    --p-chip-critical-ink: var(--color-severity-critical);
+    --p-chip-medium-bg: var(--color-severity-medium-bg);
+    --p-chip-medium-ink: var(--color-severity-medium);
+    --p-chip-low-bg: var(--color-severity-low-bg);
+    --p-chip-low-ink: var(--color-severity-low);
+  }
+}
+
+:root[data-theme="dark"] main.person-page {
+  --p-chip-critical-bg: var(--color-severity-critical-bg);
+  --p-chip-critical-ink: var(--color-severity-critical);
+  --p-chip-medium-bg: var(--color-severity-medium-bg);
+  --p-chip-medium-ink: var(--color-severity-medium);
+  --p-chip-low-bg: var(--color-severity-low-bg);
+  --p-chip-low-ink: var(--color-severity-low);
+}
+
+:root[data-theme="light"] main.person-page {
+  --p-chip-critical-bg: #FAEDEC;
+  --p-chip-critical-ink: #BE433A;
+  --p-chip-medium-bg: #FAEFDD;
+  --p-chip-medium-ink: #946200;
+  --p-chip-low-bg: #E4F1EC;
+  --p-chip-low-ink: #39775A;
+}
+
+.person-reports__state {
+  padding: var(--space-xl) var(--space-lg) 0;
+}
+
+.person-report-box {
+  box-sizing: border-box;
+  min-width: 0;
+  background: var(--color-bg);
+}
+
+.person-report-cols {
+  display: none;
+}
+
+/* The phone: one card per report, 12px apart. */
+.person-report-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.person-report {
+  box-sizing: border-box;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-bg);
+}
+
+.person-report__body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "disc status"
+    "report report"
+    "when when"
+    "foot foot";
+  gap: var(--space-sm) var(--space-12);
+  align-items: center;
+  box-sizing: border-box;
+  padding: var(--space-md);
+  border-radius: 12px;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+a.person-report__body:hover {
+  background: var(--color-surface);
+}
+
+.person-report__disc {
+  grid-area: disc;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
+.person-report--live.sev-critical .person-report__disc {
+  background: var(--p-chip-critical-bg);
+  color: var(--p-chip-critical-ink);
+}
+
+.person-report--live.sev-medium .person-report__disc {
+  background: var(--p-chip-medium-bg);
+  color: var(--p-chip-medium-ink);
+}
+
+.person-report--live.sev-low .person-report__disc {
+  background: var(--p-chip-low-bg);
+  color: var(--p-chip-low-ink);
+}
+
+.person-report--finished .person-report__disc {
+  background: var(--color-age-stale);
+  color: var(--color-text);
+}
+
+.person-report__report {
+  grid-area: report;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.person-report__title {
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.person-report__label {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  overflow-wrap: anywhere;
+}
+
+.person-report__disputed {
+  color: var(--color-severity-critical);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+}
+
+.person-report__status {
+  grid-area: status;
+  justify-self: end;
+}
+
+.person-chip {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 28px;
+  padding: 0 var(--space-sm);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+.person-chip--sev-critical {
+  background: var(--p-chip-critical-bg);
+  color: var(--p-chip-critical-ink);
+}
+
+.person-chip--sev-medium {
+  background: var(--p-chip-medium-bg);
+  color: var(--p-chip-medium-ink);
+}
+
+.person-chip--sev-low,
+.person-chip--low {
+  background: var(--p-chip-low-bg);
+  color: var(--p-chip-low-ink);
+}
+
+.person-chip--neutral,
+.person-chip--grey {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.person-report__when {
+  grid-area: when;
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+}
+
+.person-report__foot {
+  grid-area: foot;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+.person-report__chevron {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+
+.person-reports__cut {
+  margin: var(--space-12) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
 /* Surface 6: the not found and You blocked boxes, the .empty-state look with
    32px above. The display rule is guarded, so the hidden attribute works. */
 .person-state:not([hidden]) {
@@ -355,6 +586,57 @@
 
   .person-state {
     grid-column: 1 / -1;
+  }
+
+  /* Surface 5b: rows in columns inside one box. */
+  .person-report-box {
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .person-report-cols {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 2.2fr) 144px 152px 96px;
+    gap: var(--space-md);
+    align-items: center;
+    padding: var(--space-sm) var(--space-lg);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .person-report-list {
+    gap: 0;
+  }
+
+  .person-report {
+    border: 0;
+    border-radius: 0;
+  }
+
+  .person-report + .person-report {
+    border-top: 1px solid var(--color-border);
+  }
+
+  .person-report__body {
+    grid-template-columns: 40px minmax(0, 2.2fr) 144px 152px 96px;
+    grid-template-areas: "disc report status when foot";
+    gap: var(--space-md);
+    padding: var(--space-md) var(--space-lg);
+    border-radius: 0;
+  }
+
+  .person-report__status {
+    justify-self: start;
+  }
+
+  .person-report__foot {
+    padding-top: 0;
+    border-top: 0;
   }
 }
 

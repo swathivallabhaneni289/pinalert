@@ -7,6 +7,8 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"pinalert/internal/account"
@@ -43,6 +45,94 @@ type personViewModel struct {
 	NotFound     bool
 	BlockedByYou bool
 	PageTitle    string
+
+	// AccountID is the READER's own account id, never the profile owner's. It
+	// is written as data-account-id so position.js can return the position
+	// Nearby kept for this account (plan 09-11); it is zero on the not found
+	// page, which carries nothing about the request.
+	AccountID int64
+
+	// The Recent reports section (plan 09-11, D-06, D-07). ReportsFailed draws
+	// the error state; an empty Reports draws the empty state.
+	Reports        []personReportRow
+	ReportsCut     bool
+	ReportsCutText string
+	ReportsFailed  bool
+}
+
+// personReportRow is one row of Recent reports, written by the server like a My
+// activity row. A live row has an Href (the Phase 8 report link) and the exact
+// point the map already shows. A finished row has no Href and carries only the
+// coarse cell centre in Lat and Lon (Approx true): the page never holds a
+// finished report's exact point, its id or a time of day (D-20, T-09-40).
+type personReportRow struct {
+	Href             string
+	Title            string
+	LabelLine        string
+	AreaLine         string
+	StatusWord       string
+	ChipClass        string
+	WhenText         string
+	DisputedLine     string
+	IconGlyph        string
+	SeverityClass    string
+	Lat              float64
+	Lon              float64
+	Approx           bool
+	AccessiblePrefix string
+}
+
+// personReportHref is the Phase 8 report link of a live report: the same
+// /?report=ID address a push note and a shared link use. It opens the popup on
+// a laptop and the report page on a phone (A-P8-1).
+func personReportHref(id int64) string {
+	return "/?report=" + strconv.FormatInt(id, 10)
+}
+
+// personReportRows turns the service rows into page rows. now is the instant
+// the relative time of a live row is measured from.
+func personReportRows(rows []service.ProfileReportRow, now time.Time) []personReportRow {
+	out := make([]personReportRow, 0, len(rows))
+	for _, row := range rows {
+		v := row.View
+		pr := personReportRow{
+			StatusWord:   row.StatusWord,
+			IconGlyph:    "icon-glyph--" + string(v.Category),
+			Lat:          v.Latitude,
+			Lon:          v.Longitude,
+			DisputedLine: row.DisputedLine,
+		}
+		if row.Live {
+			pr.Href = personReportHref(v.ID)
+			pr.Title = v.Description
+			pr.LabelLine = service.CategoryWord(v.Category) + " · " + service.SeverityWord(v.Severity)
+			pr.WhenText = "Posted " + profileRelativeTime(v.CreatedAt, now)
+			pr.SeverityClass = "sev-" + string(v.Severity)
+			switch row.Status {
+			case service.ProfileStatusDisputed:
+				pr.ChipClass = "person-chip--grey"
+				pr.AccessiblePrefix = "Disputed, may not be true."
+			case service.ProfileStatusNotConfirmed:
+				pr.ChipClass = "person-chip--neutral"
+				pr.AccessiblePrefix = "Not confirmed yet."
+			default:
+				pr.ChipClass = "person-chip--" + pr.SeverityClass
+			}
+		} else {
+			pr.Title = row.FinishedTitle
+			pr.AreaLine = row.AreaLine
+			pr.WhenText = "Ended " + row.EndedOn
+			pr.Approx = true
+			pr.AccessiblePrefix = "Ended."
+			if row.Status == service.ProfileStatusResolved {
+				pr.ChipClass = "person-chip--low"
+			} else {
+				pr.ChipClass = "person-chip--grey"
+			}
+		}
+		out = append(out, pr)
+	}
+	return out
 }
 
 // personPageHeaders sets the headers every answer of the profile routes carries:
@@ -65,7 +155,7 @@ func personPageHeaders(w http.ResponseWriter) {
 //
 // Deliberately carries no swag annotation: it serves text/html and lives
 // outside @BasePath /api.
-func PersonPage(tmpl *template.Template, people *service.PeopleService, cfg PageConfig) http.HandlerFunc {
+func PersonPage(tmpl *template.Template, people *service.PeopleService, reports *service.ReportService, cfg PageConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acc, ok := account.FromContext(r.Context())
 		if !ok {
@@ -101,6 +191,31 @@ func PersonPage(tmpl *template.Template, people *service.PeopleService, cfg Page
 				title = personTitleOwn
 			}
 			vm.Nav = navFor(navPerson, navTitle(title), navBack("/"))
+			vm.AccountID = acc.ID
+
+			// Recent reports (plan 09-11): drawn by the server like My activity,
+			// for a profile the viewer may see and has not blocked. The read has
+			// no centre: distances are filled in the browser from the position
+			// Nearby kept, so the server learns no reader location. A failed read
+			// is logged with ids only and the page still renders.
+			if !profile.BlockedByYou {
+				if reports == nil {
+					vm.ReportsFailed = true
+				} else {
+					list, err := reports.ProfileReports(r.Context(), service.ProfileQuery{
+						AccountID:       profile.AccountID(),
+						ViewerAccountID: acc.ID,
+					})
+					if err != nil {
+						log.Printf("handlers: PersonPage: reading reports of account %d for viewer %d: %v", profile.AccountID(), acc.ID, err)
+						vm.ReportsFailed = true
+					} else {
+						vm.Reports = personReportRows(list.Rows, time.Now().UTC())
+						vm.ReportsCut = list.Cut
+						vm.ReportsCutText = list.CutText
+					}
+				}
+			}
 		}
 
 		var page bytes.Buffer

@@ -604,13 +604,17 @@ var sizeOnlyNamed = map[string]string{
 	// Amended 2026-10-17 by Phase 3.4 plan 26 (code review part 3 WR-04): this title is no longer
 	// display none on any size. app-bar.css hides it by clipping so Nearby keeps its one h1 for screen
 	// readers; the entry stays so a later display none on it would still be named and explained.
-	".app-topbar:has(> .map-search) > .app-topbar__title":                                           "phone Nearby: Search a place takes the place of the title in the top bar (D-10, app_bar.html.tmpl); the title is clipped, not removed, so the h1 stays.",
-	".app-topbar:has(> .map-search) > .app-topbar__spacer":                                          "phone Nearby: the spacer is not needed when Search a place fills the bar (D-10).",
-	"#map .icon-badge--pin .icon-glyph":                                                             "phone: the pin is a 20px dot without a glyph; the laptop pin is the 44px badge with it (UI-SPEC D16, pins stay the built markers).",
-	"main.profile-page:not([data-part=\"\"]):not([data-part=\"posted\"]) > .queue-strip":            "phone My activity: the waiting reports strip belongs to the Posted part only; the laptop stack shows it with that part (D-21).",
-	"main.profile-page > .activity-part":                                                            "phone My activity: one part at a time, the hub chooses; the laptop stacks all five parts (D-19, D-21).",
-	"main.profile-page > .activity-part .activity-part__title":                                      "phone My activity: the part title repeats the top bar title on the phone (R2 nothing repeated); the laptop stack needs it to tell the parts apart (D-21).",
-	"main.profile-page > .activity-part .activity-cols":                                             "phone My activity: the column head row is for the aligned laptop table; phone cards carry their own labels (D-21).",
+	".app-topbar:has(> .map-search) > .app-topbar__title":                                "phone Nearby: Search a place takes the place of the title in the top bar (D-10, app_bar.html.tmpl); the title is clipped, not removed, so the h1 stays.",
+	".app-topbar:has(> .map-search) > .app-topbar__spacer":                               "phone Nearby: the spacer is not needed when Search a place fills the bar (D-10).",
+	"#map .icon-badge--pin .icon-glyph":                                                  "phone: the pin is a 20px dot without a glyph; the laptop pin is the 44px badge with it (UI-SPEC D16, pins stay the built markers).",
+	"main.profile-page:not([data-part=\"\"]):not([data-part=\"posted\"]) > .queue-strip": "phone My activity: the waiting reports strip belongs to the Posted part only; the laptop stack shows it with that part (D-21).",
+	"main.profile-page > .activity-part":                                                 "phone My activity: one part at a time, the hub chooses; the laptop stacks all five parts (D-19, D-21).",
+	"main.profile-page > .activity-part .activity-part__title":                           "phone My activity: the part title repeats the top bar title on the phone (R2 nothing repeated); the laptop stack needs it to tell the parts apart (D-21).",
+	"main.profile-page > .activity-part .activity-cols":                                  "phone My activity: the column head row is for the aligned laptop table; phone cards carry their own labels (D-21).",
+	// Phase 9 plan 11 (UI-SPEC 5b and 5c): the column head row of the profile's
+	// Recent reports is for the aligned laptop rows; the phone cards carry the
+	// same words inside each card, as My activity does.
+	".person-report-cols": "phone profile: the column head row is for the aligned laptop rows; phone cards carry the same facts inside each card (UI-SPEC 5b, 5c).",
 	".leaflet-container .leaflet-detail-pane .leaflet-popup-tip-container":                          "phone detail sheet: a sheet has no pointer tip; the laptop popup keeps it (kept as built, UI-SPEC Not designed here).",
 	".leaflet-container .leaflet-detail-pane .popup-card__pills > .icon-badge":                      "phone detail sheet: the badge repeats the heading's glyph; kept as built (UI-SPEC Not designed here).",
 	".leaflet-container .leaflet-detail-pane .popup-card__meta > .icon-glyph":                       "phone detail sheet: the meta glyph is dropped at sheet width; kept as built (UI-SPEC Not designed here).",

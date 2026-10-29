@@ -424,6 +424,13 @@ func TestReadOnlyLabelsRoundedControlsNot(t *testing.T) {
 		if r.File == "static/css/person.css" && r.Head == ".person-disc" {
 			continue
 		}
+		// Phase 9 plan 11 (UI-SPEC Surface 5, Radii: 50 percent is for discs):
+		// the 40px category disc of a Recent reports row is a drawing, not a
+		// control. It is aria-hidden and cannot be pressed, and the row's words
+		// name the report. person.css is exempted for exactly this head.
+		if r.File == "static/css/person.css" && r.Head == ".person-report__disc" {
+			continue
+		}
 		// Amended 2026-10-29 by Phase 8 plan 04 (UI-SPEC Surface 6b, Radii: 50
 		// percent is for discs): the 8px severity dot beside the severity word on
 		// the public status page is a drawing, not a control. It is aria-hidden,
