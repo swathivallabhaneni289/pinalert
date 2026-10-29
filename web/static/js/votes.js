@@ -2081,12 +2081,18 @@
         }
       },
       onGone: function () {
-        removeRateBox(reportId);
+        // The person is gone: the box leaves quietly. A star that had focus
+        // hands it to Undo, as Skip does, and the control is destroyed so its
+        // own settle step does not focus a star that is no longer on the page
+        // (09-REVIEW IN-B05).
+        dismiss();
+        control.destroy();
       }
     });
 
-    skip.addEventListener('click', function () {
-      rateSkipped[String(reportId)] = true;
+    // dismiss takes the box out and, when focus sat inside it, moves focus to
+    // the Undo of the resolve if it can take focus.
+    function dismiss() {
       var hadFocus = box.contains(document.activeElement);
       removeRateBox(reportId);
       if (hadFocus) {
@@ -2095,6 +2101,11 @@
           undo.focus();
         }
       }
+    }
+
+    skip.addEventListener('click', function () {
+      rateSkipped[String(reportId)] = true;
+      dismiss();
     });
 
     box.appendChild(control.el);
