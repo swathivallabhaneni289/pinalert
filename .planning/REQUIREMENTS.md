@@ -14,7 +14,9 @@ Requirements for initial release. Each maps to roadmap phases.
       verified an email address by clicking a magic link sent to it (decided 2026-09-10 during
       Phase 1.1 discussion — a typed one-time passcode was the original assumption, superseded by
       a clickable link) — supersedes FOUND-01's anonymous/no-signup model, reversed 2026-09-10
-      (see Key Decisions in PROJECT.md)
+      (see Key Decisions in PROJECT.md). Amended by IDENT-06 on 2026-10-29 (Phase 7.1): the
+      clickable link is gone, an account is an email and a password and the email is proved once
+      by a typed 6-digit code.
 
 - [x] **IDENT-02**: Verification-email delivery uses a free-tier transactional email provider
       (e.g. Resend), within its free quota — no paid SMS/phone verification path exists in this
@@ -26,7 +28,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **IDENT-04**: Verification-email requests are rate-limited per email address and per IP
       (30-60 second resend cooldown), so the email-sending endpoint can't be trivially abused for
-      spam or cost inflation
+      spam or cost inflation. IDENT-06 changes these limits on 2026-10-29 (Phase 7.1): they are
+      now the password and code limits (wrong passwords per address and per device, 5 tries per
+      code, 45 second resend wait, 5 code emails an hour, and a daily email ceiling).
 
 - [x] **IDENT-05**: The Phase 1 session-cookie mechanism is retained as the underlying
       identity/session carrier — it is now gated behind a verified account rather than usable

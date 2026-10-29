@@ -29,7 +29,7 @@ How confirmations are counted, why a place is a precision 7 geohash cell, the 1 
    ```bash
    export DATABASE_URL="postgres://localhost:5432/pinalert?sslmode=disable"  # or your Neon/Supabase connection string
    export SESSION_SECRET="$(openssl rand -base64 32)"
-   export BASE_URL="http://localhost:8080"        # must be the externally reachable origin — see below
+   export BASE_URL="http://localhost:8080"        # the site origin; sign in no longer uses it, push still reads it, see below
    export ENV=development                          # unlocks the SESSION_SECRET/RESEND_API_KEY dev fallbacks below
    export RESEND_API_KEY="re_..."                   # optional when ENV=development, required otherwise — see Email delivery below
    export RESEND_FROM="Pinalert <onboarding@resend.dev>"  # optional; defaults to the Resend sandbox sender when unset
@@ -50,13 +50,12 @@ How confirmations are counted, why a place is a precision 7 geohash cell, the 1 
    The server refuses to start without `SESSION_SECRET` unless `ENV=development` is also set —
    never let a missing secret silently fall back to an auto-generated one, which would invalidate
    every session on every restart. `RESEND_API_KEY` follows the identical rule: with
-   `ENV=development` and no key set, the server prints each verification link to its own log
-   instead of sending it; with any other `ENV` (including unset), a missing `RESEND_API_KEY` makes
-   the process exit at startup rather than boot into a state where nobody can receive their
-   verification email. `BASE_URL` roots the absolute link every verification email carries
-   (`{BASE_URL}/auth/verify?token=...`) — a wrong or unset-in-production value produces emailed
-   links that resolve to the wrong host, so set it explicitly to your real deployed origin outside
-   local development. Both place searches (the report form's and the map's) ask Photon
+   `ENV=development` and no key set, the server prints each 6 digit sign in code to its own log
+   instead of sending it (a line with `code=`; there is never a link to print); with any other
+   `ENV` (including unset), a missing `RESEND_API_KEY` makes the process exit at startup rather
+   than boot into a state where nobody can receive their code email. `BASE_URL` is no longer used
+   by sign in, because no email carries a link any more; phone notifications still read it as a
+   fallback contact, so set it to your real deployed origin outside local development. Both place searches (the report form's and the map's) ask Photon
    (photon.komoot.io, OpenStreetMap data, by komoot) first, because it matches close spellings and
    half typed words, and fall back to OSM Nominatim only when Photon fails, takes over 2 seconds
    and then over 2.5 seconds on one retry, or finds nothing. Nominatim's usage policy requires an identifying contact in the outbound
@@ -97,21 +96,26 @@ CI results on a PR.
 
 ## Email delivery (Resend)
 
-Pinalert sends verification-magic-link email through [Resend](https://resend.com)'s free tier.
-`internal/mailer/loader.go` selects the implementation at startup: `RESEND_API_KEY` unset with
-`ENV=development` prints the link to the server log (a build-and-test convenience, not a
-substitute for real delivery — a green test suite proves nothing about whether real mail arrives);
+Pinalert sends its sign in email through [Resend](https://resend.com)'s free tier. There are four
+emails, all plain, all with a 6 digit code or a short notice and no link: the sign up code, the
+Forgot password code, a note to the owner of an address that already has an account when someone
+tries Create account with it, and a note to an address with no account when someone tries Forgot
+password with it. `internal/mailer/loader.go` selects the implementation at startup:
+`RESEND_API_KEY` unset with `ENV=development` prints the code to the server log (a
+build-and-test convenience, not a substitute for real delivery; a green test suite proves nothing
+about whether real mail arrives);
 `RESEND_API_KEY` set sends through Resend's official Go SDK; `RESEND_API_KEY` unset with any other
 `ENV` refuses to start.
 
 **Pre-launch requirement — read before sharing this app with anyone but yourself.** Resend's
 sandbox sender `onboarding@resend.dev` (the default when `RESEND_FROM` is unset) delivers **only**
 to the Resend account owner's own signup address. Until a custom domain is added and DNS-verified,
-every other visitor's verification email is silently undeliverable — and because login is
-mandatory to view anything at all (see PROJECT.md's Access Model), an undeliverable verification
-email means an unusable app for that person, not a degraded experience.
+every other visitor's code email is silently undeliverable, and because login is mandatory to
+view anything at all (see PROJECT.md's Access Model), an undeliverable code email means an
+unusable app for that person, not a degraded experience.
 
-Before sharing a deployed instance with real visitors:
+Before sharing a deployed instance with real visitors, the owner steps are these (the verified
+sender is the first):
 
 1. In the Resend dashboard, go to **Domains → Add Domain**, then add the printed DKIM/SPF records
    at your DNS registrar and wait for verification to complete.
@@ -127,17 +131,35 @@ Before sharing a deployed instance with real visitors:
 5. Send one canary request through the host to learn which header carries the visitor address
    before setting `CLIENT_IP_HEADER` (unset means no network limit on the new limiters).
    Until `CLIENT_IP_HEADER` is set on a host behind a proxy, the per address limits on place search
-   and login link requests see one shared address for every visitor, so set it only after the
+   and the sign in and code limits see one shared address for every visitor, so set it only after the
    canary shows which header carries the visitor address.
 6. Set `MODERATOR_EMAILS` to the verified emails of your moderators and bookmark `/moderate`.
 7. Set `OPENAI_API_KEY` and check that a fresh zero balance key is accepted by running the
    recorder once (see [docs/MODERATION.md](./docs/MODERATION.md)).
 8. Have a lawyer or mentor read the Disclaimer and Policy pages before any wide promotion.
 
-Resend's free tier is also quota-limited (roughly 100 sends/day at the time this was written —
+Resend's free tier is also quota-limited (roughly 100 sends/day at the time this was written;
 re-check the current figure in your own Resend dashboard rather than trusting this document). The
-per-email resend cooldown and per-IP rate limiter shipping in plan `01.1-05` exist specifically to
-protect that quota from being exhausted by repeated requests.
+server holds a daily ceiling of **90 sends a day** (UTC days, all four emails together) so the
+free 100 is never used up, and keeps 20 of those 90 for Forgot password emails so an attacker
+spending the rest on Create account cannot stop a real person getting back in. A person is also
+limited to one code email every 45 seconds and 5 an hour for each address. A send past the
+ceiling shows the person "Something went wrong. Try again." and says nothing about why.
+
+### Signing in: client address header and hashing speed
+
+- **`CLIENT_IP_HEADER` canary.** Sign in has a per device limit and a per address lock in the
+  database that need no setup. A limit by network address exists too, but it is off until
+  `CLIENT_IP_HEADER` names the header your host sets. Find the header with the host canary in step
+  5 of the checklist above, then set `CLIENT_IP_HEADER`, which turns the sign in network buckets
+  on. It **must be set before any public share**: without it, a script that drops cookies is held
+  back only by the per address lock and the hashing cost (see "Signing in" in
+  [docs/TRUST-MODEL.md](./docs/TRUST-MODEL.md)).
+- **Hashing speed.** Passwords are hashed with argon2id at m=19456 (19 MiB), t=2, p=1, the OWASP
+  minimum, with at most 3 hashes running at once. On a very small host, if sign in feels slow or
+  the host reports out of memory, use the fallback m=12288, t=3 (OWASP equal strength) by
+  editing `DefaultParams` in `internal/auth/password.go`; `TestDefaultParamsFloor` accepts it. Hashes already stored are checked with the numbers they carry and are
+  re-made with the new numbers the next time the person signs in.
 
 ## Phone notifications
 
@@ -157,16 +179,26 @@ Pinalert copies government alerts from NDMA SACHET onto Official alerts, a one l
 
 ## Account access and logout
 
-Pinalert has **no account-recovery path in v1** (D-11), by deliberate decision, not oversight.
-Losing access to the inbox that verified an address means verifying a new address and starting
-fresh — the previous account's reports stay attached to the old, now-unreachable address, with no
-way to reclaim them. There is no password to reset and no support flow that hands an account back.
+An account is an email and a password. The email is proved once, at sign up, by a 6 digit code
+that is typed in; there is no emailed link. Amended 2026-10-29 by Phase 7.1: the older "no
+account-recovery path" decision (D-11) is replaced. **Forgot password** on the sign in card emails
+a new 6 digit code, and the person then chooses a new password. A reset signs the account out
+everywhere, so a stolen session does not survive it. Losing access to the inbox is still the only
+unrecoverable case: no support flow hands an account back, and the previous account's reports stay
+attached to the unreachable address.
 
 Logging out is a different, much safer action: it is fully **reversible**. Clicking "Log out" from
 the account menu clears the session cookie on that device and returns to the login gate, but the
-account itself, and everything it has ever reported, is untouched — re-verifying the same email
-address (on the same device or a new one) restores the full report history on `/profile`. Losing
-the inbox is the only unrecoverable case; logging out is never one.
+account itself, and everything it has ever reported, is untouched. Signing in again with the same
+email and password (on the same device or a new one) restores the full report history on
+`/profile`.
+
+An account made before Phase 7.1 with the old emailed link has no password. Its sign in stops
+working when migration 00014 runs. The person uses **Create account** with the same email, types
+the code, chooses a password and fills in the username, name and home area once; their reports are
+still theirs. Passwords, usernames and typed codes need migrations 00014 and 00015, so run
+`make migrate` once on an existing database after pulling (run the migration first, then start the
+new server).
 
 ## API documentation
 

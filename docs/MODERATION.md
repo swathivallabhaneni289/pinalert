@@ -189,6 +189,28 @@ is just wrong, and has an optional "Tell the moderators more" box of up to 300 c
 - Police guidance stays plain text on the legal pages. The Flag control sends nothing to anyone
   outside Pinalert.
 
+## Usernames
+
+Phase 7.1 gave every account a public username. It is screened like other short free text:
+
+- The check is `ScreenAbuse`, the same abuse screen a Flag note uses, and not the gibberish
+  rule, because a username is one word and the gibberish rule would refuse it. The text sent to
+  the provider is the name only, with underscores and full stops read as spaces
+  (`UsernameScreenText`). No account, address or location goes with it.
+- The shape and the reserved words are checked first, with no provider call: 3 to 20 letters,
+  digits, underscores and full stops, at least one letter, and no name that looks like an official
+  or emergency word (look alike digits are read as letters). The live check as you type uses only
+  these rules and the uniqueness lookup. It never calls the provider.
+- A name the screen rejects as hateful, harassing or sexual is refused (422, field `username`)
+  and nothing is stored.
+- A check that cannot finish, or a borderline score, keeps the name as pending (D-16). The
+  person is not told, and can use the site as normal. Phase 8 and Phase 9 show only a name whose
+  screen word is clear, and re-check a pending one first.
+- A name can be changed once every 7 days. Saves and live checks have their own per account
+  limits, and a refused guess still uses a token.
+
+Tests: `TestUsernameSaveScreening`, `TestUsernameSaveRules`, `TestCheckUsernameStates`.
+
 ## Limits
 
 Every limit is a token bucket kept in the server's memory and keyed on the verified account,
@@ -221,8 +243,9 @@ and the backstop block beside it holds 6 more.
   quick resolve again after an Undo still waits out the cooldown.
 
 - The network backstop runs only when `CLIENT_IP_HEADER` is set. Until it is set on a host that
-  sits behind a proxy, the existing per address limits (login link requests and place search)
-  see one shared address for every visitor. Set it only after the host canary shows which header
+  sits behind a proxy, the existing per address limits (the sign in and code buckets and place search)
+  see one shared address for every visitor. Amended 2026-10-29 by Phase 7.1: the login link
+  requests this line once named are gone; the sign in limits are in TRUST-MODEL.md, "Signing in". Set it only after the host canary shows which header
   carries the visitor address.
 - Every 429 carries a `Retry-After` header and a JSON body with `retry_after_seconds`,
   `serious` and, for a blocked serious report, `emergency_number`, the configured primary number.
