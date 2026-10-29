@@ -15,7 +15,9 @@
 //     through html/template escaping.
 //   - It never builds a button. Follow and Following are both in the page, the
 //     server hides the one that does not apply, and this script only toggles the
-//     hidden flags.
+//     hidden flags. The one exception is the Your rating control (plan 09-16),
+//     whose five star buttons come from the shared stars.js and are mounted only
+//     when the server's may_rate is true.
 //   - It never closes the confirm box except through its own two buttons or
 //     Escape, and it has no click handler on the box itself, so a tap on the dim
 //     page does nothing.
@@ -59,6 +61,9 @@ window.PinalertPerson = (function () {
   var busy = false;
   var asking = '';
   var blockedNow = false;
+  // control is the Your rating control of plan 09-16, or null when the server
+  // said this reader may not rate. stars.js draws it; this script only mounts it.
+  var control = null;
 
   var els = {};
 
@@ -204,6 +209,65 @@ window.PinalertPerson = (function () {
     }
   }
 
+  // ---- The Your rating control (plan 09-16) -----------------------------------
+
+  // mountRating draws the shared star control into the rating box. It does
+  // nothing when stars.js did not load or when there is no box.
+  function mountRating(yours) {
+    var stars = typeof window !== 'undefined' ? window.PinalertStars : null;
+    if (control !== null || !els.rating || !stars || typeof stars.createControl !== 'function') {
+      return;
+    }
+    control = stars.createControl({
+      username: username,
+      current: yours,
+      legend: 'Your rating',
+      onStatus: say,
+      onError: function (line) {
+        if (line === '') {
+          hideError();
+        } else {
+          showError(line);
+        }
+      },
+      onGone: reload
+    });
+    els.rating.hidden = false;
+    els.rating.appendChild(control.el);
+  }
+
+  // syncRating follows the server's may_rate. When it is true the control is
+  // drawn (or redrawn with the server's your_rating); when it turns false the
+  // box is taken out with no message, because nothing explains why a reader may
+  // not rate (UI-SPEC 3a). The browser decides nothing: it reads one boolean.
+  function syncRating(may, yours) {
+    if (typeof may !== 'boolean') {
+      return;
+    }
+    if (!may) {
+      if (control !== null) {
+        control.destroy();
+        control = null;
+      }
+      if (els.rating) {
+        els.rating.hidden = true;
+      }
+      return;
+    }
+    if (control !== null) {
+      control.set(yours);
+      return;
+    }
+    if (!els.rating && els.header && els.error) {
+      var host = document.createElement('div');
+      host.id = 'person-rating';
+      host.className = 'person-rating';
+      els.header.insertBefore(host, els.error);
+      els.rating = host;
+    }
+    mountRating(yours);
+  }
+
   function draw(profile) {
     if (!profile || typeof profile !== 'object') {
       return;
@@ -212,6 +276,7 @@ window.PinalertPerson = (function () {
       showBlocked();
       return;
     }
+    syncRating(profile.may_rate, profile.your_rating);
     drawCount(els.followersCount, els.followersWord, els.followersButton,
       profile.followers_count, profile.followers_word, profile.followers_text);
     drawCount(els.followingCount, els.followingWord, els.followingButton,
@@ -665,7 +730,8 @@ window.PinalertPerson = (function () {
       followingCount: 'person-following-count', followingWord: 'person-following-word',
       confirm: 'person-confirm', confirmTitle: 'person-confirm-title',
       confirmText: 'person-confirm-text', confirmError: 'person-confirm-error',
-      confirmCancel: 'person-confirm-cancel', confirmGo: 'person-confirm-go'
+      confirmCancel: 'person-confirm-cancel', confirmGo: 'person-confirm-go',
+      rating: 'person-rating'
     };
     for (var key in ids) {
       if (Object.prototype.hasOwnProperty.call(ids, key)) {
@@ -674,6 +740,12 @@ window.PinalertPerson = (function () {
     }
     if (username === '') {
       return;
+    }
+
+    // The server drew the rating box only because it said this reader may rate,
+    // and wrote their rating into data-your-rating.
+    if (els.rating) {
+      mountRating(parseInt(els.rating.getAttribute('data-your-rating'), 10) || 0);
     }
 
     on(els.follow, 'click', function () { follow(); });

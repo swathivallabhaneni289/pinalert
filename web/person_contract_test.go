@@ -328,3 +328,131 @@ func TestPersonChipTintsMatchActivity(t *testing.T) {
 		}
 	}
 }
+
+// TestPersonStarsParts pins plan 09-16 (D-02, UI-SPEC 1c and 3a) in the
+// template: the two parts follow the total inside #person-stars, each drawn only
+// when the server sends it, with no separator; the rating box mounts under the
+// action row only when the server says MayRate, and only on another person's
+// page; stars.css and stars.js are linked, the script before person.js.
+func TestPersonStarsParts(t *testing.T) {
+	tmpl := p421ReadTemplate(t, "person.html.tmpl")
+	p421InOrder(t, "the stars group", tmpl,
+		`id="person-stars"`,
+		`class="person-stars__total"`,
+		`{{if .Profile.StarsFromReports}}<span id="person-stars-from-reports"`,
+		`{{if .Profile.StarsFromRatings}}<span id="person-stars-from-ratings"`,
+		`id="person-tag"`,
+	)
+	// Both parts sit inside the group: only the group's own closing div comes
+	// between the total and the tag chip.
+	group := tmpl[strings.Index(tmpl, `id="person-stars"`):strings.Index(tmpl, `id="person-tag"`)]
+	for _, want := range []string{"person-stars-from-reports", "person-stars-from-ratings"} {
+		if !strings.Contains(group, want) {
+			t.Errorf("%s is not inside the stars group", want)
+		}
+	}
+	if strings.Count(group, "</div>") != 1 {
+		t.Errorf("the stars group holds %d closing divs before the tag chip, want 1 (both parts are inside it)", strings.Count(group, "</div>"))
+	}
+	for _, sep := range []string{"&middot;", string(rune(0xb7)), "&bull;", string(rune(0x2022)), "|"} {
+		if strings.Contains(group, sep) {
+			t.Errorf("the stars group draws the separator %q, UI-SPEC 1c draws none", sep)
+		}
+	}
+	// The group's accessible name stays the server's whole sentence.
+	if !strings.Contains(tmpl, `aria-label="{{.Profile.StarsLabel}}"`) {
+		t.Errorf("person-stars no longer takes its aria-label from StarsLabel")
+	}
+	// The rating box: only when MayRate, under the action row, in the branch of
+	// another person's page, above the action error line.
+	p421InOrder(t, "the rating mount", tmpl,
+		`id="person-more-menu"`,
+		`{{if .Profile.MayRate}}`,
+		`id="person-rating"`,
+		`data-your-rating="{{.Profile.YourRating}}"`,
+		`id="person-action-error"`,
+	)
+	selfStart := strings.Index(tmpl, `{{if .Profile.IsSelf}}`)
+	selfBranch := tmpl[selfStart : selfStart+strings.Index(tmpl[selfStart:], `{{else}}`)]
+	if strings.Contains(selfBranch, "person-rating") {
+		t.Errorf("the own page branch draws the rating box")
+	}
+	if strings.Count(tmpl, `id="person-rating"`) != 1 {
+		t.Errorf("person.html.tmpl draws the rating mount %d times, want once", strings.Count(tmpl, `id="person-rating"`))
+	}
+	p421InOrder(t, "the stylesheets and scripts", tmpl,
+		`href="/static/css/stars.css?v={{.AssetVersion}}"`,
+		`href="/static/css/person.css?v={{.AssetVersion}}"`,
+		`src="/static/js/stars.js?v={{.AssetVersion}}"`,
+		`src="/static/js/person.js?v={{.AssetVersion}}"`,
+	)
+	css := p421ReadStatic(t, "css/person.css")
+	if !strings.Contains(css, ".person-stars__part") || !strings.Contains(css, "--color-text-muted") {
+		t.Errorf("person.css does not style .person-stars__part as muted Label text")
+	}
+	script := p421ReadStatic(t, "js/person.js")
+	for _, want := range []string{"PinalertStars", "createControl", "may_rate", "your_rating", "data-your-rating"} {
+		if !strings.Contains(script, want) {
+			t.Errorf("person.js lacks %q", want)
+		}
+	}
+}
+
+// TestStarsControlLook pins plan 09-16 (UI-SPEC Color, 3a and Interaction): the
+// star control is drawn in the text colour only, every star button is 44px
+// through --touch-target-min, the hover is the surface fill, nothing animates,
+// and the sheet holds no colour other than the text colour, the surface fill and
+// Highlight for forced colours.
+func TestStarsControlLook(t *testing.T) {
+	css := p421ReadStatic(t, "css/stars.css")
+	for _, want := range []string{
+		".stars-control__star", ".stars-control__glyph", ".stars-control__remove",
+		`url("/static/icons/star.svg")`, `url("/static/icons/star-filled.svg")`,
+		"background-color: var(--color-text)", "--touch-target-min", "var(--color-surface)",
+		"Highlight", "forced-colors",
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("stars.css lacks %s", want)
+		}
+	}
+	noComments := regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(css, "")
+	for _, m := range regexp.MustCompile(`var\(--color-[a-z-]+\)`).FindAllString(noComments, -1) {
+		if m != "var(--color-text)" && m != "var(--color-surface)" {
+			t.Errorf("stars.css uses %s, only the text and surface colours are allowed", m)
+		}
+	}
+	for _, bad := range []string{"#", "rgb(", "rgba(", "hsl(", "amber", "gold", "!important", "animation", "transition", "@keyframes", "box-shadow", "outline"} {
+		if strings.Contains(noComments, bad) {
+			t.Errorf("stars.css holds %q: the stars are never coloured, ringed or animated", bad)
+		}
+	}
+	// The glyph fill is the text colour and nothing else.
+	glyph := regexp.MustCompile(`(?s)\.stars-control__glyph\s*\{(.*?)\}`).FindStringSubmatch(noComments)
+	if glyph == nil || !strings.Contains(glyph[1], "background-color: var(--color-text);") {
+		t.Errorf("the .stars-control__glyph rule does not fill with var(--color-text)")
+	}
+	// Each star button is 44 by 44 through the touch token.
+	star := regexp.MustCompile(`(?s)\.stars-control__star\s*\{(.*?)\}`).FindStringSubmatch(noComments)
+	if star == nil {
+		t.Fatalf("stars.css has no .stars-control__star rule")
+	}
+	for _, want := range []string{"width: var(--touch-target-min);", "height: var(--touch-target-min);", "min-height: var(--touch-target-min);"} {
+		if !strings.Contains(star[1], want) {
+			t.Errorf(".stars-control__star lacks %s", want)
+		}
+	}
+	// The five sit 4px apart (--space-xs) on one wrapping row.
+	row := regexp.MustCompile(`(?s)\.stars-control__row\s*\{(.*?)\}`).FindStringSubmatch(noComments)
+	if row == nil || !strings.Contains(row[1], "gap: var(--space-xs);") {
+		t.Errorf(".stars-control__row does not keep a 4px gap through --space-xs")
+	}
+	// The hover is the surface fill, and a disabled star gets none.
+	if !strings.Contains(noComments, ".stars-control__star:hover:not(:disabled)") {
+		t.Errorf("stars.css has no hover rule that leaves a disabled star alone")
+	}
+	// Under forced colours the chosen star takes a Highlight border.
+	forced := noComments[strings.Index(noComments, "@media (forced-colors: active)"):]
+	if !strings.Contains(forced, `[aria-pressed="true"]`) || !strings.Contains(forced, "border: 1px solid Highlight;") {
+		t.Errorf("the forced colours block does not give the chosen star border: 1px solid Highlight")
+	}
+}

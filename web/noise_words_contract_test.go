@@ -62,6 +62,8 @@ var noiseCheckedFiles = []string{
 	"static/js/person-reports.js",
 	// Phase 9 plan 12: the Settings people rows script is scanned too.
 	"static/js/settings-people.js",
+	// Phase 9 plan 16: the shared star control script is scanned too.
+	"static/js/stars.js",
 }
 
 var (

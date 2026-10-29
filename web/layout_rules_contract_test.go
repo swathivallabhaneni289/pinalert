@@ -382,6 +382,10 @@ var touchControls = []string{
 	// or more through --touch-target-min or a 56px row in person.css. Show more
 	// and Remove all followers are .btn, listed above. No other entry changed.
 	".people-row__link", ".people-row__action", ".person-report__body",
+	// Phase 9 plan 16 (UI-SPEC 3a and Interaction and Accessibility): each of the
+	// five star buttons of the rating control and its Remove my rating button,
+	// each 44px through --touch-target-min in stars.css. No other entry changed.
+	".stars-control__star", ".stars-control__remove",
 }
 
 // touchValue reads a height or min-height value as pixels: a px length, a
@@ -533,6 +537,9 @@ var phaseScripts = []string{
 	// Phase 9 plan 12: the Settings people rows script joins the scripts held to
 	// the plain punctuation rule. No other entry changed.
 	"settings-people.js",
+	// Phase 9 plan 16: the shared star control script joins the scripts held to
+	// the plain punctuation rule. No other entry changed.
+	"stars.js",
 }
 
 // TestNewScriptsUsePlainPunctuation holds the phase's new scripts to the house
