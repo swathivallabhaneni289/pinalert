@@ -12,6 +12,9 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -74,6 +77,7 @@ type PeopleQuerier interface {
 	GetPersonByUsername(ctx context.Context, username string) (sqlcgen.GetPersonByUsernameRow, error)
 	GetPersonByID(ctx context.Context, id int64) (sqlcgen.GetPersonByIDRow, error)
 	SetProfilePublic(ctx context.Context, arg sqlcgen.SetProfilePublicParams) (int64, error)
+	SetProfilePublicOn(ctx context.Context, arg sqlcgen.SetProfilePublicOnParams) (int64, error)
 	MarkUsernameScreenClear(ctx context.Context, arg sqlcgen.MarkUsernameScreenClearParams) (int64, error)
 	FollowAccount(ctx context.Context, arg sqlcgen.FollowAccountParams) (int64, error)
 	EndFollowPair(ctx context.Context, arg sqlcgen.EndFollowPairParams) (int64, error)
@@ -273,12 +277,18 @@ func (s *PeopleService) SetProfilePublic(ctx context.Context, accountID int64, o
 		return ValidationError{Field: "profile_public", Message: PublicNameUnfinishedMessage}
 	}
 
-	rows, err := s.q.SetProfilePublic(ctx, sqlcgen.SetProfilePublicParams{IsPublic: true, Now: now, ID: accountID})
+	// The switch turns on only while the stored Name is still the one just
+	// screened (WR-S04): a Name edit that committed during the screen call
+	// leaves 0 rows, and the person tries again.
+	rows, err := s.q.SetProfilePublicOn(ctx, sqlcgen.SetProfilePublicOnParams{Now: now, ID: accountID, ScreenedName: *row.DisplayName})
 	if err != nil {
 		return fmt.Errorf("service: SetProfilePublic: switching on account %d: %w", accountID, err)
 	}
 	if rows == 0 {
-		return ErrPersonNotFound
+		if _, err := s.q.GetPersonByID(ctx, accountID); errors.Is(err, pgx.ErrNoRows) {
+			return ErrPersonNotFound
+		}
+		return ValidationError{Field: "profile_public", Message: PublicNameUnfinishedMessage}
 	}
 	return nil
 }
@@ -728,11 +738,34 @@ func (s *PeopleService) list(ctx context.Context, viewerID int64, username, afte
 	return out, nil
 }
 
+// peopleCursorKey signs the list cursors. It is random per process, made once
+// at start, so only a cursor this server issued is accepted (review IN-E02,
+// 2026-10-30): a reader can no longer send a cursor of their own making and
+// bisect when a named person followed. The price is that a cursor issued before
+// a restart reads as "That page could not be read", and the reader starts the
+// list again.
+var peopleCursorKey = func() []byte {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		panic("service: no randomness for the people cursor key: " + err.Error())
+	}
+	return key
+}()
+
+// peopleCursorTag is the signature of one cursor payload.
+func peopleCursorTag(payload string) []byte {
+	mac := hmac.New(sha256.New, peopleCursorKey)
+	mac.Write([]byte(payload))
+	return mac.Sum(nil)[:16]
+}
+
 // encodePeopleCursor builds the opaque keyset cursor: base64url of the
-// created_at microseconds and the username.
+// created_at microseconds and the username, a full stop, and the base64url of a
+// signature over that payload.
 func encodePeopleCursor(at time.Time, username string) string {
 	raw := strconv.FormatInt(at.UnixMicro(), 10) + ":" + username
-	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+	payload := base64.RawURLEncoding.EncodeToString([]byte(raw))
+	return payload + "." + base64.RawURLEncoding.EncodeToString(peopleCursorTag(payload))
 }
 
 // decodePeopleCursor reverses encodePeopleCursor. An empty cursor is the first
@@ -743,7 +776,15 @@ func decodePeopleCursor(cursor string) (pgtype.Timestamptz, *string, error) {
 		return pgtype.Timestamptz{}, nil, nil
 	}
 	bad := ValidationError{Field: "after", Message: peopleCursorMessage}
-	raw, err := base64.RawURLEncoding.DecodeString(cursor)
+	payload, tag, found := strings.Cut(cursor, ".")
+	if !found {
+		return pgtype.Timestamptz{}, nil, bad
+	}
+	gotTag, err := base64.RawURLEncoding.DecodeString(tag)
+	if err != nil || !hmac.Equal(gotTag, peopleCursorTag(payload)) {
+		return pgtype.Timestamptz{}, nil, bad
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(payload)
 	if err != nil {
 		return pgtype.Timestamptz{}, nil, bad
 	}

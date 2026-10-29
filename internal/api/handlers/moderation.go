@@ -172,10 +172,20 @@ func modRowsToJSON(rows []service.ModerationRow) []modRowJSON {
 }
 
 // modGuard runs the checks every moderator JSON handler starts with: the
-// method (a wrong one answers 405 with Allow, reachable only by a moderator),
-// and the account that requireModerator put in the context. It sets
-// Cache-Control: no-store and returns the moderator's account.
+// moderator marker that only requireModerator sets (review WR-E03), the method
+// (a wrong one answers 405 with Allow, reachable only by a moderator), and the
+// account that requireModerator put in the context. It sets Cache-Control:
+// no-store and returns the moderator's account.
 func modGuard(w http.ResponseWriter, r *http.Request, method string) (account.Account, bool) {
+	// Review WR-E03 (2026-10-30): an account that passed requireVerifiedAccount
+	// alone is in the context too, so the account check below cannot tell a
+	// moderator from anyone else; this marker does. A request without it gets the
+	// group's plain not found, judged before the method, so a person who is not
+	// a moderator never sees a 405 either.
+	if !account.IsModerator(r.Context()) {
+		http.NotFound(w, r)
+		return account.Account{}, false
+	}
 	if r.Method != method {
 		w.Header().Set("Allow", method)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

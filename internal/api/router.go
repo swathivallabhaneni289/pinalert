@@ -410,6 +410,10 @@ var RateLimitsDefault = RateLimits{
 	// Rate (Phase 9 plan 14, D-02, T-09-54): a burst of 10 then one every 30
 	// seconds, per account. The once a day change rule sits on top of it.
 	Rate: BucketLimit{Every: 30 * time.Second, Burst: 10},
+	// Visibility (review WR-E02, 2026-10-30): turning the profile switch on may
+	// call the shared text screener, so a burst of 6 then one every 20 seconds,
+	// the Comment numbers, per account.
+	Visibility: BucketLimit{Every: 20 * time.Second, Burst: 6},
 }
 
 // resolveRateLimits replaces every field equal to BucketLimit{} with the
@@ -439,6 +443,7 @@ func resolveRateLimits(l RateLimits) RateLimits {
 	fill(&l.PeopleRead, RateLimitsDefault.PeopleRead)
 	fill(&l.PeopleAction, RateLimitsDefault.PeopleAction)
 	fill(&l.Rate, RateLimitsDefault.Rate)
+	fill(&l.Visibility, RateLimitsDefault.Visibility)
 	return l
 }
 
@@ -1045,7 +1050,7 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.With(rateGate.PeopleReadMiddleware()).Get("/api/me/muted-people", handlers.MutedPeopleList(people))
 		// Plan 09-23 (D-08): the Notify me bell of one followed person.
 		r.With(rateGate.PeopleActionMiddleware()).Post("/api/people/{username}/notify", handlers.NotifyPerson(people))
-		r.With(rateGate.PeopleActionMiddleware()).Patch("/api/me/visibility", handlers.UpdateVisibility(people))
+		r.With(rateGate.PeopleActionMiddleware()).Patch("/api/me/visibility", handlers.UpdateVisibility(people, rateGate))
 		// GET /api/geocode (plan 07-03). Registered as a flat literal path,
 		// not under an r.Route mount — see this router's own doc comments
 		// above for why every /api/* path here is flat, gated or not.
@@ -1103,10 +1108,14 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.Get("/settings", handlers.SettingsPage(deps.Template, accounts, mutes, people, page))
 		// Phase 9 plan 08 (D-04, UI-SPEC Surface 1): the profile page, one for
 		// your own profile and for anyone else's, and /me which answers a 303 to
-		// /u/{your username}. Gated like /settings and given no rate bucket:
-		// the page load is already behind the access gate, and its actions
-		// pass through the people buckets of the JSON routes above.
-		r.Get("/u/{username}", handlers.PersonPage(deps.Template, people, deps.Reports, page))
+		// /u/{your username}. Gated like /settings. Amended 2026-10-30 (review
+		// WR-E01): the page load takes a token from the same per account people
+		// read bucket as the JSON reads, because it does the same work (the
+		// profile, the evaluate on touch write and the recent reports) and a
+		// door with no bucket would let a loop over a wordlist skip the throttle.
+		// A refusal is a 429 page, never JSON. Its actions pass through the
+		// people buckets of the JSON routes above.
+		r.With(rateGate.PeopleReadPageMiddleware(page.AssetVersion)).Get("/u/{username}", handlers.PersonPage(deps.Template, people, deps.Reports, page))
 		r.Get("/me", handlers.MyProfilePage(people))
 		// Phase 3.4 (D-27, plan 10): the first-time flow. It sits in this gated
 		// group because it belongs to the signed in account, and the onboarding

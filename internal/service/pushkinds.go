@@ -40,7 +40,8 @@ const (
 
 	// PushKindFollow is a report by a person the reader follows with the Notify
 	// me bell on (Phase 9 plan 25, D-09 and D-11). It is a first alert kind: one
-	// per account and report with critical and reliable (uq_push_outbox_first),
+	// per account and report across critical, follow and reliable
+	// (uq_push_outbox_first, whose predicate names all three),
 	// queued from the followed_posted bell row. It has no account switch; the
 	// bell on the follow is the switch.
 	PushKindFollow PushKind = "follow"

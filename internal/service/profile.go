@@ -505,10 +505,15 @@ func (s *AccountService) UpdateProfile(ctx context.Context, accountID int64, u P
 	// G1: a Name that changes while the public profile is on is checked before
 	// anything is written (the username write below included), so a refusal
 	// changes nothing.
+	// nameScreened is false only when the profile was off at the read, so the
+	// write below may land only while it is still off (WR-S04).
+	nameScreened := true
 	if v.SetName && v.Name != nil {
-		if err := s.screenNameEdit(ctx, accountID, *v.Name); err != nil {
+		screened, err := s.screenNameEdit(ctx, accountID, *v.Name)
+		if err != nil {
 			return AccountProfile{}, err
 		}
+		nameScreened = screened
 	}
 	// The username is written first: when it fails, the name and the home area
 	// of the same request are left unsaved, so the person sees one clear
@@ -524,6 +529,7 @@ func (s *AccountService) UpdateProfile(ctx context.Context, accountID int64, u P
 		// columns together.
 		err := s.q.UpdateAccountProfile(ctx, sqlcgen.UpdateAccountProfileParams{
 			SetName:      v.SetName,
+			NameScreened: nameScreened,
 			DisplayName:  v.Name,
 			SetHomeArea:  setHome,
 			HomeAreaName: v.HomeName,
@@ -532,6 +538,11 @@ func (s *AccountService) UpdateProfile(ctx context.Context, accountID int64, u P
 		})
 		if err != nil {
 			return AccountProfile{}, fmt.Errorf("service: saving profile: %w", err)
+		}
+		if v.SetName && v.Name != nil && !nameScreened {
+			if err := s.nameLandedOrRefuse(ctx, accountID, *v.Name); err != nil {
+				return AccountProfile{}, err
+			}
 		}
 		if v.HomeAction == HomeAreaClear {
 			// Phase 7.1 (D-15): ValidateProfileUpdate no longer produces this
@@ -554,7 +565,42 @@ func (s *AccountService) UpdateProfile(ctx context.Context, accountID int64, u P
 // is screened. While the profile is on the new Name goes through
 // ScreenPublicName and a failure becomes a ValidationError on display_name. A
 // read error fails the edit (fail closed), it never skips the screen.
-func (s *AccountService) screenNameEdit(ctx context.Context, accountID int64, name string) error {
+//
+// The bool says whether the Name counts as screened for the write: false only
+// when the profile was off at the read, which makes the write itself check that
+// the profile is still off (WR-S04, UpdateAccountProfile name_screened).
+func (s *AccountService) screenNameEdit(ctx context.Context, accountID int64, name string) (bool, error) {
+	if s.public == nil {
+		return true, nil
+	}
+	row, err := s.public.GetPersonByID(ctx, accountID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return true, nil
+		}
+		return false, fmt.Errorf("service: reading the profile switch: %w", err)
+	}
+	if !row.ProfilePublic {
+		return false, nil
+	}
+	if row.DisplayName != nil && *row.DisplayName == name {
+		return true, nil
+	}
+	switch ScreenPublicName(ctx, s.screener, name) {
+	case PublicNameRefused:
+		return false, ValidationError{Field: "display_name", Message: PublicNameEditRefusedMessage}
+	case PublicNameUnfinished:
+		return false, ValidationError{Field: "display_name", Message: PublicNameUnfinishedMessage}
+	}
+	return true, nil
+}
+
+// nameLandedOrRefuse runs after a Name write that was not screened because the
+// profile was off at the read. The write itself refuses to land on a profile
+// that turned public meanwhile; this reads the profile again and, when it is
+// public and does not hold the new Name, tells the person to try again
+// (WR-S04). A profile that is still off, or holds the Name, is fine.
+func (s *AccountService) nameLandedOrRefuse(ctx context.Context, accountID int64, name string) error {
 	if s.public == nil {
 		return nil
 	}
@@ -563,15 +609,9 @@ func (s *AccountService) screenNameEdit(ctx context.Context, accountID int64, na
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
-		return fmt.Errorf("service: reading the profile switch: %w", err)
+		return fmt.Errorf("service: reading the profile switch after the save: %w", err)
 	}
-	if !row.ProfilePublic || (row.DisplayName != nil && *row.DisplayName == name) {
-		return nil
-	}
-	switch ScreenPublicName(ctx, s.screener, name) {
-	case PublicNameRefused:
-		return ValidationError{Field: "display_name", Message: PublicNameEditRefusedMessage}
-	case PublicNameUnfinished:
+	if row.ProfilePublic && (row.DisplayName == nil || *row.DisplayName != name) {
 		return ValidationError{Field: "display_name", Message: PublicNameUnfinishedMessage}
 	}
 	return nil

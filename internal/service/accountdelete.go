@@ -57,6 +57,9 @@ type AccountDeleteQuerier interface {
 	// Phase 9 plan 02 (research G6): the person's follows and blocks, in both
 	// directions, are hard deleted.
 	DeleteAccountFollows(ctx context.Context, accountID int64) (int64, error)
+	// Review IN-E06 (2026-10-30): the followers' queued follow phone notes about
+	// the deleted person's reports go with the follows.
+	DeleteQueuedFollowPushesForFollowee(ctx context.Context, followeeID int64) (int64, error)
 	DeleteAccountBlocks(ctx context.Context, accountID int64) (int64, error)
 	// Phase 9 plan 13 (research G6, Pitfall 11): the ratings the account gave and
 	// the ratings it received are hard deleted.
@@ -258,6 +261,13 @@ func (s *AccountDeletionService) DeleteAccount(ctx context.Context, accountID in
 		// Phase 9 plan 02 (research G6, T-09-07): the person's place in the social
 		// graph goes in the same transaction and before the scrub, after every
 		// earlier step.
+		// Review IN-E06 (2026-10-30): the followers' queued follow notes about this
+		// person's reports are deleted first, while the report to person join can
+		// still be read; a note a worker already holds is stopped by its send time
+		// check, which finds no follow.
+		if _, err := q.DeleteQueuedFollowPushesForFollowee(ctx, accountID); err != nil {
+			return fmt.Errorf("service: DeleteAccount: account %d: deleting queued follow notes: %w", accountID, err)
+		}
 		if _, err := q.DeleteAccountFollows(ctx, accountID); err != nil {
 			return fmt.Errorf("service: DeleteAccount: account %d: deleting follows: %w", accountID, err)
 		}

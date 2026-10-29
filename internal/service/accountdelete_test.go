@@ -144,6 +144,13 @@ func (f *fakeDeleteQuerier) DeleteAccountFollows(ctx context.Context, accountID 
 	return 0, f.step("DeleteAccountFollows")
 }
 
+// Amended 2026-10-30 by review IN-E06: the fake gained the queued follow notes
+// delete, which runs just before DeleteAccountFollows.
+func (f *fakeDeleteQuerier) DeleteQueuedFollowPushesForFollowee(ctx context.Context, followeeID int64) (int64, error) {
+	f.accountIDs["DeleteQueuedFollowPushesForFollowee"] = followeeID
+	return 0, f.step("DeleteQueuedFollowPushesForFollowee")
+}
+
 func (f *fakeDeleteQuerier) DeleteAccountBlocks(ctx context.Context, accountID int64) (int64, error) {
 	f.accountIDs["DeleteAccountBlocks"] = accountID
 	return 0, f.step("DeleteAccountBlocks")
@@ -225,6 +232,11 @@ func (f *fakeDeleteQuerier) ScrubDeletedAccount(ctx context.Context, arg sqlcgen
 // nineteen became twenty in wantDeleteOrderKeyed). Every old step and its order
 // is kept. The list now ends with the Phase 9 steps Follows, Blocks, Ratings,
 // PersonMutes, then RevokeAccountSessions and ScrubDeletedAccount.
+//
+// Amended 2026-10-30 by review IN-E06: DeleteQueuedFollowPushesForFollowee now
+// runs right before DeleteAccountFollows, so the twenty steps became twenty one
+// (and twenty became twenty one in wantDeleteOrderKeyed too). Every old step and
+// its order is kept.
 var wantDeleteOrder = []string{
 	"AccountEmailForDelete",
 	"DeleteEmailCooldownForEmail",
@@ -239,6 +251,7 @@ var wantDeleteOrder = []string{
 	"DeleteAccountPushOutbox",
 	"DeleteAccountOfficialPushOutbox",
 	"DeleteAccountPushSubscriptions",
+	"DeleteQueuedFollowPushesForFollowee",
 	"DeleteAccountFollows",
 	"DeleteAccountBlocks",
 	"DeleteAccountRatings",
@@ -263,6 +276,7 @@ var wantDeleteOrderKeyed = []string{
 	"DeleteAccountPushOutbox",
 	"DeleteAccountOfficialPushOutbox",
 	"DeleteAccountPushSubscriptions",
+	"DeleteQueuedFollowPushesForFollowee",
 	"DeleteAccountFollows",
 	"DeleteAccountBlocks",
 	"DeleteAccountRatings",

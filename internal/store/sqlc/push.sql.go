@@ -229,6 +229,10 @@ SELECT EXISTS (
       AND c.deleted_at IS NULL
       AND c.moderation_state = 'clear'
       AND c.account_id <> $2::bigint
+      AND NOT EXISTS (
+          SELECT 1 FROM person_blocks pb
+          WHERE (pb.blocker_id = $2::bigint AND pb.blocked_id = c.account_id)
+             OR (pb.blocker_id = c.account_id AND pb.blocked_id = $2::bigint))
       AND (CASE WHEN $3::text = 'reply_to_yours'
                 THEN t.account_id IS NOT DISTINCT FROM $2::bigint
                 ELSE c.reply_to_id IS NULL END)
@@ -253,7 +257,9 @@ type CommentPushStillHoldsParams struct {
 // to be about, read at send time. The bell row stores no comment id, and a
 // second comment while the first is unread writes no new row, so the question
 // is whether any comment the note could stand for is still there: on the
-// report, clear, not deleted, not written by the recipient, top level for
+// report, clear, not deleted, not written by the recipient, not written by a
+// person either side has blocked since the note was queued (K6, review
+// 2026-10-30; a block hides their comments and stops their notes), top level for
 // comment_on_yours or answering one of the recipient's comments for
 // reply_to_yours, and seen by the server (written, or cleared by its check)
 // after the recipient last read a note of this kind on this report. A comment

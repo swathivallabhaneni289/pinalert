@@ -6,7 +6,9 @@
 -- name: RaterMayRate :one
 -- Whether the rater has earned the right to rate this reporter (D-23, W4). False
 -- for yourself, for a deleted account and for a rater a moderator removed
--- (accounts.rater_removed_at). Otherwise true when the rater has cast a confirm,
+-- (accounts.rater_removed_at), and for a pair whose rating a moderator removed
+-- (the write is refused for good, so the offer would be false; WR-S05).
+-- Otherwise true when the rater has cast a confirm,
 -- dispute, resolve or reopen vote on one of the reporter's reports. An
 -- unresolve alone does not qualify: it is only the take back of one's own
 -- resolve and needs no location. The vote's cell is not compared with the
@@ -19,6 +21,11 @@ SELECT (
         SELECT 1 FROM accounts a
         WHERE a.id = sqlc.arg(rater_id)::bigint
           AND (a.rater_removed_at IS NOT NULL OR a.deleted_at IS NOT NULL))
+    AND NOT EXISTS (
+        SELECT 1 FROM profile_ratings pr
+        WHERE pr.rater_id = sqlc.arg(rater_id)::bigint
+          AND pr.reporter_id = sqlc.arg(reporter_id)::bigint
+          AND pr.removed_at IS NOT NULL)
     AND EXISTS (
         SELECT 1
         FROM votes v
@@ -32,7 +39,7 @@ SELECT (
 -- name: GetRating :one
 -- The rater's own row for one reporter, for the daily rule and for telling a
 -- removed rating from a rating that is merely too recent to change (D-02).
-SELECT stars, updated_at, cleared_at, removed_at
+SELECT stars, created_at, updated_at, cleared_at, removed_at
 FROM profile_ratings
 WHERE rater_id = sqlc.arg(rater_id)::bigint
   AND reporter_id = sqlc.arg(reporter_id)::bigint;
@@ -143,27 +150,39 @@ LIMIT sqlc.arg(row_limit)::int;
 -- name: RemoveRating :one
 -- A moderator removes one rating (D-14, G2). The row stays with removed_at and
 -- removed_by, so it is an audit trail and the rater cannot write it back. It
--- returns the removed rating's updated_at, which the service uses as the time
--- from which the reporter's tag_lost follows may be restored. No row means there
--- was nothing left to remove.
+-- returns the removed rating's created_at, which the service uses as the time
+-- from which the reporter's tag_lost follows may be restored. It is the first
+-- time the rating existed, not the last change, so changing the stars after the
+-- follows ended cannot shrink the restore window (WR-S01, review 2026-10-30).
+-- No row means there was nothing left to remove.
 UPDATE profile_ratings
 SET removed_at = sqlc.arg(now)::timestamptz,
     removed_by = sqlc.arg(moderator_id)::bigint
 WHERE rater_id = sqlc.arg(rater_id)::bigint
   AND reporter_id = sqlc.arg(reporter_id)::bigint
   AND removed_at IS NULL
-RETURNING updated_at;
+RETURNING created_at;
 
 -- name: RemoveRatingsByRater :many
 -- A moderator removes every rating one rater gave (D-14, G2, W4). It returns the
--- reporter and the written time of each removed rating, so the service can
--- re-evaluate each affected reporter.
+-- reporter and the first written time of each removed rating (created_at,
+-- WR-S01), so the service can re-evaluate each affected reporter.
 UPDATE profile_ratings
 SET removed_at = sqlc.arg(now)::timestamptz,
     removed_by = sqlc.arg(moderator_id)::bigint
 WHERE rater_id = sqlc.arg(rater_id)::bigint
   AND removed_at IS NULL
-RETURNING reporter_id, updated_at;
+RETURNING reporter_id, created_at;
+
+-- name: RemovedRatingsByRater :many
+-- Every rating of one rater that a moderator removed, with the time it was first
+-- written. A repeat of a removal that failed half way reads this to finish the
+-- re-evaluation of each reporter (WR-S02, review 2026-10-30).
+SELECT reporter_id, created_at
+FROM profile_ratings
+WHERE rater_id = sqlc.arg(rater_id)::bigint
+  AND removed_at IS NOT NULL
+ORDER BY reporter_id;
 
 -- name: MarkRaterRemoved :execrows
 -- Stamps the rater as removed (W4): RaterMayRate refuses such an account for

@@ -66,7 +66,7 @@ func (q *Queries) DeleteAccountRatings(ctx context.Context, accountID int64) (in
 }
 
 const getRating = `-- name: GetRating :one
-SELECT stars, updated_at, cleared_at, removed_at
+SELECT stars, created_at, updated_at, cleared_at, removed_at
 FROM profile_ratings
 WHERE rater_id = $1::bigint
   AND reporter_id = $2::bigint
@@ -79,6 +79,7 @@ type GetRatingParams struct {
 
 type GetRatingRow struct {
 	Stars     int16
+	CreatedAt time.Time
 	UpdatedAt time.Time
 	ClearedAt pgtype.Timestamptz
 	RemovedAt pgtype.Timestamptz
@@ -91,6 +92,7 @@ func (q *Queries) GetRating(ctx context.Context, arg GetRatingParams) (GetRating
 	var i GetRatingRow
 	err := row.Scan(
 		&i.Stars,
+		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ClearedAt,
 		&i.RemovedAt,
@@ -189,6 +191,11 @@ SELECT (
         SELECT 1 FROM accounts a
         WHERE a.id = $1::bigint
           AND (a.rater_removed_at IS NOT NULL OR a.deleted_at IS NOT NULL))
+    AND NOT EXISTS (
+        SELECT 1 FROM profile_ratings pr
+        WHERE pr.rater_id = $1::bigint
+          AND pr.reporter_id = $2::bigint
+          AND pr.removed_at IS NOT NULL)
     AND EXISTS (
         SELECT 1
         FROM votes v
@@ -211,7 +218,9 @@ type RaterMayRateParams struct {
 // qualifying vote, so a rater who moves cannot keep an old cell.
 // Whether the rater has earned the right to rate this reporter (D-23, W4). False
 // for yourself, for a deleted account and for a rater a moderator removed
-// (accounts.rater_removed_at). Otherwise true when the rater has cast a confirm,
+// (accounts.rater_removed_at), and for a pair whose rating a moderator removed
+// (the write is refused for good, so the offer would be false; WR-S05).
+// Otherwise true when the rater has cast a confirm,
 // dispute, resolve or reopen vote on one of the reporter's reports. An
 // unresolve alone does not qualify: it is only the take back of one's own
 // resolve and needs no location. The vote's cell is not compared with the
@@ -314,7 +323,7 @@ SET removed_at = $1::timestamptz,
 WHERE rater_id = $3::bigint
   AND reporter_id = $4::bigint
   AND removed_at IS NULL
-RETURNING updated_at
+RETURNING created_at
 `
 
 type RemoveRatingParams struct {
@@ -326,9 +335,11 @@ type RemoveRatingParams struct {
 
 // A moderator removes one rating (D-14, G2). The row stays with removed_at and
 // removed_by, so it is an audit trail and the rater cannot write it back. It
-// returns the removed rating's updated_at, which the service uses as the time
-// from which the reporter's tag_lost follows may be restored. No row means there
-// was nothing left to remove.
+// returns the removed rating's created_at, which the service uses as the time
+// from which the reporter's tag_lost follows may be restored. It is the first
+// time the rating existed, not the last change, so changing the stars after the
+// follows ended cannot shrink the restore window (WR-S01, review 2026-10-30).
+// No row means there was nothing left to remove.
 func (q *Queries) RemoveRating(ctx context.Context, arg RemoveRatingParams) (time.Time, error) {
 	row := q.db.QueryRow(ctx, removeRating,
 		arg.Now,
@@ -336,9 +347,9 @@ func (q *Queries) RemoveRating(ctx context.Context, arg RemoveRatingParams) (tim
 		arg.RaterID,
 		arg.ReporterID,
 	)
-	var updated_at time.Time
-	err := row.Scan(&updated_at)
-	return updated_at, err
+	var created_at time.Time
+	err := row.Scan(&created_at)
+	return created_at, err
 }
 
 const removeRatingsByRater = `-- name: RemoveRatingsByRater :many
@@ -347,7 +358,7 @@ SET removed_at = $1::timestamptz,
     removed_by = $2::bigint
 WHERE rater_id = $3::bigint
   AND removed_at IS NULL
-RETURNING reporter_id, updated_at
+RETURNING reporter_id, created_at
 `
 
 type RemoveRatingsByRaterParams struct {
@@ -358,12 +369,12 @@ type RemoveRatingsByRaterParams struct {
 
 type RemoveRatingsByRaterRow struct {
 	ReporterID int64
-	UpdatedAt  time.Time
+	CreatedAt  time.Time
 }
 
 // A moderator removes every rating one rater gave (D-14, G2, W4). It returns the
-// reporter and the written time of each removed rating, so the service can
-// re-evaluate each affected reporter.
+// reporter and the first written time of each removed rating (created_at,
+// WR-S01), so the service can re-evaluate each affected reporter.
 func (q *Queries) RemoveRatingsByRater(ctx context.Context, arg RemoveRatingsByRaterParams) ([]RemoveRatingsByRaterRow, error) {
 	rows, err := q.db.Query(ctx, removeRatingsByRater, arg.Now, arg.ModeratorID, arg.RaterID)
 	if err != nil {
@@ -373,7 +384,43 @@ func (q *Queries) RemoveRatingsByRater(ctx context.Context, arg RemoveRatingsByR
 	var items []RemoveRatingsByRaterRow
 	for rows.Next() {
 		var i RemoveRatingsByRaterRow
-		if err := rows.Scan(&i.ReporterID, &i.UpdatedAt); err != nil {
+		if err := rows.Scan(&i.ReporterID, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const removedRatingsByRater = `-- name: RemovedRatingsByRater :many
+SELECT reporter_id, created_at
+FROM profile_ratings
+WHERE rater_id = $1::bigint
+  AND removed_at IS NOT NULL
+ORDER BY reporter_id
+`
+
+type RemovedRatingsByRaterRow struct {
+	ReporterID int64
+	CreatedAt  time.Time
+}
+
+// Every rating of one rater that a moderator removed, with the time it was first
+// written. A repeat of a removal that failed half way reads this to finish the
+// re-evaluation of each reporter (WR-S02, review 2026-10-30).
+func (q *Queries) RemovedRatingsByRater(ctx context.Context, raterID int64) ([]RemovedRatingsByRaterRow, error) {
+	rows, err := q.db.Query(ctx, removedRatingsByRater, raterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RemovedRatingsByRaterRow
+	for rows.Next() {
+		var i RemovedRatingsByRaterRow
+		if err := rows.Scan(&i.ReporterID, &i.CreatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

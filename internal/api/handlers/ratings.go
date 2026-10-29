@@ -83,7 +83,7 @@ func RatePerson(ratings *service.RatingService) http.HandlerFunc {
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
 		var req RateRequest
-		if err := dec.Decode(&req); err != nil || req.Stars == nil {
+		if err := decodeOneValue(dec, &req); err != nil || req.Stars == nil {
 			writeFieldError(w, http.StatusBadRequest, "stars", service.RatingStarsMessage)
 			return
 		}

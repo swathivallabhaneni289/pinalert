@@ -9,6 +9,8 @@ package handlers
 // mirror api.RateLimitsDefault.
 
 import (
+	"bytes"
+	"html/template"
 	"log"
 	"net/http"
 	"strconv"
@@ -88,6 +90,12 @@ type RateLimits struct {
 	// and never per network address (Phase 9 plan 14, D-02, T-09-54). Every attempt
 	// costs one token and nothing is refunded; the 24 hour change rule sits on top.
 	Rate BucketLimit
+	// Visibility is the allowance for turning the profile switch ON, keyed per
+	// account and never per network address. An off to on change may call the
+	// shared text screener twice, so it is as tight as Comment (WR-E02, review
+	// 2026-10-30). Turning the switch off costs nothing here and is never refused
+	// by this bucket.
+	Visibility BucketLimit
 }
 
 // RateLimitResponse is the one 429 body of every Phase 4 limiter. The
@@ -134,7 +142,11 @@ const (
 
 	// The rating bucket (Phase 9 plan 14). The name goes to the block log only.
 	rateBucketName = "rate"
-	rateRateField  = "rate_rating"
+
+	// The visibility switch bucket (review WR-E02). The name goes to the block log only.
+	visibilityBucketName = "visibility"
+	visibilityRateField  = "rate_visibility"
+	rateRateField        = "rate_rating"
 
 	voteRateField       = "rate_vote"
 	voteChangeRateField = "rate_vote_change"
@@ -170,6 +182,7 @@ type RateGate struct {
 	peopleRead       *ratelimit.PerKey
 	peopleAction     *ratelimit.PerKey
 	rate             *ratelimit.PerKey
+	visibility       *ratelimit.PerKey
 
 	ipBackstopComment *ratelimit.PerKey
 	ipBackstopLike    *ratelimit.PerKey
@@ -206,6 +219,7 @@ func NewRateGate(limits RateLimits, clock func() time.Time, clientIPHeader strin
 		peopleRead:       ratelimit.NewPerKey(bucketConfig(limits.PeopleRead, clock)),
 		peopleAction:     ratelimit.NewPerKey(bucketConfig(limits.PeopleAction, clock)),
 		rate:             ratelimit.NewPerKey(bucketConfig(limits.Rate, clock)),
+		visibility:       ratelimit.NewPerKey(bucketConfig(limits.Visibility, clock)),
 
 		ipBackstopComment: ratelimit.NewPerKey(bucketConfig(limits.IPBackstopComment, clock)),
 		ipBackstopLike:    ratelimit.NewPerKey(bucketConfig(limits.IPBackstopLike, clock)),
@@ -528,6 +542,88 @@ func (g *RateGate) PeopleReadMiddleware() func(http.Handler) http.Handler {
 	return g.peopleMiddleware(g.peopleRead, peopleReadBucketName, peopleReadRateField)
 }
 
+// PeopleReadPageMiddleware is PeopleReadMiddleware for an HTML page: the profile
+// page GET /u/{username}. It takes a token from the same per account people read
+// bucket, so a page load and a JSON read share one allowance and the page is no
+// door around the throttle (WR-E01, review 2026-10-30). A refusal answers 429
+// with Retry-After as a small page, never JSON, the way the public status page
+// of Phase 8 plan 04 does. The page shows only fixed words and the wait phrase,
+// and the asset version for its stylesheets.
+func (g *RateGate) PeopleReadPageMiddleware(assetVersion string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			acc, ok := account.FromContext(r.Context())
+			if !ok {
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			if d := g.peopleRead.Reserve(accountKey(acc.ID)); !d.OK {
+				logBlock(peopleReadBucketName, acc.ID, d.RetryAfter)
+				writeRateLimitedPage(w, assetVersion, d.RetryAfter)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// rateLimitedPageTemplate is the 429 page of the HTML people route. It reuses the
+// public page's own stylesheets and classes, carries no script and no app head
+// (so it registers no service worker), and holds no value but the asset version
+// and the wait sentence, both escaped by html/template.
+var rateLimitedPageTemplate = template.Must(template.New("rate_limited_page").Parse(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{{.Title}} (Pinalert)</title>
+  <link rel="icon" href="/icons/app.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/public.css?v={{.AssetVersion}}">
+</head>
+<body class="public-page">
+  <header class="public-top">
+    <span class="public-wordmark">Pinalert</span>
+  </header>
+  <main class="public-body">
+    <div class="public-head">
+      <h1 class="public-title">{{.Title}}</h1>
+    </div>
+    <div class="public-main">
+      <p class="public-line">{{.Line}}</p>
+      <a class="btn" href="/">Back to Pinalert</a>
+    </div>
+  </main>
+</body>
+</html>
+`))
+
+// writeRateLimitedPage writes the HTML 429 of the people read page: Retry-After
+// in whole seconds, never cached, never indexed, rendered into a buffer first so
+// a template failure is a clean 500 and not half a page.
+func writeRateLimitedPage(w http.ResponseWriter, assetVersion string, wait time.Duration) {
+	var buf bytes.Buffer
+	err := rateLimitedPageTemplate.Execute(&buf, struct{ Title, Line, AssetVersion string }{
+		Title:        service.PublicTooManyTitle,
+		Line:         service.PeopleLimitMessage(wait),
+		AssetVersion: assetVersion,
+	})
+	if err != nil {
+		log.Printf("handlers: rate limited page: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", "text/html; charset=utf-8")
+	h.Set("Cache-Control", "no-store")
+	h.Set("X-Robots-Tag", "noindex, nofollow")
+	h.Set("Retry-After", strconv.Itoa(retryAfterSeconds(wait)))
+	w.WriteHeader(http.StatusTooManyRequests)
+	_, _ = w.Write(buf.Bytes())
+}
+
 // PeopleActionMiddleware throttles follow, unfollow, remove follower, block,
 // unblock, remove all followers and the visibility switch: the per account
 // people action bucket keyed acct:<id>, never per network address (Phase 9 plan
@@ -542,6 +638,23 @@ func (g *RateGate) PeopleActionMiddleware() func(http.Handler) http.Handler {
 // attempt costs one token and nothing is refunded, so a refused rating pays too.
 func (g *RateGate) RateMiddleware() func(http.Handler) http.Handler {
 	return g.peopleMiddleware(g.rate, rateBucketName, rateRateField)
+}
+
+// AdmitVisibilityOn takes one token of the per account visibility bucket for a
+// request that turns the profile switch on. It answers the 429 itself and
+// returns false when the bucket is empty. It is called by the handler only for
+// an on request, so turning the switch off is never refused by it (WR-E02).
+func (g *RateGate) AdmitVisibilityOn(w http.ResponseWriter, accountID int64) bool {
+	if g == nil {
+		return true
+	}
+	d := g.visibility.Reserve(accountKey(accountID))
+	if d.OK {
+		return true
+	}
+	logBlock(visibilityBucketName, accountID, d.RetryAfter)
+	writeRateLimited(w, visibilityRateField, service.PeopleLimitMessage(d.RetryAfter), d.RetryAfter, false, "")
+	return false
 }
 
 // peopleMiddleware is the body of the two people middlewares.

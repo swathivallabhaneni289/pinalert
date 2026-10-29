@@ -466,7 +466,15 @@ func (w *PushWorker) sendRow(ctx context.Context, claim sqlcgen.ClaimDuePushesRo
 	// never sent.
 	run.base = run.kind
 	if run.kind == PushKindConfirmedUpdate {
-		run.base = confirmedBaseKind(claim.FirstKind, facts.Meta.Serious())
+		// A confirmed update replaces a note that is no longer known when its
+		// first row was pruned. It is skipped then, never re-based on another
+		// kind, because the person, block and mute rechecks below belong to the
+		// kind of the note it replaces (K3, review 2026-10-30).
+		base, known := confirmedBaseKind(claim.FirstKind)
+		if !known {
+			return w.skip(ctx, run, pushSkipNotEligible)
+		}
+		run.base = base
 	}
 	if run.base == PushKindFollow {
 		holds, err := w.followHolds(ctx, run)
@@ -474,6 +482,18 @@ func (w *PushWorker) sendRow(ctx context.Context, claim sqlcgen.ClaimDuePushesRo
 			return w.rowErr(claim.ID, err)
 		}
 		run.followHolds = holds
+	}
+	// A Reliable reporter note, and the confirmed update that replaces one, is
+	// about a person: it stops at once when the reader muted the reporter or
+	// either of them blocked the other (WR-S03, review 2026-10-30; D-12).
+	if run.base == PushKindReliable {
+		fine, err := w.personNotMutedOrBlocked(ctx, run)
+		if err != nil {
+			return w.rowErr(claim.ID, err)
+		}
+		if !fine {
+			return w.skip(ctx, run, pushSkipNotEligible)
+		}
 	}
 
 	// 3. The kind's predicate, the one the feed and the bell use.
@@ -505,7 +525,7 @@ func (w *PushWorker) sendRow(ctx context.Context, claim sqlcgen.ClaimDuePushesRo
 		}
 		return w.rowErr(claim.ID, err)
 	}
-	if home.Muted || !w.kindSwitchOn(run.kind, claim.FirstKind, facts.Meta.Serious(), home) {
+	if home.Muted || !w.kindSwitchOn(run.kind, claim.FirstKind, home) {
 		return w.skip(ctx, run, pushSkipNotEligible)
 	}
 
@@ -787,26 +807,51 @@ func (w *PushWorker) eventStillHolds(event UpdateKind, f pushReportFacts, now ti
 }
 
 // confirmedBaseKind is the kind of the alert a confirmed update replaces: the
-// first row's kind while that row exists, otherwise Critical for a serious
-// report and Reliable for any other.
-func confirmedBaseKind(first *string, serious bool) PushKind {
+// first row's kind while that row exists. When the first row was pruned the
+// kind is unknown and the answer is false: the worker skips the update as not
+// eligible and never guesses another kind (K3, review 2026-10-30).
+func confirmedBaseKind(first *string) (PushKind, bool) {
 	if first != nil {
 		switch k := PushKind(*first); k {
 		case PushKindCritical, PushKindReliable, PushKindFollow:
-			return k
+			return k, true
 		}
 	}
-	if serious {
-		return PushKindCritical
+	return "", false
+}
+
+// personNotMutedOrBlocked is the send time person check of a row whose base is
+// Reliable reporter: true when the report has no known reporter, or the reader
+// has not muted the reporter and neither has blocked the other. The errors are
+// database errors only.
+func (w *PushWorker) personNotMutedOrBlocked(ctx context.Context, run *pushRowRun) (bool, error) {
+	if run.facts.ReporterAccountID == nil {
+		return true, nil
 	}
-	return PushKindReliable
+	reporter, reader := *run.facts.ReporterAccountID, run.claim.AccountID
+	if reporter == reader {
+		return true, nil
+	}
+	rel, err := w.q.PersonRelation(ctx, sqlcgen.PersonRelationParams{ViewerID: reader, OtherID: reporter})
+	if err != nil || rel.ViewerBlocked || rel.BlockedViewer {
+		return false, err
+	}
+	muted, err := w.q.PersonMuted(ctx, sqlcgen.PersonMutedParams{MuterID: reader, MutedID: reporter})
+	if err != nil || muted {
+		return false, err
+	}
+	return true, nil
 }
 
 // kindSwitchOn says whether the switch of the row's kind is on now (review W5).
 // A confirmed update follows the switch of the initial alert it updates.
-func (w *PushWorker) kindSwitchOn(kind PushKind, first *string, serious bool, h sqlcgen.PushAccountHomeRow) bool {
+func (w *PushWorker) kindSwitchOn(kind PushKind, first *string, h sqlcgen.PushAccountHomeRow) bool {
 	if kind == PushKindConfirmedUpdate {
-		kind = confirmedBaseKind(first, serious)
+		base, known := confirmedBaseKind(first)
+		if !known {
+			return false
+		}
+		kind = base
 	}
 	switch kind {
 	case PushKindCritical:
@@ -839,7 +884,7 @@ func (w *PushWorker) buildText(run *pushRowRun, distance *float64) (PushText, bo
 	}
 	switch run.kind {
 	case PushKindConfirmedUpdate:
-		in.Kind = confirmedBaseKind(run.claim.FirstKind, f.Meta.Serious())
+		in.Kind = run.base
 		in.Confirmed = true
 	case PushKindChanged:
 		if run.claim.UpdateKind != nil {

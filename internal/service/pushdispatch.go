@@ -102,9 +102,15 @@ const (
 	// PushChangesSweepAccountCap is the most accounts one changes sweep serves.
 	PushChangesSweepAccountCap = 500
 	// FollowFanoutCap is the most followers (people with the Notify me bell on)
-	// read for one report in the follow pass. A follower past the cap still gets
-	// the bell note from their own poll; only the phone note is left out
-	// (T-09-87).
+	// whose bell the follow pass refreshes for one report (T-09-87). It bounds
+	// the work of one pass and does not promise that nobody past it gets a phone
+	// note: the phone note is queued from every followed_posted row of the report
+	// (EnqueueFollowFromUpdates), so a follower past the cap whose own poll
+	// already wrote the row still gets it. The report is marked fanned once, so
+	// a follower past the cap whose poll came after the pass gets the bell note
+	// only. The followers are taken in follower id order (NotifyFollowersOf), so
+	// the ones left out are always the highest ids (review K4 and IN-S05,
+	// 2026-10-30; accepted at this scale).
 	FollowFanoutCap = 500
 )
 

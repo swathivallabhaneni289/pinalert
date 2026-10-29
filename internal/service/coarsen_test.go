@@ -240,11 +240,18 @@ func TestCoarsenFinishedForProfile(t *testing.T) {
 		}
 	})
 
-	t.Run("rescue keeps precision 6 and no text", func(t *testing.T) {
+	// Amended 2026-10-30 (review IN-T01): Rescue no longer keeps precision 6 on a
+	// profile. It would equal the anonymous Past row's point exactly, so the most
+	// sensitive category got the least blur. Every category is precision 5.
+	t.Run("rescue is precision 5 like every other category and has no text", func(t *testing.T) {
 		in := p31Rescue()
 		got := CoarsenFinishedForProfile(in, centre)
-		_, _, wantCell := CoarsePointAt(in.Latitude, in.Longitude, 6)
-		if got.Geohash != wantCell || len(got.Geohash) != 6 {
+		_, _, wantCell := CoarsePointAt(in.Latitude, in.Longitude, 5)
+		anonLat, anonLon, _ := CoarsePoint(in.Latitude, in.Longitude)
+		if got.Latitude == anonLat && got.Longitude == anonLon {
+			t.Errorf("the profile point (%v, %v) equals the anonymous Past point", got.Latitude, got.Longitude)
+		}
+		if got.Geohash != wantCell || len(got.Geohash) != 5 {
 			t.Errorf("geohash = %q, want %q", got.Geohash, wantCell)
 		}
 		if got.Description != "" {

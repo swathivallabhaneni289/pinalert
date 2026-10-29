@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 
@@ -701,7 +702,7 @@ func NotifyPerson(people *service.PeopleService) http.HandlerFunc {
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
 		var req NotifyRequest
-		if err := dec.Decode(&req); err != nil || req.On == nil {
+		if err := decodeOneValue(dec, &req); err != nil || req.On == nil {
 			writeFieldError(w, http.StatusBadRequest, "on", "Send on as true or false.")
 			return
 		}
@@ -736,7 +737,7 @@ func NotifyPerson(people *service.PeopleService) http.HandlerFunc {
 // @Header 429 {integer} Retry-After "Whole seconds to wait before trying again"
 // @Failure 500 {object} ErrorResponse
 // @Router /me/visibility [patch]
-func UpdateVisibility(people *service.PeopleService) http.HandlerFunc {
+func UpdateVisibility(people *service.PeopleService, gate *RateGate) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acc, ok := account.FromContext(r.Context())
 		if !ok {
@@ -751,11 +752,16 @@ func UpdateVisibility(people *service.PeopleService) http.HandlerFunc {
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
 		var req VisibilityRequest
-		if err := dec.Decode(&req); err != nil || req.ProfilePublic == nil {
+		if err := decodeOneValue(dec, &req); err != nil || req.ProfilePublic == nil {
 			writeFieldError(w, http.StatusBadRequest, "profile_public", "Send profile_public as true or false.")
 			return
 		}
 
+		// Turning it on may call the shared text screener, so that change has a
+		// tight bucket of its own; turning it off never meets it (WR-E02).
+		if *req.ProfilePublic && !gate.AdmitVisibilityOn(w, acc.ID) {
+			return
+		}
 		if err := people.SetProfilePublic(r.Context(), acc.ID, *req.ProfilePublic); err != nil {
 			// A refused or unchecked name is the only 422.
 			var ve service.ValidationError
@@ -769,4 +775,17 @@ func UpdateVisibility(people *service.PeopleService) http.HandlerFunc {
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, http.StatusOK, VisibilityResponse{ProfilePublic: *req.ProfilePublic})
 	}
+}
+
+// decodeOneValue decodes exactly one JSON value from dec into dst: a body with
+// anything after the value, other than space, is refused, the way decodePushBody
+// refuses it (review IN-E04, 2026-10-30). The Phase 9 body routes use it.
+func decodeOneValue(dec *json.Decoder, dst any) error {
+	if err := dec.Decode(dst); err != nil {
+		return err
+	}
+	if _, next := dec.Token(); !errors.Is(next, io.EOF) {
+		return errors.New("trailing data")
+	}
+	return nil
 }
