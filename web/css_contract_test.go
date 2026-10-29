@@ -795,6 +795,19 @@ var nonCategoryIcons = map[string]bool{
 	// same exemption reasoning as search.svg. TestNewIconsAreRegisteredAndUsed
 	// checks it through laterIcons, so the exemption cannot hide an orphan.
 	"static/icons/link.svg": true,
+	// Amended 2026-10-29 by Phase 8 plan 17 (UI-SPEC Design System, D-02):
+	// thumbs-up, the outline glyph of an unliked comment, drawn by a literal
+	// url("/static/icons/thumbs-up.svg") mask rule in comments.css, same
+	// exemption reasoning as search.svg. TestNewIconsAreRegisteredAndUsed
+	// checks it through laterIcons, so the exemption cannot hide an orphan.
+	"static/icons/thumbs-up.svg": true,
+	// Amended 2026-10-29 by Phase 8 plan 17: thumbs-up-filled, the filled twin
+	// of thumbs-up.svg that a liked comment draws (the state is never colour
+	// alone). It carries a solid fill, so the stroke only glyph rule of
+	// laterIcons does not fit it; TestThumbsUpIconsRegistered
+	// (comments_contract_test.go) checks the file, its licence line and the
+	// literal mask url in comments.css instead.
+	"static/icons/thumbs-up-filled.svg": true,
 }
 
 // laterIcons lists the glyphs added after Phase 3.4 (plan 04-30: bell-off).
@@ -807,7 +820,10 @@ var nonCategoryIcons = map[string]bool{
 //
 // Amended 2026-10-29 by Phase 8 plan 06 (COORD-08): link.svg joins the list,
 // masked by share.css for the Copy link button. No other assertion changed.
-var laterIcons = []string{"bell-off.svg", "share-2.svg", "link.svg"}
+//
+// Amended 2026-10-29 by Phase 8 plan 17 (D-02): thumbs-up.svg joins the list,
+// masked by comments.css for the Like button. No other assertion changed.
+var laterIcons = []string{"bell-off.svg", "share-2.svg", "link.svg", "thumbs-up.svg"}
 
 // phase34Icons lists the ten Phase 3.4 glyph files, all exempted through
 // nonCategoryIcons above.

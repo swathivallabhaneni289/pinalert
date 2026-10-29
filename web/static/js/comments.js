@@ -13,7 +13,7 @@
 // markup is ever parsed. The one bold part of a comment is the leading
 // @username of a reply, made with createElement, and only when it is exactly
 // the name the server sent as reply_to_author (review W3). Plan 08-17 adds Like
-// (a thumbs up, never a heart, the count and the pressed state written only
+// (a thumbs up and nothing else, the count and the pressed state written only
 // from the server's answer), Delete (the author's, behind the app's confirm
 // box) and Flag (everyone else's, through the Flag dialog's comment mode) to
 // the meta line after the Reply button. A deleted or removed placeholder has

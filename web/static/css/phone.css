@@ -1416,6 +1416,10 @@
   }
 
   .leaflet-container .report-page .comments .comment__reply:not([hidden]),
+  .leaflet-container .report-page .comments .comment__like:not([hidden]),
+  .leaflet-container .report-page .comments .comment__likes:not([hidden]),
+  .leaflet-container .report-page .comments .comment__delete:not([hidden]),
+  .leaflet-container .report-page .comments .comment__flag:not([hidden]),
   .leaflet-container .report-page .comments .comment-thread__toggle:not([hidden]),
   .leaflet-container .report-page .comments .composer__cancel:not([hidden]),
   .leaflet-container .report-page .comments .comments__count,
