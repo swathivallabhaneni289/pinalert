@@ -59,8 +59,11 @@ func TestOfficialAlertsShell(t *testing.T) {
 			t.Errorf("#%s does not start hidden: %s", id, tag)
 		}
 	}
-	if tag := bellTagWith(t, page, `id="official-notice"`); !strings.Contains(tag, `role="status"`) {
-		t.Errorf("the stale notice is not a status region: %s", tag)
+	// Amended 2026-10-29 by the Phase 5 review fix (WR-T05, WR-B06): the stale
+	// notice is no longer a status region. Its age moves once a minute, so a
+	// live region there was read out every minute; the page shows it on load.
+	if tag := bellTagWith(t, page, `id="official-notice"`); strings.Contains(tag, "role=") || strings.Contains(tag, "aria-live") {
+		t.Errorf("the stale notice is a live region: %s", tag)
 	}
 	// The status line is plain text, not a live region (UI-SPEC 1a: no chatter).
 	if tag := bellTagWith(t, page, `id="official-status"`); strings.Contains(tag, "aria-live") || strings.Contains(tag, "role=") {

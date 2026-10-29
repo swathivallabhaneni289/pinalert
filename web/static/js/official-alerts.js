@@ -27,9 +27,12 @@
 // device fix, else nothing, and the server then uses the home area. Latitude and
 // longitude go together or not at all.
 //
-// One request on load and one on each Try again press (T-05-50). The minutes of
-// the status line move once a minute from the server's age plus the time that
-// passed here, with no new request and no live region.
+// One request on load and one on each Try again press (T-05-50), and, since the
+// Phase 5 review fix CR-B01, one more when the answer reaches the 30 minute
+// fresh limit, every five minutes while it is stale or unavailable, when a shown
+// row ends, and when the tab is shown again more than a minute after the last
+// request. Between those, the minutes of the status line move once a minute
+// from the server's age plus the time that passed here, with no live region.
 //
 // The renderer is source agnostic: it reads its API base and its position from
 // the page, so the Demo (window.PinalertApiBase, data-fixed-lat and
@@ -38,8 +41,20 @@
   'use strict';
 
   var STATUS_TICK_MS = 60000;
+  // The server's fresh limit (internal/official FreshWindow), in seconds: a fresh
+  // answer this old is asked about again (Phase 5 review fix CR-B01).
+  var FRESH_LIMIT_SECONDS = 30 * 60;
+  // A stale or unavailable answer is asked about again this often.
+  var RECHECK_NOT_FRESH_MS = 5 * 60000;
+  // Showing the tab again asks again when the last request is this old.
+  var SHOWN_AGAIN_MS = 60000;
+  // A request with no answer this long after it went out is given up on the
+  // next minute tick (Phase 5 review fix WR-B01).
+  var REQUEST_LIMIT_MS = 10000;
   var NEARBY_CENTRE_KEY = 'pinalert.nearbyCentre';
   var DEFAULT_BASE = '/api';
+  // A stored device fix or tab centre older than this is not sent (WR-B09).
+  var STORED_PLACE_MAX_MS = 30 * 60000;
 
   var pageEl = document.getElementById('official-page');
   var statusEl = document.getElementById('official-status');
@@ -77,6 +92,13 @@
     }
   }
 
+  // The stale notice carries an age that moves once a minute, so it is never a
+  // live region (Phase 5 review fix WR-B06, WR-T05): a screen reader would hear
+  // it every minute, and the page already shows it on load. A template that
+  // still marks it live is corrected here, so the Demo's page is covered too.
+  noticeEl.removeAttribute('role');
+  noticeEl.removeAttribute('aria-live');
+
   var STATES = { fresh: true, stale: true, unavailable: true };
   var LANG_CODE_PATTERN = /^[a-z]{2,3}$/;
   // The feed's own names for the languages it sends, mapped to valid codes.
@@ -86,6 +108,9 @@
   var renderedAt = 0; // Date.now() when it was drawn
   var serverNowAtRender = 0; // the server clock when it was drawn, in ms
   var requestOut = false;
+  var lastLoadAt = 0; // Date.now() when the last request was sent
+  var requestSeq = 0; // moves on with each request and when one is given up
+  var controller = null; // aborts the request that is out, when the browser can
   var detailCount = 0;
 
   // ---- Times --------------------------------------------------------------
@@ -115,7 +140,10 @@
         period = parts[k].value.toLowerCase();
       }
     }
-    return hour + ':' + minute + ' ' + period;
+    // A no break space (U+00A0) joins the minute and am or pm, so the time never
+    // breaks before pm (Phase 5 review fix WR-T02). It is the plain no break
+    // space, not the narrow one Intl writes.
+    return hour + ':' + minute + '\u00a0' + period;
   }
 
   // clockWithDay is the clock time, with the short weekday in front when the day
@@ -210,6 +238,18 @@
     return typeof value === 'string' ? value : '';
   }
 
+  // recentEnough says whether a stored place was saved under STORED_PLACE_MAX_MS
+  // ago (Phase 5 review fix WR-B09). One with no saved time, or an older one, is
+  // not where the reader is now: the server then uses the home area alone, so
+  // "Where you are" never names a place the reader left long ago.
+  function recentEnough(savedAt) {
+    if (typeof savedAt !== 'number' || !isFinite(savedAt)) {
+      return false;
+    }
+    var age = Date.now() - savedAt;
+    return age >= -STORED_PLACE_MAX_MS && age < STORED_PLACE_MAX_MS;
+  }
+
   // areaSource answers {lat, lon} or null. The page's fixed point wins (the
   // Demo), then the tab's Nearby centre when it belongs to this page's account,
   // then the stored device fix. A value that is not a real point, or belongs to
@@ -235,7 +275,8 @@
       if (raw) {
         try {
           var centre = JSON.parse(raw);
-          if (centre && String(centre.account) === account && validPoint(centre.lat, centre.lon)) {
+          if (centre && String(centre.account) === account && validPoint(centre.lat, centre.lon) &&
+              recentEnough(centre.savedAt)) {
             return { lat: centre.lat, lon: centre.lon };
           }
         } catch (err) {
@@ -247,7 +288,7 @@
     if (position && typeof position.read === 'function') {
       try {
         var fix = position.read();
-        if (fix && validPoint(fix.lat, fix.lon)) {
+        if (fix && validPoint(fix.lat, fix.lon) && recentEnough(fix.savedAt)) {
           return { lat: fix.lat, lon: fix.lon };
         }
       } catch (err) {
@@ -257,15 +298,23 @@
     return null;
   }
 
+  // apiBase is window.PinalertApiBase (set by api-base.js), else the page's own
+  // data-api-base when it passes the same check as in api-base.js (T-05-74,
+  // Phase 5 review fix IN-B04), else /api. The Demo fails closed (Phase 5
+  // review fix CR-B02): a page marked data-demo="1" with no usable base answers
+  // null and the page asks nothing, never the real /api.
+  var SAFE_BASE = /^\/(?!\/)[A-Za-z0-9\/_-]*$/;
+
   function apiBase() {
     var base = window.PinalertApiBase;
-    if (typeof base !== 'string' || base === '') {
-      base = pageAttr('data-api-base');
+    if (typeof base === 'string' && base !== '') {
+      return base.replace(/\/+$/, '');
     }
-    if (base === '') {
-      base = DEFAULT_BASE;
+    var own = pageAttr('data-api-base');
+    if (SAFE_BASE.test(own) && own.replace(/\/+$/, '') !== '') {
+      return own.replace(/\/+$/, '');
     }
-    return base.replace(/\/+$/, '');
+    return pageAttr('data-demo') === '1' ? null : DEFAULT_BASE;
   }
 
   // ---- Showing and hiding -------------------------------------------------
@@ -494,6 +543,12 @@
     if (row.original_language_only) {
       alert.appendChild(make('span', 'official-tag', 'Original language'));
     }
+    // A GDACS row whose end has passed is listed, marked Ended, and not counted
+    // as in force (WR-S04).
+    var ended = row.ended === true;
+    if (ended) {
+      alert.appendChild(make('span', 'official-tag', 'Ended'));
+    }
     if (row.area_text) {
       alert.appendChild(make('span', 'official-row__area', String(row.area_text)));
     }
@@ -524,7 +579,7 @@
     var until = make('span', 'official-row__until');
     var endClock = clockWithDay(row.expires_at, serverNowAtRender);
     if (endClock !== '') {
-      until.appendChild(prefix('Until '));
+      until.appendChild(prefix(ended ? 'Ended ' : 'Until '));
       if (row.expires_inferred) {
         until.appendChild(make('span', 'official-about', 'about '));
       }
@@ -556,20 +611,61 @@
     }
   }
 
+  // countRows counts the rows in force: a GDACS row marked ended is listed but
+  // never counted (WR-S04). countListed counts every row drawn.
   function countRows(view) {
+    return countWhere(view, function (r) {
+      return !r || r.ended !== true;
+    });
+  }
+
+  function countListed(view) {
+    return countWhere(view, function () {
+      return true;
+    });
+  }
+
+  function countWhere(view, keep) {
     var total = 0;
     for (var k = 0; k < view.groups.length; k += 1) {
       var rows = view.groups[k] && view.groups[k].rows;
-      total += Array.isArray(rows) ? rows.length : 0;
+      if (!Array.isArray(rows)) {
+        continue;
+      }
+      for (var r = 0; r < rows.length; r += 1) {
+        if (keep(rows[r])) {
+          total += 1;
+        }
+      }
     }
     return total;
+  }
+
+  // gdacsOnly is the answer with only its GDACS rows, for an unavailable SACHET
+  // feed whose GDACS feed is fresh (IN-S05), or null when there are none to
+  // draw. No SACHET row is ever drawn from an unavailable feed.
+  function gdacsOnly(view) {
+    if (view.hazards_state !== 'fresh') {
+      return null;
+    }
+    var groups = [];
+    for (var g = 0; g < view.groups.length; g += 1) {
+      var source = view.groups[g];
+      var rows = source && Array.isArray(source.rows) ? source.rows : [];
+      var kept = rows.filter(function (r) {
+        return !!r && r.source === 'gdacs';
+      });
+      groups.push({ label: source ? source.label : '', rows: kept });
+    }
+    var only = { groups: groups };
+    return countListed(only) > 0 ? only : null;
   }
 
   // renderGroups draws the column head row (laptop) and the groups in the order
   // the server sent them. A group with no rows is not drawn.
   function renderGroups(view) {
     listEl.textContent = '';
-    if (countRows(view) === 0) {
+    if (countListed(view) === 0) {
       return;
     }
     var head = make('div', 'official-columns');
@@ -625,6 +721,17 @@
     if (view.state === 'unavailable') {
       unavailableTitleEl.textContent = 'Official alerts could not be checked';
       setHidden(unavailableEl, false);
+      // Fresh GDACS rows are still drawn under the notice, by the GDACS state
+      // alone (IN-S05), under their own title: never In force now, which is
+      // the SACHET claim, and never a SACHET row.
+      var hazards = gdacsOnly(view);
+      if (hazards) {
+        setTitle('Hazard events from GDACS', countRows(hazards));
+        setHidden(districtsEl, true);
+        renderGroups(hazards);
+        setHidden(listEl, false);
+        setHidden(sectionEl, false);
+      }
       return;
     }
     if (view.state === 'stale') {
@@ -636,7 +743,8 @@
       return;
     }
     var rows = countRows(view);
-    if (view.state === 'fresh' && rows === 0) {
+    var listed = countListed(view);
+    if (view.state === 'fresh' && listed === 0) {
       showState(emptyEl, emptyTitleEl, 'No official alerts in force for your area', emptyBodyEl,
         'Nothing is in force for where you are or for your home area. ' +
         'Check your state disaster management authority for anything else.');
@@ -646,13 +754,18 @@
       setTitle('Last known alerts', rows);
       districtsEl.textContent = 'As of ' + clockWithDay(view.last_success_at, serverNowAtRender);
       setHidden(districtsEl, false);
+    } else if (rows === 0) {
+      // Only GDACS rows that have ended (WR-S04): listed, but nothing is said
+      // to be in force, and the page does not claim that nothing is.
+      setTitle('Recently ended', 0);
+      setHidden(districtsEl, true);
     } else {
       setTitle('In force now', rows);
       districtsEl.textContent = typeof view.districts_line === 'string' ? view.districts_line : '';
       setHidden(districtsEl, districtsEl.textContent === '');
     }
     renderGroups(view);
-    setHidden(listEl, rows === 0);
+    setHidden(listEl, listed === 0);
     setHidden(sectionEl, false);
   }
 
@@ -663,39 +776,156 @@
       return;
     }
     requestOut = true;
+    lastLoadAt = Date.now();
     retryEl.disabled = true;
     showLoading();
     var point = areaSource();
-    var target = apiBase() + '/official/alerts';
+    var base = apiBase();
+    var target = base + '/official/alerts';
     if (point) {
       target += '?lat=' + encodeURIComponent(String(point.lat)) + '&lon=' + encodeURIComponent(String(point.lon));
     }
-    if (typeof fetch !== 'function') {
+    if (base === null || typeof fetch !== 'function') {
       requestOut = false;
       renderError();
       return;
     }
-    fetch(target, { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (res) {
+    requestSeq += 1;
+    var mine = requestSeq;
+    controller = typeof AbortController === 'function' ? new AbortController() : null;
+    var init = { credentials: 'same-origin', headers: { Accept: 'application/json' } };
+    if (controller) {
+      init.signal = controller.signal;
+    }
+    fetch(target, init).then(function (res) {
       if (!res.ok) {
+        // An ended Demo visit answers 404 with the field visit: the Demo then
+        // starts again (Phase 5 review fix WR-B08). window.PinalertDemoEnded is
+        // set by demo.js on Demo pages only, so a real page never reads it.
+        if (res.status === 404 && typeof window.PinalertDemoEnded === 'function' && typeof res.json === 'function') {
+          return res.json().then(function (body) {
+            if (mine === requestSeq && body && body.error && body.error.field === 'visit') {
+              window.PinalertDemoEnded();
+            }
+          }, function () {}).then(function () {
+            throw new Error('status ' + res.status);
+          });
+        }
         throw new Error('status ' + res.status);
       }
       return res.json();
     }).then(function (body) {
+      if (mine !== requestSeq) {
+        return;
+      }
       requestOut = false;
+      controller = null;
       retryEl.disabled = false;
       render(body);
     }, function () {
+      if (mine !== requestSeq) {
+        return;
+      }
       requestOut = false;
+      controller = null;
       renderError();
     });
   }
 
-  retryEl.addEventListener('click', load);
-  setInterval(function () {
-    if (current) {
-      renderStatus(current, Date.now() - renderedAt);
+  // giveUpIfHung is the time limit of a request (Phase 5 review fix WR-B01). It
+  // runs on the minute tick, the page's one timer (no second timer, so no
+  // refetch loop): a request out for REQUEST_LIMIT_MS or more is aborted, its
+  // late answer is dropped, and the page shows the load error, so a request
+  // that never ends never blocks Try again or the next ask. The tick is not the
+  // request's promise, which WebKit can leave unsettled.
+  function giveUpIfHung() {
+    if (!requestOut || Date.now() - lastLoadAt < REQUEST_LIMIT_MS) {
+      return false;
     }
-  }, STATUS_TICK_MS);
+    requestSeq += 1;
+    requestOut = false;
+    if (controller) {
+      controller.abort();
+      controller = null;
+    }
+    renderError();
+    return true;
+  }
+
+  // ---- Asking again (Phase 5 review fix CR-B01) ---------------------------
+  //
+  // An answer is only good while it is fresh (UI-SPEC 1b, T-34-17): the page
+  // never keeps "No official alerts in force for your area" or "In force now" up
+  // over an answer older than the server's 30 minute fresh limit. So the minute
+  // tick asks again when a fresh answer reaches that limit, or when a row it
+  // shows has passed its Until time since it was drawn; a stale or unavailable
+  // answer is asked about again every few minutes, so it can recover or move on.
+  // load() hides every block first, so no claim waits for the new answer.
+  // Showing the tab again, or a page restored from the back and forward cache,
+  // asks again when the last request is more than a minute old.
+
+  function rowEndedSinceDrawn(view, elapsedMs) {
+    var now = serverNowAtRender + Math.max(0, elapsedMs);
+    for (var g = 0; g < view.groups.length; g += 1) {
+      var rows = view.groups[g] && view.groups[g].rows;
+      if (!Array.isArray(rows)) {
+        continue;
+      }
+      for (var r = 0; r < rows.length; r += 1) {
+        var end = rows[r] ? Date.parse(rows[r].expires_at) : NaN;
+        if (isFinite(end) && end > serverNowAtRender && end <= now) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function answerTooOld(view, elapsedMs) {
+    if (view.state !== 'fresh') {
+      return elapsedMs >= RECHECK_NOT_FRESH_MS;
+    }
+    var age = ageOf(view, elapsedMs);
+    if (age === null) {
+      age = Math.max(0, elapsedMs) / 1000;
+    }
+    return age >= FRESH_LIMIT_SECONDS || rowEndedSinceDrawn(view, elapsedMs);
+  }
+
+  function tick() {
+    if (giveUpIfHung() || !current) {
+      return;
+    }
+    var elapsed = Date.now() - renderedAt;
+    if (answerTooOld(current, elapsed)) {
+      load();
+      return;
+    }
+    renderStatus(current, elapsed);
+  }
+
+  function askIfOld() {
+    if (Date.now() - lastLoadAt >= SHOWN_AGAIN_MS) {
+      load();
+    }
+  }
+
+  retryEl.addEventListener('click', load);
+  setInterval(tick, STATUS_TICK_MS);
+  if (typeof document.addEventListener === 'function') {
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') {
+        askIfOld();
+      }
+    });
+  }
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('pageshow', function (event) {
+      if (event && event.persisted === true) {
+        askIfOld();
+      }
+    });
+  }
 
   window.PinalertOfficialAlerts = {
     render: render,

@@ -173,6 +173,12 @@ function boot(opts = {}) {
     innerHeight: o.innerHeight,
     addEventListener(type, fn) { (winHandlers[type] = winHandlers[type] || []).push(fn); }
   };
+  // Amended 2026-10-29 by the Phase 5 review fix (IN-B05): styled says whether
+  // login-globe.css applied (the box is visibility hidden until ready). Left
+  // out, the window has no getComputedStyle, as in every older case.
+  if (o.styled !== undefined) {
+    sandbox.getComputedStyle = () => ({ visibility: o.styled ? 'hidden' : 'visible' });
+  }
   if (o.idle) {
     sandbox.requestIdleCallback = (fn) => { const id = nextId++; timers.set(id, { fn, at: now + 50 }); return id; };
   }
@@ -614,4 +620,23 @@ test('sizeGlobe tells a built map its new zoom, and a resize does it again', () 
   assert.ok(map.zooms.length > first, 'a resize sets the zoom again');
   const z = map.zooms[map.zooms.length - 1];
   assert.ok(z > 0 && z < 3, 'the zoom is a sensible globe zoom, got ' + z);
+});
+
+// ---- A missing stylesheet downloads nothing (Phase 5 review fix IN-B05) ----
+// Added 2026-10-29. Without login-globe.css the box is as wide as the credit's
+// text, not 0, so the size guard alone let the library download into a box with
+// no height. The globe now also needs the stylesheet's own mark: the box is
+// visibility hidden until it is ready.
+
+test('IN-B05: with login-globe.css missing a phone downloads nothing', () => {
+  const c = boot({ width: 390, innerHeight: 844, box: 300, styled: false });
+  c.start();
+  assert.equal(c.head.children.length, 0, 'no library script or stylesheet is injected');
+  assert.equal(c.maps.length, 0);
+});
+
+test('IN-B05: with the stylesheet applied the phone globe still downloads', () => {
+  const c = boot({ width: 390, innerHeight: 844, box: 300, styled: true });
+  c.start();
+  assert.ok(c.head.children.length > 0, 'the library is requested as before');
 });

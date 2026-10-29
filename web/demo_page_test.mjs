@@ -50,7 +50,11 @@ class FakeEl {
 
 // load builds a page: shellAttrs are the attributes of #app-shell (null means
 // the page has no shell), strip is an optional .demo-strip element.
-function load({ shellAttrs = {}, strip = null, scripts = ['app.js'] } = {}) {
+// Amended 2026-10-29 by the Phase 5 review fix (CR-B02): mainAttrs are the
+// attributes of a main page root (Demo My activity and Demo Official alerts
+// carry the base there), found by querySelector('main[<attr>]') or
+// querySelector('main[data-demo="1"]'); without it the page has none, as before.
+function load({ shellAttrs = {}, strip = null, scripts = ['app.js'], mainAttrs = null } = {}) {
   const fetches = [];
   const events = [];
   const storage = { reads: 0, writes: 0 };
@@ -59,11 +63,16 @@ function load({ shellAttrs = {}, strip = null, scripts = ['app.js'] } = {}) {
   const frames = [];
   const listeners = {};
   const shell = shellAttrs === null ? null : new FakeEl(shellAttrs);
+  const main = mainAttrs === null ? null : new FakeEl(mainAttrs);
+  const mainMatches = (sel) => {
+    const m = /^main\[([a-z-]+)(?:="([^"]*)")?\]$/.exec(sel);
+    return !!main && !!m && main.hasAttribute(m[1]) && (m[2] === undefined || main.getAttribute(m[1]) === m[2]);
+  };
   const doc = {
     readyState: 'complete',
     documentElement: Object.assign(new FakeEl(), { style: rootStyle }),
     getElementById(id) { return id === 'app-shell' ? shell : null; },
-    querySelector(sel) { return sel === '.demo-strip' ? strip : null; },
+    querySelector(sel) { return sel === '.demo-strip' ? strip : (mainMatches(sel) ? main : null); },
     querySelectorAll() { return []; },
     createElement() { return new FakeEl(); },
     addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
@@ -167,7 +176,9 @@ test('app.js: with a Demo base the feed read goes to the Demo and the centre is 
   await settle();
   const centre = m.events.filter((e) => e.type === 'pinalert:feed-centre');
   assert.equal(centre.length, 1, 'one centre event after the load');
-  assert.deepEqual({ ...centre[0].detail }, { lat: 16.5424, lon: 80.6386 });
+  // Amended 2026-10-29 by the Phase 5 review fix (WR-B09): the detail also says
+  // the centre is the reader's own position (own) and not a searched place.
+  assert.deepEqual({ ...centre[0].detail }, { lat: 16.5424, lon: 80.6386, own: true, place: false });
 });
 
 test('app.js: a failed read announces no centre', async () => {
@@ -265,4 +276,162 @@ test('demo.js: it writes no storage and never asks the browser', () => {
   const m = load({ shellAttrs: {}, strip, scripts: ['demo.js'] });
   assert.equal(m.storage.writes + m.storage.reads, 0);
   assert.equal(m.geo.calls, 0);
+});
+
+// ---- The Demo fails closed (Phase 5 review fix CR-B02) ----
+// Added 2026-10-29. When api-base.js fails to load, window.PinalertApiBase and
+// window.PinalertDemoPage are never set. The scripts then read the page's own
+// data-api-base (with the same check), and a Demo page with no usable base
+// sends no report call at all: never one to the real /api.
+
+const BAD_BASES = [undefined, '', 'https://evil.example/api', '//evil.example/api', '/demo/../x y', '/'];
+const demoShell = (base) => {
+  const attrs = { 'data-demo': '1', 'data-fixed-lat': PRETEND.lat, 'data-fixed-lon': PRETEND.lon, 'data-vote-radius-km': '1' };
+  if (base !== undefined) { attrs['data-api-base'] = base; }
+  return attrs;
+};
+const toRealApi = (m) => m.fetches.filter((f) => /^\/api(\/|$)/.test(f.url));
+
+test('CR-B02 app.js: with api-base.js missing the feed read and the post go to the page own Demo base', async () => {
+  const m = load({ shellAttrs: demoShell(DEMO_BASE), scripts: ['app.js'] });
+  assert.equal(m.win.PinalertApiBase, undefined, 'api-base.js never ran');
+  assert.equal(m.win.PinalertDemoPage, true, 'the Demo marks still know this is the Demo');
+  m.win.Pinalert.setCenter(16.5424, 80.6386, true);
+  m.win.Pinalert.fetchReports();
+  m.win.Pinalert.submitReport({ description: 'water over the road' }).catch(() => {});
+  assert.equal(m.fetches.length, 2);
+  assert.equal(lastPath(m, 0).pathname, DEMO_BASE + '/reports');
+  assert.equal(m.fetches[1].url, DEMO_BASE + '/reports');
+});
+
+test('CR-B02 app.js: a Demo page with no usable base sends no report call at all', async () => {
+  for (const bad of BAD_BASES) {
+    const m = load({ shellAttrs: demoShell(bad), scripts: ['app.js'] });
+    m.win.Pinalert.setCenter(16.5424, 80.6386, true);
+    await m.win.Pinalert.fetchReports();
+    let refused = null;
+    await m.win.Pinalert.submitReport({ description: 'water over the road' }).catch((err) => { refused = err; });
+    assert.equal(m.fetches.length, 0, 'no request for base ' + JSON.stringify(bad));
+    assert.equal(toRealApi(m).length, 0);
+    assert.ok(refused, 'the post fails');
+    assert.equal(refused.queueable, false, 'and is not kept to send later');
+    assert.equal(m.win.Pinalert.state.status, 'error', 'the feed shows its load error');
+  }
+});
+
+test('CR-B02 app.js: the Demo My activity root carries the base on main', async () => {
+  const m = load({ shellAttrs: null, mainAttrs: { 'data-demo': '1', 'data-api-base': DEMO_BASE }, scripts: ['app.js'] });
+  assert.equal(m.win.PinalertDemoPage, true);
+  m.win.Pinalert.submitReport({ description: 'x' }).catch(() => {});
+  assert.equal(m.fetches[0].url, DEMO_BASE + '/reports');
+  const closed = load({ shellAttrs: null, mainAttrs: { 'data-demo': '1' }, scripts: ['app.js'] });
+  await closed.win.Pinalert.submitReport({ description: 'x' }).catch(() => {});
+  assert.equal(closed.fetches.length, 0);
+});
+
+test('CR-B02 app.js: a real page with no base still uses /api and is not the Demo', () => {
+  const m = load({ shellAttrs: {}, scripts: ['app.js'] });
+  assert.ok(!m.win.PinalertDemoPage);
+  m.win.Pinalert.submitReport({ description: 'x' }).catch(() => {});
+  assert.equal(m.fetches[0].url, '/api/reports');
+});
+
+test('CR-B02 votes.js: with api-base.js missing a vote goes to the page own Demo base', async () => {
+  const m = load({ shellAttrs: demoShell(DEMO_BASE), scripts: ['app.js', 'votes.js'] });
+  m.win.Pinalert.setCenter(16.5424, 80.6386, true);
+  m.win.PinalertVotes.castVote('7', 'confirm').catch(() => {});
+  await settle();
+  assert.equal(m.fetches.length, 1);
+  assert.equal(m.fetches[0].url, DEMO_BASE + '/reports/7/confirm');
+});
+
+test('CR-B02 votes.js: a Demo page with no usable base casts no vote at all', async () => {
+  for (const bad of BAD_BASES) {
+    const m = load({ shellAttrs: demoShell(bad), scripts: ['app.js', 'votes.js'] });
+    m.win.Pinalert.setCenter(16.5424, 80.6386, true);
+    let refused = null;
+    await m.win.PinalertVotes.castVote('7', 'confirm').catch((err) => { refused = err; });
+    await settle();
+    assert.equal(m.fetches.length, 0, 'no vote for base ' + JSON.stringify(bad));
+    assert.ok(refused, 'the vote fails');
+    assert.equal(m.geo.calls, 0, 'the browser is still never asked');
+  }
+});
+
+test('CR-B02 demo.js: with api-base.js missing an ended visit still restarts the Demo', () => {
+  const shellPage = load({ shellAttrs: { 'data-demo': '1' }, scripts: ['demo.js'] });
+  assert.equal(typeof shellPage.win.PinalertDemoEnded, 'function', 'Demo Nearby');
+  const mainPage = load({ shellAttrs: null, mainAttrs: { 'data-demo': '1' }, scripts: ['demo.js'] });
+  assert.equal(typeof mainPage.win.PinalertDemoEnded, 'function', 'Demo My activity and Demo Official alerts');
+  const real = load({ shellAttrs: {}, scripts: ['demo.js'] });
+  assert.equal(real.win.PinalertDemoEnded, undefined, 'never on a real page');
+  assert.equal(shellPage.fetches.length + mainPage.fetches.length, 0, 'demo.js itself asks nothing');
+});
+
+// ---- Demo My activity's pretend position (Phase 5 review fix IN-B03) ----
+// Added 2026-10-29. Demo My activity writes the pretend point on its main page
+// root, not on #app-shell. votes.js takes it from there too, so Reopen never
+// reads the real voter cache on the Demo.
+
+test('IN-B03 votes.js: on Demo My activity the position comes from the main root, with no storage and no browser question', async () => {
+  const m = load({
+    shellAttrs: null,
+    mainAttrs: { 'data-demo': '1', 'data-api-base': DEMO_BASE, 'data-fixed-lat': PRETEND.lat, 'data-fixed-lon': PRETEND.lon },
+    scripts: ['api-base.js', 'app.js', 'votes.js']
+  });
+  let got = null;
+  await m.win.PinalertVotes.getVoterLocation({ fresh: false }).then((fix) => { got = fix; });
+  assert.equal(got.latitude, 16.5424);
+  assert.equal(got.longitude, 80.6386);
+  assert.equal(m.storage.reads + m.storage.writes, 0, 'the real voter cache is never read');
+  assert.equal(m.geo.calls, 0);
+});
+
+// ---- The centre event says what the centre is (Phase 5 review fix WR-B09) ----
+// Added 2026-10-29.
+
+test('WR-B09 app.js: the fallback centre is announced as not own and not a place; a searched place as a place', async () => {
+  const m = load({ shellAttrs: {}, scripts: ['app.js'] });
+  m.win.Pinalert.setCenter(16.5, 80.6, false);
+  m.win.Pinalert.fetchReports();
+  m.answer(m.fetches[0], { reports: [] });
+  await settle();
+  const first = m.events.filter((e) => e.type === 'pinalert:feed-centre')[0];
+  assert.deepEqual({ ...first.detail }, { lat: 16.5, lon: 80.6, own: false, place: false }, 'the boot fallback centre');
+  m.win.Pinalert.setPlace({ name: 'Benz Circle', lat: 16.4975, lon: 80.6553 });
+  m.win.Pinalert.setCenter(16.4975, 80.6553, false);
+  m.win.Pinalert.fetchReports();
+  m.answer(m.fetches[1], { reports: [] });
+  await settle();
+  const second = m.events.filter((e) => e.type === 'pinalert:feed-centre')[1];
+  assert.deepEqual({ ...second.detail }, { lat: 16.4975, lon: 80.6553, own: false, place: true }, 'a searched place');
+});
+
+// ---- A vote on an ended Demo visit restarts the Demo (Phase 5 review fix IN-B01) ----
+// Added 2026-10-29.
+
+test('IN-B01 votes.js: a 404 for an ended visit calls PinalertDemoEnded once and still rejects with the server words', async () => {
+  const m = load({ shellAttrs: demoShell(DEMO_BASE), scripts: ['api-base.js', 'app.js', 'votes.js'] });
+  let ended = 0;
+  m.win.PinalertDemoEnded = () => { ended += 1; };
+  m.win.Pinalert.setCenter(16.5424, 80.6386, true);
+  let refused = null;
+  const voted = m.win.PinalertVotes.castVote('7', 'confirm').catch((err) => { refused = err; });
+  await settle();
+  m.answer(m.fetches[0], { error: { field: 'visit', message: 'This Demo has ended. Reload the page to start again.' } }, 404);
+  await voted;
+  assert.equal(ended, 1);
+  assert.equal(refused.fieldMessage, 'This Demo has ended. Reload the page to start again.');
+});
+
+test('IN-B01 votes.js: another refusal restarts nothing', async () => {
+  const m = load({ shellAttrs: demoShell(DEMO_BASE), scripts: ['api-base.js', 'app.js', 'votes.js'] });
+  let ended = 0;
+  m.win.PinalertDemoEnded = () => { ended += 1; };
+  m.win.Pinalert.setCenter(16.5424, 80.6386, true);
+  const voted = m.win.PinalertVotes.castVote('7', 'confirm').catch(() => {});
+  await settle();
+  m.answer(m.fetches[0], { error: { field: 'report', message: 'Not found' } }, 404);
+  await voted;
+  assert.equal(ended, 0);
 });

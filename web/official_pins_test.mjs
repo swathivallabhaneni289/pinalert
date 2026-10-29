@@ -94,6 +94,7 @@ function loadLayer(options = {}) {
   const listeners = {};
   const overlays = [];
   const cards = [];
+  const closes = [];
   let now = NOW;
   let nextTimer = 1;
   const doc = {
@@ -106,9 +107,9 @@ function loadLayer(options = {}) {
     for (;;) {
       const due = [...intervals.entries()].filter(([, t]) => t.next <= end).sort((a, b) => a[1].next - b[1].next)[0];
       if (!due) { break; }
-      const [, timer] = due;
+      const [id, timer] = due;
       now = timer.next;
-      timer.next += timer.every;
+      if (timer.once) { intervals.delete(id); } else { timer.next += timer.every; }
       timer.fn();
     }
     now = end;
@@ -153,7 +154,18 @@ function loadLayer(options = {}) {
   };
   const PinalertMap = options.noMap ? undefined : {
     addOverlay(layer) { overlays.push(layer); return options.overlayRefused ? false : true; },
-    openCard(latlng, node, name, opts) { cards.push({ latlng, node, name, opts }); return true; }
+    openCard(latlng, node, name, opts) { cards.push({ latlng, node, name, opts }); return true; },
+    // Amended 2026-10-29 by the Phase 5 review fix (WR-B02): the map closes the
+    // open card on request and runs its onClose once, as map.js does.
+    closeCard() {
+      closes.push(1);
+      const last = cards[cards.length - 1];
+      if (last && !last.closed) {
+        last.closed = true;
+        if (last.opts && typeof last.opts.onClose === 'function') { last.opts.onClose(); }
+      }
+      return true;
+    }
   };
   const sandbox = {
     console,
@@ -167,7 +179,13 @@ function loadLayer(options = {}) {
     },
     setInterval(fn, every) { const id = nextTimer++; intervals.set(id, { fn, every, next: now + every }); return id; },
     clearInterval(id) { intervals.delete(id); },
-    setTimeout(fn) { fn(); return 0; },
+    // Amended 2026-10-29 by the Phase 5 review fix (WR-B01): a timeout waits for
+    // the clock the test moves, so the request time limit fires only when
+    // advance() reaches it. The script made no setTimeout call before the fix,
+    // so no older case depended on the old fire-at-once fake.
+    setTimeout(fn, ms) { const id = nextTimer++; intervals.set(id, { fn, every: 0, next: now + (ms || 0), once: true }); return id; },
+    clearTimeout(id) { intervals.delete(id); },
+    AbortController: class { constructor() { this.signal = { aborted: false }; } abort() { this.signal.aborted = true; } },
     CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init && init.detail; } }
   };
   if (PinalertMap) { sandbox.PinalertMap = PinalertMap; }
@@ -176,7 +194,7 @@ function loadLayer(options = {}) {
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox, { filename: 'official-pins.js' });
   const emit = (type, detail) => (listeners[type] || []).forEach((fn) => fn({ type, detail }));
-  return { doc, api: sandbox.PinalertOfficialPins, requests, overlays, cards, groups, advance, emit, intervals, sandbox };
+  return { doc, api: sandbox.PinalertOfficialPins, requests, overlays, cards, closes, groups, advance, emit, intervals, sandbox };
 }
 
 const flush = async () => { for (let i = 0; i < 8; i++) { await new Promise((r) => setImmediate(r)); } };
@@ -380,7 +398,10 @@ test('the card holds the badge, the chip, the title, the lines, the honesty line
   assert.equal(byClass(card, 'official-card__title')[0].textContent, 'Earthquake in Vanuatu Islands');
   assert.match(text, /Hazard\s*Earthquake/);
   assert.match(text, /Issued 3 hours ago/);
-  assert.match(text, /Until .*\d:\d\d [ap]m/);
+  // Amended 2026-10-29 by the Phase 5 review fix (WR-T02): the clock joins the
+  // minute and am or pm with a no break space (U+00A0), never a plain space.
+  assert.match(text, /Until .*\d:\d\d\u00a0[ap]m/);
+  assert.doesNotMatch(text, /\d:\d\d [ap]m/);
   assert.match(text, /Issued by GDACS/);
   assert.match(text, /Magnitude 6\.5M, Depth 10 km/);
   assert.match(text, /Automatic estimate\. Follow your state disaster management authority\./);
@@ -541,4 +562,107 @@ test('the layer never writes to the list, the counts or the shared store', async
   answer(layer.requests[0], 200, fresh([pin()]));
   await flush();
   assert.equal(layer.doc.activeElement, null, 'nothing took focus');
+});
+
+// ---- A request that never answers (Phase 5 review fix WR-B01) ----
+// Added 2026-10-29. Every pins request has a 10 second limit: at the limit it
+// is aborted, the layer is cleared (nothing is known to be current) and the
+// next load sends a new request.
+
+test('WR-B01: a pins request with no answer is given up at 10 seconds and the layer clears', async () => {
+  const layer = await open(fresh([pin()]));
+  assert.equal(markersOf(layer).length, 1);
+  assert.ok(layer.requests[0].init.signal, 'the request carries an abort signal');
+  layer.advance(300000);
+  await flush();
+  assert.equal(layer.requests.length, 2, 'the five minute refresh is out');
+  layer.advance(9000);
+  await flush();
+  assert.equal(markersOf(layer).length, 1, 'inside the limit the pins stay');
+  layer.advance(1000);
+  await flush();
+  assert.equal(markersOf(layer).length, 0, 'at the limit the pins drawn before are cleared');
+  assert.equal(layer.requests[1].init.signal.aborted, true, 'the hung request is aborted');
+  layer.api.loadPins();
+  await flush();
+  assert.equal(layer.requests.length, 3, 'a hung request never blocks the next load');
+  answer(layer.requests[1], 200, fresh([pin({ id: 8 })]));
+  await flush();
+  assert.equal(markersOf(layer).length, 0, 'the late answer of the given up request is dropped');
+  answer(layer.requests[2], 200, fresh([pin()]));
+  await flush();
+  assert.equal(markersOf(layer).length, 1);
+});
+
+test('WR-B01: a body that never arrives is given up at the limit too', async () => {
+  const layer = loadLayer();
+  await flush();
+  layer.requests[0].resolve({ ok: true, status: 200, json: () => new Promise(() => {}) });
+  await flush();
+  layer.advance(10000);
+  await flush();
+  layer.api.loadPins();
+  await flush();
+  assert.equal(layer.requests.length, 2);
+});
+
+// ---- An open card goes with its pin (Phase 5 review fix WR-B02) ----
+// Added 2026-10-29. The card is a popup apart from the markers, so whenever the
+// layer clears, or a redraw removes or replaces the pin of the open card, the
+// card is closed through the map.
+
+const openFirst = (layer) => fire(markersOf(layer)[0].el, 'keydown', { key: 'Enter' });
+
+test('WR-B02: a stale answer clears the layer and closes the open card', async () => {
+  const layer = await open(fresh([pin()]));
+  openFirst(layer);
+  assert.equal(layer.cards.length, 1);
+  layer.api.drawPins({ state: 'stale', pins: [] });
+  assert.equal(layer.closes.length, 1, 'the card is closed with its pin');
+  assert.equal(layer.cards[0].closed, true);
+});
+
+test('WR-B02: a failed refresh closes the open card too', async () => {
+  const layer = await open(fresh([pin()]));
+  openFirst(layer);
+  layer.advance(300000);
+  await flush();
+  answer(layer.requests[1], 500);
+  await flush();
+  assert.equal(layer.closes.length, 1);
+});
+
+test('WR-B02: a redraw that replaces or removes the pin of the open card closes it; an unchanged pin keeps it', async () => {
+  const layer = await open(fresh([pin(), pin({ id: 8, name: 'Flood in Assam', lat: 26.1, lon: 91.7 })]));
+  openFirst(layer);
+  layer.api.drawPins(fresh([pin(), pin({ id: 8, name: 'Flood in Assam', lat: 26.1, lon: 91.7 })]));
+  assert.equal(layer.closes.length, 0, 'nothing changed: the card stays');
+  layer.api.drawPins(fresh([pin({ id: 8, name: 'Flood in Assam', lat: 26.1, lon: 91.7, alert_level: 'red' }),
+    pin({ alert_level: 'orange', level_word: 'Orange' })]));
+  assert.equal(layer.closes.length, 1, 'the open pin changed level: its card goes');
+  const seven = markersOf(layer).find((m) => m.latlng[0] === 16.5);
+  fire(seven.el, 'keydown', { key: 'Enter' });
+  layer.api.drawPins(fresh([pin({ id: 8, name: 'Flood in Assam', lat: 26.1, lon: 91.7 })]));
+  assert.ok(layer.closes.length >= 2, 'the open pin left the answer: its card goes');
+});
+
+test('WR-B02: clearing with no card open asks the map for nothing', async () => {
+  const layer = await open(fresh([pin()]));
+  layer.api.drawPins({ state: 'unavailable' });
+  assert.equal(layer.closes.length, 0);
+});
+
+// ---- Each card names itself (Phase 5 review fix WR-B04) ----
+// Added 2026-10-29.
+
+test('WR-B04: two cards never share a title id', async () => {
+  const layer = await open(fresh([pin()]));
+  openFirst(layer);
+  openFirst(layer);
+  const a = layer.cards[0].node;
+  const b = layer.cards[1].node;
+  const idOf = (card) => byClass(card, 'official-card__title')[0].getAttribute('id');
+  assert.ok(idOf(a), 'the title has an id');
+  assert.match(idOf(a), /^official-card-title-\d+$/);
+  assert.notEqual(idOf(a), idOf(b));
 });

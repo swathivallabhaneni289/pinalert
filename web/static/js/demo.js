@@ -73,11 +73,13 @@
   // adds the practice prefix to the server's confirmed sentence (TRUST-02,
   // T-05-92). Everything it writes is text content (T-05-93). Only the Demo page
   // takes part: on any other page the post event is ignored.
-  var PRACTICE_POLL_MS = 3000;
-  // The poll gives up after this many ticks (about two minutes): the neighbours
+  // Two seconds, at most half the pretend neighbours' gap (NeighbourInterval,
+  // 4 s), so the climb shows near 4 s and 8 s (Phase 5 review fix IN-B02).
+  var PRACTICE_POLL_MS = 2000;
+  // The poll gives up after this many ticks (two minutes): the neighbours
   // finish within seconds, so a report that never shows up is a dropped visit or
   // a filtered list and polling forever would only be noise (T-05-94).
-  var PRACTICE_POLL_LIMIT = 40;
+  var PRACTICE_POLL_LIMIT = 60;
   var POSTED_TOAST = 'Practice report posted. Pretend neighbours will confirm it in a few seconds.';
   var CONFIRMED_PREFIX = 'Practice report confirmed. ';
   var REPORT_POSTED_EVENT = 'pinalert:report-posted';
@@ -91,8 +93,26 @@
     return window.Pinalert || null;
   }
 
+  // isDemoPage also reads the page itself (Phase 5 review fix CR-B02): when
+  // api-base.js failed to load, window.PinalertDemoPage is unset, but the page
+  // root still says data-demo="1", and an ended visit must still restart the
+  // Demo rather than leave the page asking a visit that is gone.
   function isDemoPage() {
-    return window.PinalertDemoPage === true;
+    if (window.PinalertDemoPage === true) {
+      return true;
+    }
+    var shell = typeof document.getElementById === 'function' ? document.getElementById('app-shell') : null;
+    if (shell && shell.getAttribute('data-demo') === '1') {
+      return true;
+    }
+    if (typeof document.querySelector !== 'function') {
+      return false;
+    }
+    try {
+      return !!document.querySelector('main[data-demo="1"]');
+    } catch (err) {
+      return false;
+    }
   }
 
   // reportInState finds the report with this id in the feed state, or null.

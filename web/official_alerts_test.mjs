@@ -38,6 +38,12 @@
 //     another account or out of range is ignored; the API base is
 //     window.PinalertApiBase, else the page's data-api-base, else /api.
 //
+// Amended 2026-10-29 by the Phase 5 review fix (WR-T02): every expected clock
+// time joins the minute and am or pm with a no break space (U+00A0, written
+// \u00a0), so "11:20 pm" never breaks before "pm". The words are unchanged.
+// The row cases read text through textOf, which folds every space to one, and
+// keep their plain space.
+//
 // Run it with: node --test web/official_alerts_test.mjs
 // CI runs it with the other web/*.mjs files. It is not embedded in the server.
 // The fakes cover only what official-alerts.js calls: a minimal element model,
@@ -138,13 +144,21 @@ const ids = [
 
 // buildPage makes the markup of alerts.html.tmpl as the ids official-alerts.js
 // reads: every state block starts hidden, as the template ships them.
-function buildPage({ withMarkup = true, account = '7', fixedLat, fixedLon, dataApiBase, hazardLine = false } = {}) {
+// Amended 2026-10-29 by the Phase 5 review fix (CR-B02): demo marks the page root
+// data-demo="1", as demo_alerts.html.tmpl does; without it the page has none.
+// Amended 2026-10-29 by the Phase 5 review fix (WR-B06): noticeLive marks the
+// stale notice role="status" aria-live="polite", as the templates shipped it.
+function buildPage({ withMarkup = true, account = '7', fixedLat, fixedLon, dataApiBase, hazardLine = false, demo = false, noticeLive = false } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
     createElement(tag) { return new FakeEl(doc, tag); },
     getElementById(id) { return doc.byId[id] || null; },
-    addEventListener() {},
+    // Amended 2026-10-29 by the Phase 5 review fix (CR-B01): the document keeps its
+    // listeners and a visibility state, so a case can bring the tab back.
+    listeners: {},
+    visibilityState: 'visible',
+    addEventListener(type, fn) { (doc.listeners[type] = doc.listeners[type] || []).push(fn); },
     querySelector() { return null; }
   };
   const make = (tag, id, parent) => {
@@ -160,6 +174,7 @@ function buildPage({ withMarkup = true, account = '7', fixedLat, fixedLon, dataA
   if (fixedLat !== undefined) { main.setAttribute('data-fixed-lat', fixedLat); }
   if (fixedLon !== undefined) { main.setAttribute('data-fixed-lon', fixedLon); }
   if (dataApiBase !== undefined) { main.setAttribute('data-api-base', dataApiBase); }
+  if (demo) { main.setAttribute('data-demo', '1'); }
   // Nest the parts the way the template does, so a hidden block hides its words.
   const parentOf = {
     'official-notice-text': 'official-notice',
@@ -177,6 +192,10 @@ function buildPage({ withMarkup = true, account = '7', fixedLat, fixedLon, dataA
     if (startHidden.includes(id)) { doc.byId[id].hidden = true; }
   }
   doc.byId['official-retry'].textContent = 'Try again';
+  if (noticeLive) {
+    doc.byId['official-notice'].setAttribute('role', 'status');
+    doc.byId['official-notice'].setAttribute('aria-live', 'polite');
+  }
   // Amended 2026-10-29 by plan 05-22: the second muted status line (hazard events
   // from GDACS) is drawn only by a page that carries it, as alerts.html.tmpl does
   // and the Demo's template does not, so the older cases above run on a page
@@ -199,9 +218,9 @@ function loadPage(options = {}) {
     for (;;) {
       const due = [...intervals.entries()].filter(([, t]) => t.next <= end).sort((a, b) => a[1].next - b[1].next)[0];
       if (!due) { break; }
-      const [, timer] = due;
+      const [id, timer] = due;
       now = timer.next;
-      timer.next += timer.every;
+      if (timer.once) { intervals.delete(id); } else { timer.next += timer.every; }
       timer.fn();
     }
     now = end;
@@ -229,7 +248,11 @@ function loadPage(options = {}) {
     },
     setInterval(fn, every) { const id = nextId++; intervals.set(id, { fn, every, next: now + every }); return id; },
     clearInterval(id) { intervals.delete(id); },
-    setTimeout(fn) { fn(); return 0; }
+    setTimeout(fn) { fn(); return 0; },
+    // Amended 2026-10-29 by the Phase 5 review fix (CR-B01): the window keeps
+    // its listeners, so a case can restore the page (pageshow).
+    windowListeners: {},
+    addEventListener(type, fn) { (sandbox.windowListeners[type] = sandbox.windowListeners[type] || []).push(fn); }
   };
   if (options.position !== undefined) { sandbox.PinalertPosition = { read() { return options.position; } }; }
   if (options.apiBase !== undefined) { sandbox.PinalertApiBase = options.apiBase; }
@@ -389,9 +412,9 @@ test('stale: notice, Last known alerts, As of, and never In force now', async ()
   const page = await open({}, withRows(staleAt()));
   assert.equal(status(page), 'Last checked 2 hours ago');
   assert.equal(shown(page, 'official-notice'), true);
-  assert.equal(el(page, 'official-notice-text').textContent, 'We could not check for alerts since 2:05 pm (2 hours ago).');
+  assert.equal(el(page, 'official-notice-text').textContent, 'We could not check for alerts since 2:05\u00a0pm (2 hours ago).');
   assert.equal(el(page, 'official-title').textContent, 'Last known alerts 2');
-  assert.equal(el(page, 'official-districts').textContent, 'As of 2:05 pm');
+  assert.equal(el(page, 'official-districts').textContent, 'As of 2:05\u00a0pm');
   assert.doesNotMatch(visibleText(page.doc.body), /in force now/i);
   assert.equal(shown(page, 'official-empty'), false);
   assertNoClaim(page, 'stale with rows');
@@ -403,7 +426,7 @@ test('stale with no rows keeps the notice and the heading and says nothing reass
   assert.equal(shown(page, 'official-empty'), false);
   assert.equal(shown(page, 'official-section'), true);
   assert.equal(el(page, 'official-title').textContent, 'Last known alerts');
-  assert.equal(el(page, 'official-districts').textContent, 'As of 2:05 pm');
+  assert.equal(el(page, 'official-districts').textContent, 'As of 2:05\u00a0pm');
   assert.equal(shown(page, 'official-list'), false);
   assertNoClaim(page, 'stale and empty');
 });
@@ -414,7 +437,7 @@ test('unavailable with a last good time says it could not be checked and lists n
   assert.equal(shown(page, 'official-unavailable'), true);
   assert.equal(el(page, 'official-unavailable-title').textContent, 'Official alerts could not be checked');
   assert.equal(el(page, 'official-unavailable-body').textContent,
-    'Pinalert could not reach the official feed since 9:10 am (7 hours ago). Check your state disaster management authority for warnings.');
+    'Pinalert could not reach the official feed since 9:10\u00a0am (7 hours ago). Check your state disaster management authority for warnings.');
   assert.equal(shown(page, 'official-section'), false);
   assertNoClaim(page, 'unavailable');
 });
@@ -516,9 +539,33 @@ test('the minutes move once a minute with no new request', async () => {
 
 test('the stale sentence keeps its age in step too', async () => {
   const page = await open({}, withRows(staleAt()));
-  page.advance(60 * 60000);
-  assert.equal(el(page, 'official-notice-text').textContent, 'We could not check for alerts since 2:05 pm (3 hours ago).');
+  // Amended 2026-10-29 by the Phase 5 review fix (CR-B01): a stale answer is now
+  // asked about again every five minutes, so the hour passes with the server
+  // answering each new request with the same stale feed and its own age, as the
+  // real route does. The words at the end of the hour are unchanged.
+  for (let minute = 1; minute <= 60; minute++) {
+    page.advance(60000);
+    await flush();
+    const open = page.requests.filter((r) => !r.done);
+    for (const req of open) {
+      req.done = true;
+      answer(req, 200, withRows({ ...staleAt(), age_seconds: 7200 + minute * 60 }));
+    }
+    await flush();
+  }
+  assert.ok(page.requests.length > 1, 'the stale feed was asked about again');
+  assert.equal(el(page, 'official-notice-text').textContent, 'We could not check for alerts since 2:05\u00a0pm (3 hours ago).');
   assert.equal(status(page), 'Last checked 3 hours ago');
+});
+
+test('the stale sentence keeps its age in step between two requests', async () => {
+  // Added 2026-10-29 by the Phase 5 review fix (CR-B01): the minute tick still
+  // moves the stale age with no request while the answer is under five minutes old.
+  const page = await open({}, withRows({ state: 'stale', age_seconds: 2000, last_success_at: '2026-10-29T10:00:40Z' }));
+  assert.equal(status(page), 'Last checked 33 minutes ago');
+  page.advance(4 * 60000);
+  assert.equal(status(page), 'Last checked 37 minutes ago');
+  assert.equal(page.requests.length, 1);
 });
 
 test('relative words', () => {
@@ -550,11 +597,11 @@ test('relative words', () => {
 
 test('until: a clock time, about when inferred, a weekday when not today', () => {
   const page = loadPage();
-  assert.equal(page.api.untilText('2026-10-29T15:05:00Z', false), 'Until 8:35 pm');
-  assert.equal(page.api.untilText('2026-10-29T15:05:00Z', true), 'Until about 8:35 pm');
-  assert.equal(page.api.untilText('2026-11-01T15:05:00Z', false), 'Until Sun 8:35 pm');
-  assert.equal(page.api.untilText('2026-10-29T18:25:00Z', false), 'Until 11:55 pm');
-  assert.equal(page.api.untilText('2026-10-29T18:35:00Z', false), 'Until Fri 12:05 am');
+  assert.equal(page.api.untilText('2026-10-29T15:05:00Z', false), 'Until 8:35\u00a0pm');
+  assert.equal(page.api.untilText('2026-10-29T15:05:00Z', true), 'Until about 8:35\u00a0pm');
+  assert.equal(page.api.untilText('2026-11-01T15:05:00Z', false), 'Until Sun 8:35\u00a0pm');
+  assert.equal(page.api.untilText('2026-10-29T18:25:00Z', false), 'Until 11:55\u00a0pm');
+  assert.equal(page.api.untilText('2026-10-29T18:35:00Z', false), 'Until Fri 12:05\u00a0am');
 });
 
 const rowsOf = (page) => byClass(el(page, 'official-list'), 'official-row');
@@ -743,21 +790,25 @@ test('a hostile lang code is never written to the page', async () => {
   assert.equal(findAll(el(page, 'official-list'), (e) => e.hasAttribute('lang')).length, 0);
 });
 
+// Amended 2026-10-29 by the Phase 5 review fix (WR-B09): a stored fix and a tab
+// centre are used only when they say when they were saved and that is under
+// 30 minutes ago, so the stored values in these cases carry savedAt: T0 (now).
+// The bad values below still have none and are still ignored.
 test('area source: the page fixed point wins (the Demo)', async () => {
-  const page = loadPage({ fixedLat: '16.5062', fixedLon: '80.6480', position: { lat: 1, lon: 2 } });
+  const page = loadPage({ fixedLat: '16.5062', fixedLon: '80.6480', position: { lat: 1, lon: 2, savedAt: T0 } });
   await flush();
   assert.ok(page.requests[0].url.includes('lat=16.5062'), page.requests[0].url);
   assert.ok(page.requests[0].url.includes('lon=80.648'), page.requests[0].url);
 });
 
 test('area source: the tab centre of this account, then the stored fix, then none', async () => {
-  const centre = JSON.stringify({ account: '7', lat: 17.38, lon: 78.48 });
-  const a = loadPage({ position: { lat: 1, lon: 2 } });
+  const centre = JSON.stringify({ account: '7', lat: 17.38, lon: 78.48, savedAt: T0 });
+  const a = loadPage({ position: { lat: 1, lon: 2, savedAt: T0 } });
   a.sessionStorage.setItem('pinalert.nearbyCentre', centre);
   assert.deepEqual(JSON.parse(JSON.stringify(a.api.areaSource())), { lat: 17.38, lon: 78.48 });
 
-  const other = loadPage({ position: { lat: 1, lon: 2 } });
-  other.sessionStorage.setItem('pinalert.nearbyCentre', JSON.stringify({ account: '8', lat: 17.38, lon: 78.48 }));
+  const other = loadPage({ position: { lat: 1, lon: 2, savedAt: T0 } });
+  other.sessionStorage.setItem('pinalert.nearbyCentre', JSON.stringify({ account: '8', lat: 17.38, lon: 78.48, savedAt: T0 }));
   assert.deepEqual(JSON.parse(JSON.stringify(other.api.areaSource())), { lat: 1, lon: 2 });
 
   const none = loadPage();
@@ -774,13 +825,13 @@ test('area source: bad values are ignored and lat and lon go together', async ()
     'not json'
   ];
   for (const value of bad) {
-    const page = loadPage({ position: { lat: 12.5, lon: 77.5 } });
+    const page = loadPage({ position: { lat: 12.5, lon: 77.5, savedAt: T0 } });
     page.sessionStorage.setItem('pinalert.nearbyCentre', value);
     assert.deepEqual(JSON.parse(JSON.stringify(page.api.areaSource())), { lat: 12.5, lon: 77.5 }, value);
   }
   const lone = loadPage({ fixedLat: '16.5' });
   assert.equal(lone.api.areaSource(), null, 'a fixed latitude without a longitude is not a point');
-  const blocked = loadPage({ noStorage: true, position: { lat: 12.5, lon: 77.5 } });
+  const blocked = loadPage({ noStorage: true, position: { lat: 12.5, lon: 77.5, savedAt: T0 } });
   assert.deepEqual(JSON.parse(JSON.stringify(blocked.api.areaSource())), { lat: 12.5, lon: 77.5 });
 });
 
@@ -838,7 +889,7 @@ test('hazard line: stale says they could not be checked since a time', async () 
   const page = await open({ hazardLine: true }, withHazards({
     hazards_state: 'stale', hazards_age_seconds: 7200, hazards_last_success_at: '2026-10-29T08:35:00Z'
   }));
-  assert.equal(hazardLine(page), 'Hazard events from GDACS could not be checked since 2:05 pm.');
+  assert.equal(hazardLine(page), 'Hazard events from GDACS could not be checked since 2:05\u00a0pm.');
   assert.equal(status(page), 'Last checked 4 minutes ago', 'the SACHET line is unchanged');
 });
 
@@ -846,7 +897,7 @@ test('hazard line: unavailable with a last good time says the same, with the wee
   const page = await open({ hazardLine: true }, withHazards({
     hazards_state: 'unavailable', hazards_age_seconds: 90000, hazards_last_success_at: '2026-10-28T08:35:00Z'
   }));
-  assert.equal(hazardLine(page), 'Hazard events from GDACS could not be checked since Wed 2:05 pm.');
+  assert.equal(hazardLine(page), 'Hazard events from GDACS could not be checked since Wed 2:05\u00a0pm.');
 });
 
 test('hazard line: never checked says they have not been checked yet', async () => {
@@ -905,4 +956,349 @@ test('hazard line: the Official alerts page carries the line and the Demo page d
   assert.ok(real.indexOf('id="official-status"') < real.indexOf('id="official-hazard-status"'), 'under the status line');
   assert.ok(real.includes('class="official-status official-status--hazards"'));
   assert.ok(!demo.includes('official-hazard-status'), 'the Demo never draws a GDACS freshness notice');
+});
+
+// ---- The answer never outlives the fresh limit (Phase 5 review fix CR-B01) ----
+// Added 2026-10-29. The page asks the server again once its answer is older
+// than the 30 minute fresh limit, when the tab is shown again, and when a row
+// it shows has ended; the claim never stays up over an answer that is no
+// longer fresh.
+
+const hasClaim = (page) => /no official alerts in force for your area/i.test(visibleText(page.doc.body));
+const hasInForce = (page) => /in force now/i.test(visibleText(page.doc.body));
+const showTab = (page, state = 'visible') => {
+  page.doc.visibilityState = state;
+  (page.doc.listeners.visibilitychange || []).forEach((h) => h({ type: 'visibilitychange' }));
+};
+
+test('CR-B01: a fresh and empty answer is asked again once it reaches the fresh limit', async () => {
+  const page = await open({}, view());
+  assert.ok(hasClaim(page));
+  page.advance(25 * 60000); // age 240 s + 25 min = 1740 s, still fresh
+  await flush();
+  assert.equal(page.requests.length, 1, 'no new request while the answer is fresh');
+  assert.ok(hasClaim(page));
+  page.advance(60000); // age 1800 s: the fresh limit
+  await flush();
+  assert.equal(page.requests.length, 2, 'a second request once the answer reaches 30 minutes');
+  assert.equal(hasClaim(page), false, 'the claim is not kept up while the new answer is out');
+  answer(page.requests[1], 200, view({ age_seconds: 30 }));
+  await flush();
+  assert.ok(hasClaim(page), 'the new fresh answer may say it again');
+});
+
+test('CR-B01: a fresh answer with rows drops In force now at the fresh limit and asks again', async () => {
+  const page = await open({}, withRows());
+  assert.ok(hasInForce(page));
+  for (let i = 0; i < 27; i++) { page.advance(60000); }
+  await flush();
+  assert.equal(page.requests.length, 2);
+  assert.equal(hasInForce(page), false, 'In force now is not kept over an answer past the fresh limit');
+});
+
+test('CR-B01: a stale answer is asked again, at most once every five minutes', async () => {
+  const page = await open({}, view(staleAt()));
+  page.advance(4 * 60000);
+  await flush();
+  assert.equal(page.requests.length, 1, 'no request a minute for a stale feed');
+  page.advance(60000);
+  await flush();
+  assert.equal(page.requests.length, 2, 'asked again after five minutes');
+  answer(page.requests[1], 200, view({ state: 'unavailable', age_seconds: 7500, last_success_at: '2026-10-29T08:35:00Z' }));
+  await flush();
+  assert.ok(shown(page, 'official-unavailable'), 'a stale feed can move on to unavailable');
+});
+
+test('CR-B01: showing the tab again asks again when the answer is older than a minute', async () => {
+  const page = await open({}, view());
+  showTab(page, 'hidden');
+  page.advance(30000);
+  showTab(page);
+  await flush();
+  assert.equal(page.requests.length, 1, 'an answer under a minute old is kept');
+  page.advance(40000);
+  showTab(page, 'hidden');
+  showTab(page);
+  await flush();
+  assert.equal(page.requests.length, 2, 'the tab shown again asks again');
+  assert.equal(hasClaim(page), false);
+});
+
+test('CR-B01: a page restored from the back and forward cache asks again', async () => {
+  const page = await open({}, view());
+  page.advance(5 * 60000);
+  (page.sandbox.windowListeners.pageshow || []).forEach((h) => h({ type: 'pageshow', persisted: false }));
+  await flush();
+  assert.equal(page.requests.length, 1, 'a normal page show is the first load, nothing more');
+  (page.sandbox.windowListeners.pageshow || []).forEach((h) => h({ type: 'pageshow', persisted: true }));
+  await flush();
+  assert.equal(page.requests.length, 2, 'a restored page asks again');
+});
+
+test('CR-B01: a shown row that ends asks again', async () => {
+  // The row ends at 4:20 pm local, sixteen minutes after the clock.
+  const page = await open({}, withRows({ groups: [group('reader', 'Where you are', [row({ expires_at: '2026-10-29T10:50:00Z' })])] }));
+  page.advance(15 * 60000);
+  await flush();
+  assert.equal(page.requests.length, 1);
+  page.advance(2 * 60000);
+  await flush();
+  assert.equal(page.requests.length, 2, 'a row past its Until time is asked about again');
+});
+
+test('CR-B01: a row that had ended before the answer does not ask every minute', async () => {
+  const page = await open({}, withRows({ groups: [group('reader', 'Where you are', [row({ expires_at: '2026-10-29T10:00:00Z' })])] }));
+  for (let i = 0; i < 5; i++) { page.advance(60000); }
+  await flush();
+  assert.equal(page.requests.length, 1);
+});
+
+// ---- A request that never answers (Phase 5 review fix WR-B01) ----
+// Added 2026-10-29. A request with no answer is given up on the first minute
+// tick at least 10 seconds after it went out (the page keeps its one timer, the
+// minute tick): it is aborted, the load error shows, and later loads go out.
+
+const withAbort = (page) => {
+  page.sandbox.AbortController = class { constructor() { this.signal = { aborted: false }; } abort() { this.signal.aborted = true; } };
+  return page;
+};
+
+test('WR-B01: a load with no answer is given up on the next tick and never blocks Try again', async () => {
+  const page = withAbort(loadPage());
+  page.advance(1000);
+  el(page, 'official-retry').disabled = false;
+  fire(el(page, 'official-retry'), 'click'); // still out: nothing new
+  await flush();
+  assert.equal(page.requests.length, 1);
+  const first = page.requests[0];
+  page.advance(59000);
+  await flush();
+  assert.ok(shown(page, 'official-error'), 'the hung load becomes the load error');
+  assert.equal(status(page), 'Not checked');
+  assert.equal(el(page, 'official-retry').disabled, false);
+  fire(el(page, 'official-retry'), 'click');
+  await flush();
+  assert.equal(page.requests.length, 2, 'Try again sends a new request');
+  answer(first, 200, view());
+  await flush();
+  assert.equal(hasClaim(page), false, 'the late answer of the given up request is dropped');
+  answer(page.requests[1], 200, view());
+  await flush();
+  assert.ok(hasClaim(page));
+});
+
+test('WR-B01: the request carries an abort signal that the time limit aborts', async () => {
+  const page = withAbort(loadPage());
+  // The page made its first request before the fake was in place; ask again.
+  page.advance(60000);
+  await flush();
+  fire(el(page, 'official-retry'), 'click');
+  await flush();
+  const req = page.requests[1];
+  assert.ok(req.init.signal, 'the request carries an abort signal');
+  page.advance(60000);
+  await flush();
+  assert.equal(req.init.signal.aborted, true);
+});
+
+test('WR-B01: a re-ask at the fresh limit that hangs shows no claim and gives way', async () => {
+  const page = await open({}, view());
+  page.advance(26 * 60000);
+  await flush();
+  assert.equal(page.requests.length, 2);
+  assert.equal(hasClaim(page), false);
+  page.advance(60000);
+  await flush();
+  assert.ok(shown(page, 'official-error'));
+  assert.equal(hasClaim(page), false);
+  showTab(page, 'hidden');
+  showTab(page);
+  await flush();
+  assert.equal(page.requests.length, 3, 'the next load goes out');
+});
+
+// ---- The Demo fails closed, and the page base is checked (Phase 5 review fixes CR-B02, IN-B04) ----
+// Added 2026-10-29.
+
+test('CR-B02: on a Demo page with api-base.js missing the page asks its own Demo base', async () => {
+  const page = loadPage({ account: null, demo: true, dataApiBase: '/demo/api/v/abc_DEF-123', fixedLat: '16.5424', fixedLon: '80.6386' });
+  await flush();
+  assert.equal(page.requests.length, 1);
+  assert.ok(page.requests[0].url.startsWith('/demo/api/v/abc_DEF-123/official/alerts?lat=16.5424&lon=80.6386'), page.requests[0].url);
+});
+
+test('CR-B02: a Demo page with no usable base asks nothing and shows the load error', async () => {
+  for (const bad of [undefined, '', 'https://evil.example/api', '//evil.example/api', '/demo/../x y', '/']) {
+    const page = loadPage({ account: null, demo: true, dataApiBase: bad, fixedLat: '16.5424', fixedLon: '80.6386' });
+    await flush();
+    assert.equal(page.requests.length, 0, 'no request for base ' + JSON.stringify(bad));
+    assert.ok(shown(page, 'official-error'));
+    assertNoClaim(page, 'a Demo page with no base');
+  }
+});
+
+test('IN-B04: a real page whose data-api-base fails the check asks /api', async () => {
+  for (const bad of ['//evil.example', 'https://evil.example/api', 'javascript:alert(1)']) {
+    const page = loadPage({ dataApiBase: bad });
+    await flush();
+    assert.ok(page.requests[0].url.startsWith('/api/official/alerts'), bad + ' -> ' + page.requests[0].url);
+  }
+});
+
+// ---- The clock never breaks before am or pm (Phase 5 review fix WR-T02) ----
+// Added 2026-10-29.
+
+test('WR-T02: the character before pm in the stale notice and a row Until is a no break space', async () => {
+  const page = await open({}, withRows(staleAt()));
+  const notice = el(page, 'official-notice-text').textContent;
+  const at = notice.indexOf('pm');
+  assert.ok(at > 0, notice);
+  assert.equal(notice.charCodeAt(at - 1), 0xa0, 'U+00A0 before pm');
+  assert.equal(page.api.untilText('2026-10-29T15:05:00Z', false).charCodeAt('Until 8:35'.length), 0xa0);
+  assert.doesNotMatch(visibleText(page.doc.body), /\d:\d\d [ap]m/, 'no plain space before am or pm anywhere');
+});
+
+// ---- The stale notice is not a live region (Phase 5 review fix WR-B06, WR-T05) ----
+// Added 2026-10-29. The notice carries an age that moves every minute, so it is
+// never a live region: a screen reader would hear it once a minute. The page
+// already shows it on load; nothing needs announcing later.
+
+const liveRegions = (page) => findAll(page.doc.body, (n) => n.hasAttribute('role') || n.hasAttribute('aria-live'));
+
+test('WR-B06: the ticking stale notice is never a live region, even on a template that marks it', async () => {
+  // noticeLive marks the notice as both templates shipped it before the fix.
+  const page = await open({ noticeLive: true }, withRows(staleAt()));
+  assert.equal(shown(page, 'official-notice'), true);
+  assert.equal(liveRegions(page).length, 0, 'no live region on the page');
+  const before = el(page, 'official-notice-text').textContent;
+  page.advance(60000);
+  page.advance(60000);
+  assert.ok(el(page, 'official-notice-text').textContent !== '', before);
+  assert.equal(liveRegions(page).length, 0, 'still none after two minute ticks');
+});
+
+test('WR-T05: alerts.html.tmpl carries no live region on the stale notice', () => {
+  const real = fs.readFileSync(path.join(here, 'templates', 'alerts.html.tmpl'), 'utf8');
+  const tag = /<div[^>]*id="official-notice"[^>]*>/.exec(real)[0];
+  assert.doesNotMatch(tag, /role=|aria-live/);
+});
+
+// ---- "Where you are" is never an old or a made up place (Phase 5 review fix WR-B09) ----
+// Added 2026-10-29. A stored device fix or tab centre older than 30 minutes, or
+// with no saved time, is not sent: the server then uses the home area alone.
+
+test('WR-B09: a stored device fix older than 30 minutes, or with no time, is not sent', async () => {
+  const old = loadPage({ position: { lat: 16.5, lon: 80.6, savedAt: T0 - 31 * 60000 } });
+  assert.equal(old.api.areaSource(), null);
+  await flush();
+  assert.equal(old.requests[0].url, '/api/official/alerts', 'no lat or lon: the server uses the home area');
+  const timeless = loadPage({ position: { lat: 16.5, lon: 80.6, savedAt: null } });
+  assert.equal(timeless.api.areaSource(), null);
+  const recent = loadPage({ position: { lat: 16.5, lon: 80.6, savedAt: T0 - 29 * 60000 } });
+  assert.deepEqual(JSON.parse(JSON.stringify(recent.api.areaSource())), { lat: 16.5, lon: 80.6 });
+});
+
+test('WR-B09: a tab centre older than 30 minutes, or with no time, is not used', () => {
+  const old = loadPage({ position: { lat: 1, lon: 2, savedAt: T0 } });
+  old.sessionStorage.setItem('pinalert.nearbyCentre', JSON.stringify({ account: '7', lat: 17.38, lon: 78.48, savedAt: T0 - 31 * 60000 }));
+  assert.deepEqual(JSON.parse(JSON.stringify(old.api.areaSource())), { lat: 1, lon: 2 }, 'the fresher stored fix is used instead');
+  const timeless = loadPage();
+  timeless.sessionStorage.setItem('pinalert.nearbyCentre', JSON.stringify({ account: '7', lat: 17.38, lon: 78.48 }));
+  assert.equal(timeless.api.areaSource(), null);
+});
+
+// ---- An ended Demo visit restarts the Demo (Phase 5 review fix WR-B08) ----
+// Added 2026-10-29. The Demo API answers 404 with the field visit once the
+// visit is gone; the page then hands over to window.PinalertDemoEnded (set by
+// demo.js on Demo pages only) instead of blaming the connection for ever.
+
+test('WR-B08: a 404 for an ended visit calls PinalertDemoEnded once', async () => {
+  const page = loadPage({ account: null, demo: true, dataApiBase: '/demo/api/v/abc_DEF-123', fixedLat: '16.5', fixedLon: '80.6' });
+  let ended = 0;
+  page.sandbox.PinalertDemoEnded = () => { ended += 1; };
+  await flush();
+  answer(page.requests[0], 404, { error: { field: 'visit', message: 'This Demo has ended. Reload the page to start again.' } });
+  await flush();
+  assert.equal(ended, 1);
+});
+
+test('WR-B08: any other failure keeps the load error and never restarts anything', async () => {
+  const page = loadPage();
+  let ended = 0;
+  page.sandbox.PinalertDemoEnded = () => { ended += 1; };
+  await flush();
+  answer(page.requests[0], 404, { error: { field: 'body', message: 'Not found' } });
+  await flush();
+  assert.equal(ended, 0);
+  assert.ok(shown(page, 'official-error'));
+  fire(el(page, 'official-retry'), 'click');
+  await flush();
+  answer(page.requests[1], 500, { error: { field: 'visit' } });
+  await flush();
+  assert.equal(ended, 0, 'only a 404 says the visit is gone');
+});
+
+// ---- GDACS rows after the server fixes WR-S04 and IN-S05 (browser side) ----
+// Added 2026-10-29 for WR-S04-browser and IN-S05-browser. The answer can carry
+// GDACS rows marked ended: true (listed, never counted as in force), a missing
+// GDACS date is an empty string, and fresh GDACS rows can come with a SACHET
+// state of unavailable. These fakes supply those shapes directly.
+
+const gdacs = (over = {}) => row({
+  id: 900, source: 'gdacs', level: 'severe', level_word: 'Orange', badge: 'GDACS', headline: 'Earthquake in Krishna district',
+  issuer: 'GDACS', area_text: '', issued_at: '2026-10-28T04:30:00Z', expires_at: '2026-10-28T04:30:00Z', ended: true, ...over
+});
+
+test('WR-S04-browser: an ended GDACS row is listed, marked Ended and not counted in In force now', async () => {
+  const page = await open({}, view({ groups: [group('reader', 'Where you are: Ntr district', [row(), gdacs()])], count: 1 }));
+  assert.equal(el(page, 'official-title').textContent, 'In force now 1', 'only the row in force is counted');
+  const rows = rowsOf(page);
+  assert.equal(rows.length, 2, 'the ended row is still listed');
+  const ended = textOf(rows[1]);
+  assert.ok(/Ended/.test(ended), ended);
+  assert.ok(!/Until/.test(ended), 'an ended row never says Until: ' + ended);
+  assert.ok(!/Ended/.test(textOf(rows[0])), 'a row in force is not marked');
+});
+
+test('WR-S04-browser: with only ended rows the page neither claims nothing is in force nor says In force now', async () => {
+  const page = await open({}, view({ groups: [group('reader', 'Where you are', [gdacs()])], count: 0 }));
+  assertNoClaim(page, 'only ended rows');
+  assert.equal(hasInForce(page), false);
+  assert.equal(el(page, 'official-title').textContent, 'Recently ended');
+  assert.equal(rowsOf(page).length, 1);
+});
+
+test('WR-S04-browser: an empty GDACS date draws no date at all', async () => {
+  const page = await open({}, view({ groups: [group('reader', 'Where you are', [row(), gdacs({ issued_at: '', expires_at: '', ended: false })])], count: 2 }));
+  const text = textOf(rowsOf(page)[1]);
+  assert.ok(!/Issued \d|ago|Until|0001|Jan/.test(text.replace('Issued by', '')), text);
+});
+
+test('IN-S05-browser: fresh GDACS rows are drawn under the unavailable notice, with no SACHET claim', async () => {
+  const page = await open({}, view({
+    state: 'unavailable', age_seconds: 25200, last_success_at: '2026-10-29T03:40:00Z',
+    hazards_state: 'fresh', hazards_age_seconds: 300, hazards_last_success_at: '2026-10-29T10:29:00Z',
+    groups: [group('reader', 'Where you are: Ntr district', [gdacs({ ended: false, expires_at: '2026-10-29T15:05:00Z' })])], count: 1
+  }));
+  assert.ok(shown(page, 'official-unavailable'), 'the SACHET feed still says it could not be checked');
+  assert.ok(shown(page, 'official-section'));
+  assert.equal(rowsOf(page).length, 1);
+  assert.equal(el(page, 'official-title').textContent, 'Hazard events from GDACS 1');
+  assert.equal(hasInForce(page), false, 'no In force now: that is the SACHET claim');
+  assertNoClaim(page, 'unavailable with GDACS rows');
+});
+
+test('IN-S05-browser: under the unavailable notice nothing is drawn unless the GDACS feed is fresh, and never a SACHET row', async () => {
+  for (const hazards of ['stale', 'unavailable', undefined]) {
+    const page = await open({}, view({
+      state: 'unavailable', age_seconds: 25200, last_success_at: '2026-10-29T03:40:00Z', hazards_state: hazards,
+      groups: [group('reader', 'Where you are', [gdacs({ ended: false }), row()])], count: 2
+    }));
+    assert.equal(shown(page, 'official-section'), false, String(hazards));
+  }
+  const page = await open({}, view({
+    state: 'unavailable', age_seconds: 25200, last_success_at: '2026-10-29T03:40:00Z', hazards_state: 'fresh',
+    groups: [group('reader', 'Where you are', [row()])], count: 1
+  }));
+  assert.equal(shown(page, 'official-section'), false, 'a SACHET row is never drawn from an unavailable feed');
 });

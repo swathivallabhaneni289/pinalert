@@ -46,6 +46,9 @@
   var SETTLE_MS = 500;
   // No two fetches for a changed place are closer than this.
   var MIN_GAP_MS = 1000;
+  // A request with no answer, body included, is given up after this long
+  // (Phase 5 review fix WR-B01, the same limit as the report list in app.js).
+  var REQUEST_LIMIT_MS = 10000;
 
   var bannerEl = document.getElementById('alert-banner');
   var levelEl = document.getElementById('alert-banner-level');
@@ -183,15 +186,23 @@
       Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
   }
 
+  // apiBase is window.PinalertApiBase (set by api-base.js), else the shell's own
+  // data-api-base when it passes the same check as in api-base.js (T-05-74,
+  // Phase 5 review fix IN-B04), else /api. The Demo fails closed (Phase 5
+  // review fix CR-B02): a shell marked data-demo="1" with no usable base
+  // answers null and the banner asks nothing, never the real /api.
+  var SAFE_BASE = /^\/(?!\/)[A-Za-z0-9\/_-]*$/;
+
   function apiBase() {
     var base = window.PinalertApiBase;
-    if (typeof base !== 'string' || base === '') {
-      base = shellEl ? text(shellEl.getAttribute('data-api-base')) : '';
+    if (typeof base === 'string' && base !== '') {
+      return base.replace(/\/+$/, '');
     }
-    if (base === '') {
-      base = DEFAULT_BASE;
+    var own = shellEl ? text(shellEl.getAttribute('data-api-base')) : '';
+    if (SAFE_BASE.test(own) && own.replace(/\/+$/, '') !== '') {
+      return own.replace(/\/+$/, '');
     }
-    return base.replace(/\/+$/, '');
+    return shellEl && shellEl.getAttribute('data-demo') === '1' ? null : DEFAULT_BASE;
   }
 
   // fetchBanner asks the route about one place and draws the answer. An answer
@@ -200,26 +211,54 @@
   function fetchBanner(lat, lon) {
     requestSeq += 1;
     var mine = requestSeq;
-    if (typeof fetch !== 'function') {
+    if (typeof fetch !== 'function' || apiBase() === null) {
       hideQuiet();
       return;
     }
     var target = apiBase() + '/official/alerts?lat=' + encodeURIComponent(String(lat)) +
       '&lon=' + encodeURIComponent(String(lon));
-    fetch(target, { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(function (res) {
+    // The time limit (Phase 5 review fix WR-B01) is the page's own timer, never
+    // the request's promise, which WebKit can leave unsettled: at the limit the
+    // request is aborted and the banner hides, as for any failed request.
+    var controller = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = null;
+    var expired = new Promise(function (resolve, reject) {
+      timer = setTimeout(function () {
+        timer = null;
+        reject(new Error('official banner: no answer in time'));
+        if (controller) {
+          controller.abort();
+        }
+      }, REQUEST_LIMIT_MS);
+    });
+    expired.catch(function () {});
+    var init = { credentials: 'same-origin', headers: { Accept: 'application/json' } };
+    if (controller) {
+      init.signal = controller.signal;
+    }
+    var answered = fetch(target, init).then(function (res) {
       if (!res.ok) {
         throw new Error('status ' + res.status);
       }
-      return res.json();
-    }).then(function (body) {
+      return Promise.race([res.json(), expired]);
+    });
+    Promise.race([answered, expired]).then(function (body) {
+      stopTimer(timer);
       if (mine === requestSeq) {
         render(body);
       }
     }, function () {
+      stopTimer(timer);
       if (mine === requestSeq) {
         hideQuiet();
       }
     });
+  }
+
+  function stopTimer(timer) {
+    if (timer !== null) {
+      clearTimeout(timer);
+    }
   }
 
   // ---- The place ----------------------------------------------------------
@@ -233,7 +272,7 @@
       return;
     }
     try {
-      window.sessionStorage.setItem(NEARBY_CENTRE_KEY, JSON.stringify({ account: account, lat: lat, lon: lon }));
+      window.sessionStorage.setItem(NEARBY_CENTRE_KEY, JSON.stringify({ account: account, lat: lat, lon: lon, savedAt: Date.now() }));
     } catch (err) {
       // The tab keeps no centre; Official alerts then falls back to the stored fix.
     }
@@ -267,7 +306,13 @@
       return;
     }
     wanted = { lat: detail.lat, lon: detail.lon };
-    rememberCentre(wanted.lat, wanted.lon);
+    // Only the reader's own position or a place they searched is kept for
+    // Official alerts, never the boot fallback centre (the home area cell or
+    // the city), which would be named "Where you are" (Phase 5 review fix
+    // WR-B09). The kept centre says when it was saved, so an old one is not used.
+    if (detail.own === true || detail.place === true) {
+      rememberCentre(wanted.lat, wanted.lon);
+    }
     if (refreshTimer === null) {
       refreshTimer = setInterval(refresh, REFRESH_MS);
     }
@@ -278,6 +323,11 @@
     if (samePlace(wanted, fetched)) {
       return;
     }
+    // The alert on show was fetched for another place: it goes now, before the
+    // new place is asked about, so it never sits over a place it was not
+    // fetched for (Phase 5 review fix WR-B01). The rank is kept, so the same
+    // alert coming back for the new place is not announced again.
+    hideQuiet();
     var delay = Math.max(SETTLE_MS, lastFetchAt + MIN_GAP_MS - Date.now());
     settleTimer = setTimeout(settle, delay);
   }

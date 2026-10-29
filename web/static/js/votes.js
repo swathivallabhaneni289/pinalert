@@ -249,9 +249,12 @@
 
   // The Demo page's pretend position, from data-fixed-lat and data-fixed-lon on
   // the page shell, or null when the page has no such pair (every real page) or
-  // either half is not a number. Both halves are needed.
+  // either half is not a number. Both halves are needed. Demo My activity writes
+  // the pair on its main page root instead of #app-shell, and it is read there
+  // too (Phase 5 review fix IN-B03), so Reopen there never reads the real
+  // voter cache.
   function fixedPosition() {
-    var shell = document.getElementById('app-shell');
+    var shell = pageCarrier('data-fixed-lat');
     if (!shell) {
       return null;
     }
@@ -266,9 +269,40 @@
   // The base of the report calls: '/api' on every real page, the visit's sandbox
   // path on the Demo page (api-base.js sets window.PinalertApiBase). The same
   // rule as app.js.
+  //
+  // The Demo fails closed (Phase 5 review fix CR-B02): when api-base.js did not
+  // run, the base is read from the page with the same check, and a page marked
+  // data-demo="1" with no usable base answers null, so no vote goes out, never
+  // to the real /api with the Demo's pretend position.
+  var SAFE_BASE = /^\/(?!\/)[A-Za-z0-9\/_-]*$/;
+
+  function pageCarrier(attr) {
+    var shell = typeof document.getElementById === 'function' ? document.getElementById('app-shell') : null;
+    if (shell && shell.getAttribute(attr) !== null) {
+      return shell;
+    }
+    if (typeof document.querySelector !== 'function') {
+      return null;
+    }
+    try {
+      return document.querySelector('main[' + attr + ']');
+    } catch (err) {
+      return null;
+    }
+  }
+
   function apiBase() {
     var base = window.PinalertApiBase;
-    return typeof base === 'string' && base !== '' ? base : '/api';
+    if (typeof base === 'string' && base !== '') {
+      return base;
+    }
+    var carrier = pageCarrier('data-api-base');
+    var own = carrier ? carrier.getAttribute('data-api-base') : null;
+    if (typeof own === 'string' && SAFE_BASE.test(own) && own.replace(/\/+$/, '') !== '') {
+      return own.replace(/\/+$/, '');
+    }
+    var demo = pageCarrier('data-demo');
+    return demo && demo.getAttribute('data-demo') === '1' ? null : '/api';
   }
 
   // Resolves a Promise of latitude and longitude only. The capture time is
@@ -555,7 +589,15 @@
     });
 
     function postVote(coords) {
-      return fetch(apiBase() + '/reports/' + encodeURIComponent(String(reportId)) + '/' + action, {
+      var base = apiBase();
+      if (base === null) {
+        var refused = new Error(GENERIC_FAILURE_MESSAGE);
+        refused.field = 'body';
+        refused.fieldMessage = GENERIC_FAILURE_MESSAGE;
+        refused.status = 0;
+        return Promise.reject(refused);
+      }
+      return fetch(base + '/reports/' + encodeURIComponent(String(reportId)) + '/' + action, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // Exactly the two fields the server's decoder declares. That
@@ -578,6 +620,14 @@
             err.field = fieldError.field;
             err.fieldMessage = fieldError.message;
             err.status = res.status;
+            // An ended Demo visit answers 404 with the field visit: the Demo
+            // starts again (Phase 5 review fix IN-B01). The rejection is the
+            // same, so the controls stay as they were. window.PinalertDemoEnded
+            // is set by demo.js on Demo pages only.
+            if (res.status === 404 && fieldError.field === 'visit' &&
+                typeof window.PinalertDemoEnded === 'function') {
+              window.PinalertDemoEnded();
+            }
             if (res.status === 429) {
               // The server's own sentence and wait are remembered, so a tap
               // during the wait is answered without a request. A 429 is

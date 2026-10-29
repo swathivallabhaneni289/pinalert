@@ -133,7 +133,9 @@
   var UNREAD_ATTR = 'data-unread';
   var END_MARGIN = '0px 0px 24px 0px';
 
-  var FOCUSABLE_SELECTOR = 'button, input, [tabindex]:not([tabindex="-1"])';
+  // Links count (Phase 5 review fix WR-B05): both Try the demo links are in the
+  // Tab loop, so Tab never leaves the flow from them and always reaches them.
+  var FOCUSABLE_SELECTOR = 'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
   function el(id) {
     return document.getElementById(id);
@@ -276,6 +278,12 @@
     var out = [];
     for (var i = 0; i < all.length; i++) {
       if (all[i].disabled || !isShown(all[i])) {
+        continue;
+      }
+      // Since the page moves Tab focus itself (WR-B05), nothing the browser's
+      // own Tab would skip may be a stop: a hidden input, or a control taken out
+      // of the order with tabindex -1.
+      if (all[i].type === 'hidden' || all[i].getAttribute('tabindex') === '-1') {
         continue;
       }
       if (!panel && sideNode !== null && sideNode.contains(all[i])) {
@@ -1327,6 +1335,18 @@
     var first = items[0];
     var last = items[items.length - 1];
     var active = document.activeElement;
+    // From a control in the loop, Tab moves to the next control in the loop and
+    // Shift+Tab to the one before, wrapping at the ends (Phase 5 review fix
+    // WR-B05). The page moves focus itself rather than leaving it to the
+    // browser, because Safari's Tab skips links by default: left to Safari, Tab
+    // from Log out would pass over Try the demo and leave the flow.
+    var at = items.indexOf ? items.indexOf(active) : -1;
+    if (at !== -1 && items.length > 1) {
+      e.preventDefault();
+      var next = e.shiftKey ? (at === 0 ? last : items[at - 1]) : (at === items.length - 1 ? first : items[at + 1]);
+      next.focus();
+      return;
+    }
     var title = el('welcome-step-' + current + '-title');
     // Shift+Tab from the title goes back to whatever comes before it (the step
     // list, the Back control). It wraps only when nothing does.

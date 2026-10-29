@@ -38,6 +38,9 @@
   'use strict';
 
   var REFRESH_MS = 300000;
+  // A request with no answer, body included, is given up after this long
+  // (Phase 5 review fix WR-B01, the same limit as the report list in app.js).
+  var REQUEST_LIMIT_MS = 10000;
   var FEED_CENTRE_EVENT = 'pinalert:feed-centre';
   var DEFAULT_BASE = '/api';
   var CHOSEN_Z_OFFSET = 1000;
@@ -71,6 +74,9 @@
   var layer = null; // the layer group, made on the first draw
   var entries = {}; // pin id -> { pin, key, marker, node }
   var requestOut = false;
+  var requestSeq = 0; // moves on when a request is sent and when it ends
+  var cardSeq = 0; // numbers the card titles
+  var openId = null; // the pin id of the open card, or null
   var lastFetchAt = 0;
 
   // ---- Small helpers ------------------------------------------------------
@@ -139,7 +145,10 @@
         period = parts[i].value.toLowerCase();
       }
     }
-    return hour + ':' + minute + ' ' + period;
+    // A no break space (U+00A0) joins the minute and am or pm, so the time never
+    // breaks before pm (Phase 5 review fix WR-T02). It is the plain no break
+    // space, not the narrow one Intl writes.
+    return hour + ':' + minute + '\u00a0' + period;
   }
 
   // clockWithDay is the clock time, with the short weekday in front when the day
@@ -269,7 +278,11 @@
 
     var body = make('div', 'official-card__body');
     var title = make('h3', 'official-card__title', pin.name);
-    title.setAttribute('id', 'official-card-title');
+    // Each card has its own title id (Phase 5 review fix WR-B04): a closing card
+    // stays in the page for its fade, and a shared id would name the new card
+    // with the old card's title.
+    cardSeq += 1;
+    title.setAttribute('id', 'official-card-title-' + cardSeq);
     body.appendChild(title);
     body.appendChild(line('Hazard', pin.kind.word));
     if (pin.from !== null) {
@@ -329,10 +342,14 @@
       opener: element,
       onClose: function () {
         setChosen(entry, false);
+        if (openId === pin.id) {
+          openId = null;
+        }
       }
     });
     if (opened !== false) {
       setChosen(entry, true);
+      openId = pin.id;
     }
   }
 
@@ -380,7 +397,21 @@
     return entry;
   }
 
+  // closeOpenCard closes the open card through the map (Phase 5 review fix
+  // WR-B02): the card is a popup apart from the markers, so it must go with its
+  // pin, or it would stay up as if the hazard were current.
+  function closeOpenCard() {
+    if (openId === null) {
+      return;
+    }
+    openId = null;
+    if (typeof window.PinalertMap.closeCard === 'function') {
+      window.PinalertMap.closeCard();
+    }
+  }
+
   function clearAll() {
+    closeOpenCard();
     if (layer) {
       layer.clearLayers();
     }
@@ -416,6 +447,9 @@
         continue;
       }
       if (existing) {
+        if (openId === pin.id) {
+          closeOpenCard();
+        }
         group.removeLayer(existing.marker);
       }
       entries[pin.id] = addPin(group, pin, key);
@@ -424,6 +458,9 @@
     var ids = Object.keys(entries);
     for (var j = 0; j < ids.length; j += 1) {
       if (seen[ids[j]] !== true) {
+        if (openId !== null && String(openId) === ids[j]) {
+          closeOpenCard();
+        }
         group.removeLayer(entries[ids[j]].marker);
         delete entries[ids[j]];
       }
@@ -433,27 +470,65 @@
 
   // loadPins makes the one request and draws the answer. A failed request or an
   // HTTP error clears the layer: with no answer, nothing is known to be current.
+  //
+  // Each request has a time limit (Phase 5 review fix WR-B01). The limit is the
+  // page's own timer, never the request's promise: WebKit can leave a request's
+  // promise unsettled, and a request that never ends must not keep the pins
+  // drawn as current or block every later load. At the limit the request is
+  // aborted, the layer is cleared and requestOut is let go; a late answer of a
+  // request that was given up is dropped.
   function loadPins() {
     if (requestOut || typeof fetch !== 'function') {
       return;
     }
     requestOut = true;
     lastFetchAt = Date.now();
-    fetch(apiBase() + '/official/pins', {
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' }
-    }).then(function (res) {
+    requestSeq += 1;
+    var mine = requestSeq;
+    var controller = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = null;
+    var expired = new Promise(function (resolve, reject) {
+      timer = setTimeout(function () {
+        timer = null;
+        reject(new Error('official pins: no answer in time'));
+        if (controller) {
+          controller.abort();
+        }
+      }, REQUEST_LIMIT_MS);
+    });
+    expired.catch(function () {});
+    var init = { credentials: 'same-origin', headers: { Accept: 'application/json' } };
+    if (controller) {
+      init.signal = controller.signal;
+    }
+    var answered = fetch(apiBase() + '/official/pins', init).then(function (res) {
       if (!res.ok) {
         throw new Error('status ' + res.status);
       }
-      return res.json();
-    }).then(function (body) {
-      requestOut = false;
+      return Promise.race([res.json(), expired]);
+    });
+    Promise.race([answered, expired]).then(function (body) {
+      if (mine !== requestSeq) {
+        return;
+      }
+      settled(timer);
       drawPins(body);
     }, function () {
-      requestOut = false;
+      if (mine !== requestSeq) {
+        return;
+      }
+      settled(timer);
       clearAll();
     });
+  }
+
+  // settled ends one request: its timer stops and the next load may go out.
+  function settled(timer) {
+    if (timer !== null) {
+      clearTimeout(timer);
+    }
+    requestSeq += 1;
+    requestOut = false;
   }
 
   document.addEventListener(FEED_CENTRE_EVENT, function () {

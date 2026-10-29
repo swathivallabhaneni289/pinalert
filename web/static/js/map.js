@@ -1074,14 +1074,16 @@ window.PinalertMap = (function () {
     if (close) {
       close.setAttribute('aria-label', phoneDetail() ? BACK_LABEL : CLOSE_LABEL);
     }
-    ensureReportHeading(container, close);
-
     // A GDACS card belongs to no report: it takes the open path of its own below
-    // (plan 05-22), which sets the same marks and puts focus the same way.
+    // (plan 05-22), which sets the same marks and puts focus the same way. Its
+    // heading, where focus lands on a phone, says Hazard, never Report, so it is
+    // never announced as a crowd report (Phase 5 review fix WR-B03).
     if (isOfficialPopup(evt.popup)) {
+      ensureReportHeading(container, close, OFFICIAL_TITLE);
       openOfficialPopup(evt.popup, container);
       return;
     }
+    ensureReportHeading(container, close, REPORT_TITLE);
 
     var popup = evt.popup;
     activePopup = popup;
@@ -1953,6 +1955,8 @@ window.PinalertMap = (function () {
   var BACK_LABEL = 'Back';
   var CLOSE_LABEL = 'Close popup';
   var REPORT_TITLE = 'Report';
+  // The heading of a GDACS card in the same place (Phase 5 review fix WR-B03).
+  var OFFICIAL_TITLE = 'Hazard';
   // 'pushed' when this script added the address entry of the open report,
   // 'url' when the page arrived with it, null when none is open.
   var historyMode = null;
@@ -2231,15 +2235,17 @@ window.PinalertMap = (function () {
   // ensureReportHeading gives a popup container its heading, Report, once,
   // right after the close anchor. phone.css shows it in the top row beside
   // Back; everywhere else it is not drawn, so the laptop popup is unchanged.
-  function ensureReportHeading(container, close) {
+  function ensureReportHeading(container, close, words) {
+    var title = typeof words === 'string' ? words : REPORT_TITLE;
     var heading = container.querySelector('.report-view__title');
     if (heading) {
+      Pinalert.setText(heading, title);
       return heading;
     }
     heading = document.createElement('h2');
     heading.className = 'report-view__title';
     heading.setAttribute('tabindex', '-1');
-    Pinalert.setText(heading, REPORT_TITLE);
+    Pinalert.setText(heading, title);
     container.insertBefore(heading, close ? close.nextSibling : container.firstChild);
     return heading;
   }
@@ -2308,6 +2314,16 @@ window.PinalertMap = (function () {
       name: typeof name === 'string' ? name : ''
     };
     map.openPopup(popup);
+    return true;
+  }
+
+  // closeCard closes the open GDACS card, if any, through its own close path
+  // (Phase 5 review fix WR-B02): the layer calls it when the pin of the open card
+  // is removed or replaced, or the layer is cleared.
+  function closeCard() {
+    if (map && officialPopup !== null) {
+      map.closePopup(officialPopup);
+    }
     return true;
   }
 
@@ -2453,6 +2469,7 @@ window.PinalertMap = (function () {
     focusMarker: focusMarker,
     openReport: openReport,
     addOverlay: addOverlay,
-    openCard: openCard
+    openCard: openCard,
+    closeCard: closeCard
   };
 }());

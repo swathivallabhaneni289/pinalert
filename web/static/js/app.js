@@ -93,9 +93,58 @@ window.Pinalert = (function () {
   // window.PinalertApiBase to the visit's own sandbox path, so the same code
   // reads and posts reports there with no second copy of any rule in JavaScript
   // (TRUST-02). The value is a path api-base.js has already checked.
+  //
+  // The Demo fails closed (Phase 5 review fix CR-B02). When api-base.js did not
+  // run (its request failed), the base is read from the page itself with the
+  // same check, and a page marked data-demo="1" with no usable base answers
+  // null: no report call goes out at all, never to the real /api from a Demo
+  // page with its pretend position. The same small check lives in each script
+  // that calls the report API, because api-base.js is the file that can fail.
+  var SAFE_BASE = /^\/(?!\/)[A-Za-z0-9\/_-]*$/;
+
+  function pageCarrier(attr) {
+    var shell = typeof document.getElementById === 'function' ? document.getElementById('app-shell') : null;
+    if (shell && shell.getAttribute(attr) !== null) {
+      return shell;
+    }
+    if (typeof document.querySelector !== 'function') {
+      return null;
+    }
+    try {
+      return document.querySelector('main[' + attr + ']');
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function demoMarked() {
+    var el = pageCarrier('data-demo');
+    return !!el && el.getAttribute('data-demo') === '1';
+  }
+
   function apiBase() {
     var base = window.PinalertApiBase;
-    return typeof base === 'string' && base !== '' ? base : '/api';
+    if (typeof base === 'string' && base !== '') {
+      return base;
+    }
+    var carrier = pageCarrier('data-api-base');
+    var own = carrier ? carrier.getAttribute('data-api-base') : null;
+    if (typeof own === 'string' && SAFE_BASE.test(own) && own.replace(/\/+$/, '') !== '') {
+      return own.replace(/\/+$/, '');
+    }
+    return demoMarked() ? null : '/api';
+  }
+
+  // noBase is the failure of a report call that may not go out: a Demo page
+  // with no usable base.
+  function noBase(what) {
+    return new Error(what + ': no report API base on this Demo page');
+  }
+
+  // The Demo marks follow the page too: with api-base.js missing, the rows, the
+  // pins and the ended visit still know this is the Demo (CR-B02).
+  if (window.PinalertDemoPage !== true && demoMarked()) {
+    window.PinalertDemoPage = true;
   }
 
   // FEED_CENTRE_EVENT is announced on the document after each report list that
@@ -103,11 +152,17 @@ window.Pinalert = (function () {
   // banner (plan 05-15) follows the same place the reader is looking at (D-09).
   var FEED_CENTRE_EVENT = 'pinalert:feed-centre';
 
-  function announceFeedCentre(lat, lon) {
+  // The detail also says what the centre is (Phase 5 review fix WR-B09): own is
+  // true for the reader's own position, place is true for a place they searched.
+  // Both false is the boot fallback centre (the home area cell or the city),
+  // which the banner follows but never keeps as "Where you are".
+  function announceFeedCentre(lat, lon, own, place) {
     if (typeof CustomEvent !== 'function' || typeof document.dispatchEvent !== 'function') {
       return;
     }
-    document.dispatchEvent(new CustomEvent(FEED_CENTRE_EVENT, { detail: { lat: lat, lon: lon } }));
+    document.dispatchEvent(new CustomEvent(FEED_CENTRE_EVENT, {
+      detail: { lat: lat, lon: lon, own: own === true, place: place === true }
+    }));
   }
 
   // REPORT_POSTED_EVENT is announced on the document once a report the server
@@ -556,6 +611,20 @@ window.Pinalert = (function () {
   // the newest call's promise, so a caller that refetches after a write
   // (votes.js, the submit path) never treats the store as fresh before the
   // newest data has landed.
+  // endWithoutBase is the end of a list read that may not go out: a Demo page
+  // with no usable report API base (Phase 5 review fix CR-B02). The list holds
+  // no rows and shows its load error, as after a failed read.
+  function endWithoutBase() {
+    state.reports = [];
+    state.recent = null;
+    state.cut = null;
+    state.status = 'error';
+    state.error = noBase('fetchReports');
+    markListLoading(false);
+    notify();
+    return Promise.resolve();
+  }
+
   function fetchReports(options) {
     var isBackgroundRefresh = state.status === 'ok' || state.reports.length > 0;
     if (state.hasLoaded === true) {
@@ -569,6 +638,8 @@ window.Pinalert = (function () {
     var sentCategory = state.category;
     var sentLat = state.center.lat;
     var sentLon = state.center.lon;
+    var sentOwn = state.center.own === true;
+    var sentPlace = !!state.place && state.place.lat === sentLat && state.place.lon === sentLon;
     var sentFocusId = state.focusId;
     var pending;
     // A response is stale when newer data was applied after this call
@@ -603,7 +674,8 @@ window.Pinalert = (function () {
     // the rows belong to (a tab pressed and pressed back) shows them again.
     markListLoading(isBackgroundRefresh && !rowsMatchStore());
 
-    var url = apiBase() + '/reports' +
+    var base = apiBase();
+    var url = (base === null ? '' : base) + '/reports' +
       '?lat=' + encodeURIComponent(state.center.lat) +
       '&lon=' + encodeURIComponent(state.center.lon) +
       '&radius_km=' + encodeURIComponent(config.defaultRadiusKm);
@@ -628,6 +700,13 @@ window.Pinalert = (function () {
     }
     if (sentFocusId !== null) {
       url += '&report=' + encodeURIComponent(sentFocusId);
+    }
+
+    // A Demo page with no usable base sends no request at all (CR-B02): the
+    // list ends in its load error, holding no rows, as a failed read does.
+    if (base === null) {
+      newestFetch = endWithoutBase();
+      return newestFetch;
     }
 
     // The first request of the page is flagged on the root element once, so
@@ -701,7 +780,7 @@ window.Pinalert = (function () {
         state.lastUpdatedAt = Date.now();
         // The centre this list was loaded for is announced once the store holds
         // it, in the same step as the render below (plan 05-13, D-09).
-        announceFeedCentre(sentLat, sentLon);
+        announceFeedCentre(sentLat, sentLon, sentOwn, sentPlace);
         markListLoading(false);
         notify();
       })
@@ -809,6 +888,14 @@ window.Pinalert = (function () {
   // aborted body read always did, never in the no answer path: the post may
   // have made the report already.
   function submitReport(payload) {
+    if (apiBase() === null) {
+      var refused = noBase('submitReport');
+      refused.field = 'body';
+      refused.fieldMessage = 'Something went wrong. Try again.';
+      refused.status = 0;
+      refused.queueable = false;
+      return Promise.reject(refused);
+    }
     var timeout = requestTimeout(SUBMIT_TIMEOUT_MS, 'submitReport');
     return Promise.race([fetch(apiBase() + '/reports', {
       method: 'POST',

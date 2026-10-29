@@ -205,8 +205,11 @@ function loadPage(options = {}) {
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox, { filename: 'official-banner.js' });
-  const centre = (lat, lon) => {
-    (page.doc.listeners['pinalert:feed-centre'] || []).forEach((fn) => fn({ type: 'pinalert:feed-centre', detail: { lat, lon } }));
+  // Amended 2026-10-29 by the Phase 5 review fix (WR-B09): the feed-centre event
+  // now says whether the centre is the reader's own position (own) or a searched
+  // place (place). The older cases send the reader's own position, as they meant.
+  const centre = (lat, lon, kind = { own: true, place: false }) => {
+    (page.doc.listeners['pinalert:feed-centre'] || []).forEach((fn) => fn({ type: 'pinalert:feed-centre', detail: { lat, lon, ...kind } }));
   };
   return { ...page, api: sandbox.PinalertOfficialBanner, requests, advance, centre, store, timers, sandbox };
 }
@@ -429,7 +432,10 @@ test('a timer fetches again after five minutes, not before', async () => {
   await flush();
   page.advance(290000);
   assert.equal(page.requests.length, 1);
-  page.advance(20000);
+  // Amended 2026-10-29 by the Phase 5 review fix (WR-B01): the clock stops 1 s
+  // after the refresh went out (it stopped 11 s after), so the answer below comes
+  // inside the new 10 second request limit. The checks are unchanged.
+  page.advance(10000);
   assert.equal(page.requests.length, 2);
   assert.equal(page.requests[1].url, page.requests[0].url);
   byId(page, 'notice-live').textContent = '';
@@ -534,10 +540,13 @@ test('the tab keeps the centre for this account, exactly', () => {
   const page = loadPage({ account: '7' });
   page.centre(16.5062, 80.648);
   const raw = page.store.get('pinalert.nearbyCentre');
-  assert.equal(raw, '{"account":"7","lat":16.5062,"lon":80.648}');
-  assert.deepEqual(JSON.parse(raw), { account: '7', lat: 16.5062, lon: 80.648 });
+  // Amended 2026-10-29 by the Phase 5 review fix (WR-B09): the kept centre also
+  // says when it was saved (savedAt, the clock T0), so Official alerts can tell an
+  // old one. The account, lat and lon are kept exactly as before.
+  assert.equal(raw, '{"account":"7","lat":16.5062,"lon":80.648,"savedAt":' + T0 + '}');
+  assert.deepEqual(JSON.parse(raw), { account: '7', lat: 16.5062, lon: 80.648, savedAt: T0 });
   page.centre(13.08, 80.27);
-  assert.deepEqual(JSON.parse(page.store.get('pinalert.nearbyCentre')), { account: '7', lat: 13.08, lon: 80.27 });
+  assert.deepEqual(JSON.parse(page.store.get('pinalert.nearbyCentre')), { account: '7', lat: 13.08, lon: 80.27, savedAt: T0 });
 });
 
 test('with no account (the Demo) nothing is stored', () => {
@@ -627,4 +636,100 @@ test('the Demo banner follows the place on the visit API base and stores nothing
   assert.equal(page.requests.length, 1);
   assert.ok(page.requests[0].url.startsWith('/demo/api/v/abc/official/alerts?'), page.requests[0].url);
   assert.equal(page.store.size, 0);
+});
+
+// ---- A request that never answers, and a new place (Phase 5 review fix WR-B01) ----
+// Added 2026-10-29. Every banner request has a 10 second limit, and the banner
+// never sits over a place it was not fetched for.
+
+test('WR-B01: a banner request with no answer is given up at 10 seconds and the banner hides', async () => {
+  const page = loadPage();
+  page.sandbox.AbortController = class { constructor() { this.signal = { aborted: false }; } abort() { this.signal.aborted = true; } };
+  page.centre(16.5, 80.6);
+  page.advance(1000);
+  answer(page.requests[0], 200, view(pick()));
+  await flush();
+  assert.equal(page.banner.hidden, false);
+  page.advance(299000);
+  assert.equal(page.requests.length, 2, 'the five minute refresh is out');
+  assert.ok(page.requests[1].init.signal, 'the request carries an abort signal');
+  page.advance(9000);
+  await flush();
+  assert.equal(page.banner.hidden, false, 'inside the limit the banner stays');
+  page.advance(1000);
+  await flush();
+  assert.equal(page.banner.hidden, true, 'at the limit the feed cannot vouch for the alert');
+  assert.equal(page.requests[1].init.signal.aborted, true);
+  answer(page.requests[1], 200, view(pick()));
+  await flush();
+  assert.equal(page.banner.hidden, true, 'the late answer is dropped');
+});
+
+test('WR-B01: a new place hides the banner before its own answer comes', async () => {
+  const page = loadPage();
+  page.centre(16.5, 80.6);
+  page.advance(1000);
+  answer(page.requests[0], 200, view(pick()));
+  await flush();
+  assert.equal(page.banner.hidden, false);
+  page.centre(16.5, 80.6);
+  assert.equal(page.banner.hidden, false, 'the same place keeps the banner');
+  page.centre(13.08, 80.27);
+  assert.equal(page.banner.hidden, true, 'an alert never sits over a place it was not fetched for');
+  page.advance(1000);
+  answer(page.requests[1], 200, view(pick()));
+  await flush();
+  assert.equal(page.banner.hidden, false);
+});
+
+// ---- The Demo fails closed, and the shell base is checked (Phase 5 review fixes CR-B02, IN-B04) ----
+// Added 2026-10-29. The shell's data-demo is set after load: the script reads
+// it when it asks, as it reads data-api-base.
+
+test('CR-B02: on Demo Nearby with api-base.js missing the banner asks the shell own Demo base', () => {
+  const page = loadPage({ account: null, dataApiBase: '/demo/api/v/abc_DEF-123', demoPage: true });
+  page.shell.setAttribute('data-demo', '1');
+  page.centre(16.5, 80.6);
+  page.advance(1000);
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.requests[0].url, '/demo/api/v/abc_DEF-123/official/alerts?lat=16.5&lon=80.6');
+});
+
+test('CR-B02: a Demo shell with no usable base asks nothing and keeps the banner hidden', () => {
+  for (const bad of [undefined, '', 'https://evil.example/api', '//evil.example/api', '/']) {
+    const page = loadPage({ account: null, dataApiBase: bad, demoPage: true });
+    page.shell.setAttribute('data-demo', '1');
+    page.centre(16.5, 80.6);
+    page.advance(1000);
+    assert.equal(page.requests.length, 0, 'no request for base ' + JSON.stringify(bad));
+    assert.equal(page.banner.hidden, true);
+  }
+});
+
+test('IN-B04: a real shell whose data-api-base fails the check asks /api', () => {
+  for (const bad of ['//evil.example', 'https://evil.example/api']) {
+    const page = loadPage({ dataApiBase: bad });
+    page.centre(16.5, 80.6);
+    page.advance(1000);
+    assert.equal(page.requests[0].url, '/api/official/alerts?lat=16.5&lon=80.6', bad);
+  }
+});
+
+// ---- The fallback centre is never "Where you are" (Phase 5 review fix WR-B09) ----
+// Added 2026-10-29. The banner follows every centre Nearby shows, but keeps one
+// for Official alerts only when it is the reader's own position or a place they
+// searched: never the boot fallback centre (the home area cell or the city).
+
+test('WR-B09: the fallback centre is followed but never kept for Official alerts', () => {
+  const page = loadPage({ account: '7' });
+  page.centre(16.5, 80.6, { own: false, place: false });
+  page.advance(1000);
+  assert.equal(page.requests.length, 1, 'the banner still follows the place on screen');
+  assert.equal(page.store.size, 0, 'a fallback centre is not kept');
+  page.centre(17.38, 78.48, { own: false, place: true });
+  assert.deepEqual(JSON.parse(page.store.get('pinalert.nearbyCentre')), { account: '7', lat: 17.38, lon: 78.48, savedAt: T0 + 1000 }, 'a searched place is kept');
+  page.centre(13.08, 80.27, { own: true, place: false });
+  assert.equal(JSON.parse(page.store.get('pinalert.nearbyCentre')).lat, 13.08, 'the reader own position is kept');
+  page.centre(12.97, 77.59, {});
+  assert.equal(JSON.parse(page.store.get('pinalert.nearbyCentre')).lat, 13.08, 'an event that does not say is not kept');
 });
