@@ -61,6 +61,9 @@ type PersonProfileResponse struct {
 	Following     bool   `json:"following" example:"false"`
 	FollowsYou    bool   `json:"follows_you" example:"false"`
 	BlockedByYou  bool   `json:"blocked_by_you" example:"false"`
+	// Muted says the caller muted this person (D-12). It is the caller's own
+	// state: false on your own page and never revealed to the muted person.
+	Muted bool `json:"muted" example:"false"`
 	// MayRate says the caller may rate this person now. YourRating is the caller's
 	// own current rating, 1 to 5, or 0 for none.
 	MayRate    bool `json:"may_rate" example:"true"`
@@ -190,6 +193,7 @@ func profileResponse(p service.PersonProfile) PersonProfileResponse {
 		Following:        p.Following,
 		FollowsYou:       p.FollowsYou,
 		BlockedByYou:     p.BlockedByYou,
+		Muted:            p.Muted,
 		MayRate:          p.MayRate,
 		YourRating:       p.YourRating,
 	}

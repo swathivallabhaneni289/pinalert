@@ -1170,6 +1170,50 @@
                 }
             }
         },
+        "/me/muted-people": {
+            "get": {
+                "description": "Returns the usernames of the people the signed in account muted, newest first, at most\n500. A person whose new username is still being checked is left out until it clears.\nOnly the caller reads this list.\nRequires a session verified by email; an unverified caller receives 401.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "people"
+                ],
+                "summary": "List the people the caller muted",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.MutedPeopleResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/me/muted-reports": {
             "get": {
                 "description": "Lists the signed in account's muted reports, newest mute first, for the Muted reports\nwindow of Settings. A report that is held, removed or has gone shows available false\nwith no text, category or severity, and still carries report_id so the mute can be\nundone. A finished Rescue report shows no text. The answer is never cached.\nRequires a session verified by email; an unverified caller receives 401.",
@@ -1979,6 +2023,71 @@
                 }
             }
         },
+        "/people/{username}/mute": {
+            "post": {
+                "description": "Stops person level notes about a person for the caller only, such as the Reliable\nreporter note. Nothing else changes: no follow ends, no report is hidden from any feed,\nmap, list or profile, and the muted person is never told. Send no body or an empty\nobject. Muting someone already muted changes nothing and answers 204. A person you may\nnot see, and yourself, answer the same 404 as the profile.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "people"
+                ],
+                "summary": "Mute a person",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Username",
+                        "name": "username",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Muted"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/people/{username}/rating": {
             "post": {
                 "description": "Saves the caller's rating of a person, 1 to 5 stars. Only someone who confirmed, disputed,\nresolved or reopened one of that person's reports may rate them, and never yourself. The\nfirst rating is free; a different rating can be given again after a day. The same stars\nagain change nothing and answer 204. Every reason a rating is not allowed answers 409 with\nthe field stars and the same sentence, and a change inside the day answers 409 with the\nfield stars and its own sentence, so the route does not tell who voted on whose report.\nStars outside 1 to 5, or a body that is not {\"stars\": n}, answers 400 with the field stars.\nA person the caller may not see answers the same 404 as the profile.\nRequires a session verified by email; an unverified caller receives 401.",
@@ -2362,6 +2471,71 @@
                 "responses": {
                     "204": {
                         "description": "Not following"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/people/{username}/unmute": {
+            "post": {
+                "description": "Undoes a mute. Send no body or an empty object. It works for any username in the\ncaller's own list, also one whose profile went private since. A well formed username that\nmatches nobody, or someone the caller did not mute, answers 204 and changes nothing. A\nmalformed username answers the same 404 as the profile.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "people"
+                ],
+                "summary": "Unmute a person",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Username",
+                        "name": "username",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Unmuted"
                     },
                     "400": {
                         "description": "Bad Request",
@@ -4468,6 +4642,17 @@
                 }
             }
         },
+        "handlers.MutedPeopleResponse": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.PersonEntryResponse"
+                    }
+                }
+            }
+        },
         "handlers.MutedReportWire": {
             "type": "object",
             "properties": {
@@ -4975,6 +5160,11 @@
                 "member_since": {
                     "type": "string",
                     "example": "Member since October 2026"
+                },
+                "muted": {
+                    "description": "Muted says the caller muted this person (D-12). It is the caller's own\nstate: false on your own page and never revealed to the muted person.",
+                    "type": "boolean",
+                    "example": false
                 },
                 "name": {
                     "type": "string",

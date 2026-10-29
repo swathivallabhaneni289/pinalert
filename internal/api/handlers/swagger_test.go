@@ -480,6 +480,10 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 		{"/people/{username}/rating/clear", "post", []string{"204", "400", "401", "404", "409", "429"}},
 		{"/me/followers/remove-all", "post", []string{"204", "401", "429"}},
 		{"/me/blocked", "get", []string{"200", "401", "429"}},
+		// Plan 09-19 (D-12): the three person mute routes.
+		{"/people/{username}/mute", "post", []string{"204", "401", "404", "429"}},
+		{"/people/{username}/unmute", "post", []string{"204", "401", "404", "429"}},
+		{"/me/muted-people", "get", []string{"200", "401", "429"}},
 		{"/me/visibility", "patch", []string{"200", "400", "401", "422", "429"}},
 	} {
 		ops, ok := spec.Paths[rt.path]

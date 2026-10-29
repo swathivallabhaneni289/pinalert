@@ -1039,6 +1039,10 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.With(rateGate.RateMiddleware()).Post("/api/people/{username}/rating/clear", handlers.ClearPersonRating(deps.Ratings))
 		r.With(rateGate.PeopleActionMiddleware()).Post("/api/me/followers/remove-all", handlers.RemoveAllFollowers(people))
 		r.With(rateGate.PeopleReadMiddleware()).Get("/api/me/blocked", handlers.BlockedPeopleList(people))
+		// Person mute (Phase 9 plan 19, D-12): one way and quiet, buckets as above.
+		r.With(rateGate.PeopleActionMiddleware()).Post("/api/people/{username}/mute", handlers.MutePerson(people))
+		r.With(rateGate.PeopleActionMiddleware()).Post("/api/people/{username}/unmute", handlers.UnmutePerson(people))
+		r.With(rateGate.PeopleReadMiddleware()).Get("/api/me/muted-people", handlers.MutedPeopleList(people))
 		r.With(rateGate.PeopleActionMiddleware()).Patch("/api/me/visibility", handlers.UpdateVisibility(people))
 		// GET /api/geocode (plan 07-03). Registered as a flat literal path,
 		// not under an r.Route mount — see this router's own doc comments
