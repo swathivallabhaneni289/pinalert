@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"pinalert/internal/auth"
+	"pinalert/internal/mailer"
 	"pinalert/internal/service"
 	sqlcgen "pinalert/internal/store/sqlc"
 )
@@ -320,6 +321,11 @@ func (f *fakeMailer) SendVerificationLink(ctx context.Context, email, link strin
 	*f.calls = append(*f.calls, "send:"+email)
 	f.lastEmail = email
 	f.lastLink = link
+	return f.err
+}
+
+func (f *fakeMailer) SendAuthEmail(ctx context.Context, to string, msg mailer.AuthEmail) error {
+	*f.calls = append(*f.calls, "auth:"+string(msg.Kind))
 	return f.err
 }
 
