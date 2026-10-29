@@ -59,9 +59,14 @@ type LegalText struct {
 	PolicyLastUpdated string
 	// ExpiryHours and CriticalExpiryHours are read from service.ExpiryDuration
 	// so the Reports expire section follows the constants that expire reports.
-	ExpiryHours         int
-	CriticalExpiryHours int
-	Glossary            []service.GlossaryEntry
+	// ExpiryCapHours and CriticalExpiryCapHours are read from service.ExpiryCap
+	// the same way: the longest a report lasts after posting, however often it
+	// is confirmed from a new spot (backlog 999.12).
+	ExpiryHours            int
+	CriticalExpiryHours    int
+	ExpiryCapHours         int
+	CriticalExpiryCapHours int
+	Glossary               []service.GlossaryEntry
 }
 
 // legalTextFor builds the legal text values from the page chrome. chrome must
@@ -73,13 +78,15 @@ func legalTextFor(chrome Chrome) LegalText {
 		// value is safe because it always starts with the literal tel
 		// scheme and the primary is digits only, validated by
 		// LoadEmergencyNumbers (D-22).
-		CallHref:            chrome.Numbers.TelHref(),
-		ContactEmail:        chrome.ContactEmail,
-		OlderLabel:          service.OlderNumbersLabel(chrome.Numbers.Older),
-		PolicyLastUpdated:   policyLastUpdated,
-		ExpiryHours:         int(service.ExpiryDuration(service.SeverityLow).Hours()),
-		CriticalExpiryHours: int(service.ExpiryDuration(service.SeverityCritical).Hours()),
-		Glossary:            service.DisclaimerGlossary(),
+		CallHref:               chrome.Numbers.TelHref(),
+		ContactEmail:           chrome.ContactEmail,
+		OlderLabel:             service.OlderNumbersLabel(chrome.Numbers.Older),
+		PolicyLastUpdated:      policyLastUpdated,
+		ExpiryHours:            int(service.ExpiryDuration(service.SeverityLow).Hours()),
+		CriticalExpiryHours:    int(service.ExpiryDuration(service.SeverityCritical).Hours()),
+		ExpiryCapHours:         int(service.ExpiryCap(service.SeverityLow).Hours()),
+		CriticalExpiryCapHours: int(service.ExpiryCap(service.SeverityCritical).Hours()),
+		Glossary:               service.DisclaimerGlossary(),
 	}
 	if chrome.ContactEmail != "" {
 		// main.go validates the address as a bare email address (D-24).

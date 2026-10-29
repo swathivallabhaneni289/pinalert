@@ -1150,9 +1150,11 @@ window.Pinalert = (function () {
   // formatFade is the fade line of the popup (A95), from the report's own
   // expires_at on the server's clock, like relativeTime. One hour or more
   // reads in whole hours rounded down, under an hour in minutes rounded up,
-  // and an expired report or a missing expires_at reads nothing. It never says
-  // that a confirmation extends a report's life, because nothing updates
-  // expires_at after creation (T-03-31-03).
+  // and an expired report or a missing expires_at reads nothing. The line ends
+  // with unless confirmed again only when the server's confirm_extends is true
+  // (backlog 999.12), which it is only while the report is live and before its
+  // cap, so a confirmation from a new spot can still move the fade time. The
+  // browser holds no lifetime, cap or rule; it repeats the server's word.
   function formatFade(report) {
     var expires = new Date(report && report.expires_at).getTime();
     if (!isFinite(expires)) {
@@ -1162,12 +1164,13 @@ window.Pinalert = (function () {
     if (remainingMs <= 0) {
       return '';
     }
+    var ending = report.confirm_extends === true ? ' unless confirmed again.' : '.';
     var hourMs = 3600000;
     if (remainingMs >= hourMs) {
       var hours = Math.floor(remainingMs / hourMs);
-      return 'Fades in ' + hours + (hours === 1 ? ' hr.' : ' hrs.');
+      return 'Fades in ' + hours + (hours === 1 ? ' hr' : ' hrs') + ending;
     }
-    return 'Fades in ' + Math.ceil(remainingMs / 60000) + ' min.';
+    return 'Fades in ' + Math.ceil(remainingMs / 60000) + ' min' + ending;
   }
 
   // ageStage implements D-15/D-17: a report fades over roughly the last
