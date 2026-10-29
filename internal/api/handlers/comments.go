@@ -63,7 +63,7 @@ type CommentResponse struct {
 	Deleted       bool              `json:"deleted" example:"false"`
 	Removed       bool              `json:"removed" example:"false"`
 	Hidden        bool              `json:"hidden" example:"false"` // true when you blocked the author and others replied
-	Held         bool              `json:"held" example:"false"`
+	Held          bool              `json:"held" example:"false"`
 	Words         string            `json:"words" example:"The road is open again from the north side."`
 	Replies       []CommentResponse `json:"replies"`
 }
