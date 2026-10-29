@@ -127,9 +127,80 @@ func TestSpentCodeOnDatabase(t *testing.T) {
 		}
 	}
 
+	// Round 4 (skeptic SK3-02): a spent code is told only for a short time after
+	// the spend, not for the whole resume window, so the next person on a shared
+	// phone does not see the address and the line. A few minutes later it still
+	// shows (the lost answer case); eleven minutes later it is gone.
+	offset.Store(int64(5 * time.Minute))
+	if _, ok, err := svc.SpentCode(ctx, "spent-D"); err != nil || !ok {
+		t.Errorf("SpentCode five minutes after the spend = %v, %v; want true", ok, err)
+	}
+	offset.Store(int64(11 * time.Minute))
+	if _, ok, err := svc.SpentCode(ctx, "spent-D"); err != nil || ok {
+		t.Errorf("SpentCode eleven minutes after the spend = %v, %v; want false (inside the resume window)", ok, err)
+	}
+
 	// Outside the resume window the spent row says nothing.
 	offset.Store(int64(limits.ResumeWindow + time.Minute))
 	if _, ok, err := svc.SpentCode(ctx, "spent-D"); err != nil || ok {
 		t.Errorf("SpentCode after the resume window = %v, %v; want false", ok, err)
+	}
+}
+
+// TestSpentCodeNamesPasswordSetOnExistingAccount is the Phase 7.1 review fix
+// round 4 test for skeptic SK3-03. A Create account confirm that only set a
+// password on an account the old emailed link had made is not an account
+// created, so the browser that lost the answer must be told "Password set", not
+// "Account created". The confirm itself marks its own kept code row (it is the
+// one place that knows which branch it took), so the read stays on this
+// browser's code row and never asks whether the address has an account.
+func TestSpentCodeNamesPasswordSetOnExistingAccount(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+	mail := &credMailer{}
+
+	limits := service.DefaultCredentialLimits
+	limits.SendCooldown = 0
+	svc := service.NewCredentialService(q, mail,
+		service.WithHasher(auth.NewHasher(auth.TestParams())),
+		service.WithCodeKey(credCodeKey),
+		service.WithThrottleKey(credThrottleKey),
+		service.WithCredentialLimits(limits),
+	)
+
+	// An account the old emailed link made: an address and no password.
+	if err := q.InsertAccount(ctx, credEmail); err != nil {
+		t.Fatalf("InsertAccount: %v", err)
+	}
+	if err := svc.SignUp(ctx, "legacy-A", credEmail, credPassword); err != nil {
+		t.Fatalf("SignUp: %v", err)
+	}
+	if _, err := svc.ConfirmSignUp(ctx, "legacy-A", mail.last(t).msg.Code, credSessionIDs("legacy-B")); err != nil {
+		t.Fatalf("ConfirmSignUp: %v", err)
+	}
+	spent, ok, err := svc.SpentCode(ctx, "legacy-A")
+	if err != nil || !ok || spent.Purpose != service.PurposeReset || spent.Email != credEmail {
+		t.Fatalf("SpentCode after a password set on an old account = %+v, %v, %v; want the password set line (reset) for %s", spent, ok, err, credEmail)
+	}
+	var rows, withHash int
+	if err := pool.QueryRow(ctx, `SELECT count(*), count(password_hash) FROM auth_codes WHERE email = $1`, credEmail).Scan(&rows, &withHash); err != nil {
+		t.Fatalf("counting code rows: %v", err)
+	}
+	if rows != 1 || withHash != 0 {
+		t.Errorf("code rows after the confirm = %d (%d with a hash), want one and no hash", rows, withHash)
+	}
+
+	// A brand new address still reads as an account created.
+	const fresh = "brand-new@example.com"
+	if err := svc.SignUp(ctx, "fresh-A", fresh, credPassword); err != nil {
+		t.Fatalf("SignUp (new): %v", err)
+	}
+	if _, err := svc.ConfirmSignUp(ctx, "fresh-A", mail.last(t).msg.Code, credSessionIDs("fresh-B")); err != nil {
+		t.Fatalf("ConfirmSignUp (new): %v", err)
+	}
+	spent, ok, err = svc.SpentCode(ctx, "fresh-A")
+	if err != nil || !ok || spent.Purpose != service.PurposeSignUp || spent.Email != fresh {
+		t.Fatalf("SpentCode after a new account = %+v, %v, %v; want the account created line (signup) for %s", spent, ok, err, fresh)
 	}
 }

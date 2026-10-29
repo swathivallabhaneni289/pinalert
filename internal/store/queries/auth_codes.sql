@@ -55,6 +55,21 @@ WHERE id = sqlc.arg(id)
   AND used_at IS NULL
   AND expires_at > now();
 
+-- name: MarkAuthCodePasswordSet :exec
+-- Phase 7.1 review fix round 4 (skeptic SK3-03): a Create account confirm that
+-- only set a password on an account the old emailed link had made did not create
+-- anything, so the kept row is marked as a password set (purpose reset) and the
+-- sign in page after a lost answer says "Password set", not "Account created".
+-- Only the confirm writes it, on the row it just spent; the row holds no hash,
+-- so the purpose constraints still hold. The page never asks whether an
+-- address has an account; it reads this browser's own row.
+UPDATE auth_codes
+SET purpose = 'reset'
+WHERE id = sqlc.arg(id)
+  AND purpose = 'signup'
+  AND used_at IS NOT NULL
+  AND password_hash IS NULL;
+
 -- name: RetireAuthCode :exec
 -- Marks a row used when its email did not go out (the ceiling refused it or
 -- the provider failed), so a reload of the sign in page does not show a code
@@ -84,7 +99,9 @@ DELETE FROM auth_codes WHERE email = sqlc.arg(email);
 -- in another browser can no longer be used (W9). The row just spent is kept,
 -- used and with no password hash, so the browser that spent it can be told so
 -- after a lost answer (Phase 7.1 review fix round 3, skeptic SK2-01). The prune
--- removes it a day after the spend, and Delete my account removes it at once.
+-- runs when a code is sent and removes it then, once a day or more has passed
+-- since the spend (round 4, SK3-01); on a quiet site it can stay longer. Delete
+-- my account removes it at once.
 DELETE FROM auth_codes WHERE email = sqlc.arg(email) AND id <> sqlc.arg(keep_id);
 
 -- name: LockCredentialAddress :exec

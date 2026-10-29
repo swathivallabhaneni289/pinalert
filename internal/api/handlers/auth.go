@@ -51,8 +51,8 @@ type AuthConfig struct {
 type LoginState interface {
 	SignedIn(ctx context.Context, sessionID string) (bool, error)
 	LiveCode(ctx context.Context, sessionID string) (service.LiveCode, bool, error)
-	// SpentCode reports a code this browser's own session confirmed inside the
-	// resume window, so a page reloaded after a lost confirm answer says what
+	// SpentCode reports a code this browser's own session confirmed in the last few
+	// minutes, so a page reloaded after a lost confirm answer says what
 	// happened (review fix round 3, skeptic SK2-01).
 	SpentCode(ctx context.Context, sessionID string) (service.SpentCode, bool, error)
 	EndedByPasswordSwitch(ctx context.Context, sessionID string) (bool, error)

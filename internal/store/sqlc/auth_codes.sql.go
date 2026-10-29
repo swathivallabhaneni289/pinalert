@@ -109,7 +109,9 @@ type DeleteOtherAuthCodesForEmailParams struct {
 // in another browser can no longer be used (W9). The row just spent is kept,
 // used and with no password hash, so the browser that spent it can be told so
 // after a lost answer (Phase 7.1 review fix round 3, skeptic SK2-01). The prune
-// removes it a day after the spend, and Delete my account removes it at once.
+// runs when a code is sent and removes it then, once a day or more has passed
+// since the spend (round 4, SK3-01); on a quiet site it can stay longer. Delete
+// my account removes it at once.
 func (q *Queries) DeleteOtherAuthCodesForEmail(ctx context.Context, arg DeleteOtherAuthCodesForEmailParams) error {
 	_, err := q.db.Exec(ctx, deleteOtherAuthCodesForEmail, arg.Email, arg.KeepID)
 	return err
@@ -223,6 +225,27 @@ SELECT pg_advisory_xact_lock(71, hashtext($1::text))
 // from any other advisory lock. It ends with the transaction.
 func (q *Queries) LockCredentialAddress(ctx context.Context, addressKey string) error {
 	_, err := q.db.Exec(ctx, lockCredentialAddress, addressKey)
+	return err
+}
+
+const markAuthCodePasswordSet = `-- name: MarkAuthCodePasswordSet :exec
+UPDATE auth_codes
+SET purpose = 'reset'
+WHERE id = $1
+  AND purpose = 'signup'
+  AND used_at IS NOT NULL
+  AND password_hash IS NULL
+`
+
+// Phase 7.1 review fix round 4 (skeptic SK3-03): a Create account confirm that
+// only set a password on an account the old emailed link had made did not create
+// anything, so the kept row is marked as a password set (purpose reset) and the
+// sign in page after a lost answer says "Password set", not "Account created".
+// Only the confirm writes it, on the row it just spent; the row holds no hash,
+// so the purpose constraints still hold. The page never asks whether an
+// address has an account; it reads this browser's own row.
+func (q *Queries) MarkAuthCodePasswordSet(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, markAuthCodePasswordSet, id)
 	return err
 }
 
