@@ -187,6 +187,12 @@ type Deps struct {
 	// no area. cmd/server/main.go sets it with the one geocode client as the
 	// namer.
 	Shares *service.ShareService
+	// Comments is the comment service behind the six comment routes (Phase 8
+	// plan 12, PAGE-02). Left nil, which every Deps{} literal gives, NewRouter
+	// builds one from the sessions store and the report service's own text
+	// screener. cmd/server/main.go sets it with the screener and, only when push
+	// is on, the change notifier.
+	Comments *service.CommentService
 	// SharePageRateLimit is the per client IP budget of GET /r/{token} (Phase 8
 	// plan 04). A zero value takes SharePageRateLimitDefault. It is used only when
 	// ClientIPHeader is set; without it every request is admitted.
@@ -655,6 +661,16 @@ func NewRouter(deps Deps) *chi.Mux {
 	if shares == nil {
 		shares = service.NewShareService(deps.Sessions, deps.Reports)
 	}
+	// The comment service (Phase 8 plan 12). A nil Comments builds one that
+	// screens through the report service's own screener, like the flag service.
+	comments := deps.Comments
+	if comments == nil {
+		var commentOpts []service.CommentOption
+		if deps.Reports != nil {
+			commentOpts = append(commentOpts, service.WithCommentScreener(deps.Reports.Screener()))
+		}
+		comments = service.NewCommentService(deps.Sessions, commentOpts...)
+	}
 	shareBase := deps.PublicBaseURL
 	if shareBase == "" {
 		shareBase = handlers.DefaultPublicBaseURL
@@ -909,6 +925,18 @@ func NewRouter(deps Deps) *chi.Mux {
 		// route with r.With. The absolute address comes from the configured
 		// base, never from the request.
 		r.With(rateGate.ShareMiddleware()).Post("/api/reports/{id}/share", handlers.ShareReport(shares, shareBase))
+		// The six comment routes (Phase 8 plan 12, PAGE-02, SC3). Gated, flat
+		// literal paths. The list is a read polled like the bell, so it has no
+		// bucket. Posts and replies spend the comment bucket, with no refund
+		// because each attempt may cost a screener call. Likes, unlikes and
+		// deletes spend the like bucket. A comment flag shares the report flag
+		// bucket and its network backstop (D-14).
+		r.Get("/api/reports/{id}/comments", handlers.ListComments(comments))
+		r.With(rateGate.CommentMiddleware()).Post("/api/reports/{id}/comments", handlers.PostComment(comments))
+		r.With(rateGate.LikeMiddleware()).Post("/api/comments/{id}/like", handlers.LikeComment(comments))
+		r.With(rateGate.LikeMiddleware()).Post("/api/comments/{id}/unlike", handlers.UnlikeComment(comments))
+		r.With(rateGate.LikeMiddleware()).Post("/api/comments/{id}/delete", handlers.DeleteComment(comments))
+		r.With(rateGate.FlagMiddleware()).Post("/api/comments/{id}/flag", handlers.FlagComment(comments))
 		// The five Phase 3.2 routes (plan 07). Flat literal paths like the
 		// others, gated because they act only for the account the gate
 		// resolved. The bell polls every 30 seconds from its own script, so

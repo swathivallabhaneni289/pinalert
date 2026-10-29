@@ -459,6 +459,7 @@ func main() {
 	// interface, so the options are added only inside this branch.
 	reportOpts := []service.ReportOption{service.WithScreener(screener)}
 	var voteOpts []service.VotingOption
+	commentOpts := []service.CommentOption{service.WithCommentScreener(screener)}
 	var pushDispatcher *service.PushDispatcher
 	var pushUpdates *lateUpdates
 	if pushOn {
@@ -467,6 +468,7 @@ func main() {
 		pushDispatcher = service.NewPushDispatcher(queries, pushUpdates, geocodeClient)
 		reportOpts = append(reportOpts, service.WithReportChangeNotifier(pushDispatcher))
 		voteOpts = append(voteOpts, service.WithVoteChangeNotifier(pushDispatcher))
+		commentOpts = append(commentOpts, service.WithCommentChangeNotifier(pushDispatcher))
 	}
 	reportService := service.NewReportService(queries, reportOpts...)
 	voteService := service.NewVotingService(queries, voteOpts...)
@@ -528,6 +530,7 @@ func main() {
 		// The public status page's per client IP limit (plan 08-04); used only
 		// with CLIENT_IP_HEADER.
 		SharePageRateLimit: api.SharePageRateLimit{Every: sharePageEvery, Burst: sharePageBurst},
+		Comments:           service.NewCommentService(queries, commentOpts...),
 		Shares:             service.NewShareService(queries, reportService, service.WithShareAreaNamer(geocodeClient)),
 		Credentials:        credentials,
 		AuthLimits:         authLimits(),
