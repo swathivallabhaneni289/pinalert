@@ -118,7 +118,7 @@ func ModerationRatingRemove(ratings *service.RatingService) http.HandlerFunc {
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
 		var req modRatingRemoveRequest
-		if err := dec.Decode(&req); err != nil || req.Rater == nil {
+		if err := decodeOneValue(dec, &req); err != nil || req.Rater == nil {
 			writeFieldError(w, http.StatusBadRequest, "rater", "Send the rater's username.")
 			return
 		}

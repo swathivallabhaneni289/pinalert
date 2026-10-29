@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 
@@ -701,7 +702,7 @@ func NotifyPerson(people *service.PeopleService) http.HandlerFunc {
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
 		var req NotifyRequest
-		if err := dec.Decode(&req); err != nil || req.On == nil {
+		if err := decodeOneValue(dec, &req); err != nil || req.On == nil {
 			writeFieldError(w, http.StatusBadRequest, "on", "Send on as true or false.")
 			return
 		}
@@ -751,7 +752,7 @@ func UpdateVisibility(people *service.PeopleService, gate *RateGate) http.Handle
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
 		var req VisibilityRequest
-		if err := dec.Decode(&req); err != nil || req.ProfilePublic == nil {
+		if err := decodeOneValue(dec, &req); err != nil || req.ProfilePublic == nil {
 			writeFieldError(w, http.StatusBadRequest, "profile_public", "Send profile_public as true or false.")
 			return
 		}
@@ -774,4 +775,17 @@ func UpdateVisibility(people *service.PeopleService, gate *RateGate) http.Handle
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, http.StatusOK, VisibilityResponse{ProfilePublic: *req.ProfilePublic})
 	}
+}
+
+// decodeOneValue decodes exactly one JSON value from dec into dst: a body with
+// anything after the value, other than space, is refused, the way decodePushBody
+// refuses it (review IN-E04, 2026-10-30). The Phase 9 body routes use it.
+func decodeOneValue(dec *json.Decoder, dst any) error {
+	if err := dec.Decode(dst); err != nil {
+		return err
+	}
+	if _, next := dec.Token(); !errors.Is(next, io.EOF) {
+		return errors.New("trailing data")
+	}
+	return nil
 }
