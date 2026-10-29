@@ -240,6 +240,11 @@
   overflow-wrap: anywhere;
 }
 
+/* Phase 8 plan 18: a comment keeps the line breaks its author typed. */
+.mod-row__text--comment {
+  white-space: pre-line;
+}
+
 .mod-row__all-scores summary {
   min-height: var(--touch-target-min);
   padding: var(--space-sm) 0;

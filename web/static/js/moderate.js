@@ -101,6 +101,14 @@
   var HELD_LINE = "Held. It isn't shown to anyone until the check finishes or you keep it.";
   var SERIOUS_PENDING_LINE = 'Serious report, already published while the check waits.';
   var NOT_LISTED_DOES = 'Remove report hides it from everyone and tells the author.';
+  // The Comments section (Phase 8 plan 18, D-14). Flagged, near the line and
+  // unchecked comments, each with Keep and Remove. The sentences are client
+  // copy, like every other sentence on this screen.
+  var COMMENT_KEEP_LABEL = 'Keep comment';
+  var COMMENT_REMOVE_LABEL = 'Remove comment';
+  var COMMENT_DOES = 'Keep comment clears the flags. The comment stays. Remove comment hides it from everyone.';
+  var COMMENT_HANDLED_MESSAGE = 'This comment was already handled. Refresh the lists.';
+  var REASON_JOINER = ' · ';
 
   // The page elements this module drives. If one is missing, nothing is wired.
   var refreshBtn = document.getElementById('mod-refresh');
@@ -124,6 +132,20 @@
   if (!complete) {
     return;
   }
+
+  // The Comments section is wired only when its four parts are all on the page.
+  var commentsUi = null;
+  (function () {
+    var heading = document.getElementById('mod-h-comments');
+    var total = document.getElementById('mod-count-comments');
+    var listEl = document.getElementById('mod-list-comments');
+    var empty = document.getElementById('mod-empty-comments');
+    if (heading && total && listEl && empty && heading.parentNode) {
+      commentsUi = { heading: heading, total: total, list: listEl, empty: empty, section: heading.parentNode };
+    }
+  }());
+  var commentEntries = {};
+  var commentTotal = 0;
 
   // The state. counts holds the server's numbers and only dropReport lowers
   // them. membership maps a report id to the list keys it was in at the last
@@ -715,9 +737,19 @@
       sections[list.key].section.setAttribute('aria-busy', 'true');
     });
     refreshBtn.setAttribute('aria-disabled', 'true');
+    // Amended 2026-10-29 by Phase 8 plan 18 (D-14): the Comments list loads
+    // right after the report queue, and the refresh line and toast speak for
+    // both loads together.
+    var queueOk = false;
     apiRequest('GET', '/api/moderation/queue', REQUEST_TIMEOUT_MS).then(function (res) {
       if (res.ok && res.body) {
         applyQueue(res.body);
+        queueOk = true;
+      }
+    }, function () {
+      queueOk = false;
+    }).then(loadComments).then(function (commentsOk) {
+      if (queueOk && commentsOk) {
         refreshError.hidden = true;
         if (manual) {
           Pinalert.showToast(REFRESHED_TOAST, null, TOAST_MS);
@@ -725,9 +757,6 @@
       } else {
         refreshError.hidden = false;
       }
-    }, function () {
-      refreshError.hidden = false;
-    }).then(function () {
       LISTS.forEach(function (list) {
         sections[list.key].section.removeAttribute('aria-busy');
       });
@@ -979,6 +1008,246 @@
     });
   }
 
+  // The Comments section (Phase 8 plan 18, D-14). A row shows the reason words
+  // the server sends, the comment words, the report it belongs to and the time,
+  // with Keep and Remove. Every server string goes through Pinalert.setText. The
+  // list carries no author, flagger, email or account, so the row names none.
+
+  function makeCommentButton(action, label, ariaLabel) {
+    var button = makeEl('button', 'btn');
+    button.setAttribute('type', 'button');
+    button.setAttribute('data-mod-comment-action', action);
+    button.setAttribute('aria-label', ariaLabel);
+    Pinalert.setText(button, label);
+    return button;
+  }
+
+  function commentMetaLine(item) {
+    var category = String(item.category || '');
+    if (Object.prototype.hasOwnProperty.call(Pinalert.CATEGORY_LABELS, category)) {
+      category = Pinalert.CATEGORY_LABELS[category];
+    }
+    return category + ' report ' + item.report_id + REASON_JOINER + Pinalert.relativeTime(item.at);
+  }
+
+  function buildCommentFlags(item) {
+    var total = toCount(item.flags);
+    if (total < 1) {
+      return null;
+    }
+    var block = makeEl('div', 'mod-row__why');
+    var line = makeEl('p', 'mod-row__why-line');
+    Pinalert.setText(line, flaggedLine(total));
+    block.appendChild(line);
+    var given = Array.isArray(item.flag_reasons) ? item.flag_reasons : [];
+    var list = makeEl('ul', 'mod-scores');
+    given.forEach(function (reason) {
+      if (typeof reason !== 'string' || reason === '') {
+        return;
+      }
+      var li = document.createElement('li');
+      Pinalert.setText(li, reason);
+      list.appendChild(li);
+    });
+    if (list.firstChild) {
+      block.appendChild(list);
+    }
+    return block;
+  }
+
+  function buildCommentRow(item) {
+    var id = item.id;
+    var row = document.createElement('li');
+    row.className = 'mod-row';
+    row.setAttribute('data-mod-comment-key', String(id));
+    row.setAttribute('aria-labelledby', 'mod-comment-' + id + '-name');
+
+    var entry = { id: id, row: row, keepBtn: null, removeBtn: null, actions: null, error: null, busy: false };
+    commentEntries[String(id)] = entry;
+
+    var idLine = makeEl('p', 'mod-row__idline');
+    var name = makeEl('span', 'mod-row__id');
+    name.id = 'mod-comment-' + id + '-name';
+    Pinalert.setText(name, 'Comment ' + id);
+    idLine.appendChild(name);
+    var words = [];
+    (Array.isArray(item.reasons) ? item.reasons : []).forEach(function (reason) {
+      if (typeof reason === 'string' && reason !== '') {
+        words.push(reason);
+      }
+    });
+    if (words.length > 0) {
+      var state = makeEl('span', 'mod-row__state');
+      Pinalert.setText(state, words.join(REASON_JOINER));
+      idLine.appendChild(state);
+    }
+    row.appendChild(idLine);
+
+    var meta = makeEl('p', 'mod-row__meta');
+    Pinalert.setText(meta, commentMetaLine(item));
+    row.appendChild(meta);
+
+    var text = makeEl('p', 'mod-row__text mod-row__text--comment');
+    Pinalert.setText(text, typeof item.words === 'string' ? item.words : '');
+    row.appendChild(text);
+
+    var flags = buildCommentFlags(item);
+    if (flags) {
+      row.appendChild(flags);
+    }
+
+    var actions = makeEl('div', 'mod-row__actions');
+    entry.keepBtn = makeCommentButton('keep', COMMENT_KEEP_LABEL, 'Keep comment ' + id);
+    entry.removeBtn = makeCommentButton('remove', COMMENT_REMOVE_LABEL, 'Remove comment ' + id);
+    actions.appendChild(entry.keepBtn);
+    actions.appendChild(entry.removeBtn);
+    entry.actions = actions;
+    row.appendChild(actions);
+
+    var does = makeEl('p', 'mod-row__does');
+    Pinalert.setText(does, COMMENT_DOES);
+    row.appendChild(does);
+    return entry;
+  }
+
+  function renderCommentCount() {
+    Pinalert.setText(commentsUi.total, '(' + commentTotal + ')');
+    commentsUi.empty.hidden = commentTotal > 0;
+  }
+
+  function applyComments(items) {
+    clearChildren(commentsUi.list);
+    commentEntries = {};
+    commentTotal = 0;
+    items.forEach(function (item) {
+      if (!item || !isReportId(item.id)) {
+        return;
+      }
+      commentsUi.list.appendChild(buildCommentRow(item).row);
+      commentTotal += 1;
+    });
+    renderCommentCount();
+  }
+
+  // loadComments fetches the comment queue and answers true when it was shown.
+  // A page without the section answers true and does nothing.
+  function loadComments() {
+    if (!commentsUi) {
+      return Promise.resolve(true);
+    }
+    commentsUi.section.setAttribute('aria-busy', 'true');
+    return apiRequest('GET', '/api/moderation/comments', REQUEST_TIMEOUT_MS).then(function (res) {
+      if (res.ok && res.body && Array.isArray(res.body.comments)) {
+        applyComments(res.body.comments);
+        return true;
+      }
+      return false;
+    }, function () {
+      return false;
+    }).then(function (shown) {
+      commentsUi.section.removeAttribute('aria-busy');
+      return shown;
+    });
+  }
+
+  function setCommentBusy(entry, busy) {
+    entry.busy = busy;
+    if (busy) {
+      entry.row.setAttribute('aria-busy', 'true');
+      if (entry.error) {
+        entry.error.hidden = true;
+      }
+    } else {
+      entry.row.removeAttribute('aria-busy');
+    }
+    [entry.keepBtn, entry.removeBtn].forEach(function (button) {
+      if (busy) {
+        button.setAttribute('aria-disabled', 'true');
+        button.classList.add('btn--off');
+      } else {
+        button.removeAttribute('aria-disabled');
+        button.classList.remove('btn--off');
+      }
+    });
+  }
+
+  function showCommentError(entry, message) {
+    if (!entry.error) {
+      entry.error = document.createElement('p');
+      entry.error.className = 'inline-error mod-row__error';
+      entry.error.setAttribute('role', 'alert');
+      entry.row.insertBefore(entry.error, entry.actions.nextSibling);
+    }
+    Pinalert.setText(entry.error, message);
+    entry.error.hidden = false;
+  }
+
+  // commentFocusTarget picks where focus goes when a comment row leaves: the
+  // next row's first button, else the previous row's, else the section heading.
+  function commentFocusTarget(entry) {
+    var next = entry.row.nextElementSibling;
+    var prev = entry.row.previousElementSibling;
+    var target = next ? firstRowButton(next) : null;
+    if (!target && prev) {
+      target = firstRowButton(prev);
+    }
+    if (!target) {
+      target = commentsUi.heading;
+      target.setAttribute('tabindex', '-1');
+    }
+    return target;
+  }
+
+  function commentActionDone(entry, action) {
+    var target = commentFocusTarget(entry);
+    if (entry.row.parentNode) {
+      entry.row.parentNode.removeChild(entry.row);
+    }
+    delete commentEntries[String(entry.id)];
+    commentTotal = Math.max(0, commentTotal - 1);
+    renderCommentCount();
+    target.focus();
+    Pinalert.showToast('Comment ' + entry.id + (action === 'remove' ? ' removed.' : ' kept.'), null, TOAST_MS);
+  }
+
+  function commentActionFailed(entry, message) {
+    setCommentBusy(entry, false);
+    showCommentError(entry, message);
+  }
+
+  // sendCommentAction posts Keep or Remove. Like the report action it carries
+  // no client timer, and a repeat is answered as already handled.
+  function sendCommentAction(entry, action) {
+    if (entry.busy) {
+      return;
+    }
+    setCommentBusy(entry, true);
+    // The caller passes only keep or remove, the two comment routes.
+    apiRequest('POST', '/api/moderation/comments/' + entry.id + '/' + action, 0).then(function (res) {
+      if (res.ok) {
+        commentActionDone(entry, action);
+      } else if (res.status === 404 || res.status === 409) {
+        commentActionFailed(entry, COMMENT_HANDLED_MESSAGE);
+      } else {
+        commentActionFailed(entry, ACTION_FAILED_MESSAGE);
+      }
+    }, function () {
+      commentActionFailed(entry, ACTION_OFFLINE_MESSAGE);
+    });
+  }
+
+  function onCommentButton(button) {
+    var rowEl = button.closest('[data-mod-comment-key]');
+    var entry = rowEl ? commentEntries[rowEl.getAttribute('data-mod-comment-key')] : null;
+    if (!entry || entry.busy) {
+      return;
+    }
+    var action = button.getAttribute('data-mod-comment-action');
+    if (action === 'keep' || action === 'remove') {
+      sendCommentAction(entry, action);
+    }
+  }
+
   function entryOf(el) {
     var rowEl = el.closest('[data-mod-key]');
     return rowEl ? entries[rowEl.getAttribute('data-mod-key')] : null;
@@ -991,6 +1260,11 @@
     }
     if (target.closest('#mod-refresh')) {
       loadLists(true);
+      return;
+    }
+    var commentButton = target.closest('button[data-mod-comment-action]');
+    if (commentButton) {
+      onCommentButton(commentButton);
       return;
     }
     var button = target.closest('button[data-mod-action]');

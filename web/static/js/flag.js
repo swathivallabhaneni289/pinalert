@@ -22,6 +22,13 @@ window.PinalertFlag = (function () {
   var FLAG_ALREADY_TOAST = 'You already flagged this report. Moderators will see it.';
   var FLAG_OFFLINE_MESSAGE = "You're offline, so this wasn't sent. Flags are never saved for later. Try again when you have a signal.";
   var FLAG_GONE_MESSAGE = 'This report is no longer available.';
+  // Comment mode (Phase 8 plan 18, D-14): the same dialog, in its own words.
+  // The report title and the Dispute line stay in the template; report mode
+  // writes the report title back so a comment open never leaks into a report.
+  var FLAG_REPORT_TITLE = 'Why are you flagging this report?';
+  var FLAG_COMMENT_TITLE = 'Why are you flagging this comment?';
+  var FLAG_COMMENT_ALREADY_TOAST = 'You already flagged this comment. Moderators will see it.';
+  var FLAG_COMMENT_GONE_MESSAGE = 'This comment is no longer available.';
   var FLAG_ERROR_MESSAGE = 'Something went wrong. Try again.';
   var FLAG_TIMEOUT_MS = 10000;
   // The note box takes at most NOTE_MAX characters (its maxlength, counted the
@@ -140,6 +147,7 @@ window.PinalertFlag = (function () {
       backdrop: backdrop,
       panel: backdrop.querySelector('.modal-panel'),
       title: document.getElementById('flag-dialog-title'),
+      dispute: document.getElementById('flag-dialog-dispute'),
       reasons: document.getElementById('flag-dialog-reasons'),
       boxes: backdrop.querySelectorAll('input[name="flag-reason"]'),
       choose: document.getElementById('flag-dialog-choose'),
@@ -176,7 +184,10 @@ window.PinalertFlag = (function () {
       return;
     }
     current = {
+      target: 'report',
       reportId: opener.dataset.flagReportId,
+      commentId: null,
+      onSent: null,
       opener: opener,
       surface: surfaceOf(opener),
       rowNext: null,
@@ -197,6 +208,43 @@ window.PinalertFlag = (function () {
     if (row) {
       current.rowNext = row.nextElementSibling;
       current.rowPrev = row.previousElementSibling;
+    }
+    showDialog(r);
+  }
+
+  // openForComment opens the same dialog for a comment (Phase 8 plan 18, D-14).
+  // The caller passes the comment id, the control that was pressed (focus goes
+  // back to it) and an optional onSent, called after a 201 or an already
+  // flagged answer.
+  function openForComment(opts) {
+    var r = dialogRefs();
+    if (!r || current || !opts || opts.commentId === undefined || opts.commentId === null) {
+      return;
+    }
+    current = {
+      target: 'comment',
+      reportId: null,
+      commentId: String(opts.commentId),
+      onSent: typeof opts.onSent === 'function' ? opts.onSent : null,
+      opener: opts.opener || null,
+      surface: 'comment',
+      rowNext: null,
+      rowPrev: null
+    };
+    showDialog(r);
+  }
+
+  // showDialog sets the words for the mode, then opens the window.
+  function showDialog(r) {
+    var comment = current.target === 'comment';
+    Pinalert.setText(r.title, comment ? FLAG_COMMENT_TITLE : FLAG_REPORT_TITLE);
+    if (r.dispute) {
+      r.dispute.hidden = comment;
+    }
+    if (comment) {
+      r.panel.removeAttribute('aria-describedby');
+    } else {
+      r.panel.setAttribute('aria-describedby', 'flag-dialog-dispute');
     }
     // A fresh dialog for every report: no ticks, an empty note. A refused or
     // failed send keeps both, because only this function clears them.
@@ -324,7 +372,7 @@ window.PinalertFlag = (function () {
   function sendFlag(reasons, note) {
     setSending(true);
     var limit = Pinalert.requestTimeout(FLAG_TIMEOUT_MS, 'flag');
-    Promise.race([fetch('/api/reports/' + encodeURIComponent(current.reportId) + '/flag', {
+    Promise.race([fetch(flagPath(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
@@ -344,6 +392,13 @@ window.PinalertFlag = (function () {
     });
   }
 
+  function flagPath() {
+    if (current.target === 'comment') {
+      return '/api/comments/' + encodeURIComponent(current.commentId) + '/flag';
+    }
+    return '/api/reports/' + encodeURIComponent(current.reportId) + '/flag';
+  }
+
   // serverField returns the field and the message of an error body, or
   // empty strings.
   function serverField(body) {
@@ -361,7 +416,7 @@ window.PinalertFlag = (function () {
       return;
     }
     if (status === 409) {
-      finishFlagged(FLAG_ALREADY_TOAST);
+      finishFlagged(current.target === 'comment' ? FLAG_COMMENT_ALREADY_TOAST : FLAG_ALREADY_TOAST);
       return;
     }
     if (status === 429) {
@@ -370,7 +425,7 @@ window.PinalertFlag = (function () {
     }
     if (status === 404 || status === 410) {
       refs.send.hidden = true;
-      showError(FLAG_GONE_MESSAGE);
+      showError(current.target === 'comment' ? FLAG_COMMENT_GONE_MESSAGE : FLAG_GONE_MESSAGE);
       refs.back.focus();
       return;
     }
@@ -389,9 +444,15 @@ window.PinalertFlag = (function () {
   }
 
   function finishFlagged(toast) {
-    markFlaggedEverywhere(current.reportId);
+    var onSent = current.onSent;
+    if (current.target === 'report') {
+      markFlaggedEverywhere(current.reportId);
+    }
     closeFlagDialog();
     Pinalert.showToast(toast);
+    if (onSent) {
+      onSent();
+    }
   }
 
   function setSending(on) {
@@ -555,6 +616,9 @@ window.PinalertFlag = (function () {
         return;
       }
     }
+    if (state.target === 'comment') {
+      return;
+    }
     var controls = document.querySelectorAll('.flag-control');
     for (var i = 0; i < controls.length; i++) {
       var el = controls[i];
@@ -594,6 +658,7 @@ window.PinalertFlag = (function () {
 
   return {
     createFlagControl: createFlagControl,
-    updateFlagControl: updateFlagControl
+    updateFlagControl: updateFlagControl,
+    openForComment: openForComment
   };
 }());

@@ -538,11 +538,14 @@ func TestModeratePageAssets(t *testing.T) {
 	if n := strings.Count(tmpl, "<h1"); n != 1 {
 		t.Errorf("<h1 occurs %d times, want 1", n)
 	}
-	if n := strings.Count(tmpl, "<h2"); n != 3 {
-		t.Errorf("<h2 occurs %d times, want 3", n)
+	// Amended 2026-10-29 by Phase 8 plan 18 (D-14): the Comments section is the
+	// fourth heading and the fourth section; its empty line is pinned by
+	// TestModerateCommentsSection. The mod-section__line count stays 3.
+	if n := strings.Count(tmpl, "<h2"); n != 4 {
+		t.Errorf("<h2 occurs %d times, want 4", n)
 	}
-	if n := strings.Count(tmpl, `class="mod-section"`); n != 3 {
-		t.Errorf(`class="mod-section" occurs %d times, want 3`, n)
+	if n := strings.Count(tmpl, `class="mod-section"`); n != 4 {
+		t.Errorf(`class="mod-section" occurs %d times, want 4`, n)
 	}
 	if n := strings.Count(tmpl, `class="mod-section__line"`); n != 3 {
 		t.Errorf(`class="mod-section__line" occurs %d times, want 3`, n)
@@ -753,6 +756,86 @@ func TestModerateStylesheet(t *testing.T) {
 		if got := declsOf(r.declBody)["border"]; got != "1px solid CanvasText" {
 			t.Errorf("%s in forced colors: border = %q", sel, got)
 		}
+	}
+}
+
+// TestModerateCommentsSection pins the Comments section of Phase 8 plan 18
+// (D-14, UI-SPEC P8-C19, review W12): the template holds the section, its list
+// and the exact empty line in the p.mod-empty look; moderate.js reads the
+// comment queue and posts Keep and Remove to the comment routes, builds rows
+// through Pinalert.setText only, and adds no listener, no request call and no
+// link of its own.
+//
+// Honest limit of this test's claim: static inspection proves the shapes in the
+// source; it cannot prove how the section looks or that a moderator can act on
+// a row, which the human check does.
+func TestModerateCommentsSection(t *testing.T) {
+	tmpl := p426ReadTemplate(t)
+	js := p426ReadJS(t)
+
+	for _, id := range []string{"mod-h-comments", "mod-count-comments", "mod-list-comments", "mod-empty-comments"} {
+		if n := strings.Count(tmpl, `id="`+id+`"`); n != 1 {
+			t.Errorf(`id="%s" occurs %d times, want 1`, id, n)
+		}
+	}
+	list := findTagWindow(t, tmpl, `id="mod-list-comments"`)
+	if !strings.HasPrefix(list, "<ol") {
+		t.Errorf("mod-list-comments must be an ol, got %q", list)
+	}
+	p426WantAll(t, "comments list", list, `class="mod-list"`, `role="list"`, `aria-labelledby="mod-h-comments"`)
+	empty := findTagWindow(t, tmpl, `id="mod-empty-comments"`)
+	p426WantAll(t, "comments empty line", empty, `class="mod-empty"`, "hidden")
+	if n := p426CountTemplateText(tmpl, "No comments to review."); n != 1 {
+		t.Errorf("the empty sentence occurs %d times, want exactly 1", n)
+	}
+	if !strings.HasPrefix(empty, "<p") {
+		t.Errorf("the empty line must be a p, got %q", empty)
+	}
+	p426InOrder(t, "sections", tmpl, `id="mod-h-pending"`, `id="mod-h-comments"`, "</main>")
+	p426WantAll(t, "heading", findTagWindow(t, tmpl, `id="mod-h-comments"`), "<h2")
+	p426WantAll(t, "template", tmpl, ">Comments <span")
+
+	// The script reads the queue and posts to the two comment routes.
+	p426WantAll(t, "moderate.js", js, "'/api/moderation/comments'", "'/api/moderation/comments/'")
+	load := jsFunctionBody(t, js, "loadComments()")
+	p426WantAll(t, "loadComments", load, "apiRequest('GET', '/api/moderation/comments', REQUEST_TIMEOUT_MS)",
+		"Array.isArray(res.body.comments)", "applyComments(")
+	send := jsFunctionBody(t, js, "sendCommentAction(entry, action)")
+	p426WantAll(t, "sendCommentAction", send, "apiRequest('POST', '/api/moderation/comments/' + entry.id + '/' + action, 0)",
+		"COMMENT_HANDLED_MESSAGE", "ACTION_FAILED_MESSAGE", "ACTION_OFFLINE_MESSAGE", "404", "409")
+	pick := jsFunctionBody(t, js, "onCommentButton(button)")
+	p426WantAll(t, "onCommentButton", pick, "action === 'keep' || action === 'remove'", "entry.busy")
+	p426WantAll(t, "onRootClick", jsFunctionBody(t, js, "onRootClick(evt)"), "button[data-mod-comment-action]",
+		"onCommentButton(")
+	p426WantAll(t, "loadLists", jsFunctionBody(t, js, "loadLists(manual)"), ".then(loadComments)")
+
+	// Rows hold the words, the reasons and the report only as text nodes.
+	row := jsFunctionBody(t, js, "buildCommentRow(item)")
+	p426WantAll(t, "buildCommentRow", row, "Pinalert.setText(text, typeof item.words === 'string' ? item.words : '')",
+		"words.join(REASON_JOINER)", "commentMetaLine(item)", "COMMENT_KEEP_LABEL", "COMMENT_REMOVE_LABEL",
+		"'mod-row__text mod-row__text--comment'", "'mod-row__actions'", "'mod-row__does'")
+	p426WantAll(t, "commentMetaLine", jsFunctionBody(t, js, "commentMetaLine(item)"), "Pinalert.CATEGORY_LABELS",
+		"' report '", "item.report_id", "Pinalert.relativeTime(item.at)")
+	p426WantNone(t, "comment code", row+jsFunctionBody(t, js, "buildCommentFlags(item)"), "innerHTML", "textContent",
+		"createTextNode", "author", "username", "email", "account", "'href'")
+	p426WantAll(t, "setCommentBusy", jsFunctionBody(t, js, "setCommentBusy(entry, busy)"), "'aria-disabled'", "'btn--off'")
+	p426WantAll(t, "showCommentError", jsFunctionBody(t, js, "showCommentError(entry, message)"),
+		"'inline-error mod-row__error'", "setAttribute('role', 'alert')")
+	p426WantAll(t, "commentActionDone", jsFunctionBody(t, js, "commentActionDone(entry, action)"),
+		"removeChild(entry.row)", "renderCommentCount()", "target.focus()", "Pinalert.showToast(")
+
+	// The shared guards of the file still hold with the new section in it.
+	if n := strings.Count(js, "fetch("); n != 1 {
+		t.Errorf("fetch( occurs %d times, want exactly 1", n)
+	}
+	if n := strings.Count(js, "addEventListener("); n != 3 {
+		t.Errorf("addEventListener( occurs %d times, want exactly 3", n)
+	}
+	p426WantNone(t, "moderate.js", js, "innerHTML", "setInterval")
+
+	css := p426ReadCSS(t)
+	if !strings.Contains(css, ".mod-row__text--comment") || !strings.Contains(css, "white-space: pre-line") {
+		t.Error("moderate.css must keep a comment's line breaks with .mod-row__text--comment")
 	}
 }
 
