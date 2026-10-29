@@ -549,7 +549,10 @@ func TestNotificationsSectionRows(t *testing.T) {
 		`<span class="place-row__label">Critical reports near my home area</span>`,
 		`<span class="place-row__label">Severe official alerts for my area</span>`,
 		`{{if .OfficialPushOn}} checked{{end}}`,
-		`<span class="place-row__label">Changes to reports I posted or voted on</span>`,
+		// Amended 2026-10-29 by Phase 8 plan 15 (D-16, UI-SPEC P8-C17): the Changes
+		// switch also covers comments, because commenting makes you follow the
+		// report. Every other pinned line is unchanged.
+		`<span class="place-row__label">Changes and comments on reports I posted, voted on or commented on</span>`,
 		`<span class="place-row__label">A Reliable reporter posts near me</span>`,
 		`<span class="place-row__label">How far from my home area</span>`,
 		`{{if .CriticalPushOn}} checked{{end}}`,

@@ -195,6 +195,12 @@ LIMIT sqlc.arg(row_cap)::int;
 -- (through any of their sessions) or have any vote row on it, with Changes
 -- switched on in an explicit settings row (the default is off), not deleted,
 -- not muted, with a live subscription.
+-- Phase 8 plan 15 (D-16, PAGE-02): a third arm, the accounts that commented on
+-- the report. Only a clear, undeleted comment counts, so a refused, removed,
+-- deleted or held comment never makes its author a push follower (review W8).
+-- It is the same filter as the commented arm of FollowedOpenReports (plan
+-- 08-11) and viewer_commented behind the feed's ViewerFollows (plans 08-08 and
+-- 08-10); keep the three in step.
 WITH people AS (
     SELECT ss.account_id
     FROM reports r
@@ -205,6 +211,12 @@ WITH people AS (
     SELECT v.account_id
     FROM votes v
     WHERE v.report_id = sqlc.arg(report_id)::bigint
+    UNION
+    SELECT c.account_id
+    FROM comments c
+    WHERE c.report_id = sqlc.arg(report_id)::bigint
+      AND c.deleted_at IS NULL
+      AND c.moderation_state = 'clear'
 )
 SELECT a.id AS account_id
 FROM people pe
@@ -389,8 +401,9 @@ ON CONFLICT (account_id, report_id) WHERE kind IN ('critical', 'reliable') DO NO
 
 -- name: EnqueueChangedFromUpdates :execrows
 -- Queues a changed push for each of the account's 3.2 event rows after since:
--- reached_live, hidden, resolved and fading. Rows of kind more and
--- reliable_nearby are never pushed as changes. A reached_live row is skipped
+-- reached_live, hidden, resolved, fading and (Phase 8 plan 15, D-16)
+-- comment_on_yours and reply_to_yours. Rows of kind more and reliable_nearby
+-- are never pushed as changes. A reached_live row is skipped
 -- when the account already has a critical or reliable row for that report: the
 -- in place confirmed update carries that news, so the person never gets both
 -- (UI-SPEC 3c). expires_at comes from the report. Once per update row.
@@ -401,7 +414,7 @@ SELECT u.account_id, u.report_id, 'changed', u.id, r.expires_at,
 FROM updates u
 JOIN reports r ON r.id = u.report_id
 WHERE u.account_id = sqlc.arg(account_id)::bigint
-  AND u.kind IN ('reached_live', 'hidden', 'resolved', 'fading')
+  AND u.kind IN ('reached_live', 'hidden', 'resolved', 'fading', 'comment_on_yours', 'reply_to_yours')
   AND u.report_id IS NOT NULL
   AND u.created_at > sqlc.arg(since)::timestamptz
   AND NOT (
