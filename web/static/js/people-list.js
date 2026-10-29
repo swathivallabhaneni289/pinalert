@@ -40,6 +40,11 @@ window.PinalertPeopleList = (function () {
     blocked: 'Blocked people'
   };
   var MESSAGE_OFFLINE = 'You\'re offline, so this wasn\'t saved. Try again when you have a signal.';
+  // The header the server's unmute and unblock answers carry (handlers.ChangedHeader).
+  var CHANGED_HEADER = 'Pinalert-Changed';
+  // The calm line when the server says the tap changed nothing, for example the
+  // person changed their username since the list was read (09-REVIEW IN-B03).
+  var NOTHING_CHANGED_LINE = 'That person is no longer listed under that name. The list is up to date now.';
   var UNBLOCK_FAILED = 'Couldn\'t unblock. Try again.';
   var UNMUTE_FAILED = 'Couldn\'t unmute. Try again.';
   // The two lists whose rows are plain (no link) and end in an outlined button
@@ -179,7 +184,11 @@ window.PinalertPeopleList = (function () {
       }, function () {
         return {};
       }).then(function (body) {
-        return { status: res.status, ok: res.ok, body: body };
+        // changed is the server's Pinalert-Changed header on an unmute or an
+        // unblock: '1' a row was deleted, '0' nothing was there (09-REVIEW
+        // IN-B03). Null when the header is absent.
+        var changed = res.headers && typeof res.headers.get === 'function' ? res.headers.get(CHANGED_HEADER) : null;
+        return { status: res.status, ok: res.ok, body: body, changed: changed };
       });
     });
     return Promise.race([work, expired]).then(function (answer) {
@@ -446,6 +455,27 @@ window.PinalertPeopleList = (function () {
         settle();
         showActionError(refusalLine(answer, undo.failed));
         return false;
+      }
+      if (answer.changed === '0') {
+        // The server found nothing to undo under this name (it was renamed since
+        // the list was read, or the row is already gone). Saying "unmuted" would
+        // be untrue, so the list is read again and the count is left alone.
+        settle();
+        return load('').then(function (read) {
+          if (!read) {
+            return false;
+          }
+          // The line goes in the window's own message place, after the read (the
+          // read clears it), and no "is unmuted" sentence is said.
+          showActionError(NOTHING_CHANGED_LINE);
+          var buttons = els.rows.querySelectorAll('button');
+          if (buttons.length > 0) {
+            buttons[0].focus();
+          } else if (!els.empty.hidden) {
+            els.emptyTitle.focus();
+          }
+          return false;
+        });
       }
       busy = false;
       var after = li.nextElementSibling || li.nextSibling;

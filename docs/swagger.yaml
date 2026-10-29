@@ -3881,7 +3881,9 @@ paths:
         Undoes a block. Send no body or an empty object. A well formed username that matches
         nobody, or someone you did not block, answers 204 and changes nothing. A malformed
         username answers the same 404 as the profile. Follows that ended with the block do not
-        come back.
+        come back. The answer carries the header Pinalert-Changed, 1 when a block of yours was
+        taken back and 0 when nothing changed; it is 0 alike for a name nobody holds, so it reveals
+        nothing about other people.
         Requires a session verified by email; an unverified caller receives 401.
       parameters:
       - description: Username
@@ -3894,6 +3896,10 @@ paths:
       responses:
         "204":
           description: Unblocked
+          headers:
+            Pinalert-Changed:
+              description: 1 when a block was taken back, 0 when nothing changed
+              type: string
         "400":
           description: Bad Request
           schema:
@@ -3976,7 +3982,9 @@ paths:
         Undoes a mute. Send no body or an empty object. It works for any username in the
         caller's own list, also one whose profile went private since. A well formed username that
         matches nobody, or someone the caller did not mute, answers 204 and changes nothing. A
-        malformed username answers the same 404 as the profile.
+        malformed username answers the same 404 as the profile. The answer carries the header
+        Pinalert-Changed, 1 when a mute of yours was taken back and 0 when nothing changed; it is 0
+        alike for a name nobody holds, so it reveals nothing about other people.
         Requires a session verified by email; an unverified caller receives 401.
       parameters:
       - description: Username
@@ -3989,6 +3997,10 @@ paths:
       responses:
         "204":
           description: Unmuted
+          headers:
+            Pinalert-Changed:
+              description: 1 when a mute was taken back, 0 when nothing changed
+              type: string
         "400":
           description: Bad Request
           schema:

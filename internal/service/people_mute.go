@@ -77,14 +77,24 @@ func (s *PeopleService) Mute(ctx context.Context, muterID int64, username string
 // nobody; only a malformed username is ErrPersonNotFound (the same rule as
 // Unfollow and Unblock, review W7).
 func (s *PeopleService) Unmute(ctx context.Context, muterID int64, username string) error {
+	_, err := s.UnmuteChanged(ctx, muterID, username)
+	return err
+}
+
+// UnmuteChanged is Unmute that also says whether a mute row was deleted
+// (09-REVIEW IN-B03). changed is false for a well formed name that matches
+// nobody and for a person the caller never muted, and the two look the same, so
+// the answer shows only whether the caller's own mute existed under that name.
+func (s *PeopleService) UnmuteChanged(ctx context.Context, muterID int64, username string) (changed bool, err error) {
 	id, ok, err := s.idByUsername(ctx, username)
 	if err != nil || !ok {
-		return err
+		return false, err
 	}
-	if _, err := s.q.UnmutePerson(ctx, sqlcgen.UnmutePersonParams{MuterID: muterID, MutedID: id}); err != nil {
-		return fmt.Errorf("service: Unmute: unmuting: %w", err)
+	n, err := s.q.UnmutePerson(ctx, sqlcgen.UnmutePersonParams{MuterID: muterID, MutedID: id})
+	if err != nil {
+		return false, fmt.Errorf("service: Unmute: unmuting: %w", err)
 	}
-	return nil
+	return n > 0, nil
 }
 
 // MutedPeople lists the people the account muted, newest first, at most
