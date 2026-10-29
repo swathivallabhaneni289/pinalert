@@ -30,7 +30,10 @@ const MutedPeopleListCap = 500
 // Mute mutes the person with this username (D-12). The person must be one the
 // caller can see (as Profile decides), so a mute cannot be used to probe who
 // has a private profile; muting yourself is ErrPersonNotFound. A repeat keeps
-// one row. Nothing else changes: no follow ends and no report is hidden.
+// one row. The follow, if any, stays and no report is hidden, but the Notify me
+// bell for this person turns off in the same call (D-12, UI-SPEC 1e): muting
+// stops person level notes, and the bell stays off after Unmute until the
+// person turns it on again.
 func (s *PeopleService) Mute(ctx context.Context, muterID int64, username string) error {
 	name, ok := canonicalUsername(username)
 	if !ok {
@@ -55,6 +58,10 @@ func (s *PeopleService) Mute(ctx context.Context, muterID int64, username string
 	}
 	if err := s.q.MutePerson(ctx, sqlcgen.MutePersonParams{MuterID: muterID, MutedID: person.ID, Now: s.now().UTC()}); err != nil {
 		return fmt.Errorf("service: Mute: muting: %w", err)
+	}
+	// Zero rows means no active follow or the bell was already off; both are fine.
+	if _, err := s.q.TurnOffFollowNotify(ctx, sqlcgen.TurnOffFollowNotifyParams{FollowerID: muterID, FolloweeID: person.ID}); err != nil {
+		return fmt.Errorf("service: Mute: turning the bell off: %w", err)
 	}
 	return nil
 }

@@ -94,6 +94,11 @@ type PersonProfile struct {
 	// of someone who muted you.
 	Muted bool
 
+	// Notify says the viewer has the Notify me bell on for this person (plan
+	// 09-23, D-08). It is true only while the viewer follows the person and has
+	// not muted them, and false on your own page.
+	Notify bool
+
 	// MayRate says the viewer may rate this person now, and YourRating is the
 	// viewer's own current rating, 1 to 5, or 0 for none (plan 09-14, D-02, D-23).
 	// Both are false and 0 on your own page, when the viewer blocked the person,
@@ -139,7 +144,8 @@ func initialOf(username string) string {
 // the page shows 0 Followers. The write inside a read is safe because it only
 // soft ends follows that SC5 already ends; the sweep of plan 09-06 does the
 // same for people nobody looks at. Muted (plan 09-18) is read for another
-// person's visible profile only. The notify field is added by a later plan.
+// person's visible profile only. Notify (plan 09-23) is the viewer's own bell, read
+// only while the viewer follows and has not muted the person.
 func (s *PeopleService) Profile(ctx context.Context, viewerID int64, username string) (PersonProfile, error) {
 	name, ok := canonicalUsername(username)
 	if !ok {
@@ -239,6 +245,13 @@ func (s *PeopleService) Profile(ctx context.Context, viewerID int64, username st
 			return PersonProfile{}, fmt.Errorf("service: Profile: reading whether the viewer muted the person: %w", err)
 		}
 		p.Muted = muted
+		if following && !muted {
+			on, err := s.q.ActiveFollowNotify(ctx, sqlcgen.ActiveFollowNotifyParams{FollowerID: viewerID, FolloweeID: person.ID})
+			if err != nil {
+				return PersonProfile{}, fmt.Errorf("service: Profile: reading the viewer's bell: %w", err)
+			}
+			p.Notify = on
+		}
 		if s.ratings != nil {
 			may, err := s.ratings.MayRate(ctx, viewerID, person.ID)
 			if err != nil {

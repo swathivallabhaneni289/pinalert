@@ -773,6 +773,18 @@ definitions:
           $ref: '#/definitions/handlers.MutedReportWire'
         type: array
     type: object
+  handlers.NotifyRequest:
+    properties:
+      "on":
+        example: true
+        type: boolean
+    type: object
+  handlers.NotifyResponse:
+    properties:
+      notify:
+        example: true
+        type: boolean
+    type: object
   handlers.OfficialAlertsResponse:
     properties:
       age_seconds:
@@ -1171,6 +1183,12 @@ definitions:
       name:
         example: Asha
         type: string
+      notify:
+        description: |-
+          Notify says the caller has the Notify me bell on for this person. It is true
+          only while the caller follows the person and has not muted them.
+        example: false
+        type: boolean
       profile_public:
         example: true
         type: boolean
@@ -3570,6 +3588,70 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       summary: Mute a person
+      tags:
+      - people
+  /people/{username}/notify:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Switches Notify me for one person the caller follows. It is off by default and exists only
+        while the caller follows the person and has not muted them. Turning it on records the time,
+        so only reports posted later raise a note; turning it off clears it. Send a body with on
+        set to true or false; a repeat changes nothing. The answer is the saved state. A person the
+        caller does not follow, has muted or has blocked, and the caller's own username, answer 409
+        with the field notify and the sentence "Couldn't change this. Try again."; so does turning on
+        a bell when 50 are already on, with the sentence for that limit. A person you may not see
+        answers the same 404 as the profile.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Username
+        in: path
+        name: username
+        required: true
+        type: string
+      - description: The switch
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.NotifyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.NotifyResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Turn Notify me on or off for a person
       tags:
       - people
   /people/{username}/rating:
