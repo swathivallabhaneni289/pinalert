@@ -1480,3 +1480,276 @@ func TestMigration00013(t *testing.T) {
 		t.Errorf("after Up again: %d table and %d column present, want 1 and 1", tables, columns)
 	}
 }
+
+// TestMigration00014 covers the Phase 7.1 migration: the file carries both goose
+// markers, builds nothing concurrently, uses no ON DELETE and no citext, names
+// every constraint and index of the phase, and on a database the CHECK
+// constraints refuse a bad username shape, a duplicate username, an unknown
+// code purpose, a reset row carrying a password and a password hash that is not
+// an argon2id string. Down removes both tables and every added column and Up
+// applies again.
+func TestMigration00014(t *testing.T) {
+	const file = "migrations/00014_add_passwords_and_usernames.sql"
+	contents, err := MigrationsFS.ReadFile(file)
+	if err != nil {
+		t.Fatalf("reading embedded %s: %v", file, err)
+	}
+	text := string(contents)
+	up := strings.Index(text, "+goose Up")
+	down := strings.Index(text, "+goose Down")
+	if up < 0 || down < 0 || down < up {
+		t.Fatalf("%s must carry +goose Up then +goose Down", file)
+	}
+	var code []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		code = append(code, line)
+	}
+	allCode := strings.ToUpper(strings.Join(code, "\n"))
+	if strings.Contains(allCode, "CONCURRENTLY") {
+		t.Error("migration 00014 must not use CONCURRENTLY: goose runs it inside a transaction")
+	}
+	if strings.Contains(allCode, "ON DELETE") {
+		t.Error("migration 00014 must not use ON DELETE: the repo convention has none")
+	}
+	if strings.Contains(allCode, "CITEXT") {
+		t.Error("migration 00014 must not use citext: the stored username is already canonical")
+	}
+	for _, want := range []string{
+		"CREATE TABLE auth_codes", "CREATE TABLE auth_throttles",
+		"accounts_password_hash_shape", "accounts_username_shape", "accounts_username_unique",
+		"accounts_username_screen_valid", "username_changed_at",
+		"auth_codes_purpose_valid", "auth_codes_delivery_valid", "auth_codes_code_hash_shape",
+		"auth_codes_password_hash_shape", "auth_codes_attempts_valid",
+		"idx_auth_codes_session_live", "idx_auth_codes_email",
+		"auth_throttles_scope_valid", "auth_throttles_key_hash_shape", "auth_throttles_failures_valid",
+		"window_started_at", "window_sends", "email_cooldowns_window_sends_valid",
+		"IN ('code', 'account_exists', 'no_account')",
+		"UPDATE sessions SET revoked_at",
+	} {
+		if !strings.Contains(text[up:down], want) {
+			t.Errorf("migration 00014 Up must contain %q", want)
+		}
+	}
+	downText := text[down:]
+	for _, want := range []string{
+		"DROP TABLE auth_throttles;", "DROP TABLE auth_codes;",
+		"DROP COLUMN window_sends", "DROP COLUMN window_started_at",
+		"DROP COLUMN password_hash", "DROP COLUMN username_changed_at",
+		"DROP COLUMN username_screen", "DROP COLUMN username,",
+		"cannot be undone",
+	} {
+		if !strings.Contains(downText, want) {
+			t.Errorf("migration 00014 Down must contain %q", want)
+		}
+	}
+	// The data step is the last statement of Up.
+	if strings.LastIndex(text[up:down], "UPDATE sessions SET revoked_at") < strings.LastIndex(text[up:down], "CREATE TABLE") {
+		t.Error("migration 00014 must end Up with the session revoke data step")
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping the database part of the 00014 migration test")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("opening database: %v", err)
+	}
+
+	goose.SetBaseFS(MigrationsFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_ = goose.Up(db, "migrations")
+		_, _ = db.Exec(`DELETE FROM auth_codes WHERE session_id = 'migration-00014'`)
+		_, _ = db.Exec(`DELETE FROM accounts WHERE email LIKE 'migration-00014-%@example.com'`)
+		_ = db.Close()
+	})
+
+	objects := func() (tables, columns int) {
+		if err := db.QueryRow(`SELECT count(*) FROM information_schema.tables
+			WHERE table_schema = 'public' AND table_name IN ('auth_codes', 'auth_throttles')`).Scan(&tables); err != nil {
+			t.Fatalf("counting tables: %v", err)
+		}
+		if err := db.QueryRow(`SELECT count(*) FROM information_schema.columns
+			WHERE table_schema = 'public' AND (
+				(table_name = 'accounts' AND column_name IN ('password_hash', 'username', 'username_screen', 'username_changed_at'))
+				OR (table_name = 'email_cooldowns' AND column_name IN ('window_started_at', 'window_sends')))`).Scan(&columns); err != nil {
+			t.Fatalf("counting columns: %v", err)
+		}
+		return tables, columns
+	}
+	if tables, columns := objects(); tables != 2 || columns != 6 {
+		t.Errorf("after Up: %d tables and %d columns present, want 2 and 6", tables, columns)
+	}
+
+	wantCode := func(label, code, query string, args ...any) {
+		t.Helper()
+		_, err := db.Exec(query, args...)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != code {
+			t.Errorf("%s: want SQLSTATE %s, got %v", label, code, err)
+		}
+	}
+
+	var first, second int64
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00014-a@example.com') RETURNING id`).Scan(&first); err != nil {
+		t.Fatalf("inserting an account: %v", err)
+	}
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00014-b@example.com') RETURNING id`).Scan(&second); err != nil {
+		t.Fatalf("inserting a second account: %v", err)
+	}
+
+	const setUsername = `UPDATE accounts SET username = $2, username_screen = 'clear' WHERE id = $1`
+	for _, bad := range []string{"Asha", ".asha", "asha.", "as..ha", "123", "ab", "asha-k", "a2345678901234567890x"} {
+		wantCode("username "+bad, "23514", setUsername, first, bad)
+	}
+	if _, err := db.Exec(setUsername, first, "asha_k.1"); err != nil {
+		t.Errorf("username asha_k.1 must be accepted: %v", err)
+	}
+	wantCode("the same username on a second account", "23505", setUsername, second, "asha_k.1")
+	wantCode("a username with no screen state", "23514", `UPDATE accounts SET username_screen = NULL WHERE id = $1`, first)
+	wantCode("a screen state with no username", "23514", `UPDATE accounts SET username_screen = 'clear' WHERE id = $1`, second)
+	wantCode("a password that is not argon2id", "23514", `UPDATE accounts SET password_hash = 'plain' WHERE id = $1`, first)
+	if _, err := db.Exec(`UPDATE accounts SET password_hash = '$argon2id$v=19$m=65536,t=3,p=2$c2FsdA$aGFzaA' WHERE id = $1`, first); err != nil {
+		t.Errorf("an argon2id string must be accepted: %v", err)
+	}
+
+	const hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	const insertCode = `INSERT INTO auth_codes (session_id, purpose, delivery, email, code_hash, password_hash, expires_at)
+		VALUES ('migration-00014', $1, $2, 'migration-00014-a@example.com', $3, $4, now() + interval '10 minutes')`
+	wantCode("purpose login", "23514", insertCode, "login", "code", hash, nil)
+	wantCode("delivery other", "23514", insertCode, "signup", "other", hash, nil)
+	wantCode("a code hash that is not 64 hex", "23514", insertCode, "signup", "code", "abc", nil)
+	wantCode("a reset row carrying a password", "23514", insertCode, "reset", "code", hash, "$argon2id$v=19$x")
+	wantCode("a signup password that is not argon2id", "23514", insertCode, "signup", "code", hash, "plain")
+	if _, err := db.Exec(insertCode, "signup", "code", hash, "$argon2id$v=19$x"); err != nil {
+		t.Errorf("a signup row with an argon2id password must be accepted: %v", err)
+	}
+	for _, delivery := range []string{"account_exists", "no_account"} {
+		if _, err := db.Exec(insertCode, "reset", delivery, hash, nil); err != nil {
+			t.Errorf("delivery %q must be accepted: %v", delivery, err)
+		}
+	}
+	wantCode("negative attempts", "23514", `UPDATE auth_codes SET attempts = -1 WHERE session_id = 'migration-00014'`)
+	wantCode("a throttle scope that is unknown", "23514",
+		`INSERT INTO auth_throttles (scope, key_hash, failures, last_failure_at) VALUES ('other', $1, 1, now())`, hash)
+	wantCode("a throttle key that is a plain address", "23514",
+		`INSERT INTO auth_throttles (scope, key_hash, failures, last_failure_at) VALUES ('sign_in', 'a@example.com', 1, now())`)
+	wantCode("negative window sends", "23514",
+		`INSERT INTO email_cooldowns (email, last_requested_at, window_sends) VALUES ('migration-00014-c@example.com', now(), -1)`)
+
+	// Down drops both tables and every added column whole, so no rows need to
+	// be cleaned up first.
+	if err := goose.DownTo(db, "migrations", 13); err != nil {
+		t.Fatalf("goose down to 13: %v", err)
+	}
+	if tables, columns := objects(); tables != 0 || columns != 0 {
+		t.Errorf("after Down: %d tables and %d columns still present", tables, columns)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up again: %v", err)
+	}
+	if tables, columns := objects(); tables != 2 || columns != 6 {
+		t.Errorf("after Up again: %d tables and %d columns present, want 2 and 6", tables, columns)
+	}
+}
+
+// TestMigrationRevokesPasswordlessSessions proves the D-14 Option X data step on
+// a real database: rolling back and applying 00014 ends every live session of an
+// account with no password, keeps the time of a session that was already
+// revoked, and a later Up changes nothing, so the step runs once.
+func TestMigrationRevokesPasswordlessSessions(t *testing.T) {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping the Option X migration test")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("opening database: %v", err)
+	}
+
+	goose.SetBaseFS(MigrationsFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = goose.Up(db, "migrations")
+		_, _ = db.Exec(`DELETE FROM sessions WHERE session_id LIKE 'optx-%'`)
+		_, _ = db.Exec(`DELETE FROM accounts WHERE email LIKE 'optx-%@example.com'`)
+		_ = db.Close()
+	})
+
+	if err := goose.DownTo(db, "migrations", 13); err != nil {
+		t.Fatalf("goose down to 13: %v", err)
+	}
+
+	var a, b int64
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('optx-a@example.com') RETURNING id`).Scan(&a); err != nil {
+		t.Fatalf("inserting account a: %v", err)
+	}
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('optx-b@example.com') RETURNING id`).Scan(&b); err != nil {
+		t.Fatalf("inserting account b: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO sessions (session_id, account_id) VALUES ('optx-live-a', $1), ('optx-live-b', $2)`, a, b); err != nil {
+		t.Fatalf("inserting live sessions: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO sessions (session_id, account_id, revoked_at) VALUES ('optx-old-b', $1, '2026-01-02 03:04:05+00')`, b); err != nil {
+		t.Fatalf("inserting a revoked session: %v", err)
+	}
+	// A session with no account is not touched.
+	if _, err := db.Exec(`INSERT INTO sessions (session_id) VALUES ('optx-anon')`); err != nil {
+		t.Fatalf("inserting anonymous session: %v", err)
+	}
+
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up again: %v", err)
+	}
+
+	revokedAt := func(id string) sql.NullTime {
+		t.Helper()
+		var at sql.NullTime
+		if err := db.QueryRow(`SELECT revoked_at FROM sessions WHERE session_id = $1`, id).Scan(&at); err != nil {
+			t.Fatalf("reading session %s: %v", id, err)
+		}
+		return at
+	}
+	for _, id := range []string{"optx-live-a", "optx-live-b"} {
+		if !revokedAt(id).Valid {
+			t.Errorf("session %s must be revoked by the migration", id)
+		}
+	}
+	var kept bool
+	if err := db.QueryRow(`SELECT revoked_at = '2026-01-02 03:04:05+00'::timestamptz FROM sessions WHERE session_id = 'optx-old-b'`).Scan(&kept); err != nil || !kept {
+		t.Errorf("an already revoked session must keep its original revoked_at (%v, %v)", kept, err)
+	}
+	if revokedAt("optx-anon").Valid {
+		t.Error("a session with no account must not be revoked")
+	}
+
+	// The step ran once: an account that now has a password and a fresh session
+	// is untouched by a later Up.
+	if _, err := db.Exec(`UPDATE accounts SET password_hash = '$argon2id$v=19$x' WHERE id = $1`, a); err != nil {
+		t.Fatalf("setting a password: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO sessions (session_id, account_id) VALUES ('optx-fresh-a', $1)`, a); err != nil {
+		t.Fatalf("inserting a fresh session: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up a third time: %v", err)
+	}
+	if revokedAt("optx-fresh-a").Valid {
+		t.Error("a later Up must not revoke a fresh session of an account with a password")
+	}
+}
