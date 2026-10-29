@@ -1090,7 +1090,7 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 			IsOwnReport:      isOwn,
 			// The reader's own follow and mute state, from rows already read
 			// (D-09, D-10, D-11). Never says who else follows or muted.
-			ViewerFollows: ViewerFollows(reportVotes, r.ID, q.ViewerAccountID, isOwn),
+			ViewerFollows: ViewerFollows(reportVotes, r.ID, q.ViewerAccountID, isOwn, ex.ViewerCommented),
 			ViewerMuted:   ex.ViewerMuted,
 			Trust:         trust,
 			// Display only, set after Resolve and never read by it (R-05).
@@ -1102,6 +1102,10 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 			// Server authored Only Reliable reporters membership, from the tag on
 			// this report's trust object and the same meta (NOTIF-04, D-26).
 			KeptByReliableFilter: KeptByReliableFilter(trust.Reporter.Tag, meta),
+			// The real comment count and the server's open state (D-03, D-15), from
+			// the extras row and the visibility and expiry already resolved above.
+			CommentCount: int(ex.CommentCount),
+			CommentsOpen: CommentsOpen(vis, r.ExpiresAt, now),
 		})
 	}
 	if err := s.attachUndos(ctx, q.ViewerAccountID, views, now); err != nil {

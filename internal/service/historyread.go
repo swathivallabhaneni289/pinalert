@@ -227,6 +227,10 @@ type classified struct {
 	closure    Closure
 	reporterID *int64
 	votes      []sqlcgen.CurrentVotesForReportsRow
+	// commentCount and viewerCommented come from the one extras read (D-03,
+	// PAGE-02); both are zero for a candidate with no extras row.
+	commentCount    int
+	viewerCommented bool
 }
 
 // classify asks the one resolver about one candidate. Nothing here re derives a
@@ -247,7 +251,7 @@ func classify(c historyCandidate, rc readContext, now time.Time) classified {
 	meta := ReportMeta{Severity: r.Severity, Category: r.Category, Moderation: ModerationState(ex.ModerationState)}
 	vis, reason := Resolve(meta, tally, now)
 	view := ViewOf(vis, r.ExpiresAt, now)
-	out := classified{visibility: vis, reason: reason, view: view, tally: tally, reporterID: reporterID, votes: votes}
+	out := classified{visibility: vis, reason: reason, view: view, tally: tally, reporterID: reporterID, votes: votes, commentCount: int(ex.CommentCount), viewerCommented: ex.ViewerCommented}
 	if view == FeedViewResolved {
 		out.closure = ClosureOf(votes, r.ID, reporterID)
 	}
@@ -310,7 +314,7 @@ func baseView(in viewInput) ReportView {
 		// The reader's follow state from the vote rows already held (D-09, D-10).
 		// ViewerMuted is set by Focus from its extras read; History leaves both
 		// false.
-		ViewerFollows: ViewerFollows(c.votes, r.ID, in.ViewerAccountID, isOwn),
+		ViewerFollows: ViewerFollows(c.votes, r.ID, in.ViewerAccountID, isOwn, c.viewerCommented),
 		// Server authored Show Confirmed membership, as Nearby fills it. A finished
 		// report is never active, so it is false; a linked active report is exact.
 		ConfirmedByPeople: ConfirmedByPeople(c.visibility, c.view, c.tally),
@@ -318,6 +322,10 @@ func baseView(in viewInput) ReportView {
 		// Server authored Only Reliable reporters membership, as Nearby fills it
 		// (NOTIF-04, D-26).
 		KeptByReliableFilter: KeptByReliableFilter(trust.Reporter.Tag, meta),
+		// The real comment count and the server's open state (D-03, D-15), from the
+		// extras row and the visibility the resolver already gave.
+		CommentCount: c.commentCount,
+		CommentsOpen: CommentsOpen(c.visibility, r.ExpiresAt, in.Now),
 	}
 }
 
