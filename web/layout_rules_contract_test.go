@@ -328,6 +328,10 @@ var touchControls = []string{
 	".show-button", ".show-menu__item", ".sheet__handle",
 	// Post a report
 	".post-window__close", ".category-tile", ".severity-box", ".happening-pick", ".call-box__button",
+	// Amended 2026-10-29 by Phase 9 plan 12 (D-04, D-03): the Let others follow me
+	// switch row, the Following, Followers and Blocked people rows and the phone View
+	// my profile row are all .place-row, whose min-height is 52px, so the entry
+	// below already holds them to 44px. No other entry changed.
 	// Settings, the windows, the reader and the first-time flow
 	".place-row", ".app-window__close", ".app-window__quiet", ".app-window__option",
 	".legal-close", ".btn",
@@ -526,6 +530,9 @@ var phaseScripts = []string{
 	// Phase 9 plan 11: the list window script and the distance script join the
 	// scripts held to the plain punctuation rule. No other entry changed.
 	"people-list.js", "person-reports.js",
+	// Phase 9 plan 12: the Settings people rows script joins the scripts held to
+	// the plain punctuation rule. No other entry changed.
+	"settings-people.js",
 }
 
 // TestNewScriptsUsePlainPunctuation holds the phase's new scripts to the house
@@ -576,6 +583,11 @@ var sizeOnlyNamed = map[string]string{
 	// .place-section--phone as phone only is removed with the class and its
 	// laptop hide. No check changed: any part hidden on one size must still be
 	// named here.
+
+	// Amended 2026-10-29 by Phase 9 plan 12 (D-04, owner decision 2026-10-16, UI-SPEC
+	// 7c): the Settings row View my profile is drawn on the phone only. No other
+	// entry changed.
+	".place-row.place-row--phone-only": "phone only: the View my profile row of Settings, About you; the laptop reaches the same page from the person menu (D-04, UI-SPEC 7c).",
 
 	// Laptop only, hidden under 900px.
 	"main.profile-page > .activity-heading": "laptop only: the My activity page heading in the left column; the phone has the top bar title and the hub (D-06, D-19).",

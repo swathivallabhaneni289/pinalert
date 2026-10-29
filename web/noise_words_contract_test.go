@@ -60,6 +60,8 @@ var noiseCheckedFiles = []string{
 	"templates/people_list_window.html.tmpl",
 	"static/js/people-list.js",
 	"static/js/person-reports.js",
+	// Phase 9 plan 12: the Settings people rows script is scanned too.
+	"static/js/settings-people.js",
 }
 
 var (

@@ -408,11 +408,15 @@ func TestAccountMenuRendersPerPage(t *testing.T) {
 		// D-02 and D-26): the person menu holds Settings and Log out only on
 		// every page, and shows no email. The Phase 3.1 and Phase 4 hands-on
 		// tests are walked on this layout after Phase 3.4 is built.
+		//
+		// Amended 2026-10-29 by Phase 9 plan 12 (D-04, owner decision 2026-10-16, UI-SPEC
+		// 7c): My profile is the first item of the menu on every page, a link to /me, so
+		// the text starts with it. Every banned part is still banned.
 		menu := p421Region(t, rec.Body.String(), `<div id="account-menu"`)
-		p421AssertInOrder(t, "menu markup", menu, `href="/settings"`, `action="/auth/logout"`)
+		p421AssertInOrder(t, "menu markup", menu, `href="/me"`, `href="/settings"`, `action="/auth/logout"`)
 		text := p421Text(menu)
-		if text != "Settings Log out" {
-			t.Errorf("the menu text = %q, want %q", text, "Settings Log out")
+		if text != "My profile Settings Log out" {
+			t.Errorf("the menu text = %q, want %q", text, "My profile Settings Log out")
 		}
 		for _, banned := range []string{"/?full=1", `href="/low"`, `href="/disclaimer"`, `href="/policy"`, `href="/profile"`, "waysin-p421@example.com"} {
 			if strings.Contains(menu, banned) {
@@ -434,11 +438,13 @@ func TestAccountMenuRendersPerPage(t *testing.T) {
 		}
 		// Same amendment as the main page above. The Low data view's own Open
 		// full version button is on the page body, not in the menu.
+		// Amended 2026-10-29 by Phase 9 plan 12 (D-04, UI-SPEC 7c): My profile is the
+		// first item here too.
 		menu := p421Region(t, rec.Body.String(), `<div id="account-menu"`)
-		p421AssertInOrder(t, "menu markup", menu, `href="/settings"`, `action="/auth/logout"`)
+		p421AssertInOrder(t, "menu markup", menu, `href="/me"`, `href="/settings"`, `action="/auth/logout"`)
 		text := p421Text(menu)
-		if text != "Settings Log out" {
-			t.Errorf("the menu text = %q, want %q", text, "Settings Log out")
+		if text != "My profile Settings Log out" {
+			t.Errorf("the menu text = %q, want %q", text, "My profile Settings Log out")
 		}
 		for _, banned := range []string{`href="/low"`, "Text only, no map", `href="/?full=1"`, `href="/disclaimer"`, `href="/policy"`, `href="/profile"`} {
 			if strings.Contains(menu, banned) {

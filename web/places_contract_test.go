@@ -10,21 +10,29 @@ import (
 )
 
 // TestPersonMenuItems pins D-11, D-02 and D-26: the laptop person menu holds
-// exactly Settings and Log out, shows no email, and links nowhere that has its
-// own place (Settings holds the Disclaimer, Policy and Low data view rows).
+// My profile, Settings and Log out, in that order, shows no email, and links
+// nowhere that has its own place (Settings holds the Disclaimer, Policy and Low
+// data view rows).
+//
+// Amended 2026-10-29 by Phase 9 plan 12 (D-04, owner decision 2026-10-16, UI-SPEC
+// 7c): the menu holds three items, My profile first (a link to /me with the user
+// icon). The note in this test that waited for Phase 9 is met. href="/profile"
+// stays banned: that address is My activity, not the profile page. Every other
+// check is as it was.
 func TestPersonMenuItems(t *testing.T) {
 	header := p421ReadTemplate(t, "account_header.html.tmpl")
-	if got := strings.Count(header, `role="menuitem"`); got != 2 {
-		t.Errorf("the person menu has %d items, want exactly 2 (Settings and Log out)", got)
+	if got := strings.Count(header, `role="menuitem"`); got != 3 {
+		t.Errorf("the person menu has %d items, want exactly 3 (My profile, Settings and Log out)", got)
 	}
-	for _, want := range []string{`href="/settings"`, "Settings", `action="/auth/logout"`, "Log out", `auth-icon--settings`, `auth-icon--log-out`} {
+	p421InOrder(t, "the person menu items", header, `href="/me"`, "My profile", `href="/settings"`, "Settings", `action="/auth/logout"`, "Log out")
+	for _, want := range []string{`href="/me"`, "My profile", `auth-icon--user`, `href="/settings"`, "Settings", `action="/auth/logout"`, "Log out", `auth-icon--settings`, `auth-icon--log-out`} {
 		if !strings.Contains(header, want) {
 			t.Errorf("the person menu lacks %q", want)
 		}
 	}
 	for _, banned := range []string{
 		"{{.Email}}", "{{if .Chrome.LowDataPage}}", `href="/profile"`, `href="/low"`,
-		`href="/disclaimer"`, `href="/policy"`, `href="/?full=1"`, "My profile",
+		`href="/disclaimer"`, `href="/policy"`, `href="/?full=1"`,
 	} {
 		if strings.Contains(header, banned) {
 			t.Errorf("the person menu still holds %q", banned)
@@ -193,10 +201,13 @@ func TestAlertsNeverSaysNoAlerts(t *testing.T) {
 // Amended 2026-10-29 by plan 05-14 (D-11): Phase 5 draws the official row, so
 // "Severe official alerts for my area" left this list. TestNotificationsOfficialRow
 // pins the row itself and the welcome banned list still bans the words.
-var waitingSettingsLabels = []string{
-	"View my profile", "My profile",
-	"Let others follow me", "Following", "Followers", "Blocked people",
-}
+//
+// Amended 2026-10-29 by Phase 9 plan 12 (D-04, owner decision 2026-10-16, UI-SPEC
+// 7a and 7c): "View my profile", "My profile", "Let others follow me",
+// "Following", "Followers" and "Blocked people" left this list, because Settings
+// and the person menu draw them now. The list is empty and stays as the place a
+// later phase adds a label that waits; the loop below still runs over it.
+var waitingSettingsLabels = []string{}
 
 // TestSettingsShowsOnlyExistingRows pins D-25 and D-26: Settings holds the
 // About Pinalert rows and the phone Account row, and none of the labels that
@@ -251,8 +262,12 @@ func TestSettingsShowsOnlyExistingRows(t *testing.T) {
 	//
 	// Amended 2026-10-29 by Phase 7.1 plan 15 (D-07, UI-SPEC Surface 8): the
 	// Username row opens a window too, so thirteen.
-	if got := strings.Count(page, "app-icon--chevron-right"); got != 13 {
-		t.Errorf("settings.html.tmpl draws %d chevrons, want one on each of the thirteen rows that open something", got)
+	//
+	// Amended 2026-10-29 by Phase 9 plan 12 (D-04, UI-SPEC 7a and 7c): the Following,
+	// Followers and Blocked people rows open the list window and the phone View my
+	// profile row opens the profile page, so seventeen.
+	if got := strings.Count(page, "app-icon--chevron-right"); got != 17 {
+		t.Errorf("settings.html.tmpl draws %d chevrons, want one on each of the seventeen rows that open something", got)
 	}
 	header := p421ReadTemplate(t, "account_header.html.tmpl")
 	for _, label := range waitingSettingsLabels {
