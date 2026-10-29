@@ -396,6 +396,11 @@ var RateLimitsDefault = RateLimits{
 	IPBackstopComment: BucketLimit{Every: 200 * time.Millisecond, Burst: 600},
 	Like:              BucketLimit{Every: 3 * time.Second, Burst: 30},
 	IPBackstopLike:    BucketLimit{Every: 30 * time.Millisecond, Burst: 3000},
+	// People (Phase 9 plan 07): the lists are public to every signed in account
+	// by D-03, so reads are bounded to slow scraping and actions to slow follow
+	// churn. Both are keyed per account, never per network address (CGNAT).
+	PeopleRead:   BucketLimit{Every: time.Second, Burst: 60},
+	PeopleAction: BucketLimit{Every: 3 * time.Second, Burst: 20},
 }
 
 // resolveRateLimits replaces every field equal to BucketLimit{} with the
@@ -422,6 +427,8 @@ func resolveRateLimits(l RateLimits) RateLimits {
 	fill(&l.Like, RateLimitsDefault.Like)
 	fill(&l.IPBackstopComment, RateLimitsDefault.IPBackstopComment)
 	fill(&l.IPBackstopLike, RateLimitsDefault.IPBackstopLike)
+	fill(&l.PeopleRead, RateLimitsDefault.PeopleRead)
+	fill(&l.PeopleAction, RateLimitsDefault.PeopleAction)
 	return l
 }
 
@@ -707,6 +714,9 @@ func NewRouter(deps Deps) *chi.Mux {
 	if deps.Reports != nil {
 		accountOpts = append(accountOpts, service.WithAccountScreener(deps.Reports.Screener()))
 	}
+	// Phase 9 plan 07 (G1): a Name edit while the profile is on is screened, so
+	// the account service reads the public profile state from the same store.
+	accountOpts = append(accountOpts, service.WithPublicProfileReader(deps.Sessions))
 	accounts := service.NewAccountService(deps.Sessions, accountOpts...)
 	// Phase 3.3 (plan 08): the phone alert subscription service, from the same
 	// sessions store and the push service allowlist.
@@ -721,6 +731,16 @@ func NewRouter(deps Deps) *chi.Mux {
 	}
 	updates := service.NewUpdatesService(deps.Sessions, nearbyReader)
 	mutes := service.NewMuteService(deps.Sessions)
+	// Phase 9 plan 07: the people service (opt in switch, follow, block, lists,
+	// profile). It screens a Name and a pending username through the same
+	// screener the account service uses; without a report service nothing is
+	// screened here, as for a flag note.
+	var peopleOpts []service.PeopleOption
+	if deps.Reports != nil {
+		peopleOpts = append(peopleOpts, service.WithPeopleScreener(deps.Reports.Screener()))
+	}
+	people := service.NewPeopleService(deps.Sessions, peopleOpts...)
+	_ = people // the people routes use it from the next commit of this plan
 	// Delete my account (plan 03.2-09): built from the sessions store and the
 	// optional transaction seam.
 	// With a CredentialService, deleting an account also clears the sign in

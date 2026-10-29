@@ -75,6 +75,15 @@ type RateLimits struct {
 	// report posting (WR-S02).
 	IPBackstopComment BucketLimit
 	IPBackstopLike    BucketLimit
+	// PeopleRead is the allowance for reading people (a profile, its lists and its
+	// reports), keyed per account and never per IP, because many phones share one
+	// carrier address (Phase 9 plan 07, D-03). The lists are public to every signed
+	// in account, so the bucket slows scraping of the graph.
+	PeopleRead BucketLimit
+	// PeopleAction is the allowance for follow, unfollow, remove follower, block,
+	// unblock, remove all followers and the visibility switch, keyed per account.
+	// It slows follow churn (Phase 9 plan 07, D-12).
+	PeopleAction BucketLimit
 }
 
 // RateLimitResponse is the one 429 body of every Phase 4 limiter. The
@@ -113,6 +122,12 @@ const (
 	likeBucketName    = "like"
 	likeRateField     = "rate_like"
 
+	// The two people buckets (Phase 9 plan 07). The names go to the block log only.
+	peopleReadBucketName   = "people_read"
+	peopleReadRateField    = "rate_people_read"
+	peopleActionBucketName = "people_action"
+	peopleActionRateField  = "rate_people_action"
+
 	voteRateField       = "rate_vote"
 	voteChangeRateField = "rate_vote_change"
 
@@ -144,6 +159,8 @@ type RateGate struct {
 	ipBackstopShare  *ratelimit.PerKey
 	comment          *ratelimit.PerKey
 	like             *ratelimit.PerKey
+	peopleRead       *ratelimit.PerKey
+	peopleAction     *ratelimit.PerKey
 
 	ipBackstopComment *ratelimit.PerKey
 	ipBackstopLike    *ratelimit.PerKey
@@ -177,6 +194,8 @@ func NewRateGate(limits RateLimits, clock func() time.Time, clientIPHeader strin
 		ipBackstopShare:  ratelimit.NewPerKey(bucketConfig(limits.IPBackstopShare, clock)),
 		comment:          ratelimit.NewPerKey(bucketConfig(limits.Comment, clock)),
 		like:             ratelimit.NewPerKey(bucketConfig(limits.Like, clock)),
+		peopleRead:       ratelimit.NewPerKey(bucketConfig(limits.PeopleRead, clock)),
+		peopleAction:     ratelimit.NewPerKey(bucketConfig(limits.PeopleAction, clock)),
 
 		ipBackstopComment: ratelimit.NewPerKey(bucketConfig(limits.IPBackstopComment, clock)),
 		ipBackstopLike:    ratelimit.NewPerKey(bucketConfig(limits.IPBackstopLike, clock)),
@@ -485,6 +504,42 @@ func (g *RateGate) LikeMiddleware() func(http.Handler) http.Handler {
 				return
 			}
 
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// PeopleReadMiddleware throttles the people read routes (a profile, its
+// Followers and Following lists and its reports): the per account people read
+// bucket keyed acct:<id>, and nothing keyed on the network address, because
+// many phones share one carrier address (Phase 9 plan 07, D-03). Every admitted
+// attempt costs one token and nothing is refunded, so a 404 probe pays too.
+func (g *RateGate) PeopleReadMiddleware() func(http.Handler) http.Handler {
+	return g.peopleMiddleware(g.peopleRead, peopleReadBucketName, peopleReadRateField)
+}
+
+// PeopleActionMiddleware throttles follow, unfollow, remove follower, block,
+// unblock, remove all followers and the visibility switch: the per account
+// people action bucket keyed acct:<id>, never per network address (Phase 9 plan
+// 07, D-12). Every admitted attempt costs one token and nothing is refunded.
+func (g *RateGate) PeopleActionMiddleware() func(http.Handler) http.Handler {
+	return g.peopleMiddleware(g.peopleAction, peopleActionBucketName, peopleActionRateField)
+}
+
+// peopleMiddleware is the body of the two people middlewares.
+func (g *RateGate) peopleMiddleware(bucket *ratelimit.PerKey, name, field string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			acc, ok := account.FromContext(r.Context())
+			if !ok {
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			if d := bucket.Reserve(accountKey(acc.ID)); !d.OK {
+				logBlock(name, acc.ID, d.RetryAfter)
+				writeRateLimited(w, field, service.PeopleLimitMessage(d.RetryAfter), d.RetryAfter, false, "")
+				return
+			}
 			next.ServeHTTP(w, r)
 		})
 	}

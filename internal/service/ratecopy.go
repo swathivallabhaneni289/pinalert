@@ -108,3 +108,11 @@ func CommentLimitMessage(wait time.Duration) string {
 func LikeLimitMessage(wait time.Duration) string {
 	return "You're reacting very quickly. You can try again in " + WaitPhrase(wait) + "."
 }
+
+// PeopleLimitMessage is the sentence shown when a reader has opened or changed
+// people (profiles, lists, follow, block) in a short time (Phase 9 plan 07). Its
+// 429 fields are rate_people_read and rate_people_action. People limits are keyed
+// per account only, never per network address.
+func PeopleLimitMessage(wait time.Duration) string {
+	return "You're doing that very quickly. You can try again in " + WaitPhrase(wait) + "."
+}

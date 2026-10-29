@@ -122,10 +122,20 @@ const (
 	// generous, and every attempt may cost one screener call, so nothing is
 	// refunded. Likes, unlikes and deletes are cheap toggles, so a burst of 30
 	// then one every 3 seconds.
-	commentBurst       = 6
-	commentEvery       = 20 * time.Second
-	likeBurst          = 30
-	likeEvery          = 3 * time.Second
+	commentBurst = 6
+	commentEvery = 20 * time.Second
+	likeBurst    = 30
+	likeEvery    = 3 * time.Second
+	// People (Phase 9 plan 07): the lists are public to every signed in account
+	// by D-03, so reads are bounded to slow scraping of the graph (a burst of 60
+	// then one a second is more than a person scrolling profiles uses), and
+	// actions are bounded to slow follow churn (a burst of 20 then one every 3
+	// seconds). Both are keyed per account and never per network address,
+	// because many phones share one carrier address.
+	peopleReadBurst    = 60
+	peopleReadEvery    = time.Second
+	peopleActionBurst  = 20
+	peopleActionEvery  = 3 * time.Second
 	submitAttemptBurst = 20
 	submitAttemptEvery = 6 * time.Second
 )
@@ -616,6 +626,8 @@ func main() {
 			Like:              api.BucketLimit{Every: likeEvery, Burst: likeBurst},
 			IPBackstopComment: api.BucketLimit{Every: ipBackstopCommentEvery, Burst: ipBackstopCommentBurst},
 			IPBackstopLike:    api.BucketLimit{Every: ipBackstopLikeEvery, Burst: ipBackstopLikeBurst},
+			PeopleRead:        api.BucketLimit{Every: peopleReadEvery, Burst: peopleReadBurst},
+			PeopleAction:      api.BucketLimit{Every: peopleActionEvery, Burst: peopleActionBurst},
 		},
 	}
 	router := api.NewRouter(deps)
