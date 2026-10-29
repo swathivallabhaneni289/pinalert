@@ -91,6 +91,31 @@ func TestModeratorRemovalRetryFinishesTheRestore(t *testing.T) {
 	}
 }
 
+// TestMayRateIsFalseAfterAModeratorRemovedTheRating (WR-S05): the star box is
+// not offered to a rater whose rating of this reporter a moderator removed,
+// because every tap would be refused.
+func TestMayRateIsFalseAfterAModeratorRemovedTheRating(t *testing.T) {
+	s := newRatingScene(t)
+	ctx := context.Background()
+	rater := s.newRater("rater.one", "content", "confirm", "tdr1x55")
+	mod := s.newRater("the.moderator", "", "", "")
+	if may, err := s.svc.MayRate(ctx, rater, s.reporter); err != nil || !may {
+		t.Fatalf("MayRate before = %v (%v), want true", may, err)
+	}
+	if err := s.svc.Rate(ctx, rater, s.username, 4); err != nil {
+		t.Fatalf("Rate: %v", err)
+	}
+	if err := s.svc.ModeratorRemove(ctx, mod, s.username, "rater.one"); err != nil {
+		t.Fatalf("ModeratorRemove: %v", err)
+	}
+	if may, err := s.svc.MayRate(ctx, rater, s.reporter); err != nil || may {
+		t.Errorf("MayRate after the removal = %v (%v), want false", may, err)
+	}
+	if err := s.svc.Rate(ctx, rater, s.username, 5); err == nil {
+		t.Error("Rate after the removal succeeded")
+	}
+}
+
 // TestModeratorRemoveRaterRetryFinishesTheRestore (WR-S02): the same for a
 // whole rater. A repeat removes 0 ratings and still re-evaluates each reporter.
 func TestModeratorRemoveRaterRetryFinishesTheRestore(t *testing.T) {

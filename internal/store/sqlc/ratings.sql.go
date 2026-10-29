@@ -191,6 +191,11 @@ SELECT (
         SELECT 1 FROM accounts a
         WHERE a.id = $1::bigint
           AND (a.rater_removed_at IS NOT NULL OR a.deleted_at IS NOT NULL))
+    AND NOT EXISTS (
+        SELECT 1 FROM profile_ratings pr
+        WHERE pr.rater_id = $1::bigint
+          AND pr.reporter_id = $2::bigint
+          AND pr.removed_at IS NOT NULL)
     AND EXISTS (
         SELECT 1
         FROM votes v
@@ -213,7 +218,9 @@ type RaterMayRateParams struct {
 // qualifying vote, so a rater who moves cannot keep an old cell.
 // Whether the rater has earned the right to rate this reporter (D-23, W4). False
 // for yourself, for a deleted account and for a rater a moderator removed
-// (accounts.rater_removed_at). Otherwise true when the rater has cast a confirm,
+// (accounts.rater_removed_at), and for a pair whose rating a moderator removed
+// (the write is refused for good, so the offer would be false; WR-S05).
+// Otherwise true when the rater has cast a confirm,
 // dispute, resolve or reopen vote on one of the reporter's reports. An
 // unresolve alone does not qualify: it is only the take back of one's own
 // resolve and needs no location. The vote's cell is not compared with the

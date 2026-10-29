@@ -6,7 +6,9 @@
 -- name: RaterMayRate :one
 -- Whether the rater has earned the right to rate this reporter (D-23, W4). False
 -- for yourself, for a deleted account and for a rater a moderator removed
--- (accounts.rater_removed_at). Otherwise true when the rater has cast a confirm,
+-- (accounts.rater_removed_at), and for a pair whose rating a moderator removed
+-- (the write is refused for good, so the offer would be false; WR-S05).
+-- Otherwise true when the rater has cast a confirm,
 -- dispute, resolve or reopen vote on one of the reporter's reports. An
 -- unresolve alone does not qualify: it is only the take back of one's own
 -- resolve and needs no location. The vote's cell is not compared with the
@@ -19,6 +21,11 @@ SELECT (
         SELECT 1 FROM accounts a
         WHERE a.id = sqlc.arg(rater_id)::bigint
           AND (a.rater_removed_at IS NOT NULL OR a.deleted_at IS NOT NULL))
+    AND NOT EXISTS (
+        SELECT 1 FROM profile_ratings pr
+        WHERE pr.rater_id = sqlc.arg(rater_id)::bigint
+          AND pr.reporter_id = sqlc.arg(reporter_id)::bigint
+          AND pr.removed_at IS NOT NULL)
     AND EXISTS (
         SELECT 1
         FROM votes v
