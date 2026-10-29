@@ -2411,7 +2411,11 @@ window.PinalertMap = (function () {
     officialMeta = null;
     var el = popup.getElement();
     var pressedClose = closePressHadFocus;
-    var hadFocus = popupFocusInside || pressedClose;
+    // On a phone the card sits in the detail pane, outside the map container,
+    // so the container's focusin listener never set popupFocusInside: focus
+    // inside the card right now counts too (Phase 5 review fix NP-2), or a
+    // refresh that removes its pin would leave focus on the page body.
+    var hadFocus = popupFocusInside || pressedClose || !!(el && el.contains(document.activeElement));
     closePressHadFocus = false;
 
     document.documentElement.removeAttribute('data-popup-open');
