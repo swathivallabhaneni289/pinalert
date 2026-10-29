@@ -2,7 +2,8 @@
 // plan 08, D-12, UI-SPEC 1d, 1e, 1g, 1h).
 //
 // The page is drawn by the server. This script only does what a person taps:
-// Follow and Following (a one tap toggle), the More menu, Mute and Unmute (at
+// Follow and Following (a one tap toggle), the Notify me bell (plan 09-24, a
+// one tap on and off, shown only while you follow and have not muted), the More menu, Mute and Unmute (at
 // once, no box), Remove follower and Block (each asks first in a system style
 // box), and Unblock. It decides
 // nothing about trust: the browser computes no star, no tag, no count and no
@@ -38,6 +39,7 @@ window.PinalertPerson = (function () {
     unfollow: 'Couldn\'t unfollow. Try again.',
     mute: 'Couldn\'t mute. Try again.',
     unmute: 'Couldn\'t unmute. Try again.',
+    notify: 'Couldn\'t change this. Try again.',
     'remove-follower': 'Couldn\'t remove this follower. Try again.',
     block: 'Couldn\'t block. Try again.',
     unblock: 'Couldn\'t unblock. Try again.'
@@ -164,6 +166,16 @@ window.PinalertPerson = (function () {
       method: 'POST',
       credentials: 'same-origin',
       headers: { Accept: 'application/json' }
+    });
+  }
+
+  // postJSON sends one call with a JSON body (the Notify me bell, plan 09-24).
+  function postJSON(name, body) {
+    return request(actionUrl(name), {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
     });
   }
 
@@ -296,6 +308,25 @@ window.PinalertPerson = (function () {
     if (typeof profile.muted === 'boolean') {
       drawMute(profile.muted);
     }
+    drawBell(profile);
+  }
+
+  // drawBell shows the Notify me bell only while the viewer follows the person
+  // and has not muted them (UI-SPEC 1d and 1e), and sets its pressed state from
+  // the server's notify flag. The browser reads three booleans and decides
+  // nothing: Unfollow and Mute take the bell out, Follow and Unmute bring it
+  // back, and the server always sends it back off.
+  function drawBell(profile) {
+    if (!els.bell) {
+      return;
+    }
+    var show = profile.following === true && profile.muted !== true;
+    els.bell.hidden = !show;
+    if (typeof profile.notify === 'boolean') {
+      els.bell.setAttribute('aria-pressed', profile.notify && show ? 'true' : 'false');
+    } else if (!show) {
+      els.bell.setAttribute('aria-pressed', 'false');
+    }
   }
 
   // drawMute sets the first menu item to Mute or Unmute from the server's
@@ -419,6 +450,50 @@ window.PinalertPerson = (function () {
 
   function unfollow() {
     return toggle('unfollow', els.unfollow, 'You unfollowed ' + username + '.');
+  }
+
+  // ---- The Notify me bell (plan 09-24, D-08, UI-SPEC 1d) ----------------------
+
+  // toggleBell sends the opposite of the bell's pressed state, then sets the
+  // pressed state from the server's saved answer and says the status line. A 409
+  // shows the server's sentence and leaves the state. Focus stays on the bell.
+  function toggleBell() {
+    if (busy || !els.bell || els.bell.hidden === true) {
+      return Promise.resolve(false);
+    }
+    var want = els.bell.getAttribute('aria-pressed') !== 'true';
+    busy = true;
+    hideError();
+    setBusy(els.bell, true);
+    function done() {
+      busy = false;
+      setBusy(els.bell, false);
+      els.bell.focus();
+    }
+    function fail(text) {
+      done();
+      if (text !== null) {
+        showError(text);
+      }
+      return false;
+    }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return Promise.resolve(fail(MESSAGE_OFFLINE));
+    }
+    return postJSON('notify', { on: want }).then(function (answer) {
+      if (!answer.ok) {
+        return fail(refusal(answer, 'notify'));
+      }
+      var saved = answer.body && typeof answer.body.notify === 'boolean' ? answer.body.notify : want;
+      els.bell.setAttribute('aria-pressed', saved ? 'true' : 'false');
+      done();
+      say(saved
+        ? 'You will be notified when ' + username + ' posts.'
+        : 'You will not be notified when ' + username + ' posts.');
+      return true;
+    }, function () {
+      return fail(offlineOr('notify'));
+    });
   }
 
   // ---- Mute and Unmute (plan 09-20, UI-SPEC 1e) -------------------------------
@@ -805,7 +880,7 @@ window.PinalertPerson = (function () {
     var ids = {
       live: 'notice-live', header: 'person-header', reports: 'person-reports-section',
       error: 'person-action-error', follow: 'person-follow', unfollow: 'person-unfollow',
-      more: 'person-more', menu: 'person-more-menu', mute: 'person-mute-item', removeFollower: 'person-remove-follower',
+      bell: 'person-bell', more: 'person-more', menu: 'person-more-menu', mute: 'person-mute-item', removeFollower: 'person-remove-follower',
       block: 'person-block', blocked: 'person-blocked', blockedTitle: 'person-blocked-title',
       blockedError: 'person-blocked-error', unblock: 'person-unblock',
       followersButton: 'person-followers-button', followingButton: 'person-following-button',
@@ -833,6 +908,7 @@ window.PinalertPerson = (function () {
 
     on(els.follow, 'click', function () { follow(); });
     on(els.unfollow, 'click', function () { unfollow(); });
+    on(els.bell, 'click', function () { toggleBell(); });
     on(els.more, 'click', onMoreClick);
     on(els.more, 'keydown', onMoreKeydown);
     on(els.menu, 'keydown', onMenuKeydown);
@@ -876,6 +952,7 @@ window.PinalertPerson = (function () {
     follow: follow,
     unfollow: unfollow,
     toggleMute: toggleMute,
+    toggleBell: toggleBell,
     openMenu: openMenu,
     closeMenu: closeMenu,
     ask: ask,

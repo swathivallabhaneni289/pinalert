@@ -244,6 +244,55 @@
   mask-position: center;
 }
 
+/* Plan 09-24 (D-08, UI-SPEC 1d): the Notify me bell, 44 by 44, between Following
+   and More. 1px --color-border, radius 8px, a 24px glyph: bell-off.svg while it
+   is off and bell.svg while it is on, so the state is never colour alone. The
+   chosen look is the soft --color-surface fill, never a dark border or fill.
+   No animation. The display rule is guarded so the hidden attribute works. */
+.person-bell:not([hidden]) {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.person-bell:not([hidden]):hover,
+.person-bell[aria-pressed="true"] {
+  background: var(--color-surface);
+}
+
+.person-bell__icon {
+  display: block;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  background-color: currentColor;
+  -webkit-mask-image: url("/static/icons/bell-off.svg");
+  mask-image: url("/static/icons/bell-off.svg");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.person-bell[aria-pressed="true"] .person-bell__icon {
+  -webkit-mask-image: url("/static/icons/bell.svg");
+  mask-image: url("/static/icons/bell.svg");
+}
+
 /* 1e: the options menu. */
 .person-menu:not([hidden]) {
   position: absolute;
@@ -771,5 +820,10 @@ a.person-report__body:hover {
   .person-count,
   .person-disc {
     border: 1px solid CanvasText;
+  }
+
+  /* Plan 09-24 (UI-SPEC 1d): the chosen bell adds a Highlight border. */
+  .person-bell[aria-pressed="true"] {
+    border: 1px solid Highlight;
   }
 }
