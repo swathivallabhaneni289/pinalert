@@ -290,8 +290,11 @@ for (const [label, extra] of OFF) {
   });
 }
 
+// Amended 2026-10-29 by the Phase 7.1 review fix (browser), IN-B01: a device that
+// is already on now writes the key (the case below), so { device: 'on' } left this
+// list; the device states that are not ready and not on stay.
 test(NAME + 'does not write the key when it skips for another dialog or a locked page, or for a device that is not ready', async () => {
-  for (const extra of [{ otherDialog: true }, { modalOpen: true }, { device: 'on' }, { base: 'needs-install' }]) {
+  for (const extra of [{ otherDialog: true }, { modalOpen: true }, { device: 'blocked' }, { device: 'reject' }, { base: 'needs-install' }, { locationAsking: true }]) {
     const m = load({ stored: JSON.stringify(['7']), ...extra });
     await m.go();
     assert.equal(m.dialog.showCalls, 0);
@@ -532,6 +535,28 @@ test(NAME + 'focus goes back to the element that had it', async () => {
   await m.go();
   m.later.click();
   assert.equal(before.focused, 1);
+});
+
+// Phase 7.1 review fix (browser), IN-B01: a device already on is as good as asked,
+// so the account is written into the list and later Nearby loads stop asking the
+// server for the device state. Nothing opens and nothing else is sent.
+test(NAME + 'IN-B01: a device already on writes the account, and the next load asks nothing', async () => {
+  const m = load({ device: 'on', stored: JSON.stringify(['7']) });
+  assert.equal(await m.go(), 'skipped');
+  assert.equal(m.dialog.showCalls, 0);
+  assert.deepEqual(JSON.parse(m.store.get(KEY)), ['7', '42']);
+  assert.equal(m.fetches.length, 0);
+
+  const next = load({ device: 'on', stored: m.store.get(KEY) });
+  assert.equal(await next.go(), 'skipped');
+  assert.deepEqual(next.deviceCalls, [], 'no device state request on the next load');
+
+  const full = load({ device: 'on', stored: JSON.stringify(['1', '2', '3', '4', '5', '6', '7', '8']) });
+  await full.go();
+  assert.deepEqual(JSON.parse(full.store.get(KEY)), ['2', '3', '4', '5', '6', '7', '8', '42'], 'the last 8 are kept');
+
+  const broken = load({ device: 'on', writeThrows: true });
+  assert.equal(await broken.go(), 'skipped', 'a store that cannot be written changes nothing else');
 });
 
 // ---- WR-B05: never together with the browser's location question ----------

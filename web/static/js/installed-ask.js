@@ -39,7 +39,8 @@
 // JSON list of account ids, the last 8, so a shared phone does not ask account A
 // again after B. One plain id (the older format of pinalert.changesAsked) reads
 // as a list of one. The id is added just before the dialog opens, so a tab closed
-// mid-question does not ask again. The sign up alerts pop-up writes the same key
+// mid-question does not ask again, and when deviceState answers 'on' (review fix
+// IN-B01), so a device already on is not asked about again on every load. The sign up alerts pop-up writes the same key
 // when it opens, so a person who signed up inside the installed app is not asked
 // a second time. Storage that cannot be read or written, or a value that is
 // neither an id nor a list, means no ask at all.
@@ -129,6 +130,21 @@
       }
       look();
     });
+  }
+
+  // remember adds the account to the list, keeping the last ASKED_KEEP. A list
+  // that cannot be read or written, or junk in it, changes nothing.
+  function remember(storage, account) {
+    try {
+      var list = askedList(storage);
+      if (list === null || list.indexOf(account) !== -1) {
+        return;
+      }
+      list.push(account);
+      storage.setItem(ASKED_KEY, JSON.stringify(list.slice(-ASKED_KEEP)));
+    } catch (err) {
+      // Nothing more to do; the next load asks the device state again.
+    }
   }
 
   function pageLocked(doc) {
@@ -322,6 +338,13 @@
       }
       var parts = { doc: doc, dialog: dialog, title: title, later: later, allow: allow, reliable: reliable, key: key };
       return Promise.resolve(notify.deviceState(key)).then(function (state) {
+        if (state === 'on') {
+          // Already on: as good as asked (review fix IN-B01), so later loads do
+          // not ask the server again, and a device turned off afterwards in
+          // Settings is not asked straight after that choice.
+          remember(storage, account);
+          return false;
+        }
         if (state !== 'ready') {
           return false;
         }
