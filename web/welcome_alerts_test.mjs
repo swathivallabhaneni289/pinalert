@@ -3,8 +3,9 @@
 // first-time flow (quick 261027-t5w, owner, 2026-10-27). It replaced step 5,
 // Alerts, which was a whole page (Phase 3.3, plan 13); the flow has four steps.
 //
-//   - step 4 finishing (Continue with a saved profile, Continue with nothing to
-//     save, and Skip) opens a small native modal dialog when notify.js baseState
+//   - step 4 finishing (Continue with a saved profile, and Continue with nothing
+//     to save; amended 2026-10-29 by Phase 7.1 plan 13: there is no Skip, and
+//     Continue needs a username, a name and a home area) opens a small native modal dialog when notify.js baseState
 //     is maybe or ready and the page has a push key; the dialog title takes
 //     focus so no button looks chosen;
 //   - Allow calls PinalertNotify.enable(key) inside the click, before anything
@@ -16,7 +17,8 @@
 //   - an iPhone Safari tab (needs-install), blocked or unsupported devices, no
 //     push key, no PinalertNotify and a dialog without showModal get no pop-up:
 //     step 4 finishing sends first-run-done directly;
-//   - a 409 goes back to step 2; any other failure closes the pop-up, shows the
+//   - a 409 goes back to step 2 (a 409 with field profile goes back to step 4,
+//     tested in welcome_flow_test.mjs); any other failure closes the pop-up, shows the
 //     step 4 save line, and a second Continue finishes without asking again;
 //   - the flow counts four steps;
 //   - (plan 03.3-19, the 03.3-UAT gap for test 4, owner 2026-10-27) the pop-up now
@@ -42,6 +44,9 @@ import vm from 'node:vm';
 
 const here = path.dirname(url.fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.join(here, 'static', 'js', 'welcome.js'), 'utf8');
+// Amended 2026-10-29 by Phase 7.1 plan 13: step 4 asks for a Username with the
+// shared live check, so the page loads username-check.js first, as the template does.
+const checkSource = fs.readFileSync(path.join(here, 'static', 'js', 'username-check.js'), 'utf8');
 
 const KEY = 'test-public-key-placeholder';
 const AGREE_FIRST = 'Please agree to the Disclaimer and policy to continue.';
@@ -128,7 +133,9 @@ const STEP_NAMES = ['Welcome', 'Disclaimer and policy', 'Your location', 'About 
 // the dialog); it defaults to a stored area so the earlier cases, which are about
 // the answers and not the home area, find Allow enabled.
 // askErrorLine false draws the pop-up as it was before WR-05, without its error line.
-function buildPage({ start = 1, name = '', home = '', key = KEY, dialogSupport = true, askHome = 'Benz Circle', askErrorLine = true } = {}) {
+// Amended 2026-10-29 by Phase 7.1 plan 13: username is the name the account has
+// already (the value the template draws on step 4).
+function buildPage({ start = 1, name = '', home = '', username = '', key = KEY, dialogSupport = true, askHome = 'Benz Circle', askErrorLine = true } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -185,14 +192,19 @@ function buildPage({ start = 1, name = '', home = '', key = KEY, dialogSupport =
   make('button', 'welcome-allow-location', steps[2]);
   make('button', 'welcome-not-now', steps[2]);
 
+  const userBox = make('div', '', steps[3], 'username-field');
+  make('input', 'welcome-username-input', userBox).value = username;
+  make('p', 'welcome-username-status', steps[3], 'username-status');
   make('input', 'welcome-name-input', steps[3]).value = name;
   const form4 = make('form', 'welcome-home-form', steps[3]);
   make('input', 'welcome-home-input', form4).value = home;
   make('p', 'welcome-home-status', steps[3]).hidden = true;
   make('ul', 'welcome-home-results', steps[3]).hidden = true;
   make('p', 'welcome-error-4', steps[3]).hidden = true;
-  make('button', 'welcome-continue-4', steps[3]);
-  make('button', 'welcome-skip', steps[3]);
+  // Amended 2026-10-29 by Phase 7.1 plan 13: Continue starts off, as the template
+  // draws it, and there is no Skip button any more.
+  const continue4 = make('button', 'welcome-continue-4', steps[3], 'btn btn--off');
+  continue4.setAttribute('aria-disabled', 'true');
 
   const dialog = make('dialog', 'welcome-alerts-ask', doc.body);
   dialog.open = false;
@@ -261,19 +273,40 @@ function load(options = {}) {
   const page = buildPage(options);
   const notify = options.notify === undefined ? makeNotify() : options.notify;
   const requests = [];
+  // Amended 2026-10-29 by Phase 7.1 plan 13: the live username checks are kept
+  // apart from the other requests, so the assertions on the requests of the flow
+  // keep their order and their count.
+  const checks = [];
   const replaced = [];
   const session = {};
   const permissionCalls = [];
+  // Timers the test moves by hand (the live check waits 300 ms after typing).
+  let now = 0;
+  let nextId = 1;
+  const timers = new Map();
+  const advance = (ms) => {
+    const end = now + ms;
+    for (;;) {
+      const due = [...timers.entries()].filter(([, t]) => t.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+      if (!due) { break; }
+      const [id, timer] = due;
+      now = timer.at;
+      timers.delete(id);
+      timer.fn();
+    }
+    now = end;
+  };
   const sandbox = {
     console,
     document: page.doc,
     fetch(target, init) {
       return new Promise((resolve, reject) => {
-        requests.push({ url: String(target), init: init || {}, resolve, reject });
+        const list = String(target).startsWith('/api/username/check') ? checks : requests;
+        list.push({ url: String(target), init: init || {}, resolve, reject });
       });
     },
-    setTimeout() { return 1; },
-    clearTimeout() {},
+    setTimeout(fn, ms) { const id = nextId++; timers.set(id, { fn, at: now + ms }); return id; },
+    clearTimeout(id) { timers.delete(id); },
     AbortController: class { constructor() { this.signal = { aborted: false }; } abort() { this.signal.aborted = true; } },
     navigator: { geolocation: { getCurrentPosition() {} } },
     PinalertPosition: { markAsked() { return true; }, save() { return true; }, read() { return null; } },
@@ -291,8 +324,9 @@ function load(options = {}) {
   if (notify) { sandbox.PinalertNotify = notify; }
   sandbox.window = sandbox;
   vm.createContext(sandbox);
+  vm.runInContext(checkSource, sandbox, { filename: 'username-check.js' });
   vm.runInContext(source, sandbox, { filename: 'welcome.js' });
-  return { ...page, api: sandbox.PinalertWelcome, notify, requests, replaced, session, permissionCalls, sandbox };
+  return { ...page, api: sandbox.PinalertWelcome, notify, requests, checks, advance, replaced, session, permissionCalls, sandbox };
 }
 
 const flush = async () => { for (let i = 0; i < 8; i++) { await new Promise((r) => setImmediate(r)); } };
@@ -313,13 +347,56 @@ const click = (page, id) => fire(byId(page, id), 'click');
 const visibleStep = (page) => page.steps.findIndex((s) => !s.hidden) + 1;
 const doneRequests = (page) => page.requests.filter((r) => r.url === '/api/me/first-run-done');
 
-// An agreed account at step 4 with nothing filled in, so Continue saves nothing.
-const atStep4 = (options = {}) => load({ start: 4, ...options });
+// An agreed account at step 4.
+// Amended 2026-10-29 by Phase 7.1 plan 13: Continue needs a username, a name and a
+// home area, so the default account already holds all three and Continue saves
+// nothing, as it did when step 4 was optional. The home area is drawn in step 4's
+// field (Benz Circle), whatever the pop-up's data-home-area says: a case that
+// passes askHome: '' reaches the pop-up's own home area search, the defensive path
+// the pop-up keeps for an account that gets there with no home area known.
+const STORED = { username: 'asha.k', name: 'Asha', home: 'Benz Circle' };
+const atStep4 = (options = {}) => load({ start: 4, ...STORED, ...options });
+
+// An agreed account at step 4 that holds nothing yet, for the cases that fill the
+// three fields in.
+const emptyStep4 = (options = {}) => load({ start: 4, ...options });
+
+// fillStep4 does what a person does on step 4 now that all three fields are
+// required: type a username and let the 300 ms pause pass, answer its live check
+// with available, type a name, and search for and pick a home area. A part set to
+// null is skipped. The home area search request is taken out of page.requests
+// again, so the assertions on the requests that come after keep their order.
+async function fillStep4(page, options = {}) {
+  const o = { username: 'ravi.k', name: 'Ravi Kumar', place: { name: 'Indiranagar', display_name: 'Indiranagar, Bengaluru', lat: 12.9784, lon: 77.6408 }, ...options };
+  if (o.username !== null) {
+    const user = byId(page, 'welcome-username-input');
+    user.value = o.username;
+    fire(user, 'input');
+    page.advance(300);
+    answer(page.checks[page.checks.length - 1], 200, { state: 'available', message: o.username + ' is available.' });
+    await flush();
+  }
+  if (o.name !== null) {
+    const name = byId(page, 'welcome-name-input');
+    name.value = o.name;
+    fire(name, 'input');
+  }
+  if (o.place !== null) {
+    byId(page, 'welcome-home-input').value = o.place.name;
+    fire(byId(page, 'welcome-home-form'), 'submit');
+    const search = page.requests[page.requests.length - 1];
+    answer(search, 200, { results: [o.place] });
+    await flush();
+    fire(byId(page, 'welcome-home-results').children[0].children[0], 'click');
+    page.requests.splice(page.requests.indexOf(search), 1);
+  }
+}
 
 // Step 4 Continue with a changed name: the profile PATCH is answered 200, which
 // leads to the pop-up.
 async function continueWithProfile(page) {
-  byId(page, 'welcome-name-input').value = 'Asha';
+  byId(page, 'welcome-name-input').value = 'Asha Rao';
+  fire(byId(page, 'welcome-name-input'), 'input');
   click(page, 'welcome-continue-4');
   assert.equal(page.requests[0].url, '/api/me/profile');
   answer(page.requests[0], 200);
@@ -345,17 +422,22 @@ for (const base of ['maybe', 'ready']) {
     assert.equal(page.permissionCalls.length, 0);
   });
 
-  test('base state ' + base + ': Continue with nothing to save and Skip each open the pop-up', () => {
+  // Amended 2026-10-29 by Phase 7.1 plan 13: there is no Skip. Continue opens the
+  // pop-up with nothing to save, and again after the three fields were filled in
+  // and saved.
+  test('base state ' + base + ': Continue with nothing to save, and Continue after the fields were filled in, each open the pop-up', async () => {
     const cont = atStep4({ notify: makeNotify({ base }) });
     click(cont, 'welcome-continue-4');
     assertAskOpen(cont);
     assert.equal(cont.requests.length, 0);
 
-    const skipped = atStep4({ notify: makeNotify({ base }) });
-    byId(skipped, 'welcome-name-input').value = 'Typed but skipped';
-    click(skipped, 'welcome-skip');
-    assertAskOpen(skipped);
-    assert.equal(skipped.requests.length, 0, 'Skip saves nothing');
+    const filled = emptyStep4({ notify: makeNotify({ base }) });
+    await fillStep4(filled);
+    click(filled, 'welcome-continue-4');
+    answer(filled.requests[0], 200);
+    await flush();
+    assertAskOpen(filled);
+    assert.equal(filled.requests.length, 1, 'only the profile request');
   });
 }
 
@@ -472,10 +554,15 @@ for (const [label, options] of NO_POPUP) {
     assert.deepEqual(page.replaced, ['/']);
     assert.equal(page.session['pinalert.focusSearch'], '1');
 
-    const skipped = load({ start: 4, ...options });
-    click(skipped, 'welcome-skip');
-    assert.equal(skipped.dialog.showCalls, 0);
-    assert.equal(doneRequests(skipped).length, 1);
+    // Amended 2026-10-29 by Phase 7.1 plan 13: no Skip; the same holds after the
+    // three fields were filled in and saved.
+    const filled = load({ start: 4, ...options });
+    await fillStep4(filled);
+    click(filled, 'welcome-continue-4');
+    answer(filled.requests[0], 200);
+    await flush();
+    assert.equal(filled.dialog.showCalls, 0);
+    assert.equal(doneRequests(filled).length, 1);
   });
 }
 
@@ -527,18 +614,30 @@ test('a 409 closes the pop-up and sends the person back to step 2 with the agree
   assert.equal(page.session['pinalert.focusSearch'], undefined);
 });
 
-for (const [label, fail, opener] of [
-  ['a 500 after Continue', (req) => answer(req, 500), 'welcome-continue-4'],
-  ['a network failure after Skip', (req) => req.reject(new Error('offline')), 'welcome-skip']
+// Amended 2026-10-29 by Phase 7.1 plan 13: the second case used Skip; it now
+// reaches the pop-up by filling the three fields in and pressing Continue.
+for (const [label, fail, open] of [
+  ['a 500 after Continue', (req) => answer(req, 500), async () => {
+    const page = atStep4();
+    click(page, 'welcome-continue-4');
+    return page;
+  }],
+  ['a network failure after the three fields were filled in', (req) => req.reject(new Error('offline')), async () => {
+    const page = emptyStep4();
+    await fillStep4(page);
+    click(page, 'welcome-continue-4');
+    answer(page.requests[0], 200);
+    await flush();
+    return page;
+  }]
 ]) {
   test(label + ' closes the pop-up, shows the step 4 line, and a second Continue finishes without asking again', async () => {
-    const page = atStep4();
-    click(page, opener);
+    const page = await open();
     assertAskOpen(page);
     click(page, 'welcome-alerts-allow');
     await flush();
     assert.equal(doneRequests(page).length, 1);
-    fail(page.requests[0]);
+    fail(doneRequests(page)[0]);
     await flush();
 
     assert.equal(page.dialog.open, false, 'the pop-up is closed');
@@ -549,15 +648,14 @@ for (const [label, fail, opener] of [
     assert.equal(byId(page, 'welcome-error-4').hidden, false);
     assert.equal(byId(page, 'welcome-error-4').textContent, SAVE_FAILED);
     assert.equal(byId(page, 'welcome-continue-4').disabled, false);
-    assert.equal(byId(page, 'welcome-skip').disabled, false);
-    assert.ok(page.doc.activeElement === byId(page, opener), 'focus goes back to the button that was pressed');
+    assert.ok(page.doc.activeElement === byId(page, 'welcome-continue-4'), 'focus goes back to the button that was pressed');
     assert.deepEqual(page.replaced, []);
 
     click(page, 'welcome-continue-4');
     assert.equal(page.dialog.showCalls, 1, 'the pop-up is not shown again');
     assert.equal(page.notify.calls.enable.length, 1, 'enable is not called again');
     assert.equal(doneRequests(page).length, 2, 'a second first-run-done goes out directly');
-    answer(page.requests[1], 204);
+    answer(doneRequests(page)[1], 204);
     await flush();
     assert.deepEqual(page.replaced, ['/']);
   });
@@ -572,8 +670,10 @@ test('an account that has not agreed goes to step 2 and never sees the pop-up', 
   assert.equal(page.dialog.showCalls, 0);
   assert.equal(page.requests.length, 0);
 
+  // Amended 2026-10-29 by Phase 7.1 plan 13: there is no Skip; a second press of
+  // Continue is held to the same rule.
   page.api.goTo(4);
-  click(page, 'welcome-skip');
+  click(page, 'welcome-continue-4');
   assert.equal(page.dialog.showCalls, 0);
   assert.equal(page.requests.length, 0);
 });
@@ -586,7 +686,6 @@ test('changing step while the pop-up is open closes it without answering, and th
   assert.equal(page.dialog.open, false);
   assert.equal(page.requests.length, 0, 'nothing was answered, so nothing is sent');
   assert.equal(byId(page, 'welcome-continue-4').disabled, false);
-  assert.equal(byId(page, 'welcome-skip').disabled, false);
 
   page.api.goTo(4);
   click(page, 'welcome-continue-4');
@@ -968,7 +1067,7 @@ for (const [label, fail] of [
   ['a 500', (req) => answer(req, 500)],
   ['a network failure', (req) => req.reject(new Error('offline'))]
 ]) {
-  test('named pop-up: closed by the browser while the home save is out and it then fails (' + label + ') first-run-done still goes out and Continue and Skip are freed', async () => {
+  test('named pop-up: closed by the browser while the home save is out and it then fails (' + label + ') first-run-done still goes out and Continue is freed', async () => {
     const page = atStep4({ askHome: '' });
     click(page, 'welcome-continue-4');
     await pickInAsk(page);
@@ -985,6 +1084,5 @@ for (const [label, fail] of [
     answer(doneRequests(page)[0], 500);
     await flush();
     assert.equal(byId(page, 'welcome-continue-4').disabled, false);
-    assert.equal(byId(page, 'welcome-skip').disabled, false);
   });
 }

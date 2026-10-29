@@ -14,13 +14,20 @@
 //     (its words are in welcome.html.tmpl): Read again scrolls the text box to
 //     the top and focuses it, and Log out is a plain form posting to the app's
 //     own /auth/logout, which this script never touches.
-//   - Continue on step 4 sends PATCH /api/me/profile with only the fields the
-//     person filled and then ends the flow (below). Skip ends the flow and
-//     sends nothing. Nothing is saved before that.
+//   - Step 4 asks for a Username, a Name and a Home area, all three required
+//     (Phase 7.1 plan 13, UI-SPEC Surface 7; there is no Skip). Continue is
+//     switched off (aria-disabled, the btn--off look) until all three are good:
+//     the username check says available (or the account already has that name),
+//     the name holds a letter or a digit, and a home area is a picked place or the
+//     one already stored. A press while it is off moves focus to the first field
+//     that is not good and says what is missing. Continue then sends one
+//     PATCH /api/me/profile with the fields that changed and ends the flow
+//     (below). Nothing is saved before that.
 //   - The flow is recorded as done by POST /api/me/first-run-done (03.4 D-27,
 //     decision 15), sent once per finish attempt and only after step 4: directly
 //     when the alerts pop-up is not shown, otherwise once the pop-up has been
-//     answered.
+//     answered. The server answers 409 with field profile when a field is still
+//     missing (the client only guides); that sends the person back to step 4.
 //
 // Step 2 holds Agree and Disagree back until the end of the text has been seen
 // (quick 261027-jhd, owner, 2026-10-27), like the terms screen of any other app.
@@ -32,8 +39,8 @@
 // the buttons stay shown for the rest of the visit.
 //
 // The alerts ask (quick 261027-t5w, owner, 2026-10-27; it replaced step 5) is a
-// small modal pop-up that reuses the Log out box. When step 4 finishes (Continue
-// or Skip) it opens if window.PinalertNotify.baseState() says this device can
+// small modal pop-up that reuses the Log out box. When step 4 finishes (Continue)
+// it opens if window.PinalertNotify.baseState() says this device can
 // turn alerts on (maybe or ready, no request and no prompt) and the page has a
 // push key. On an iPhone Safari tab (needs-install), a blocked or unsupported
 // device, a page without a key, a missing PinalertNotify or a browser without
@@ -116,6 +123,9 @@
   var MESSAGE_SAVE_FAILED = 'Could not save. Try again in a moment.';
   var MESSAGE_HOME_NOT_SAVED = 'Could not save your home area. Try again in a moment.';
   var MESSAGE_SESSION_ENDED = 'Your session has ended. Reload the page and log in again.';
+  // Step 4: what Continue says when it is pressed while switched off, and the
+  // server's own sentence for first-run-done with a field missing (the same words).
+  var MESSAGE_ADD_ALL = 'Add your username, name and home area.';
   // The search wording is the same as Settings and the map search, so one
   // sentence means one thing across the app.
   var MESSAGE_SEARCHING = 'Searching…';
@@ -163,11 +173,12 @@
   var agreeButton = el('welcome-agree');
   var allowButton = el('welcome-allow-location');
   var notNowButton = el('welcome-not-now');
+  var usernameInput = el('welcome-username-input');
+  var usernameLine = el('welcome-username-status');
   var nameInput = el('welcome-name-input');
   var homeInput = el('welcome-home-input');
   var profileError = el('welcome-error-4');
   var continueButton = el('welcome-continue-4');
-  var skipButton = el('welcome-skip');
 
   // The alerts pop-up, a native dialog that sits outside the flow root. The
   // public key rides on the flow root; it is empty when the server has no key,
@@ -194,6 +205,13 @@
   // for an account that has not agreed yet. A person may look at any step in
   // any order, but finishing needs the agreement (the server holds the same rule).
   var CONSENT_STEP = 2;
+  // The step Agree leads to. The server names it (data-after-terms-step): 3 for
+  // a first visit, 4 for an account that finished the flow before and only agrees
+  // to new terms, so the fill in is one pass. Anything else means 3.
+  var afterTermsStep = parseInt(root.getAttribute('data-after-terms-step'), 10);
+  if (afterTermsStep !== 4) {
+    afterTermsStep = 3;
+  }
 
   var current = 0;
   // Whether the current terms are agreed: true when the server started the flow
@@ -203,7 +221,7 @@
   var locating = false;
   var finishing = false;
   // The alerts pop-up: asked is true once it has been answered in this visit, so
-  // a later Continue or Skip (after a failed first-run-done) never asks again;
+  // a later Continue (after a failed first-run-done) never asks again;
   // askBusy is true from the moment it is answered until the answer is handled.
   var asked = false;
   var askBusy = false;
@@ -214,11 +232,20 @@
   var askOpener = null;
 
   // The values the page was drawn with, so only what the person changed is sent.
+  // A stored username, name and home area also count as filled in (Phase 7.1 plan
+  // 13): an account that is filling in keeps what it already has.
   var storedName = nameInput ? nameInput.value.trim() : '';
+  var storedUsername = usernameInput ? usernameInput.value.trim().toLowerCase() : '';
+  var storedHome = homeInput ? homeInput.value.trim() : '';
 
   // The place picked for the home area from step 4's own search. Only a picked
   // place is ever sent as a home area.
   var homePick = null;
+
+  // The shared live check of the Username (username-check.js), attached below once
+  // the Continue helpers exist. It stays null on a page without that script, and
+  // Continue then stays off.
+  var usernameCheck = null;
 
   // The home area the pop-up names: the one the server stored for the account
   // (data-home-area, rendered by html/template), replaced by the place saved at
@@ -357,7 +384,7 @@
   }
 
   function saveMessage(answer) {
-    if (answer.status === 400 && serverSentence(answer.body) !== '') {
+    if ((answer.status === 400 || answer.status === 422 || answer.status === 429) && serverSentence(answer.body) !== '') {
       return serverSentence(answer.body);
     }
     if (answer.status === 401) {
@@ -531,7 +558,7 @@
       agreeButton.disabled = false;
       if (answer.status === 204) {
         agreed = true;
-        goTo(3);
+        goTo(afterTermsStep);
         return;
       }
       showLine(consentError, answer.status === 401 ? MESSAGE_SESSION_ENDED : MESSAGE_AGREE_FAILED);
@@ -943,8 +970,8 @@
       results: el('welcome-home-results'),
       url: STEP4_SEARCH_URL,
       typing: true,
-      onPick: function (place) { homePick = place; },
-      onClear: function () { homePick = null; }
+      onPick: function (place) { homePick = place; updateContinue(); },
+      onClear: function () { homePick = null; updateContinue(); }
     });
   }
 
@@ -971,7 +998,71 @@
   function setFinishing(on) {
     finishing = on;
     continueButton.disabled = on;
-    skipButton.disabled = on;
+  }
+
+  // ---- Step 4: the three fields and Continue ---------------------------------
+
+  // usernameGood says the Username is ready: it is the name the account already
+  // has, or the shared check said it can be used.
+  function usernameGood() {
+    if (usernameInput === null) {
+      return false;
+    }
+    var typed = usernameInput.value.trim().toLowerCase();
+    if (storedUsername !== '' && typed === storedUsername) {
+      return true;
+    }
+    return usernameCheck !== null && usernameCheck.isGood();
+  }
+
+  // nameGood says the Name holds a letter or a digit, as the server asks.
+  function nameGood() {
+    return /[\p{L}\p{N}]/u.test(nameInput.value);
+  }
+
+  // homeGood says a home area is a place picked from the search, or the one
+  // already stored and left as it was drawn. Typed text that was never picked is
+  // not a home area.
+  function homeGood() {
+    return homePick !== null || (storedHome !== '' && homeInput.value.trim() === storedHome);
+  }
+
+  function allGood() {
+    return usernameGood() && nameGood() && homeGood();
+  }
+
+  // swapClass puts one class in place of another on a node, keeping the rest.
+  function swapClass(node, remove, add) {
+    var kept = String(node.className).split(/\s+/).filter(function (name) {
+      return name !== '' && name !== remove && name !== add;
+    });
+    kept.push(add);
+    node.className = kept.join(' ');
+  }
+
+  // updateContinue draws Continue as on (the primary button) or off (aria-disabled
+  // and the full contrast btn--off look; never the disabled attribute, so it stays
+  // reachable). Once all three are good, a leftover "Add your username..." line
+  // goes away.
+  function updateContinue() {
+    if (allGood()) {
+      continueButton.removeAttribute('aria-disabled');
+      swapClass(continueButton, 'btn--off', 'btn--primary');
+      if (!profileError.hidden && profileError.textContent === MESSAGE_ADD_ALL) {
+        hideLine(profileError);
+      }
+      return;
+    }
+    continueButton.setAttribute('aria-disabled', 'true');
+    swapClass(continueButton, 'btn--primary', 'btn--off');
+  }
+
+  // focusFirstMissing moves focus to the first field that is not good.
+  function focusFirstMissing() {
+    var target = !usernameGood() ? usernameInput : (!nameGood() ? nameInput : homeInput);
+    if (target && typeof target.focus === 'function') {
+      target.focus();
+    }
   }
 
   function leave() {
@@ -993,6 +1084,14 @@
         return;
       }
       doneFailed();
+      if (answer.status === 409 && answer.body && answer.body.error && answer.body.error.field === 'profile') {
+        // The server still misses the username, the name or the home area (the
+        // pop-up is already closed): back to step 4 with the server's sentence.
+        goTo(4);
+        var missing = serverSentence(answer.body);
+        showLine(profileError, missing !== '' ? missing : MESSAGE_ADD_ALL);
+        return;
+      }
       if (answer.status === 409) {
         // The server has no agreement for the current terms: go back to it.
         goTo(2);
@@ -1008,8 +1107,8 @@
     });
   }
 
-  // doneFailed frees step 4's buttons and puts the pop-up away, so the next
-  // Continue or Skip works. The pop-up has been answered (asked stays true), so
+  // doneFailed frees step 4's button and puts the pop-up away, so the next
+  // Continue works. The pop-up has been answered (asked stays true), so
   // it is not shown again.
   function doneFailed() {
     setFinishing(false);
@@ -1027,9 +1126,13 @@
   }
 
   // profileBody builds the PATCH body from what the person filled: a changed
-  // name, and a home area only when it is a picked place.
+  // username and name, and a home area only when it is a picked place.
   function profileBody() {
     var body = {};
+    var username = usernameInput === null ? '' : usernameInput.value.trim().toLowerCase();
+    if (username !== '' && username !== storedUsername) {
+      body.username = username;
+    }
     var name = nameInput.value.trim();
     if (name !== '' && name !== storedName) {
       body.display_name = name;
@@ -1272,11 +1375,15 @@
 
   // ---- Step 4: finishing (continued) -----------------------------------------
 
-  // finish is step 4's way on. With save true it first sends the profile fields
-  // the person filled (no request when there are none); with save false (Skip)
-  // it saves nothing. Then it ends the flow through endFlow (the pop-up, or the
-  // flow recorded as done at once).
-  function finish(save) {
+  // finishStep4 is step 4's way on (Continue; the public hook PinalertWelcome.finish
+  // is this function). While any of the three fields is not good it only guides:
+  // focus goes to the first one that is not, and the line says what is missing.
+  // Otherwise it first sends the profile fields that changed
+  // (no request when none did), then ends the flow through endFlow (the pop-up, or
+  // the flow recorded as done at once). A refusal of the username (taken, wrong
+  // characters, reserved, too soon, the text screening) shows its sentence under
+  // the Username and keeps step 4.
+  function finishStep4() {
     if (finishing) {
       return Promise.resolve();
     }
@@ -1288,10 +1395,15 @@
       showLine(consentError, MESSAGE_AGREE_FIRST);
       return Promise.resolve();
     }
+    if (!allGood()) {
+      focusFirstMissing();
+      showLine(profileError, MESSAGE_ADD_ALL);
+      return Promise.resolve();
+    }
     setFinishing(true);
     hideLine(profileError);
-    var body = save ? profileBody() : {};
-    if (!body.display_name && !body.home_area) {
+    var body = profileBody();
+    if (!body.username && !body.display_name && !body.home_area) {
       endFlow();
       return Promise.resolve();
     }
@@ -1303,18 +1415,33 @@
     }, SAVE_TIMEOUT_MS).promise.then(function (answer) {
       if (!answer.ok) {
         setFinishing(false);
+        var field = answer.body && answer.body.error ? answer.body.error.field : '';
+        if (field === 'username' && (answer.status === 400 || answer.status === 422) && usernameCheck !== null) {
+          // The sentence goes under the Username, which is no longer good until
+          // the person types it again (a lost race, the screening, a wait).
+          var refusal = serverSentence(answer.body);
+          usernameCheck.showSaveError(refusal !== '' ? refusal : MESSAGE_SAVE_FAILED);
+          updateContinue();
+          usernameInput.focus();
+          return;
+        }
         showLine(profileError, saveMessage(answer));
         return;
       }
       // Saved: a retry of the last call must not send these again.
+      if (body.username) {
+        storedUsername = body.username;
+      }
       if (body.display_name) {
         storedName = body.display_name;
       }
       if (body.home_area) {
         // The pop-up names the place just saved (homePick is cleared next).
         homeName = body.home_area.name;
+        storedHome = body.home_area.name;
         homePick = null;
       }
+      updateContinue();
       endFlow();
     }, function () {
       setFinishing(false);
@@ -1399,8 +1526,20 @@
   notNowButton.addEventListener('click', notNow);
   // The pressed button is remembered, so focus can go back to it if the flow
   // cannot be recorded (Safari never focuses a tapped button).
-  continueButton.addEventListener('click', function () { askOpener = continueButton; finish(true); });
-  skipButton.addEventListener('click', function () { askOpener = skipButton; finish(false); });
+  continueButton.addEventListener('click', function () { askOpener = continueButton; finishStep4(); });
+  // The Username's live check (username-check.js) and the checks that keep
+  // Continue in step with the three fields. A page without the check script keeps
+  // Continue off; the server refuses first-run-done without all three anyway.
+  if (usernameInput !== null && usernameLine !== null && window.PinalertUsernameCheck &&
+      typeof window.PinalertUsernameCheck.attach === 'function') {
+    usernameCheck = window.PinalertUsernameCheck.attach(usernameInput, usernameLine, {
+      mode: 'signup',
+      onChange: function () { updateContinue(); }
+    });
+  }
+  nameInput.addEventListener('input', updateContinue);
+  homeInput.addEventListener('input', updateContinue);
+  updateContinue();
   if (askDialog && askTitle && askAllow && askLater) {
     askAllow.addEventListener('click', onAskAllow);
     askLater.addEventListener('click', onAskLater);
@@ -1421,6 +1560,6 @@
     agree: agree,
     disagree: disagree,
     allowLocation: allowLocation,
-    finish: finish
+    finish: finishStep4
   };
 }());

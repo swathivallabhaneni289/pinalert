@@ -704,3 +704,125 @@ html[data-modal-open] .notice-card {
     border: 1px solid CanvasText;
   }
 }
+
+/* The Username field and its live check (Phase 7.1, plan 13; UI-SPEC Surface 7).
+   Step 4 of the first-time flow and the Username window of Settings share these
+   rules. The field is one bordered box that holds a plain @ and the input, so the
+   input itself fills the 44px height and is the touch target; the box draws the
+   focus ring while the input is focused. The status line under it takes its icon
+   and tone from the class username-check.js sets (good, bad or warn); the words
+   are written as text, so state is never colour alone. */
+.username-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--touch-target-min);
+  margin-top: var(--space-xs);
+  padding: 0 var(--space-12);
+  border: 1px solid var(--color-text-muted);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  cursor: text;
+}
+
+.username-field:focus-within {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.username-field__at {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+
+.username-field__input {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  min-height: calc(var(--touch-target-min) - 2px);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.username-field__input:focus,
+.username-field__input:focus-visible {
+  outline: none;
+}
+
+/* The text colour is its own rule, ahead of the tone rules below, so a tone class
+   (one class) wins over it by order and not by weight. */
+.username-status {
+  color: var(--color-text);
+}
+
+.username-status:not([hidden]) {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: 20px;
+  margin: var(--space-xs) 0 0;
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+}
+
+.username-status--good::before,
+.username-status--bad::before,
+.username-status--warn::before {
+  content: "";
+  flex-shrink: 0;
+  width: var(--space-md);
+  height: var(--space-md);
+  background-color: currentColor;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.username-status--good {
+  color: var(--color-tone-good);
+}
+
+.username-status--good::before {
+  -webkit-mask-image: url("/static/icons/check.svg");
+  mask-image: url("/static/icons/check.svg");
+}
+
+.username-status--bad {
+  color: var(--color-tone-bad);
+}
+
+.username-status--bad::before {
+  -webkit-mask-image: url("/static/icons/circle-x.svg");
+  mask-image: url("/static/icons/circle-x.svg");
+}
+
+.username-status--warn::before {
+  -webkit-mask-image: url("/static/icons/circle-alert.svg");
+  mask-image: url("/static/icons/circle-alert.svg");
+}
+
+@media (forced-colors: active) {
+  .username-field {
+    border: 1px solid CanvasText;
+  }
+
+  .username-status--good::before,
+  .username-status--bad::before,
+  .username-status--warn::before {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+}
