@@ -3987,6 +3987,11 @@ const docTemplate = `{
                     "type": "number",
                     "example": 80.2707
                 },
+                "reporter_profile_path": {
+                    "description": "ReporterProfilePath is the path of the reporter's public profile. It is\npresent only for an opted in reporter who has not blocked you, never for\nyour own report, and only while the report is active or disputed. It sits\non the row beside is_own_report and never inside trust, so the feed and the\nvote response still build equal trust objects. Omitted when absent.",
+                    "type": "string",
+                    "example": "/u/ravi.k"
+                },
                 "severity": {
                     "type": "string",
                     "enum": [

@@ -110,6 +110,7 @@
                 data-visibility-reason="{{.VisibilityReason}}"
                 data-expired="{{.Expired}}"
                 {{if not .Moderation}}data-trust="{{.TrustJSON}}"{{end}}
+                {{if .ReporterProfilePath}}data-reporter-profile-path="{{.ReporterProfilePath}}"{{end}}
                 {{if .Moderation}}data-moderation="{{.Moderation}}"{{end}}
                 {{if .CanReopen}}data-can-reopen="true"{{end}}
                 {{if .UndosUsed}}data-undos-used="true"{{end}}>

@@ -418,6 +418,15 @@ definitions:
       longitude:
         example: 80.2707
         type: number
+      reporter_profile_path:
+        description: |-
+          ReporterProfilePath is the path of the reporter's public profile. It is
+          present only for an opted in reporter who has not blocked you, never for
+          your own report, and only while the report is active or disputed. It sits
+          on the row beside is_own_report and never inside trust, so the feed and the
+          vote response still build equal trust objects. Omitted when absent.
+        example: /u/ravi.k
+        type: string
       severity:
         enum:
         - low

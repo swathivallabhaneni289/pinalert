@@ -516,6 +516,12 @@ type profileReport struct {
 	Lat         float64
 	Lon         float64
 	Approximate bool
+
+	// ReporterProfilePath is the "/u/username" path of the reporter of a live
+	// voted report, empty otherwise (plan 09-09, D-04). The template writes it
+	// as data-reporter-profile-path and activity.js hands it to the trust
+	// block's explanation panel. It is a path only, never an account id.
+	ReporterProfilePath string
 }
 
 // profileRecord is the reporter record card of the phone Activity page: the
@@ -780,6 +786,9 @@ func newProfileReport(ar service.ActivityReport, now time.Time) (profileReport, 
 		Lat:              row.Latitude,
 		Lon:              row.Longitude,
 		Approximate:      ar.Approximate,
+		// The service sets it only for a live voted report, so a finished card
+		// never carries a username (D-20).
+		ReporterProfilePath: ar.ReporterProfilePath,
 	}, nil
 }
 
