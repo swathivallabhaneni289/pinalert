@@ -787,7 +787,11 @@ test('Escape does nothing and Tab stays inside the current step', () => {
 
   byId(page, 'welcome-disagree').focus();
   const middle = fire(page.root, 'keydown', { key: 'Tab' });
-  assert.equal(middle.prevented, false, 'Tab between two controls is left to the browser');
+  // Amended 2026-10-29 by the Phase 5 review fix (WR-B05): Tab between two
+  // controls is no longer left to the browser (Safari's Tab skips links, so a
+  // link in the loop was passed over); the page moves to the next control itself.
+  assert.equal(middle.prevented, true, 'the page moves focus between two controls');
+  assert.ok(page.doc.activeElement === agree, 'Tab from Disagree lands on Agree, the next control');
 
   // Phone: the side panel is not drawn, so its buttons are not in the Tab loop
   // and Back is the first control of the step.
@@ -805,7 +809,11 @@ test('Escape does nothing and Tab stays inside the current step', () => {
   assert.equal(wrapBack.prevented, true);
   assert.equal(phone.doc.activeElement, phoneAgree);
   box.focus();
-  assert.equal(fire(phone.root, 'keydown', { key: 'Tab', shiftKey: true }).prevented, false);
+  // Amended 2026-10-29 by the Phase 5 review fix (WR-B05): focus here is still
+  // on Agree of the phone page (box belongs to the laptop page), and Shift+Tab
+  // from a control in the loop is now moved by the page, not left to the browser.
+  assert.equal(fire(phone.root, 'keydown', { key: 'Tab', shiftKey: true }).prevented, true);
+  assert.ok(phone.doc.activeElement === byId(phone, 'welcome-disagree'), 'Shift+Tab from Agree lands on Disagree');
 
   // Step 1 on the phone has nothing before the title, so Shift+Tab from it wraps.
   const first = load();
@@ -1537,7 +1545,10 @@ test('step 2 holds Agree and Disagree back until the end marker is seen, and Tab
   assert.equal(heldBack(page), false);
   assert.equal(watcher.disconnected, true);
   box.focus();
-  assert.equal(fire(page.root, 'keydown', { key: 'Tab' }).prevented, false, 'Tab from the text box now reaches Disagree');
+  // Amended 2026-10-29 by the Phase 5 review fix (WR-B05): the page moves focus
+  // itself now (it was left to the browser); the next control is still Disagree.
+  assert.equal(fire(page.root, 'keydown', { key: 'Tab' }).prevented, true);
+  assert.ok(page.doc.activeElement === byId(page, 'welcome-disagree'), 'Tab from the text box now reaches Disagree');
   byId(page, 'welcome-agree').focus();
   assert.equal(fire(page.root, 'keydown', { key: 'Tab' }).prevented, true);
   assert.ok(page.doc.activeElement === page.items[0].button, 'Tab from Agree wraps to the first control as before');
@@ -1631,8 +1642,8 @@ test('WR-B05: in the Disagree box Tab goes from Log out to Try the demo and then
   assert.equal(byId(page, 'welcome-disagree-message').hidden, false);
   byId(page, 'welcome-logout').focus();
   const fromLogout = fire(page.root, 'keydown', { key: 'Tab' });
-  assert.equal(fromLogout.prevented, false, 'Log out is no longer the last control: the browser moves on to Try the demo');
-  byId(page, 'welcome-try-demo-2').focus();
+  assert.equal(fromLogout.prevented, true, 'the page moves focus itself: the Tab of Safari would skip the link');
+  assert.ok(page.doc.activeElement === byId(page, 'welcome-try-demo-2'), 'Tab from Log out lands on Try the demo');
   const fromLink = fire(page.root, 'keydown', { key: 'Tab' });
   assert.equal(fromLink.prevented, true, 'Tab from the last control wraps');
   assert.ok(page.doc.activeElement === page.items[0].button, 'to the first control of the flow, never out of it');
@@ -1655,5 +1666,6 @@ test('WR-B05: on a phone step 1 Tab and Shift+Tab reach Try the demo every time'
   assert.equal(back.prevented, true);
   assert.ok(phone.doc.activeElement === go, 'Shift+Tab from Try the demo wraps to Continue');
   go.focus();
-  assert.equal(fire(phone.root, 'keydown', { key: 'Tab', shiftKey: true }).prevented, false, 'Shift+Tab from Continue is left to the browser, which moves to Try the demo');
+  assert.equal(fire(phone.root, 'keydown', { key: 'Tab', shiftKey: true }).prevented, true);
+  assert.ok(phone.doc.activeElement === link, 'Shift+Tab from Continue lands on Try the demo');
 });

@@ -1329,6 +1329,18 @@
     var first = items[0];
     var last = items[items.length - 1];
     var active = document.activeElement;
+    // From a control in the loop, Tab moves to the next control in the loop and
+    // Shift+Tab to the one before, wrapping at the ends (Phase 5 review fix
+    // WR-B05). The page moves focus itself rather than leaving it to the
+    // browser, because Safari's Tab skips links by default: left to Safari, Tab
+    // from Log out would pass over Try the demo and leave the flow.
+    var at = items.indexOf ? items.indexOf(active) : -1;
+    if (at !== -1 && items.length > 1) {
+      e.preventDefault();
+      var next = e.shiftKey ? (at === 0 ? last : items[at - 1]) : (at === items.length - 1 ? first : items[at + 1]);
+      next.focus();
+      return;
+    }
     var title = el('welcome-step-' + current + '-title');
     // Shift+Tab from the title goes back to whatever comes before it (the step
     // list, the Back control). It wraps only when nothing does.
