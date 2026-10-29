@@ -1362,3 +1362,107 @@ test('NP-1: an automatic ask that meets an ended visit never restarts anything',
   assert.equal(ended, 0, 'only a load the reader started hands over');
   assert.ok(shown(page, 'official-error'), 'the load error with Try again shows instead');
 });
+
+// ---- An automatic ask keeps focus and open rows (Phase 5 review fix NP-4) ----
+// Added 2026-10-29. The asks of CR-B01 rebuild the list. A reader who has a row
+// focused and open keeps it: after the new answer is drawn, the row with the
+// same id is open again and holds focus. The fake document leaves activeElement
+// on the old, removed button, so each case checks that focus is on a button
+// that is in the list now, not on one that was thrown away.
+
+const panelOf = (page, button) => page.doc.byId[button.getAttribute('aria-controls')];
+const focusAndOpen = (page, button) => { button.focus(); fire(button, 'click'); };
+const assertKept = (page, label, headline) => {
+  const active = page.doc.activeElement;
+  assert.ok(rowsOf(page).includes(active), label + ': focus is on a row of the list as drawn now');
+  assert.ok(textOf(active).includes(headline), label + ': it is the same row');
+  assert.equal(active.getAttribute('aria-expanded'), 'true', label + ': the row is still open');
+  assert.equal(panelOf(page, active).hidden, false, label + ': its details show');
+};
+
+test('NP-4: the five minute ask of a stale answer keeps the focused, open row', async () => {
+  const page = await open({}, withRows(staleAt()));
+  focusAndOpen(page, rowsOf(page)[1]);
+  page.advance(5 * 60000);
+  await flush();
+  assert.equal(page.requests.length, 2);
+  answer(page.requests[1], 200, withRows({ ...staleAt(), age_seconds: 7500 }));
+  await flush();
+  assertKept(page, 'stale', 'Heavy rain');
+});
+
+test('NP-4: the ask at the fresh limit keeps the focused, open row', async () => {
+  const page = await open({}, withRows());
+  focusAndOpen(page, rowsOf(page)[0]);
+  for (let i = 0; i < 26; i++) { page.advance(60000); }
+  await flush();
+  assert.equal(page.requests.length, 2);
+  assert.equal(hasInForce(page), false, 'the claim still goes while the new answer is out');
+  answer(page.requests[1], 200, withRows({ age_seconds: 30 }));
+  await flush();
+  assertKept(page, 'fresh limit', 'Cyclone warning for the coast');
+});
+
+test('NP-4: the ask when the tab is shown again keeps the focused, open row', async () => {
+  const page = await open({}, withRows());
+  focusAndOpen(page, rowsOf(page)[1]);
+  page.advance(70000);
+  showTab(page, 'hidden');
+  showTab(page);
+  await flush();
+  assert.equal(page.requests.length, 2);
+  answer(page.requests[1], 200, withRows());
+  await flush();
+  assertKept(page, 'tab shown', 'Heavy rain');
+});
+
+test('NP-4: the ask of a restored page keeps the focused, open row', async () => {
+  const page = await open({}, withRows());
+  focusAndOpen(page, rowsOf(page)[0]);
+  page.advance(70000);
+  (page.sandbox.windowListeners.pageshow || []).forEach((h) => h({ type: 'pageshow', persisted: true }));
+  await flush();
+  assert.equal(page.requests.length, 2);
+  answer(page.requests[1], 200, withRows());
+  await flush();
+  assertKept(page, 'restored', 'Cyclone warning for the coast');
+});
+
+test('NP-4: every open row is open again, and focus stays where it was', async () => {
+  const page = await open({}, withRows(staleAt()));
+  const [first, second] = rowsOf(page);
+  fire(first, 'click');
+  focusAndOpen(page, second);
+  page.advance(5 * 60000);
+  await flush();
+  answer(page.requests[1], 200, withRows({ ...staleAt(), age_seconds: 7500 }));
+  await flush();
+  const now = rowsOf(page);
+  assert.equal(now[0].getAttribute('aria-expanded'), 'true', 'the first open row is open again');
+  assert.equal(panelOf(page, now[0]).hidden, false);
+  assertKept(page, 'two open', 'Heavy rain');
+});
+
+test('NP-4: a focused row that left the answer puts focus on the section title, never the body', async () => {
+  const page = await open({}, withRows(staleAt()));
+  focusAndOpen(page, rowsOf(page)[1]);
+  page.advance(5 * 60000);
+  await flush();
+  answer(page.requests[1], 200, withRows({ ...staleAt(), age_seconds: 7500, groups: [group('reader', 'Where you are', [row()])] }));
+  await flush();
+  assert.ok(page.doc.activeElement === el(page, 'official-title'), 'focus is on the section title');
+  assert.equal(el(page, 'official-title').getAttribute('tabindex'), '-1');
+});
+
+test('NP-4: focus the reader moved elsewhere is never pulled back to a row', async () => {
+  const page = await open({}, withRows(staleAt()));
+  focusAndOpen(page, rowsOf(page)[1]);
+  const elsewhere = el(page, 'official-status');
+  page.advance(5 * 60000);
+  await flush();
+  elsewhere.focus();
+  answer(page.requests[1], 200, withRows({ ...staleAt(), age_seconds: 7500 }));
+  await flush();
+  assert.ok(page.doc.activeElement === elsewhere, 'focus stays where the reader put it');
+  assert.equal(rowsOf(page)[1].getAttribute('aria-expanded'), 'true', 'the open row is still open again');
+});
