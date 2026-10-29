@@ -104,12 +104,16 @@ func TestPersonPageCopy(t *testing.T) {
 		// P9-C15 Blocked by you.
 		"You blocked ",
 		"They can't see your profile or follow you. Their reports still show in the feed.",
-		"Unblock",
-		// P9-C6, P9-C7 the buttons and the menu.
-		"Follow", "Following", "More", "Edit in Settings", "Remove follower", "Block",
+		">Unblock</button>",
+		// P9-C6, P9-C7 the buttons and the menu. Amended 2026-10-30 by the
+		// review fix IN-T03: each is matched as visible element text, so an id,
+		// a field name or an aria-label that happens to hold the word cannot
+		// satisfy it.
+		">Follow</button>", ">Following</button>", "<span>More</span>",
+		">Edit in Settings</a>", ">Remove follower</button>", ">Block</button>",
 		// Surface 5, the part of the section this plan draws.
 		"Recent reports", "Reports from the last 30 days, newest first.",
-		"stars",
+		`person-stars__word">stars</span>`,
 	} {
 		if !strings.Contains(tmpl, want) {
 			t.Errorf("person.html.tmpl lacks the sentence %q", want)
