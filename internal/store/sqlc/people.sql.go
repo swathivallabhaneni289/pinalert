@@ -12,6 +12,30 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const activeFollowNotify = `-- name: ActiveFollowNotify :one
+SELECT EXISTS (
+    SELECT 1 FROM account_follows
+    WHERE follower_id = $1::bigint
+      AND followee_id = $2::bigint
+      AND ended_at IS NULL
+      AND notify)::bool AS notify_on
+`
+
+type ActiveFollowNotifyParams struct {
+	FollowerID int64
+	FolloweeID int64
+}
+
+// Whether an active follow with the bell on exists from the follower to the
+// followee (D-21). The push worker reads it at send time, and a profile reads
+// it for the viewer's own bell.
+func (q *Queries) ActiveFollowNotify(ctx context.Context, arg ActiveFollowNotifyParams) (bool, error) {
+	row := q.db.QueryRow(ctx, activeFollowNotify, arg.FollowerID, arg.FolloweeID)
+	var notify_on bool
+	err := row.Scan(&notify_on)
+	return notify_on, err
+}
+
 const blockAccount = `-- name: BlockAccount :exec
 INSERT INTO person_blocks (blocker_id, blocked_id, created_at)
 VALUES ($1::bigint, $2::bigint, $3::timestamptz)
@@ -170,6 +194,23 @@ func (q *Queries) CountNamedFollowing(ctx context.Context, arg CountNamedFollowi
 	return column_1, err
 }
 
+const countNotifyFollows = `-- name: CountNotifyFollows :one
+SELECT COUNT(*)::bigint
+FROM account_follows
+WHERE follower_id = $1::bigint
+  AND ended_at IS NULL
+  AND notify
+`
+
+// How many Notify me bells the account has on now (active follows only), for
+// the cap of NotifyFollowsCap.
+func (q *Queries) CountNotifyFollows(ctx context.Context, followerID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countNotifyFollows, followerID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const deleteAccountBlocks = `-- name: DeleteAccountBlocks :execrows
 DELETE FROM person_blocks
 WHERE blocker_id = $1::bigint
@@ -207,7 +248,9 @@ func (q *Queries) DeleteAccountFollows(ctx context.Context, accountID int64) (in
 const endFollowPair = `-- name: EndFollowPair :execrows
 UPDATE account_follows
 SET ended_at = $1::timestamptz,
-    end_reason = $2::text
+    end_reason = $2::text,
+    notify = false,
+    notify_since = NULL
 WHERE follower_id = $3::bigint
   AND followee_id = $4::bigint
   AND ended_at IS NULL
@@ -221,7 +264,9 @@ type EndFollowPairParams struct {
 }
 
 // Ends one active follow with a reason (D-21). The row stays. Services call it
-// only through endFollowPair (followend.go), never directly (review W1).
+// only through endFollowPair (followend.go), never directly (review W1). Ending
+// a follow also turns its Notify me off (D-08, D-21), so a follow restored
+// later by the sweep, or followed again, comes back with the bell off.
 func (q *Queries) EndFollowPair(ctx context.Context, arg EndFollowPairParams) (int64, error) {
 	result, err := q.db.Exec(ctx, endFollowPair,
 		arg.Now,
@@ -238,7 +283,9 @@ func (q *Queries) EndFollowPair(ctx context.Context, arg EndFollowPairParams) (i
 const endFollowsOf = `-- name: EndFollowsOf :execrows
 UPDATE account_follows
 SET ended_at = $1::timestamptz,
-    end_reason = $2::text
+    end_reason = $2::text,
+    notify = false,
+    notify_since = NULL
 WHERE followee_id = $3::bigint
   AND ended_at IS NULL
 `
@@ -250,7 +297,8 @@ type EndFollowsOfParams struct {
 }
 
 // Ends every active follow of one followee with a reason (D-21), returning the
-// number of rows ended. Services call it only through endFollowsOf.
+// number of rows ended. Services call it only through endFollowsOf. Every
+// ended follow also has its Notify me turned off (D-08, D-21).
 func (q *Queries) EndFollowsOf(ctx context.Context, arg EndFollowsOfParams) (int64, error) {
 	result, err := q.db.Exec(ctx, endFollowsOf, arg.Now, arg.Reason, arg.FolloweeID)
 	if err != nil {
@@ -275,7 +323,9 @@ WHERE a.id = $3::bigint
 ON CONFLICT (follower_id, followee_id) DO UPDATE
 SET created_at = EXCLUDED.created_at,
     ended_at = NULL,
-    end_reason = NULL
+    end_reason = NULL,
+    notify = false,
+    notify_since = NULL
 WHERE account_follows.ended_at IS NOT NULL
 `
 
@@ -618,6 +668,88 @@ func (q *Queries) MarkUsernameScreenClear(ctx context.Context, arg MarkUsernameS
 	return result.RowsAffected(), nil
 }
 
+const notifyFollowersOf = `-- name: NotifyFollowersOf :many
+SELECT follower_id
+FROM account_follows
+WHERE followee_id = $1::bigint
+  AND ended_at IS NULL
+  AND notify
+ORDER BY follower_id
+LIMIT $2::int
+`
+
+type NotifyFollowersOfParams struct {
+	FolloweeID int64
+	RowLimit   int32
+}
+
+// The followers of one person who have the bell on (D-21: active follows
+// only), for the fan out at posting time. Limited; ordered by id so the answer
+// is stable. It names no username and no account detail.
+func (q *Queries) NotifyFollowersOf(ctx context.Context, arg NotifyFollowersOfParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, notifyFollowersOf, arg.FolloweeID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var follower_id int64
+		if err := rows.Scan(&follower_id); err != nil {
+			return nil, err
+		}
+		items = append(items, follower_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const notifyFollowsFor = `-- name: NotifyFollowsFor :many
+SELECT followee_id, notify_since::timestamptz AS notify_since
+FROM account_follows
+WHERE follower_id = $1::bigint
+  AND ended_at IS NULL
+  AND notify
+ORDER BY notify_since, followee_id
+LIMIT $2::int
+`
+
+type NotifyFollowsForParams struct {
+	FollowerID int64
+	RowLimit   int32
+}
+
+type NotifyFollowsForRow struct {
+	FolloweeID  int64
+	NotifySince time.Time
+}
+
+// The people one account has the bell on for, with the time it was turned on
+// (D-08, D-21: active follows only). The producer of follow notes reads it and
+// keeps only reports posted after notify_since. Limited by the cap; ordered so
+// the answer is stable.
+func (q *Queries) NotifyFollowsFor(ctx context.Context, arg NotifyFollowsForParams) ([]NotifyFollowsForRow, error) {
+	rows, err := q.db.Query(ctx, notifyFollowsFor, arg.FollowerID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []NotifyFollowsForRow
+	for rows.Next() {
+		var i NotifyFollowsForRow
+		if err := rows.Scan(&i.FolloweeID, &i.NotifySince); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const personRelation = `-- name: PersonRelation :one
 SELECT
     EXISTS (SELECT 1 FROM account_follows f
@@ -708,6 +840,43 @@ func (q *Queries) PublicProfilePathsForViewer(ctx context.Context, arg PublicPro
 	return items, nil
 }
 
+const setFollowNotify = `-- name: SetFollowNotify :execrows
+UPDATE account_follows
+SET notify = $1::boolean,
+    notify_since = CASE
+        WHEN $1::boolean THEN COALESCE(notify_since, $2::timestamptz)
+        ELSE NULL
+    END
+WHERE follower_id = $3::bigint
+  AND followee_id = $4::bigint
+  AND ended_at IS NULL
+`
+
+type SetFollowNotifyParams struct {
+	Notify     bool
+	Now        time.Time
+	FollowerID int64
+	FolloweeID int64
+}
+
+// Turns Notify me on or off for one active follow (D-08). Turning it on keeps
+// an existing notify_since, so a repeat changes nothing and a note is only for
+// reports posted after the first time it was turned on; turning it off clears
+// the time. Zero rows means there is no active follow (D-21). The service
+// checks the relation, the mute and the cap first.
+func (q *Queries) SetFollowNotify(ctx context.Context, arg SetFollowNotifyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setFollowNotify,
+		arg.Notify,
+		arg.Now,
+		arg.FollowerID,
+		arg.FolloweeID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const setProfilePublic = `-- name: SetProfilePublic :execrows
 UPDATE accounts
 SET profile_public = $1::boolean,
@@ -731,6 +900,32 @@ type SetProfilePublicParams struct {
 // the profile is public). 0 rows means the account is deleted.
 func (q *Queries) SetProfilePublic(ctx context.Context, arg SetProfilePublicParams) (int64, error) {
 	result, err := q.db.Exec(ctx, setProfilePublic, arg.IsPublic, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const turnOffFollowNotify = `-- name: TurnOffFollowNotify :execrows
+UPDATE account_follows
+SET notify = false,
+    notify_since = NULL
+WHERE follower_id = $1::bigint
+  AND followee_id = $2::bigint
+  AND ended_at IS NULL
+  AND notify
+`
+
+type TurnOffFollowNotifyParams struct {
+	FollowerID int64
+	FolloweeID int64
+}
+
+// Turns Notify me off for one active follow, whatever it was (D-12: a mute
+// turns the bell off). Zero rows means it was already off or there is no active
+// follow.
+func (q *Queries) TurnOffFollowNotify(ctx context.Context, arg TurnOffFollowNotifyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, turnOffFollowNotify, arg.FollowerID, arg.FolloweeID)
 	if err != nil {
 		return 0, err
 	}

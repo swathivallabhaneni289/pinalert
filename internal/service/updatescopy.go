@@ -47,9 +47,30 @@ func EventLine(k UpdateKind) string {
 		return "New comment on your report"
 	case UpdateReplyToYours:
 		return "New reply to your comment"
+	case UpdateFollowedPosted:
+		// The follow note's line names the person, and the row stores no name:
+		// the list builder builds the line with FollowedPostedLine and the
+		// username it reads then (Phase 9, D-09). A username shows only when its
+		// screen is clear, so this function, which knows no username, has no
+		// line of its own for the kind.
+		return ""
 	default:
 		return ""
 	}
+}
+
+// FollowedPostedLine is line 1 of a follow note: "{username} posted a report."
+// (Phase 9, D-09, UI-SPEC 2a). The caller passes a username only when its
+// screen is clear.
+func FollowedPostedLine(username string) string {
+	return username + " posted a report."
+}
+
+// FollowedPostedDetail is line 2 of a follow note: "{Category}, {Severity}."
+// (Phase 9, D-09, UI-SPEC 2a). Both words are the page's own words, built by
+// the caller from the report's current facts.
+func FollowedPostedDetail(category, severity string) string {
+	return category + ", " + severity + "."
 }
 
 // UpdateTrustLine is line 3 of an update row (UI-SPEC A3 line 3). It is chosen
@@ -66,7 +87,10 @@ func EventLine(k UpdateKind) string {
 // trust line.
 func UpdateTrustLine(k UpdateKind, t Trust, view FeedView, confirmedByPeople bool) string {
 	switch k {
-	case UpdateReliableNearby:
+	case UpdateReliableNearby, UpdateFollowedPosted:
+		// The follow note reads exactly like the Reliable reporter note: both
+		// come at posting, so both say Not confirmed yet. until people nearby
+		// confirm the report (Phase 9, D-09, UI-SPEC 2a).
 		switch view {
 		case FeedViewActive:
 			if confirmedByPeople {

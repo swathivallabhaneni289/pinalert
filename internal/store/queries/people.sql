@@ -67,27 +67,109 @@ WHERE a.id = sqlc.arg(followee_id)::bigint
 ON CONFLICT (follower_id, followee_id) DO UPDATE
 SET created_at = EXCLUDED.created_at,
     ended_at = NULL,
-    end_reason = NULL
+    end_reason = NULL,
+    notify = false,
+    notify_since = NULL
 WHERE account_follows.ended_at IS NOT NULL;
 
 -- name: EndFollowPair :execrows
 -- Ends one active follow with a reason (D-21). The row stays. Services call it
--- only through endFollowPair (followend.go), never directly (review W1).
+-- only through endFollowPair (followend.go), never directly (review W1). Ending
+-- a follow also turns its Notify me off (D-08, D-21), so a follow restored
+-- later by the sweep, or followed again, comes back with the bell off.
 UPDATE account_follows
 SET ended_at = sqlc.arg(now)::timestamptz,
-    end_reason = sqlc.arg(reason)::text
+    end_reason = sqlc.arg(reason)::text,
+    notify = false,
+    notify_since = NULL
 WHERE follower_id = sqlc.arg(follower_id)::bigint
   AND followee_id = sqlc.arg(followee_id)::bigint
   AND ended_at IS NULL;
 
 -- name: EndFollowsOf :execrows
 -- Ends every active follow of one followee with a reason (D-21), returning the
--- number of rows ended. Services call it only through endFollowsOf.
+-- number of rows ended. Services call it only through endFollowsOf. Every
+-- ended follow also has its Notify me turned off (D-08, D-21).
 UPDATE account_follows
 SET ended_at = sqlc.arg(now)::timestamptz,
-    end_reason = sqlc.arg(reason)::text
+    end_reason = sqlc.arg(reason)::text,
+    notify = false,
+    notify_since = NULL
 WHERE followee_id = sqlc.arg(followee_id)::bigint
   AND ended_at IS NULL;
+
+-- name: SetFollowNotify :execrows
+-- Turns Notify me on or off for one active follow (D-08). Turning it on keeps
+-- an existing notify_since, so a repeat changes nothing and a note is only for
+-- reports posted after the first time it was turned on; turning it off clears
+-- the time. Zero rows means there is no active follow (D-21). The service
+-- checks the relation, the mute and the cap first.
+UPDATE account_follows
+SET notify = sqlc.arg(notify)::boolean,
+    notify_since = CASE
+        WHEN sqlc.arg(notify)::boolean THEN COALESCE(notify_since, sqlc.arg(now)::timestamptz)
+        ELSE NULL
+    END
+WHERE follower_id = sqlc.arg(follower_id)::bigint
+  AND followee_id = sqlc.arg(followee_id)::bigint
+  AND ended_at IS NULL;
+
+-- name: TurnOffFollowNotify :execrows
+-- Turns Notify me off for one active follow, whatever it was (D-12: a mute
+-- turns the bell off). Zero rows means it was already off or there is no active
+-- follow.
+UPDATE account_follows
+SET notify = false,
+    notify_since = NULL
+WHERE follower_id = sqlc.arg(follower_id)::bigint
+  AND followee_id = sqlc.arg(followee_id)::bigint
+  AND ended_at IS NULL
+  AND notify;
+
+-- name: CountNotifyFollows :one
+-- How many Notify me bells the account has on now (active follows only), for
+-- the cap of NotifyFollowsCap.
+SELECT COUNT(*)::bigint
+FROM account_follows
+WHERE follower_id = sqlc.arg(follower_id)::bigint
+  AND ended_at IS NULL
+  AND notify;
+
+-- name: NotifyFollowsFor :many
+-- The people one account has the bell on for, with the time it was turned on
+-- (D-08, D-21: active follows only). The producer of follow notes reads it and
+-- keeps only reports posted after notify_since. Limited by the cap; ordered so
+-- the answer is stable.
+SELECT followee_id, notify_since::timestamptz AS notify_since
+FROM account_follows
+WHERE follower_id = sqlc.arg(follower_id)::bigint
+  AND ended_at IS NULL
+  AND notify
+ORDER BY notify_since, followee_id
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: NotifyFollowersOf :many
+-- The followers of one person who have the bell on (D-21: active follows
+-- only), for the fan out at posting time. Limited; ordered by id so the answer
+-- is stable. It names no username and no account detail.
+SELECT follower_id
+FROM account_follows
+WHERE followee_id = sqlc.arg(followee_id)::bigint
+  AND ended_at IS NULL
+  AND notify
+ORDER BY follower_id
+LIMIT sqlc.arg(row_limit)::int;
+
+-- name: ActiveFollowNotify :one
+-- Whether an active follow with the bell on exists from the follower to the
+-- followee (D-21). The push worker reads it at send time, and a profile reads
+-- it for the viewer's own bell.
+SELECT EXISTS (
+    SELECT 1 FROM account_follows
+    WHERE follower_id = sqlc.arg(follower_id)::bigint
+      AND followee_id = sqlc.arg(followee_id)::bigint
+      AND ended_at IS NULL
+      AND notify)::bool AS notify_on;
 
 -- name: CountFollowing :one
 -- How many people the account follows now (active rows only).

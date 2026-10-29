@@ -45,11 +45,13 @@ type AccountAlertSetting struct {
 }
 
 type AccountFollow struct {
-	FollowerID int64
-	FolloweeID int64
-	CreatedAt  time.Time
-	EndedAt    pgtype.Timestamptz
-	EndReason  *string
+	FollowerID  int64
+	FolloweeID  int64
+	CreatedAt   time.Time
+	EndedAt     pgtype.Timestamptz
+	EndReason   *string
+	Notify      bool
+	NotifySince pgtype.Timestamptz
 }
 
 type AuthCode struct {

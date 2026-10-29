@@ -2828,3 +2828,193 @@ func TestMigration00022(t *testing.T) {
 		t.Errorf("after Up again: %d of 1 tables, %d of 1 indexes", tb, i)
 	}
 }
+
+// TestMigration00023 covers the Phase 9 follow note migration (plan 09-21): the
+// file carries both goose markers and builds nothing concurrently, never names
+// Phase 8's unread comment index, and carries the two literal kind lists. On a
+// database it adds the Notify me columns and their CHECK (notify is true exactly
+// when notify_since is set), widens the kind CHECK to accept followed_posted,
+// replaces the Reliable only unique index with one first alert index over both
+// kinds, and Down removes the followed_posted rows first, restores the old index
+// and the eight kind list, and Up applies again (D-08, D-09, Pitfall 5).
+func TestMigration00023(t *testing.T) {
+	const file = "migrations/00023_add_follow_notes.sql"
+	contents, err := MigrationsFS.ReadFile(file)
+	if err != nil {
+		t.Fatalf("reading embedded %s: %v", file, err)
+	}
+	text := string(contents)
+	up := strings.Index(text, "+goose Up")
+	down := strings.Index(text, "+goose Down")
+	if up < 0 || down < 0 || down < up {
+		t.Fatalf("%s must carry +goose Up then +goose Down", file)
+	}
+	var code []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		code = append(code, line)
+	}
+	if strings.Contains(strings.ToUpper(strings.Join(code, "\n")), "CONCURRENTLY") {
+		t.Error("migration 00023 must not use CONCURRENTLY: goose runs it inside a transaction")
+	}
+	if strings.Contains(text, "uq_updates_comment_unread") {
+		t.Error("migration 00023 must not name Phase 8's unread comment index")
+	}
+	for _, name := range []string{"ADD COLUMN notify ", "ADD COLUMN notify_since", "account_follows_notify_since",
+		"idx_account_follows_notify_follower", "idx_account_follows_notify_followee",
+		"'reply_to_yours', 'followed_posted'))", "DROP INDEX uq_updates_reliable_once", "uq_updates_first_alert",
+		"WHERE kind IN ('reliable_nearby', 'followed_posted')"} {
+		if !strings.Contains(text[:down], name) {
+			t.Errorf("migration 00023 Up must contain %s", name)
+		}
+	}
+	for _, want := range []string{"DELETE FROM updates WHERE kind = 'followed_posted'", "DROP INDEX uq_updates_first_alert",
+		"WHERE kind = 'reliable_nearby'", "'comment_on_yours', 'reply_to_yours'))", "DROP COLUMN notify_since", "DROP COLUMN notify"} {
+		if !strings.Contains(text[down:], want) {
+			t.Errorf("migration 00023 Down must contain %q", want)
+		}
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping the database part of the 00023 migration test")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("opening database: %v", err)
+	}
+	defer db.Close()
+
+	goose.SetBaseFS(MigrationsFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up: %v", err)
+	}
+
+	var a, b, report int64
+	t.Cleanup(func() {
+		_ = goose.Up(db, "migrations")
+		if report != 0 {
+			_, _ = db.Exec("DELETE FROM updates WHERE report_id = $1", report)
+			_, _ = db.Exec("DELETE FROM reports WHERE id = $1", report)
+		}
+		for _, id := range []int64{a, b} {
+			if id != 0 {
+				_, _ = db.Exec("DELETE FROM account_follows WHERE follower_id = $1 OR followee_id = $1", id)
+				_, _ = db.Exec("DELETE FROM accounts WHERE id = $1", id)
+			}
+		}
+	})
+
+	count := func(query string) (n int) {
+		t.Helper()
+		if err := db.QueryRow(query).Scan(&n); err != nil {
+			t.Fatalf("counting with %q: %v", query, err)
+		}
+		return
+	}
+	present := func() (columns, indexes, oldIndexes int) {
+		t.Helper()
+		columns = count(`SELECT count(*) FROM information_schema.columns
+			WHERE table_schema = 'public' AND table_name = 'account_follows'
+			  AND column_name IN ('notify', 'notify_since')`)
+		indexes = count(`SELECT count(*) FROM pg_indexes WHERE indexname IN (
+			'idx_account_follows_notify_follower', 'idx_account_follows_notify_followee', 'uq_updates_first_alert')`)
+		oldIndexes = count(`SELECT count(*) FROM pg_indexes WHERE indexname = 'uq_updates_reliable_once'`)
+		return
+	}
+	if c, i, o := present(); c != 2 || i != 3 || o != 0 {
+		t.Errorf("after Up: %d of 2 columns, %d of 3 indexes, %d old indexes (want 0)", c, i, o)
+	}
+	if n := count(`SELECT count(*) FROM pg_constraint WHERE conname = 'account_follows_notify_since'`); n != 1 {
+		t.Errorf("after Up: constraint account_follows_notify_since count %d, want 1", n)
+	}
+	if n := count(`SELECT count(*) FROM pg_indexes WHERE indexname = 'uq_updates_comment_unread'`); n != 1 {
+		t.Errorf("after Up: Phase 8's uq_updates_comment_unread count %d, want 1 (untouched)", n)
+	}
+
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00023-a@example.com') RETURNING id`).Scan(&a); err != nil {
+		t.Fatalf("inserting account: %v", err)
+	}
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00023-b@example.com') RETURNING id`).Scan(&b); err != nil {
+		t.Fatalf("inserting second account: %v", err)
+	}
+	if err := db.QueryRow(`INSERT INTO reports
+		(session_id, category, severity, description, latitude, longitude, geohash, created_at, expires_at)
+		VALUES ('migration-00023-session', 'flood', 'medium', 'migration test report', 12.9716, 77.5946, 'tdr1v8y',
+		        now() - interval '1 hour', now() + interval '5 hours') RETURNING id`).Scan(&report); err != nil {
+		t.Fatalf("inserting report: %v", err)
+	}
+
+	wantCode := func(label, code, query string, args ...any) {
+		t.Helper()
+		_, err := db.Exec(query, args...)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != code {
+			t.Errorf("%s: want SQLSTATE %s, got %v", label, code, err)
+		}
+	}
+	// Notify me is off by default and carries no time.
+	if _, err := db.Exec(`INSERT INTO account_follows (follower_id, followee_id) VALUES ($1, $2)`, a, b); err != nil {
+		t.Fatalf("inserting a follow: %v", err)
+	}
+	var notify bool
+	var since sql.NullTime
+	if err := db.QueryRow(`SELECT notify, notify_since FROM account_follows WHERE follower_id = $1 AND followee_id = $2`, a, b).
+		Scan(&notify, &since); err != nil || notify || since.Valid {
+		t.Errorf("a new follow: notify %v, notify_since valid %v (%v), want off with no time", notify, since.Valid, err)
+	}
+	wantCode("notify on with no time", "23514",
+		`UPDATE account_follows SET notify = true WHERE follower_id = $1 AND followee_id = $2`, a, b)
+	wantCode("a time with notify off", "23514",
+		`UPDATE account_follows SET notify_since = now() WHERE follower_id = $1 AND followee_id = $2`, a, b)
+	if _, err := db.Exec(`UPDATE account_follows SET notify = true, notify_since = now() WHERE follower_id = $1 AND followee_id = $2`, a, b); err != nil {
+		t.Errorf("notify on with a time must update: %v", err)
+	}
+
+	// The kind CHECK accepts followed_posted and the one index covers both kinds.
+	if _, err := db.Exec(`INSERT INTO updates (account_id, report_id, kind) VALUES ($1, $2, 'followed_posted')`, a, report); err != nil {
+		t.Fatalf("followed_posted must be accepted by the kind check: %v", err)
+	}
+	wantCode("a Reliable alert after the follow note", "23505",
+		`INSERT INTO updates (account_id, report_id, kind) VALUES ($1, $2, 'reliable_nearby')`, a, report)
+	wantCode("a second follow note", "23505",
+		`INSERT INTO updates (account_id, report_id, kind) VALUES ($1, $2, 'followed_posted')`, a, report)
+	wantCode("an unknown kind", "23514",
+		`INSERT INTO updates (account_id, report_id, kind) VALUES ($1, $2, 'followed_nothing')`, b, report)
+
+	version, err := goose.NumericComponent("00023_add_follow_notes.sql")
+	if err != nil {
+		t.Fatalf("parsing version: %v", err)
+	}
+	if err := goose.DownTo(db, "migrations", version-1); err != nil {
+		t.Fatalf("goose down to %d: %v", version-1, err)
+	}
+	if c, i, o := present(); c != 0 || i != 0 || o != 1 {
+		t.Errorf("after Down: %d columns, %d new indexes, %d of 1 old index", c, i, o)
+	}
+	if n := count(`SELECT count(*) FROM updates WHERE kind = 'followed_posted'`); n != 0 {
+		t.Errorf("after Down: %d followed_posted rows, want 0", n)
+	}
+	wantCode("followed_posted after Down", "23514",
+		`INSERT INTO updates (account_id, report_id, kind) VALUES ($1, $2, 'followed_posted')`, b, report)
+	// The old index is back: a second Reliable alert for the pair is refused.
+	if _, err := db.Exec(`INSERT INTO updates (account_id, report_id, kind) VALUES ($1, $2, 'reliable_nearby')`, a, report); err != nil {
+		t.Fatalf("a Reliable alert after Down: %v", err)
+	}
+	wantCode("a second Reliable alert after Down", "23505",
+		`INSERT INTO updates (account_id, report_id, kind) VALUES ($1, $2, 'reliable_nearby')`, a, report)
+	if _, err := db.Exec(`DELETE FROM updates WHERE report_id = $1`, report); err != nil {
+		t.Fatalf("clearing updates: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up again: %v", err)
+	}
+	if c, i, o := present(); c != 2 || i != 3 || o != 0 {
+		t.Errorf("after Up again: %d of 2 columns, %d of 3 indexes, %d old indexes", c, i, o)
+	}
+}

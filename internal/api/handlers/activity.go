@@ -189,10 +189,11 @@ func updateSeverityClass(s service.Severity) string {
 
 // updatesHubSummary is the hub row's one line for the newest update: "{Line 1}
 // · {Category}" for an event row, and the row's own line for the Reliable note,
-// an unavailable report and the rolled up row (UI-SPEC B2).
+// the follow note (Phase 9, D-09: its line already names the person and the
+// category), an unavailable report and the rolled up row (UI-SPEC B2).
 func updatesHubSummary(item service.UpdateItem) string {
 	switch {
-	case item.Kind == service.UpdateReliableNearby, !item.Available, item.Kind == service.UpdateMore, item.Category == "":
+	case item.Kind == service.UpdateReliableNearby, item.Kind == service.UpdateFollowedPosted, !item.Available, item.Kind == service.UpdateMore, item.Category == "":
 		return item.Event
 	default:
 		return item.Event + " · " + updateCategoryWord(item.Category)

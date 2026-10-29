@@ -11,7 +11,7 @@ import "time"
 
 // UpdateKind is the closed set of things an update can say. A later phase that
 // adds a kind extends this list and its test. Phase 8 added the two comment
-// kinds.
+// kinds, and Phase 9 added the follow note.
 type UpdateKind string
 
 const (
@@ -31,6 +31,12 @@ const (
 	// UpdateReplyToYours says someone replied to your comment (Phase 8, D-16).
 	// The row holds the kind and the report id only.
 	UpdateReplyToYours UpdateKind = "reply_to_yours"
+	// UpdateFollowedPosted says a person you follow, with Notify me on, posted a
+	// report (Phase 9, D-09). The row holds the kind and the report id only; the
+	// sentence is written at read time. It shares the Reliable reporter alert's
+	// allowance in MayNotifyAboutReport and its once per account and report
+	// index (uq_updates_first_alert).
+	UpdateFollowedPosted UpdateKind = "followed_posted"
 	// UpdateMore marks the rolled up row of D-16 ("And N more changes"). It is
 	// never an event: it is never stored and never decided, only built when a
 	// list is read.
@@ -50,17 +56,25 @@ const UpdateCriticalNearby UpdateKind = "critical_nearby"
 // at its six stored kinds.
 var PushOnlyUpdateKinds = []UpdateKind{UpdateCriticalNearby}
 
-// UpdateEventKinds is the seven kinds that are real events, in display order.
-// The two comment kinds (Phase 8, D-16) come after the five 3.2 events.
-var UpdateEventKinds = []UpdateKind{UpdateReachedLive, UpdateHidden, UpdateResolved, UpdateFading, UpdateReliableNearby, UpdateCommentOnYours, UpdateReplyToYours}
+// NotifyFollowsCap is the most Notify me bells one account can have on at once
+// (Phase 9, D-08). The follow note producer reads that many at most and the
+// Settings switch counts against it, so one account cannot fan the producer out
+// without limit.
+const NotifyFollowsCap = 50
 
-// UpdateKinds is the eight kinds a list row can carry: the seven events and
+// UpdateEventKinds is the eight kinds that are real events, in display order.
+// The two comment kinds (Phase 8, D-16) come after the five 3.2 events, and the
+// follow note (Phase 9, D-09) after them.
+var UpdateEventKinds = []UpdateKind{UpdateReachedLive, UpdateHidden, UpdateResolved, UpdateFading, UpdateReliableNearby, UpdateCommentOnYours, UpdateReplyToYours, UpdateFollowedPosted}
+
+// UpdateKinds is the nine kinds a list row can carry: the eight events and
 // the rolled up marker. Comment rows never roll up into the marker and do not
 // count toward UpdatesHourlyCeiling: the unread unique index of migration
-// 00019 is their only cap (Phase 8 plan 11).
-var UpdateKinds = []UpdateKind{UpdateReachedLive, UpdateHidden, UpdateResolved, UpdateFading, UpdateReliableNearby, UpdateCommentOnYours, UpdateReplyToYours, UpdateMore}
+// 00019 is their only cap (Phase 8 plan 11). The follow note is an ordinary
+// event for the ceiling, like the Reliable reporter alert (Phase 9, D-09).
+var UpdateKinds = []UpdateKind{UpdateReachedLive, UpdateHidden, UpdateResolved, UpdateFading, UpdateReliableNearby, UpdateCommentOnYours, UpdateReplyToYours, UpdateFollowedPosted, UpdateMore}
 
-// Valid reports whether k is one of the eight kinds. Comparison is exact.
+// Valid reports whether k is one of the nine kinds. Comparison is exact.
 func (k UpdateKind) Valid() bool {
 	for _, x := range UpdateKinds {
 		if x == k {
@@ -70,7 +84,7 @@ func (k UpdateKind) Valid() bool {
 	return false
 }
 
-// IsEvent reports whether k is one of the seven event kinds (never more).
+// IsEvent reports whether k is one of the eight event kinds (never more).
 func (k UpdateKind) IsEvent() bool {
 	for _, x := range UpdateEventKinds {
 		if x == k {
@@ -245,8 +259,11 @@ func DecideUpdate(in DecideInput) Decision {
 // that, the Reliable reporter note (UpdateReliableNearby) is allowed for Live
 // and Provisional alike, because the note comes at posting for critical and
 // non critical reports (owner amendment 2026-10-18, replacing D-26's only once
-// Live). Every other kind needs Live, so the Provisional gate holds for
-// anything Phase 3.3 adds.
+// Live). The follow note (UpdateFollowedPosted, Phase 9 D-09) takes the same
+// allowance in the same condition, never a second copy of the rule: it also
+// comes at posting, marked Not confirmed yet until people nearby confirm it.
+// Every other kind needs Live, so the Provisional gate holds for anything
+// Phase 3.3 adds.
 //
 // It is a free function on purpose: a bool method on Visibility, or a
 // signature that names FeedView, would have to be exercised in
@@ -255,7 +272,7 @@ func MayNotifyAboutReport(kind UpdateKind, vis Visibility, expiresAt, now time.T
 	if ViewOf(vis, expiresAt, now) != FeedViewActive {
 		return false
 	}
-	if kind == UpdateReliableNearby {
+	if kind == UpdateReliableNearby || kind == UpdateFollowedPosted {
 		return true
 	}
 	return vis == VisibilityLive

@@ -541,9 +541,11 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 			t.Fatalf("parsing docs/swagger.json definitions: %v", err)
 		}
 		_, props := p07WalkSwaggerDefinitions(t, defs.Definitions, []string{"handlers.UpdatesResponse"})
+		// Amended 2026-10-29 by Phase 9 plan 21 (D-09): the kind enum gained
+		// followed_posted, right before more; every other value is unchanged.
 		p14AssertEnum(t, p14SwaggerProp(t, props, "handlers.UpdateWire", "kind"), []string{
 			"reached_live", "hidden", "resolved", "fading", "reliable_nearby",
-			"comment_on_yours", "reply_to_yours", "more",
+			"comment_on_yours", "reply_to_yours", "followed_posted", "more",
 		})
 	}
 

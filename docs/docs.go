@@ -6009,6 +6009,7 @@ const docTemplate = `{
                         "reliable_nearby",
                         "comment_on_yours",
                         "reply_to_yours",
+                        "followed_posted",
                         "more"
                     ],
                     "example": "reached_live"

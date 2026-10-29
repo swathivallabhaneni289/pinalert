@@ -758,6 +758,20 @@ func TestFillUpdatesPart(t *testing.T) {
 		}
 	})
 
+	// Added 2026-10-29 by Phase 9 plan 21 (D-09): a follow note's hub summary is
+	// its own line, as for the Reliable note, because that line already names
+	// the person; no category word is appended.
+	t.Run("a follow note reads its own line", func(t *testing.T) {
+		view := base(t)
+		it := p32Item(5, service.UpdateFollowedPosted, false, 1)
+		it.Event = service.FollowedPostedLine("ravi.k")
+		it.Trust = service.UnconfirmedLine
+		fillUpdatesPart(&view, service.UpdatesPage{Items: []service.UpdateItem{it}, Total: 1}, false, wm5Now)
+		if got, want := wm5Part(t, view, "updates").Summary, "ravi.k posted a report."; got != want {
+			t.Errorf("summary = %q, want %q", got, want)
+		}
+	})
+
 	t.Run("an unavailable or rolled up newest row reads its own line", func(t *testing.T) {
 		view := base(t)
 		gone := service.UpdateItem{ID: 9, Kind: service.UpdateHidden, CreatedAt: wm5Now.Add(-time.Hour), Event: service.UnavailableLine}
