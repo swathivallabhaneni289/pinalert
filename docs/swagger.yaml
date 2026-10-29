@@ -3045,6 +3045,11 @@ paths:
         A comment that was deleted or removed but still has visible replies appears as a
         placeholder with no words. No account id, email or session is ever sent. A report
         that does not exist, is not available or ended too long ago gets 404.
+        Each thread lists at most 100 replies and reply_count is its real number. To read
+        the rest, pass replies_of with the top level comment's id and reply_after with the
+        last reply read: the answer is that comment alone with its next replies, at most
+        100, oldest first; more and next_after then page through its replies. An id that is
+        not a top level comment shown on this report answers an empty list.
         Requires a session verified by email; an unverified caller receives 401.
       parameters:
       - description: Report id
@@ -3055,6 +3060,14 @@ paths:
       - description: Id of the last top level comment of the previous page
         in: query
         name: after
+        type: integer
+      - description: Id of a top level comment, to read a page of its replies
+        in: query
+        name: replies_of
+        type: integer
+      - description: Id of the last reply read in that thread (needs replies_of)
+        in: query
+        name: reply_after
         type: integer
       produces:
       - application/json

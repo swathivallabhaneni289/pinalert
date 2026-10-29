@@ -188,11 +188,18 @@ func writeCommentError(w http.ResponseWriter, err error) bool {
 // @Description A comment that was deleted or removed but still has visible replies appears as a
 // @Description placeholder with no words. No account id, email or session is ever sent. A report
 // @Description that does not exist, is not available or ended too long ago gets 404.
+// @Description Each thread lists at most 100 replies and reply_count is its real number. To read
+// @Description the rest, pass replies_of with the top level comment's id and reply_after with the
+// @Description last reply read: the answer is that comment alone with its next replies, at most
+// @Description 100, oldest first; more and next_after then page through its replies. An id that is
+// @Description not a top level comment shown on this report answers an empty list.
 // @Description Requires a session verified by email; an unverified caller receives 401.
 // @Tags comments
 // @Produce json
 // @Param id path int true "Report id"
 // @Param after query int false "Id of the last top level comment of the previous page"
+// @Param replies_of query int false "Id of a top level comment, to read a page of its replies"
+// @Param reply_after query int false "Id of the last reply read in that thread (needs replies_of)"
 // @Success 200 {object} CommentListResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
@@ -210,17 +217,50 @@ func ListComments(svc *service.CommentService) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		var after int64
-		if raw := r.URL.Query().Get("after"); raw != "" {
+		query := r.URL.Query()
+		positive := func(field string) (int64, bool) {
+			raw := query.Get(field)
+			if raw == "" {
+				return 0, true
+			}
 			n, err := strconv.ParseInt(raw, 10, 64)
 			if err != nil || n <= 0 {
-				writeFieldError(w, http.StatusBadRequest, "after", "The after value must be a positive number.")
-				return
+				writeFieldError(w, http.StatusBadRequest, field, "The "+field+" value must be a positive number.")
+				return 0, false
 			}
-			after = n
+			return n, true
+		}
+		after, ok := positive("after")
+		if !ok {
+			return
+		}
+		// replies_of and reply_after read one page of one thread's replies
+		// (review fix round 2, SK-01), so a thread longer than the reply cap
+		// keeps every reply reachable.
+		repliesOf, ok := positive("replies_of")
+		if !ok {
+			return
+		}
+		replyAfter, ok := positive("reply_after")
+		if !ok {
+			return
+		}
+		if repliesOf == 0 && replyAfter != 0 {
+			writeFieldError(w, http.StatusBadRequest, "reply_after", "The reply_after value needs replies_of.")
+			return
+		}
+		if repliesOf != 0 && after != 0 {
+			writeFieldError(w, http.StatusBadRequest, "after", "The after value cannot be used with replies_of.")
+			return
 		}
 
-		list, err := svc.List(r.Context(), reportID, acc.ID, after)
+		var list service.CommentList
+		var err error
+		if repliesOf != 0 {
+			list, err = svc.ListReplies(r.Context(), reportID, acc.ID, repliesOf, replyAfter)
+		} else {
+			list, err = svc.List(r.Context(), reportID, acc.ID, after)
+		}
 		if err != nil {
 			if writeCommentError(w, err) {
 				return

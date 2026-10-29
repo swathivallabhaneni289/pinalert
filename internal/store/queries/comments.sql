@@ -60,6 +60,10 @@ WHERE c.id = sqlc.arg(comment_id);
 -- most reply_cap replies of each listed root, oldest first (the service passes
 -- CommentReplyCap). It was one total bound over every root until review WR-S02
 -- (2026-10-29), which let one busy thread hide every later thread's replies.
+-- reply_after lists replies with a larger id only: the page list passes 0, and
+-- the reply paging of one thread (review fix round 2, SK-01) passes the last
+-- reply id read, with after_id = root id - 1 and root_cap 1. shown_replies is
+-- not touched by it and stays the whole thread's count.
 --
 -- Columns, in this order:
 --   id, parent_id, reply_to_id   the thread position; parent_id is the root id
@@ -125,6 +129,7 @@ replies AS (
         FROM visible v
         JOIN roots ON v.parent_id = roots.id
         WHERE v.shown
+          AND v.id > sqlc.arg(reply_after)::bigint
     ) x
     WHERE x.rn <= sqlc.arg(reply_cap)::int
 ),

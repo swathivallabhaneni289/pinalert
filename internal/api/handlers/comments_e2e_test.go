@@ -321,6 +321,70 @@ func TestCommentListQuery(t *testing.T) {
 		http.StatusNotFound, "report", "This report is no longer available.")
 }
 
+// TestCommentReplyPagesQuery proves the reply paging of review fix round 2
+// (SK-01): replies_of names a thread root and reply_after the last reply read,
+// and the answer is that root alone with its replies after the cursor, oldest
+// first. An id that is not a shown root of the report answers an empty list,
+// and a bad value answers 400 with its field.
+func TestCommentReplyPagesQuery(t *testing.T) {
+	e := p812Setup(t, nil)
+	top := e.mustPost(t, e.ann, e.report, "is the bridge open", 0)
+	r1 := e.mustPost(t, e.ben, e.report, "closed at the north end", top.ID)
+	r2 := e.mustPost(t, e.ann, e.report, "thanks", top.ID)
+	other := e.mustPost(t, e.ben, e.report, "power is back on our road", 0)
+
+	read := func(label, query string) handlers.CommentListResponse {
+		t.Helper()
+		resp := p812Send(t, e.ben, http.MethodGet, e.commentsURL(e.report)+query, "")
+		if cc := resp.Header.Get("Cache-Control"); cc != "no-store" {
+			t.Errorf("%s: Cache-Control = %q, want no-store", label, cc)
+		}
+		raw := p20Status(t, label, resp, http.StatusOK)
+		var out handlers.CommentListResponse
+		if err := json.Unmarshal(raw, &out); err != nil {
+			t.Fatalf("%s: decoding %s: %v", label, raw, err)
+		}
+		return out
+	}
+
+	all := read("whole thread", fmt.Sprintf("?replies_of=%d", top.ID))
+	if len(all.Comments) != 1 || all.Comments[0].ID != top.ID || len(all.Comments[0].Replies) != 2 {
+		t.Fatalf("whole thread = %+v, want the root with its 2 replies", all)
+	}
+	if all.Comments[0].Replies[0].ID != r1.ID || all.Comments[0].Replies[1].ID != r2.ID || all.More || all.NextAfter != r2.ID {
+		t.Errorf("whole thread = %+v, want r1 then r2, no more, next_after %d", all, r2.ID)
+	}
+	if all.Comments[0].ReplyCount != 2 || all.CommentCount != 4 {
+		t.Errorf("reply_count %d, comment_count %d, want 2 and 4", all.Comments[0].ReplyCount, all.CommentCount)
+	}
+
+	tail := read("after r1", fmt.Sprintf("?replies_of=%d&reply_after=%d", top.ID, r1.ID))
+	if len(tail.Comments) != 1 || len(tail.Comments[0].Replies) != 1 || tail.Comments[0].Replies[0].ID != r2.ID {
+		t.Errorf("after r1 = %+v, want the root with r2 alone", tail)
+	}
+
+	for label, id := range map[string]int64{"a reply id": r1.ID, "an unknown id": 999999999} {
+		got := read(label, fmt.Sprintf("?replies_of=%d", id))
+		if len(got.Comments) != 0 || got.More || got.NextAfter != 0 {
+			t.Errorf("%s = %+v, want an empty list", label, got)
+		}
+	}
+	if got := read("a root with no replies", fmt.Sprintf("?replies_of=%d", other.ID)); len(got.Comments) != 1 || len(got.Comments[0].Replies) != 0 {
+		t.Errorf("a root with no replies = %+v, want the root alone", got)
+	}
+
+	for _, bad := range []string{"abc", "0", "-3"} {
+		p20WantError(t, "replies_of="+bad, p812Send(t, e.ben, http.MethodGet, e.commentsURL(e.report)+"?replies_of="+bad, ""),
+			http.StatusBadRequest, "replies_of", "The replies_of value must be a positive number.")
+		p20WantError(t, "reply_after="+bad, p812Send(t, e.ben, http.MethodGet, fmt.Sprintf("%s?replies_of=%d&reply_after=%s", e.commentsURL(e.report), top.ID, bad), ""),
+			http.StatusBadRequest, "reply_after", "The reply_after value must be a positive number.")
+	}
+	p20WantError(t, "reply_after alone", p812Send(t, e.ben, http.MethodGet, fmt.Sprintf("%s?reply_after=%d", e.commentsURL(e.report), r1.ID), ""),
+		http.StatusBadRequest, "reply_after", "The reply_after value needs replies_of.")
+	p20WantError(t, "after with replies_of", p812Send(t, e.ben, http.MethodGet, fmt.Sprintf("%s?replies_of=%d&after=%d", e.commentsURL(e.report), top.ID, r1.ID), ""),
+		http.StatusBadRequest, "after", "The after value cannot be used with replies_of.")
+}
+
 func TestCommentResponseOmitsIdentifiers(t *testing.T) {
 	e := p812Setup(t, nil)
 	top := e.mustPost(t, e.ann, e.report, "top level", 0)

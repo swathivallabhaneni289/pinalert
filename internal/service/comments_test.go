@@ -396,6 +396,87 @@ func TestCommentReplyCapPerThread(t *testing.T) {
 	}
 }
 
+// TestCommentRepliesPaged proves review fix round 2 (SK-01): a thread longer
+// than CommentReplyCap keeps every reply reachable. ListReplies reads one
+// thread's replies after a cursor, oldest first, a page of at most the cap,
+// with More set while some are left. An id that is not a listed root of the
+// report (a reply, another report's comment, an unknown id, a removed root
+// with nothing shown) answers an empty list, all the same way.
+func TestCommentRepliesPaged(t *testing.T) {
+	r := newCmsRig(t)
+	rep := r.open(t)
+	other := r.open(t)
+	ctx := context.Background()
+
+	a := r.mustPost(t, rep, r.alice, "is the road open", nil)
+	testutil.MustExec(t, r.pool,
+		`INSERT INTO comments (report_id, account_id, parent_id, reply_to_id, body, created_at)
+		 SELECT $1, $2, $3, $3, 'still closed ' || g, $4
+		 FROM generate_series(1, $5::int) AS g`,
+		rep, r.carol, a.ID, r.now, service.CommentReplyCap+2)
+	b := r.mustPost(t, rep, r.carol, "shelter at the school is full", nil)
+	bReply := r.mustPost(t, rep, r.alice, "the hall next door has room", &b.ID)
+	elsewhere := r.mustPost(t, other, r.alice, "on another report", nil)
+	removed := testutil.SeedComment(t, r.pool, testutil.CommentSeed{ReportID: rep, AccountID: r.alice, State: "removed"})
+
+	p1, err := r.svc.ListReplies(ctx, rep, 0, a.ID, 0)
+	if err != nil {
+		t.Fatalf("ListReplies page 1 = %v", err)
+	}
+	if len(p1.Comments) != 1 || p1.Comments[0].ID != a.ID {
+		t.Fatalf("page 1 = %d roots, want thread A alone", len(p1.Comments))
+	}
+	t1 := p1.Comments[0]
+	if len(t1.Replies) != service.CommentReplyCap || !p1.More {
+		t.Errorf("page 1 lists %d replies, more %v; want the cap %d and more", len(t1.Replies), p1.More, service.CommentReplyCap)
+	}
+	if t1.ReplyCount != service.CommentReplyCap+2 {
+		t.Errorf("page 1 ReplyCount = %d, want %d", t1.ReplyCount, service.CommentReplyCap+2)
+	}
+	if n := len(t1.Replies); n == 0 || p1.NextAfter != t1.Replies[n-1].ID {
+		t.Fatalf("page 1 NextAfter = %d, want the last reply id", p1.NextAfter)
+	}
+
+	p2, err := r.svc.ListReplies(ctx, rep, 0, a.ID, p1.NextAfter)
+	if err != nil {
+		t.Fatalf("ListReplies page 2 = %v", err)
+	}
+	if len(p2.Comments) != 1 || len(p2.Comments[0].Replies) != 2 || p2.More {
+		t.Fatalf("page 2 = %+v, want thread A with its last 2 replies and no more", p2)
+	}
+	t2 := p2.Comments[0].Replies
+	if t2[0].ID <= p1.NextAfter || t2[1].ID <= t2[0].ID {
+		t.Errorf("page 2 replies %d, %d are not after %d, oldest first", t2[0].ID, t2[1].ID, p1.NextAfter)
+	}
+	if p2.NextAfter != t2[1].ID {
+		t.Errorf("page 2 NextAfter = %d, want %d", p2.NextAfter, t2[1].ID)
+	}
+
+	pb, err := r.svc.ListReplies(ctx, rep, 0, b.ID, 0)
+	if err != nil {
+		t.Fatalf("ListReplies thread B = %v", err)
+	}
+	if len(pb.Comments) != 1 || len(pb.Comments[0].Replies) != 1 || pb.Comments[0].Replies[0].ID != bReply.ID || pb.More {
+		t.Errorf("thread B = %+v, want its one reply and no more", pb)
+	}
+
+	for name, id := range map[string]int64{
+		"a reply id":            bReply.ID,
+		"another report's root": elsewhere.ID,
+		"an unknown id":         999999,
+		"a removed root":        removed,
+	} {
+		got, err := r.svc.ListReplies(ctx, rep, 0, id, 0)
+		if err != nil {
+			t.Errorf("%s: ListReplies = %v, want an empty list", name, err)
+			continue
+		}
+		if len(got.Comments) != 0 || got.More || got.NextAfter != 0 {
+			t.Errorf("%s: ListReplies = %+v, want an empty list", name, got)
+		}
+	}
+}
+
 func TestCommentReplyTargetMustBeVisible(t *testing.T) {
 	r := newCmsRig(t)
 	rep := r.open(t)
