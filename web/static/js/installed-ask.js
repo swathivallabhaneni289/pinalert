@@ -147,6 +147,22 @@
     }
   }
 
+  // forget takes the account back out of the list; the other ids stay. A list
+  // that cannot be read or written changes nothing.
+  function forget(storage, account) {
+    try {
+      var list = askedList(storage);
+      if (list === null) {
+        return;
+      }
+      storage.setItem(ASKED_KEY, JSON.stringify(list.filter(function (id) {
+        return id !== account;
+      })));
+    } catch (err) {
+      // Nothing more to do.
+    }
+  }
+
   function pageLocked(doc) {
     var root = doc.documentElement;
     return !!doc.querySelector('dialog[open]') ||
@@ -279,14 +295,16 @@
       finish();
     }
 
-    parts.allow.addEventListener('click', onAllow);
-    parts.later.addEventListener('click', onLater);
-    dialog.addEventListener('cancel', onCancel);
-    dialog.addEventListener('close', onClose);
-
+    // open shows the box and only then attaches the four listeners, so a
+    // showModal that throws leaves nothing on a box that never opened (review fix
+    // IN-B06); the throw reaches the caller.
     return function open() {
       opener = parts.doc.activeElement || null;
       dialog.showModal();
+      parts.allow.addEventListener('click', onAllow);
+      parts.later.addEventListener('click', onLater);
+      dialog.addEventListener('cancel', onCancel);
+      dialog.addEventListener('close', onClose);
       // The question takes the first focus, as the Log out box does, so no button
       // looks chosen.
       parts.title.focus();
@@ -366,7 +384,13 @@
         }
         list.push(account);
         storage.setItem(ASKED_KEY, JSON.stringify(list.slice(-ASKED_KEEP)));
-        wire(parts, notify, fetchFn)();
+        try {
+          wire(parts, notify, fetchFn)();
+        } catch (err) {
+          // The box never opened, so it does not count as asked (IN-B06).
+          forget(storage, account);
+          return 'skipped';
+        }
         return 'opened';
       }).then(null, function () {
         return 'skipped';

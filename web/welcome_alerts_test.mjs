@@ -1433,6 +1433,25 @@ test('asked key: other accounts stay in the list, an older single id is a list o
   assert.deepEqual(JSON.parse(twice.stored[ALERTS_KEY]), ['42', '7'], 'the list is left as it was');
 });
 
+// Phase 7.1 review fix (browser), IN-B06: the id is added to the list just before
+// showModal; when showModal throws, the box never opened, so the id is taken back
+// out (the other ids stay) and the flow still finishes.
+test('IN-B06: a showModal that throws takes this account back out of the alerts list', () => {
+  const page = alertsPage({ storage: { [ALERTS_KEY]: JSON.stringify(['7']) } });
+  page.dialog.throwOnShow = true;
+  click(page, 'welcome-continue-4');
+  assert.deepEqual(JSON.parse(page.stored[ALERTS_KEY]), ['7']);
+  assert.equal(doneRequests(page).length, 1);
+});
+
+test('IN-B06: a showModal that throws takes this account back out of the install list', () => {
+  const page = installPage({ storage: { [INSTALL_KEY]: JSON.stringify(['7']) } });
+  installOf(page).throwOnShow = true;
+  click(page, 'welcome-continue-4');
+  assert.deepEqual(JSON.parse(page.stored[INSTALL_KEY]), ['7']);
+  assert.equal(doneRequests(page).length, 1);
+});
+
 // Phase 7.1 review fix (browser), WR-B06: the sign up pop-up asks once per device
 // and account (D-18) and never piles a question on a device that is already on
 // (the owner: notifications few, never piled up). Every way past it still records

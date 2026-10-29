@@ -1312,6 +1312,7 @@
     try {
       askDialog.showModal();
     } catch (err) {
+      forgetAsked(ALERTS_ASKED_KEY);
       postDone();
       return;
     }
@@ -1461,6 +1462,24 @@
     }
   }
 
+  // forgetAsked takes this account back out of one of the two lists, for a pop-up
+  // that never opened because showModal threw (review fix IN-B06): the id was
+  // added just before showModal, so a box that was never seen must not count as
+  // asked. The other ids stay. A storage that fails changes nothing else.
+  function forgetAsked(key) {
+    var account = accountId();
+    if (account === '') {
+      return;
+    }
+    try {
+      var list = key === ALERTS_ASKED_KEY ? alertsAskedList() : installAskedList();
+      var kept = list.filter(function (id) { return id !== account; });
+      window.localStorage.setItem(key, JSON.stringify(kept));
+    } catch (err) {
+      // The flow still goes on.
+    }
+  }
+
   // closeInstall puts the install pop-up away when it is open. Nothing is sent
   // from the dialog's close event.
   function closeInstall() {
@@ -1481,6 +1500,7 @@
     try {
       installDialog.showModal();
     } catch (err) {
+      forgetAsked(INSTALL_ASKED_KEY);
       postDone();
       return;
     }

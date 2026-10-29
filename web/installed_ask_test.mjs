@@ -559,6 +559,20 @@ test(NAME + 'IN-B01: a device already on writes the account, and the next load a
   assert.equal(await broken.go(), 'skipped', 'a store that cannot be written changes nothing else');
 });
 
+// Phase 7.1 review fix (browser), IN-B06: a showModal that throws means the box
+// never opened: the account is taken back out of the list (other ids stay), no
+// listener is left on the box, and the run answers skipped.
+test(NAME + 'IN-B06: a showModal that throws leaves no key for this account and no listeners', async () => {
+  const m = load({ stored: JSON.stringify(['7']) });
+  m.dialog.showModal = function () { this.showCalls += 1; throw new Error('InvalidStateError'); };
+  assert.equal(await m.go(), 'skipped');
+  assert.deepEqual(JSON.parse(m.store.get(KEY)), ['7']);
+  for (const el of [m.dialog, m.allow, m.later]) {
+    assert.equal(el.listeners.length, 0, el.id + ' has no listener');
+  }
+  assert.equal(m.enables.length, 0);
+});
+
 // ---- WR-B05: never together with the browser's location question ----------
 //
 // Phase 7.1 review fix (browser), WR-B05: an app on the Home Screen has its own

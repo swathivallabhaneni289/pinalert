@@ -391,7 +391,18 @@ func TestWelcomeStep3And4Privacy(t *testing.T) {
 	// now. The fifth only reads notify.js's own intent flag (its exported
 	// INTENT_KEY), so the sign up alerts pop-up does not ask a device whose alerts
 	// are already on for this account. It is never written here.
-	w10Count(t, "welcome.js", js, "localStorage", 5)
+	//
+	// Amended 2026-10-29 by the Phase 7.1 review fix (browser): IN-B06, six places
+	// now. The sixth, in forgetAsked, takes this account back out of
+	// pinalert.alertsAsked or pinalert.installAsked when showModal threw, so a box
+	// that never opened does not count as asked. It writes only those two keys.
+	w10Count(t, "welcome.js", js, "localStorage", 6)
+	forget := jsFunctionBody(t, js, "forgetAsked(key)")
+	p13MustContain(t, "forgetAsked", forget,
+		"key === ALERTS_ASKED_KEY ? alertsAskedList() : installAskedList()",
+		"window.localStorage.setItem(key, JSON.stringify(kept))")
+	p13MustContain(t, "welcome.js", js, "forgetAsked(ALERTS_ASKED_KEY);", "forgetAsked(INSTALL_ASKED_KEY);")
+	w10Count(t, "welcome.js", js, "forgetAsked(", 3)
 	p13MustContain(t, "welcome.js", js,
 		"var INSTALL_ASKED_KEY = 'pinalert.installAsked';",
 		"window.localStorage.getItem(INSTALL_ASKED_KEY)",
