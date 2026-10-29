@@ -801,10 +801,13 @@ func TestLoginGlassTextContrast(t *testing.T) {
 	if p31mRule(t, "static/css/chrome.css", "", ".inline-error:not([hidden])").Decls["color"] != "var(--color-text)" {
 		t.Errorf("the shared .inline-error rule no longer paints the normal text colour")
 	}
-	loser := p31mRule(t, authCSS, "", ".auth-error")
-	for _, prop := range []string{"color", "font-size", "line-height"} {
-		if v, ok := loser.Decls[prop]; ok {
-			t.Errorf(".auth-error sets %s %q, which .login-card p always overrides; drop the dead declaration", prop, v)
+	// Amended 2026-10-29 by the Phase 7.1 review fix (templates): IN-T03 removed
+	// the dead .auth-error rules with the rest of the old emailed link sign in, so
+	// instead of reading .auth-error's declarations this pins that no rule for it
+	// is left to claim a colour or a size.
+	for _, r := range p16ParseCSS(authCSS, p16ReadStatic(t, authCSS)) {
+		if strings.Contains(r.Head, ".auth-error") {
+			t.Errorf("auth.css still has a .auth-error rule (%q); nothing draws that line any more", r.Head)
 		}
 	}
 	for name, tok := range themes {

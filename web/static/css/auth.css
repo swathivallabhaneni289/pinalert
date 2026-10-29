@@ -1,13 +1,15 @@
 /*
- * auth.css — plan 01.1-01: the mandatory-email-verification login gate and
- * check-inbox panel. Later plans in this phase (link-landing outcome pages,
- * account header, profile page) extend this same file.
+ * auth.css: the sign in page (the Phase 7.1 password card, plan 11), the
+ * account header and menu, the Log out box and the pop-ups that reuse it, and
+ * the profile page. It began in plan 01.1-01 as the emailed link sign in; the
+ * rules of that sign in were removed by the Phase 7.1 review fix (IN-T03,
+ * 2026-10-29), because nothing draws them and the Low data page links this
+ * file and counts its bytes.
  *
- * Consumes main.css's design tokens exclusively (--space-*, --font-*,
- * --color-*, --touch-target-min) and main.css's shared component classes
- * (.btn, .btn--primary) — no raw hex colour, px, or font value is declared
- * here; main.css is the single source of tokens for the whole project
- * (01.1-UI-SPEC.md "Token discipline").
+ * Consumes main.css's design tokens (--space-*, --font-*, --color-*,
+ * --touch-target-min) and main.css's shared component classes (.btn,
+ * .btn--primary); main.css is the single source of tokens for the whole
+ * project (01.1-UI-SPEC.md "Token discipline").
  */
 
 .login-gate {
@@ -22,8 +24,7 @@
   padding: var(--space-lg);
 }
 
-.login-card,
-#check-inbox {
+.login-card {
   position: relative;
   z-index: 1;
   width: 100%;
@@ -34,8 +35,7 @@
   padding: var(--space-lg);
 }
 
-.login-card h1,
-#check-inbox h2 {
+.login-card h1 {
   font-size: var(--font-size-display);
   line-height: var(--line-height-display);
   font-weight: var(--font-weight-semibold);
@@ -50,8 +50,7 @@
   outline: none;
 }
 
-.login-card p,
-#check-inbox p {
+.login-card p {
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);
   font-weight: var(--font-weight-regular);
@@ -327,60 +326,6 @@
   mask-image: url("/static/icons/check-circle.svg");
 }
 
-/* Link-landing outcome screen (plan 01.1-02; the page was deleted by Phase 7.1 plan 16, so these rules are unused),
-   the same .login-card surface as the login gate, centered instead of
-   left-aligned, with a single large status glyph above the heading. */
-.verify-outcome-card {
-  text-align: center;
-}
-
-.verify-outcome-icon {
-  display: block;
-  width: calc(var(--space-lg) * 2);
-  height: calc(var(--space-lg) * 2);
-  margin: 0 auto var(--space-md) auto;
-}
-
-.verify-outcome-icon--success {
-  color: var(--color-severity-low);
-}
-
-.verify-outcome-icon--error {
-  color: var(--color-severity-critical);
-}
-
-.verify-outcome-card .btn {
-  text-decoration: none;
-}
-
-/* The sign in error line and the link expiry notice are p elements inside
-   .login-card and #check-inbox, so ".login-card p, #check-inbox p" above sets
-   their colour, size and line height: the normal text colour at 16px. Colour
-   is reserved for severity, so the line is never red; its words and the alert
-   role carry it. The red, 14px declarations that sat here never painted and
-   are gone (Phase 5 review fix WR-T04, 2026-10-29). */
-.auth-error {
-  min-height: var(--font-size-label);
-  margin: 0 0 var(--space-md) 0;
-}
-
-/* An empty error line takes no room, so the field and the button keep the one
-   16px step instead of 54px (03.4-29 finding 15). The element stays in the
-   page, so its alert role still announces a message when one is written. */
-.auth-error:empty {
-  min-height: 0;
-  margin: 0;
-}
-
-#request-link,
-#check-inbox .btn {
-  width: 100%;
-}
-
-#check-inbox .btn + .btn {
-  margin-top: var(--space-sm);
-}
-
 /* One column holds the sign in card and the row of buttons under it, so the
    gate still centres the pair as one item. Every line of both is plain text
    colour: muted text on the card surface falls under 4.5:1 in one of the two
@@ -463,16 +408,6 @@
   .login-ways__status {
     text-align: center;
   }
-}
-
-/* Plan 01.1-05: the resend countdown label ("Resend in {n}s") on the
-   disabled button. .btn already carries min-height: var(--touch-target-min)
-   (main.css), so the disabled state below changes only the label's color,
-   never the button's footprint — the layout must not shift as the digit
-   count in the label changes width while counting down. */
-#resend-link:disabled {
-  color: var(--color-text-muted);
-  cursor: default;
 }
 
 /* Plan 01.1-06: the shared account header (D-12) — web/templates/

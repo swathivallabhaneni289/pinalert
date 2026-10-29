@@ -301,6 +301,41 @@ func TestPolicyNamesHomeSquareScreeningAndMail(t *testing.T) {
 	}
 }
 
+// TestAuthCSSHasNoEmailedLinkRules (IN-T03): the old emailed link sign in is
+// gone (Phase 7.1 plans 11 and 16), and so are its ids and classes in every
+// template, so auth.css keeps none of its rules. The Low data page links
+// auth.css and counts its bytes.
+func TestAuthCSSHasNoEmailedLinkRules(t *testing.T) {
+	dead := []string{"#check-inbox", ".verify-outcome", ".auth-error", "#request-link", "#resend-link"}
+	auth := p16ReadStatic(t, "static/css/auth.css")
+	for _, r := range r71tRules(t, "static/css/auth.css") {
+		for _, sel := range dead {
+			if strings.Contains(r.Head, sel) {
+				t.Errorf("auth.css still has a rule for %s (%q)", sel, r.Head)
+			}
+		}
+	}
+	// The file's header no longer describes the link gate.
+	head := auth
+	if end := strings.Index(auth, "*/"); end >= 0 {
+		head = auth[:end]
+	}
+	for _, stale := range []string{"check-inbox", "mandatory-email-verification", "link-landing"} {
+		if strings.Contains(head, stale) {
+			t.Errorf("the auth.css header still describes the old link gate (%q)", stale)
+		}
+	}
+	// Nothing draws them any more, so nothing lost a look.
+	for _, name := range []string{"login_gate.html.tmpl", "login_ways_links.html.tmpl", "low.html.tmpl", "welcome.html.tmpl", "settings.html.tmpl", "index.html.tmpl"} {
+		page := stripReadTemplate(t, name)
+		for _, attr := range []string{`id="check-inbox"`, `verify-outcome`, `auth-error`, `id="request-link"`, `id="resend-link"`} {
+			if strings.Contains(page, attr) {
+				t.Errorf("%s still uses %s; its rule in auth.css was removed", name, attr)
+			}
+		}
+	}
+}
+
 // TestLoginGlobeBoxFrom360 (IN-T01): from 360px wide the gate and the card pad
 // 24px instead of 16px, so the card sits 16px lower and the 404px term of --g,
 // set for 320, left Email me a code 5 or 6px under the first screen at 360x640,
