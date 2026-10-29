@@ -357,6 +357,25 @@ func TestChromeContractTestIsGofmtClean(t *testing.T) {
 	}
 }
 
+// TestPushDocHomeAreaSearchIsFallback (IN-T05): step 4 of sign up requires a
+// home area since Phase 7.1 plan 13, so every account that reaches the alerts
+// pop-up has one, and the pop-up's own home area search is only a fallback.
+// docs/PUSH.md said the pop-up asks for the home area first when there is none.
+func TestPushDocHomeAreaSearchIsFallback(t *testing.T) {
+	raw, err := os.ReadFile("../docs/PUSH.md")
+	if err != nil {
+		t.Fatalf("reading docs/PUSH.md: %v", err)
+	}
+	doc := string(raw)
+	if strings.Contains(doc, "asks for the home area first when there is none") {
+		t.Errorf("docs/PUSH.md still says the sign up pop-up asks for the home area first")
+	}
+	const want = "A home area is always set by then, because step 4 of sign up requires one; the pop-up keeps its own home area search only as a fallback."
+	if !strings.Contains(doc, want) {
+		t.Errorf("docs/PUSH.md does not say the pop-up's home area search is only a fallback:\n%s", want)
+	}
+}
+
 // TestLoginGlobeBoxFrom360 (IN-T01): from 360px wide the gate and the card pad
 // 24px instead of 16px, so the card sits 16px lower and the 404px term of --g,
 // set for 320, left Email me a code 5 or 6px under the first screen at 360x640,
