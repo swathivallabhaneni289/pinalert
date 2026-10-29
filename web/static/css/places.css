@@ -267,6 +267,14 @@ a.place-row {
     padding: var(--space-sm) var(--space-md);
   }
 
+  /* Phase 9 plan 12 (D-04, UI-SPEC 7c): View my profile is the phone's way to
+     the profile page; the laptop reaches the same page from the first item of
+     the person menu. Named in sizeOnlyNamed. Same weight as the guarded
+     display rule above and later in the file, so it wins. */
+  .place-row.place-row--phone-only {
+    display: none;
+  }
+
   /* Official alerts: the empty state takes the right column. */
   .place-empty {
     grid-column: 2;

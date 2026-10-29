@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="/static/css/window.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/updates.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/device-guide.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/person.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/phone.css?v={{.AssetVersion}}">
   <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
 </head>
@@ -58,6 +59,13 @@
           <span class="place-row__value" id="settings-home-value">{{if .HomeAreaName}}{{.HomeAreaName}}{{else}}Not set{{end}}</span>
           <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
         </button>
+        {{/* Phase 9 plan 12 (D-04, UI-SPEC 7c): View my profile is the phone's way to the profile page; the laptop reaches the same page from the first item of the person menu, so this row is hidden at 900px and up and named in sizeOnlyNamed. It is a link to /me, which goes on to the profile page. */}}
+        <a class="place-row place-row--phone-only" id="settings-view-profile-row" href="/me">
+          <span class="place-row__text">
+            <span class="place-row__label">View my profile</span>
+          </span>
+          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+        </a>
       </div>
     </section>
 
@@ -169,9 +177,33 @@
     <section class="place-section" aria-labelledby="settings-people-title">
       <div class="place-section__intro">
         <h2 class="place-section__title" id="settings-people-title">People and reports</h2>
-        <p class="place-section__line">Reports you have turned updates off for.</p>
+        {{/* Amended 2026-10-29 by Phase 9 plan 12 (D-04, UI-SPEC 7a, P9-C17): the line names the profile and its lists, no longer only the muted reports. */}}
+        <p class="place-section__line">Your public profile and the lists that go with it.</p>
       </div>
-      <div class="place-box">
+      {{/* One classless wrapper, so on the laptop grid the box and the error line are one item beside the title. */}}
+      <div id="settings-people-wrap" data-username="{{.MyUsername}}">
+      {{/* Phase 9 plan 12 (D-04, 03.4 D-25, UI-SPEC 7a): the rows in the owner's order, the same on both sizes: the switch, Following, Followers, Muted reports (built in Phase 3.2), Blocked people. There is no follow posts switch here (D-11): the bell on a profile replaces it. */}}
+      <div class="place-box" id="settings-people-box">
+        <label class="place-row place-row--switch" id="settings-profile-row" for="settings-profile-switch">
+          <span class="place-row__text">
+            <span class="place-row__label">Let others follow me</span>
+          </span>
+          <input class="place-switch" type="checkbox" role="switch" id="settings-profile-switch" name="profile_public"{{if .ProfilePublic}} checked{{end}}>
+        </label>
+        <button type="button" class="place-row" id="settings-following-row" aria-haspopup="dialog" data-kind="following">
+          <span class="place-row__text">
+            <span class="place-row__label">Following</span>
+          </span>
+          <span class="place-row__value" id="settings-following-value">{{.FollowingCount}}</span>
+          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="place-row" id="settings-followers-row" aria-haspopup="dialog" data-kind="followers">
+          <span class="place-row__text">
+            <span class="place-row__label">Followers</span>
+          </span>
+          <span class="place-row__value" id="settings-followers-value">{{.FollowersCount}}</span>
+          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+        </button>
         <button type="button" class="place-row" id="settings-muted-row" aria-haspopup="dialog">
           <span class="place-row__text">
             <span class="place-row__label">Muted reports</span>
@@ -179,6 +211,15 @@
           <span class="place-row__value" id="settings-muted-value">{{.MutedCount}}</span>
           <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
         </button>
+        <button type="button" class="place-row" id="settings-blocked-row" aria-haspopup="dialog" data-kind="blocked">
+          <span class="place-row__text">
+            <span class="place-row__label">Blocked people</span>
+          </span>
+          <span class="place-row__value" id="settings-blocked-value">{{.BlockedCount}}</span>
+          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+        </button>
+      </div>
+      <p class="inline-error" id="settings-people-error" role="alert" hidden></p>
       </div>
     </section>
 
@@ -259,6 +300,23 @@
       </div>
     </div>
   </dialog>
+
+  {{/* Phase 9 plan 12 (D-12, UI-SPEC 7b, P9-C22): the box that asks before Let others follow me is turned off while anyone follows you. A native dialog built like the Log out box: Cancel snaps the switch back on, Turn off saves. It sits here as a direct child of the body. */}}
+  <dialog id="settings-profile-off-confirm" class="logout-confirm" aria-labelledby="settings-profile-off-title" aria-describedby="settings-profile-off-text">
+    <div class="logout-confirm__body">
+      <h2 class="logout-confirm__title" id="settings-profile-off-title" tabindex="-1">Turn off your public profile?</h2>
+      <div class="logout-confirm__text" id="settings-profile-off-text">
+        <p>Your profile is hidden and everyone who follows you stops following. They would have to follow you again.</p>
+      </div>
+      <div class="logout-confirm__actions">
+        <button type="button" class="btn" id="settings-profile-off-cancel">Cancel</button>
+        <button type="button" class="btn btn--destructive" id="settings-profile-off-go">Turn off</button>
+      </div>
+    </div>
+  </dialog>
+
+  {{/* Phase 9 plan 12 (D-04): the shared list window of Following, Followers and Blocked people, opened from the three rows by settings-people.js. It must sit at the body level. */}}
+  {{template "people_list_window" .}}
 
   {{/* Phase 7.1 plan 15 (D-07, UI-SPEC Surface 8): the Username window is the built edit window. The field, the live line and the small line are step 4's (username-check.js). The input is named handle with autocomplete off, so a password manager never takes it for the login (T-07.1-30). Save username starts switched off with aria-disabled and the btn--off look, never the disabled attribute. */}}
   <div class="app-window app-window--edit" id="settings-username-window" hidden>
@@ -394,6 +452,8 @@
   <script src="/static/js/username-check.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/settings.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/settings-alerts.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/people-list.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/settings-people.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/reader.js?v={{.AssetVersion}}" defer></script>
 </body>
 </html>

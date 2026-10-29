@@ -167,8 +167,14 @@ func TestSettingsRows(t *testing.T) {
 	//
 	// Amended 2026-10-29 by Phase 7.1 plan 15 (D-07, UI-SPEC Surface 8): the
 	// Username row is the first of About you, a button that opens its window.
-	if strings.Join(buttonIDs, ",") != "settings-username-row,settings-name-row,settings-home-row,settings-device-install,settings-critical-nohome,settings-official-nohome,settings-reliable-nohome,settings-muted-row,settings-logout-all-row,settings-delete-row" {
-		t.Errorf("Settings button rows are %v, want Username, Name, Home area, the On this device install row, the three Add a home area first rows, Muted reports, Log out of all devices, Delete my account", buttonIDs)
+	//
+	// Amended 2026-10-29 by Phase 9 plan 12 (D-04, owner decision 2026-10-16, UI-SPEC
+	// 7a): People and reports draws Following and Followers before Muted reports and
+	// Blocked people after it, each a button row that opens the list window. The
+	// Let others follow me switch row is a label, and View my profile is a link, so
+	// neither is in this list.
+	if strings.Join(buttonIDs, ",") != "settings-username-row,settings-name-row,settings-home-row,settings-device-install,settings-critical-nohome,settings-official-nohome,settings-reliable-nohome,settings-following-row,settings-followers-row,settings-muted-row,settings-blocked-row,settings-logout-all-row,settings-delete-row" {
+		t.Errorf("Settings button rows are %v, want Username, Name, Home area, the On this device install row, the three Add a home area first rows, Following, Followers, Muted reports, Blocked people, Log out of all devices, Delete my account", buttonIDs)
 	}
 	for _, want := range []string{
 		// Amended 2026-10-22 (owner: "too much details under the heading for
@@ -188,7 +194,11 @@ func TestSettingsRows(t *testing.T) {
 		"Account", "Sign out, or remove your account and its data.",
 		// Amended 2026-10-18 by Phase 3.3 plan 14 (UI-SPEC N1): the Notifications
 		// line is "Choose what Pinalert tells you about."
-		"Choose what Pinalert tells you about.", "Reports you have turned updates off for.",
+		//
+		// Amended 2026-10-29 by Phase 9 plan 12 (D-04, UI-SPEC P9-C17): the People and
+		// reports line names the public profile, in place of "Reports you have turned
+		// updates off for.".
+		"Choose what Pinalert tells you about.", "Your public profile and the lists that go with it.",
 		`<form class="place-row-form" method="post" action="/auth/logout">`,
 		`<section class="place-section" aria-labelledby="settings-account-title">`,
 		"People and reports", "Muted reports", "Log out of all devices", "Delete my account",
@@ -202,9 +212,11 @@ func TestSettingsRows(t *testing.T) {
 	if strings.Contains(body, "place-section--phone") {
 		t.Errorf("/settings still marks a section phone only; the Account section with Log out is drawn on both sizes (plan 43)")
 	}
+	// Amended 2026-10-29 by Phase 9 plan 12 (D-04, owner decision 2026-10-16): View
+	// my profile, My profile and Let others follow me are drawn now (see
+	// TestSettingsPeopleRows), so they left this list. The rest still holds.
 	for _, banned := range []string{
-		"View my profile", "My profile", "Phone notifications",
-		"Let others follow me", "place-section--phone", email, "disclaimer-bar",
+		"Phone notifications", "place-section--phone", email, "disclaimer-bar",
 	} {
 		if strings.Contains(body, banned) {
 			t.Errorf("/settings holds %q", banned)
@@ -241,10 +253,13 @@ func TestSettingsBackAndNoGear(t *testing.T) {
 			}
 		}
 	}
-	// The person menu on a laptop holds Settings and Log out only.
+	// The person menu on a laptop holds My profile, Settings and Log out.
+	//
+	// Amended 2026-10-29 by Phase 9 plan 12 (D-04, owner decision 2026-10-16, UI-SPEC
+	// 7c): My profile is the first item, so the text starts with it.
 	menu := p421Text(p421Region(t, body, `<div id="account-menu"`))
-	if menu != "Settings Log out" {
-		t.Errorf("person menu text = %q, want %q", menu, "Settings Log out")
+	if menu != "My profile Settings Log out" {
+		t.Errorf("person menu text = %q, want %q", menu, "My profile Settings Log out")
 	}
 }
 
@@ -281,8 +296,11 @@ func TestSettingsAboutYouValues(t *testing.T) {
 	if you, about := strings.Index(body, "settings-you-title"), strings.Index(body, "settings-about-title"); you == -1 || about == -1 || you > about {
 		t.Errorf("About you must come before About Pinalert (you at %d, about at %d)", you, about)
 	}
-	if strings.Contains(body, "View my profile") {
-		t.Errorf("/settings draws View my profile, which waits for Phase 9")
+	// Amended 2026-10-29 by Phase 9 plan 12 (D-04, UI-SPEC 7c): View my profile is
+	// the phone row of About you, a link to /me, so the old ban is replaced by the
+	// check that it is there and comes after Home area.
+	if home, view := strings.Index(body, `id="settings-home-row"`), strings.Index(body, `id="settings-view-profile-row" href="/me"`); home == -1 || view == -1 || view < home {
+		t.Errorf("/settings must draw View my profile after Home area (home at %d, view at %d)", home, view)
 	}
 
 	// Save a name and a home area with markup in them, the way the windows do.

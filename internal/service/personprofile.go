@@ -207,3 +207,31 @@ func (s *PeopleService) MyUsername(ctx context.Context, accountID int64) (string
 	}
 	return *row.Username, nil
 }
+
+// OwnProfileState is what the Settings page needs to draw the people rows: the
+// caller's own username (empty when none is saved yet) and whether the public
+// profile switch is on.
+type OwnProfileState struct {
+	Username      string
+	ProfilePublic bool
+}
+
+// MyProfileState reads the caller's own username and switch state in one read
+// (Phase 9 plan 12, D-04). An account with no username is not an error here:
+// Settings still draws the rows, and turning the switch on is refused by
+// SetProfilePublic with the Name or username sentence. A missing account is
+// ErrPersonNotFound.
+func (s *PeopleService) MyProfileState(ctx context.Context, accountID int64) (OwnProfileState, error) {
+	row, err := s.q.GetPersonByID(ctx, accountID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return OwnProfileState{}, ErrPersonNotFound
+		}
+		return OwnProfileState{}, fmt.Errorf("service: MyProfileState: reading account %d: %w", accountID, err)
+	}
+	state := OwnProfileState{ProfilePublic: row.ProfilePublic}
+	if row.Username != nil {
+		state.Username = *row.Username
+	}
+	return state, nil
+}

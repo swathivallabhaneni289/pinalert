@@ -214,7 +214,13 @@ func TestAccountMenuItems(t *testing.T) {
 	// went with them, so its two rules are gone from auth.css. My profile waits
 	// for Phase 9. The Phase 3.1 and Phase 4 hands-on tests are walked on this
 	// layout after Phase 3.4 is built.
+	//
+	// Amended 2026-10-29 by Phase 9 plan 12 (D-04, owner decision 2026-10-16,
+	// UI-SPEC 7c): My profile is the first item of the menu, a link to /me, so the
+	// order starts with it and the menu holds three items. Settings and Log out
+	// are as they were; every banned part is still banned.
 	p421InOrder(t, "menu item order", panel,
+		`href="/me"`, "My profile",
 		`href="/settings"`, "Settings",
 		`action="/auth/logout"`, "Log out")
 	for _, gone := range []string{

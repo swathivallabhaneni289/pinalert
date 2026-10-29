@@ -68,6 +68,16 @@ type settingsViewModel struct {
 	ChangesPushOn  bool
 	OfficialPushOn bool
 	PushPublicKey  string
+	// ProfilePublic, FollowingCount, FollowersCount, BlockedCount and MyUsername are
+	// Phase 9 plan 12 (D-04): the Let others follow me switch state, the three counts
+	// of the People and reports rows, and the caller's own username, which the
+	// list windows need to read your own lists. All are the caller's own; nothing
+	// about anyone else enters this model. html/template escapes the username.
+	ProfilePublic  bool
+	FollowingCount int
+	FollowersCount int
+	BlockedCount   int
+	MyUsername     string
 }
 
 // SettingsPage handles GET /settings: the one Settings page (Phase 3.4, D-25,
@@ -81,7 +91,7 @@ type settingsViewModel struct {
 //
 // Deliberately carries no swag annotation: it serves text/html and lives
 // outside @BasePath /api.
-func SettingsPage(tmpl *template.Template, accounts *service.AccountService, mutes *service.MuteService, cfg PageConfig) http.HandlerFunc {
+func SettingsPage(tmpl *template.Template, accounts *service.AccountService, mutes *service.MuteService, people *service.PeopleService, cfg PageConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acc, ok := account.FromContext(r.Context())
 		if !ok {
@@ -110,6 +120,23 @@ func SettingsPage(tmpl *template.Template, accounts *service.AccountService, mut
 			}
 		}
 
+		// The people rows (Phase 9 plan 12, D-04): the switch state, the caller's own
+		// username and the three counts. A failed read is a logged 500 like the muted
+		// count: a switch drawn off when it is on would hide that others can follow.
+		var own service.OwnProfileState
+		var counts service.PeopleCounts
+		if people != nil {
+			own, err = people.MyProfileState(r.Context(), acc.ID)
+			if err == nil {
+				counts, err = people.Counts(r.Context(), acc.ID)
+			}
+			if err != nil {
+				log.Printf("handlers: SettingsPage: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+		}
+
 		// The alert switch and distance. A failed read is a logged 500 like the
 		// profile read: a switch drawn off when it is on would let the person
 		// believe they are not being alerted.
@@ -122,11 +149,16 @@ func SettingsPage(tmpl *template.Template, accounts *service.AccountService, mut
 
 		chrome := cfg.Chrome.withDefaults()
 		vm := settingsViewModel{
-			AlertsOn:      alerts.ReliableAlertsOn,
-			AlertRadiusKm: alerts.AlertRadiusKm,
-			HasHomeArea:   alerts.HasHomeArea,
-			AlertRadii:    service.AlertRadii,
-			MutedCount:    mutedCount,
+			AlertsOn:       alerts.ReliableAlertsOn,
+			AlertRadiusKm:  alerts.AlertRadiusKm,
+			HasHomeArea:    alerts.HasHomeArea,
+			AlertRadii:     service.AlertRadii,
+			MutedCount:     mutedCount,
+			ProfilePublic:  own.ProfilePublic,
+			MyUsername:     own.Username,
+			FollowingCount: counts.Following,
+			FollowersCount: counts.Followers,
+			BlockedCount:   counts.Blocked,
 			// Plan 14 draws these; see the field comments. Booleans and the public
 			// key only.
 			CriticalPushOn: alerts.CriticalPushOn,
