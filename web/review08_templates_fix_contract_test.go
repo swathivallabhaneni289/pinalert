@@ -47,13 +47,21 @@ func TestTrustModelSharingRemovedReport(t *testing.T) {
 // TestPolicyCommentCheckKeptForEvery (WR-T04): every checked comment keeps
 // the check's verdict, its scores and the model with it, clear or borderline,
 // so the Policy must not say only a borderline one does.
+//
+// Amended 2026-10-29 by review fix round 2 (SK-07): a comment keeps a check
+// result only when the check finished on it (comments.go writes the verdict
+// only then; with no screener, or a held comment a moderator settled, nothing
+// is kept), so the Policy must not say every comment keeps one.
 func TestPolicyCommentCheckKeptForEvery(t *testing.T) {
 	keeps := r71tPolicySection(t, "What Pinalert keeps")
 	if strings.Contains(keeps, "for a borderline one the check") {
 		t.Errorf("the Policy says only a borderline comment keeps its check result")
 	}
+	if strings.Contains(keeps, "For every comment the check's result") {
+		t.Errorf("the Policy says every comment keeps a check result; only one the check finished on does")
+	}
 	r08tMust(t, "the Policy's keeps list", keeps,
-		"A comment is checked by the same service as a report. For every comment the check's result, its scores and which model gave them are kept with the comment.")
+		"A comment is checked by the same service as a report. When the check finishes on a comment, its result, its scores and which model gave them are kept with the comment.")
 }
 
 // TestPolicyAndReadmeSharedPageFields (WR-T05): the public page also shows
