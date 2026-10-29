@@ -39,7 +39,7 @@ type UpdateWire struct {
 	// ID orders the list and is what the read mark sends back as up_to.
 	ID int64 `json:"id" example:"41"`
 	// Kind is the closed kind of the row.
-	Kind string `json:"kind" enums:"reached_live,hidden,resolved,fading,reliable_nearby,more" example:"reached_live"`
+	Kind string `json:"kind" enums:"reached_live,hidden,resolved,fading,reliable_nearby,comment_on_yours,reply_to_yours,more" example:"reached_live"`
 	// ReportID is the report the row opens. It is absent for the rolled up row
 	// and for a report that is no longer available, so a row never links to a
 	// report the reader may not open.

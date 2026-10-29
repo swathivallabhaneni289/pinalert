@@ -2219,3 +2219,144 @@ func TestMigration00018(t *testing.T) {
 		t.Errorf("after Up again: %d of %d tables present", got, len(tables))
 	}
 }
+
+// TestMigration00019 covers the Phase 8 plan 11 migration (D-16, PAGE-02,
+// A-P8-3): the two comment kinds join updates_kind_valid, and the unread index
+// keeps thirty comments to one row per account, report and kind.
+func TestMigration00019(t *testing.T) {
+	const file = "migrations/00019_add_comment_update_kinds.sql"
+	contents, err := MigrationsFS.ReadFile(file)
+	if err != nil {
+		t.Fatalf("reading embedded %s: %v", file, err)
+	}
+	text := string(contents)
+	up := strings.Index(text, "+goose Up")
+	down := strings.Index(text, "+goose Down")
+	if up < 0 || down < 0 || down < up {
+		t.Fatalf("%s must carry +goose Up then +goose Down", file)
+	}
+	var code []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		code = append(code, line)
+	}
+	joined := strings.ToUpper(strings.Join(code, "\n"))
+	if strings.Contains(joined, "CONCURRENTLY") {
+		t.Error("migration 00019 must not use CONCURRENTLY: goose runs it inside a transaction")
+	}
+	const wantList = "CHECK (kind IN ('reached_live', 'hidden', 'resolved', 'fading', 'reliable_nearby', 'more', 'comment_on_yours', 'reply_to_yours'))"
+	if !strings.Contains(text[up:down], wantList) {
+		t.Errorf("migration 00019 Up must carry the widened list %q", wantList)
+	}
+	const oldList = "CHECK (kind IN ('reached_live', 'hidden', 'resolved', 'fading', 'reliable_nearby', 'more'))"
+	if !strings.Contains(text[down:], oldList) {
+		t.Errorf("migration 00019 Down must restore the old list %q", oldList)
+	}
+	if !strings.Contains(text[up:down], "uq_updates_comment_unread") || !strings.Contains(text[down:], "DROP INDEX uq_updates_comment_unread") {
+		t.Error("migration 00019 must create uq_updates_comment_unread in Up and drop it in Down")
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping the database part of the 00019 migration test")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("opening database: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	goose.SetBaseFS(MigrationsFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up: %v", err)
+	}
+
+	const sessionID = "migration-00019-session"
+	var accountA, reportID, otherReport int64
+	t.Cleanup(func() {
+		_ = goose.Up(db, "migrations")
+		_, _ = db.Exec("DELETE FROM updates WHERE account_id = $1", accountA)
+		_, _ = db.Exec("DELETE FROM reports WHERE id IN ($1, $2)", reportID, otherReport)
+		_, _ = db.Exec("DELETE FROM sessions WHERE session_id = $1", sessionID)
+		_, _ = db.Exec("DELETE FROM accounts WHERE id = $1", accountA)
+	})
+
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00019-a@example.com') RETURNING id`).Scan(&accountA); err != nil {
+		t.Fatalf("inserting account: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO sessions (session_id) VALUES ($1)`, sessionID); err != nil {
+		t.Fatalf("inserting session: %v", err)
+	}
+	for _, dst := range []*int64{&reportID, &otherReport} {
+		if err := db.QueryRow(`INSERT INTO reports (session_id, category, severity, description, latitude, longitude, geohash, expires_at)
+			VALUES ($1, 'road', 'info', 'for the 00019 test', 12.97, 77.59, 'tdr1w', now() + interval '1 hour')
+			RETURNING id`, sessionID).Scan(dst); err != nil {
+			t.Fatalf("inserting report: %v", err)
+		}
+	}
+
+	wantCode := func(label, code, query string, args ...any) {
+		t.Helper()
+		_, err := db.Exec(query, args...)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != code {
+			t.Errorf("%s: want SQLSTATE %s, got %v", label, code, err)
+		}
+	}
+	const insert = `INSERT INTO updates (account_id, report_id, kind) VALUES ($1, $2, $3)`
+
+	for _, kind := range []string{"comment_on_yours", "reply_to_yours"} {
+		if _, err := db.Exec(insert, accountA, reportID, kind); err != nil {
+			t.Errorf("kind %s must insert: %v", kind, err)
+		}
+	}
+	wantCode("an unknown kind", "23514", insert, accountA, reportID, "comment_liked")
+	wantCode("a second unread comment_on_yours for the same report", "23505", insert, accountA, reportID, "comment_on_yours")
+	wantCode("a second unread reply_to_yours for the same report", "23505", insert, accountA, reportID, "reply_to_yours")
+	if _, err := db.Exec(insert, accountA, otherReport, "comment_on_yours"); err != nil {
+		t.Errorf("another report must insert: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE updates SET read_at = now() WHERE account_id = $1 AND report_id = $2 AND kind = 'comment_on_yours'`, accountA, reportID); err != nil {
+		t.Fatalf("marking read: %v", err)
+	}
+	if _, err := db.Exec(insert, accountA, reportID, "comment_on_yours"); err != nil {
+		t.Errorf("after the first row is read a new unread row must insert: %v", err)
+	}
+	// The index is scoped to the two comment kinds: other kinds are not capped.
+	for i := 0; i < 2; i++ {
+		if _, err := db.Exec(insert, accountA, reportID, "fading"); err != nil {
+			t.Errorf("fading row %d must insert (the unread index covers comment kinds only): %v", i, err)
+		}
+	}
+
+	version, err := goose.NumericComponent("00019_add_comment_update_kinds.sql")
+	if err != nil {
+		t.Fatalf("parsing version: %v", err)
+	}
+	if err := goose.DownTo(db, "migrations", version-1); err != nil {
+		t.Fatalf("goose down to %d: %v", version-1, err)
+	}
+	var n int
+	if err := db.QueryRow(`SELECT count(*) FROM updates WHERE account_id = $1 AND kind IN ('comment_on_yours', 'reply_to_yours')`, accountA).Scan(&n); err != nil || n != 0 {
+		t.Errorf("after Down: %d comment rows remain (%v), want 0", n, err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM updates WHERE account_id = $1 AND kind = 'fading'`, accountA).Scan(&n); err != nil || n != 2 {
+		t.Errorf("after Down: %d fading rows (%v), want the 2 older rows kept", n, err)
+	}
+	wantCode("a comment kind after Down", "23514", insert, accountA, reportID, "comment_on_yours")
+	var idx sql.NullString
+	if err := db.QueryRow(`SELECT to_regclass('public.uq_updates_comment_unread')::text`).Scan(&idx); err != nil || idx.Valid {
+		t.Errorf("after Down: unread index still present (%v, %v)", idx, err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up again: %v", err)
+	}
+	if _, err := db.Exec(insert, accountA, otherReport, "reply_to_yours"); err != nil {
+		t.Errorf("after Up again a comment kind must insert: %v", err)
+	}
+}

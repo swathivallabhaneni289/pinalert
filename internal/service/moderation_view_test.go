@@ -239,6 +239,14 @@ func TestWithheldInNoView(t *testing.T) {
 		if UpdateTrustLine(UpdateReliableNearby, trust, FeedViewActive, false) != UnconfirmedLine {
 			t.Error("an unconfirmed active Reliable note must read Not confirmed yet.")
 		}
+		// Amended 2026-10-29 by Phase 8 plan 11 (D-16, A-P8-3): the two comment
+		// kinds are in UpdateEventKinds, so the loop above already reaches them;
+		// this names them so a later edit to the list cannot drop them silently.
+		for _, k := range []UpdateKind{UpdateCommentOnYours, UpdateReplyToYours} {
+			if !k.IsEvent() || UpdateTrustLine(k, trust, FeedViewActive, false) == "" {
+				t.Errorf("comment kind %q is not an event with a trust line", k)
+			}
+		}
 	})
 
 	t.Run("source guard", func(t *testing.T) {

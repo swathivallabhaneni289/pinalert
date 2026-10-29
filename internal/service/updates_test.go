@@ -16,13 +16,16 @@ var updatesNow = time.Date(2026, 10, 18, 12, 30, 0, 0, time.UTC)
 func updatesPtr(t time.Time) *time.Time { return &t }
 
 func TestUpdateKindsClosed(t *testing.T) {
-	if len(UpdateKinds) != 6 {
-		t.Errorf("UpdateKinds has %d entries, want 6", len(UpdateKinds))
+	// Amended 2026-10-29 by Phase 8 plan 11 (D-16, A-P8-3): the closed lists grew
+	// by comment_on_yours and reply_to_yours, so the counts are 8 and 7; every
+	// other assertion below is unchanged.
+	if len(UpdateKinds) != 8 {
+		t.Errorf("UpdateKinds has %d entries, want 8", len(UpdateKinds))
 	}
-	if len(UpdateEventKinds) != 5 {
-		t.Errorf("UpdateEventKinds has %d entries, want 5", len(UpdateEventKinds))
+	if len(UpdateEventKinds) != 7 {
+		t.Errorf("UpdateEventKinds has %d entries, want 7", len(UpdateEventKinds))
 	}
-	for _, k := range []UpdateKind{UpdateReachedLive, UpdateHidden, UpdateResolved, UpdateFading, UpdateReliableNearby, UpdateMore} {
+	for _, k := range []UpdateKind{UpdateReachedLive, UpdateHidden, UpdateResolved, UpdateFading, UpdateReliableNearby, UpdateCommentOnYours, UpdateReplyToYours, UpdateMore} {
 		if !k.Valid() {
 			t.Errorf("%q should be valid", k)
 		}
