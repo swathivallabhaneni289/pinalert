@@ -36,6 +36,11 @@ const kickTimeout = 55 * time.Second
 type Config struct {
 	ContactEmail string
 	BaseURL      string
+	// PushOff leaves out the hook that queues official pushes. Set it when push
+	// is off (no VAPID keys): no worker runs then to send the rows or skip the
+	// stale ones, so queued rows would only pile up (IN-S11 of the Phase 5
+	// review).
+	PushOff bool
 }
 
 // Service reads the official alerts for a reader and refreshes them lazily.
@@ -102,7 +107,9 @@ func NewService(pool TxBeginner, q *sqlcgen.Queries, cfg Config, opts ...Refresh
 	gdacs := NewGdacsClient(ClientConfig{ContactEmail: cfg.ContactEmail, BaseURL: cfg.BaseURL})
 	all := make([]RefresherOption, 0, len(opts)+3)
 	all = append(all, WithSachet(client, ix))
-	all = append(all, WithVersionHook(PushEnqueueHook(areas.Default())))
+	if !cfg.PushOff {
+		all = append(all, WithVersionHook(PushEnqueueHook(areas.Default())))
+	}
 	all = append(all, WithGdacs(gdacs))
 	all = append(all, opts...)
 	return newService(NewRefresher(pool, q, all...), q, ix)

@@ -305,6 +305,15 @@ func TestOfficialHomeMatches(t *testing.T) {
 	}
 }
 
+// TestNewServiceNoPushHookWhenPushIsOff pins IN-S11 of the Phase 5 review: with
+// push off (no VAPID keys) nothing would ever send or skip official push rows,
+// so the hook is not registered and queues nothing.
+func TestNewServiceNoPushHookWhenPushIsOff(t *testing.T) {
+	if n := len(NewService(nil, nil, Config{PushOff: true}).Refresher().hookList()); n != 0 {
+		t.Fatalf("with push off NewService registered %d hooks, want none", n)
+	}
+}
+
 // TestNewServiceRegistersPushHook: NewService adds the push hook before the
 // caller's options, and the caller's hook still runs.
 func TestNewServiceRegistersPushHook(t *testing.T) {
