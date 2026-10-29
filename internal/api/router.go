@@ -232,8 +232,20 @@ func (f *pathOnlyLogFormatter) NewLogEntry(r *http.Request) middleware.LogEntry 
 		logger: f.logger,
 		reqID:  middleware.GetReqID(r.Context()),
 		method: r.Method,
-		path:   r.URL.EscapedPath(),
+		path:   loggedPath(r.URL.EscapedPath()),
 	}
+}
+
+// loggedPath is the path an access log line may hold. Under /r/ the path is the
+// share token, a capability that opens a report's public page and can never be
+// revoked, so the line names the route instead (review WR-S01, T-08-19). The
+// redaction sits here, in the formatter, so every route and the Panic line are
+// covered, whatever follows the prefix.
+func loggedPath(path string) string {
+	if strings.HasPrefix(path, "/r/") {
+		return "/r/{token}"
+	}
+	return path
 }
 
 type pathOnlyLogEntry struct {
@@ -791,6 +803,9 @@ func NewRouter(deps Deps) *chi.Mux {
 		}
 		r.Method(http.MethodGet, path, h)
 	}
+	// A browser's own favicon request (review WR-T02): one exact GET route that
+	// answers a plain 404, in sessionSkipSet's GET set, so it sets no cookie.
+	r.Get(handlers.FaviconPath, handlers.FaviconNotFound)
 	// The sign in globe's Earth pictures (plan 05-04, D-13): the same shape, one
 	// exact GET route for each of the 85 entries of handlers.GlobeTilePaths, which
 	// is also what feeds the session bypass above. Public because the sign in page
@@ -1189,18 +1204,24 @@ func (s sessionSkip) matches(r *http.Request) bool {
 
 // sessionSkipSet builds the rule set the router uses, from the same lists the
 // routes are registered from: the exact GET paths are handlers.PWAPublicPaths
-// (plan 03.3-04) and handlers.GlobeTilePaths() (plan 05-04). The one exact POST
+// (plan 03.3-04), handlers.GlobeTilePaths() (plan 05-04) and
+// handlers.FaviconPath (review WR-T02). The one exact POST
 // path is the external cron's refresh endpoint (plan 05-12). The prefixes are
 // /demo (plan 05-10), /static (the Phase 5 follow up) and /r (plan 08-04).
 func sessionSkipSet() sessionSkip {
 	tiles := handlers.GlobeTilePaths()
-	get := make(map[string]bool, len(handlers.PWAPublicPaths)+len(tiles))
+	get := make(map[string]bool, len(handlers.PWAPublicPaths)+len(tiles)+1)
 	for _, path := range handlers.PWAPublicPaths {
 		get[path] = true
 	}
 	for _, path := range tiles {
 		get[path] = true
 	}
+	// "/favicon.ico" (added 2026-10-29, review WR-T02): a browser that opens the
+	// public page of a shared link with no cookie may still ask for it, and that
+	// request must not set a cookie or write a sessions row. Its route answers a
+	// plain 404.
+	get[handlers.FaviconPath] = true
 	// "/demo" covers GET and POST under it: the Demo's sandbox API (plan 05-10).
 	// The cron's refresh door: an exact POST path, so a call neither sets a cookie
 	// nor writes a sessions row (plan 05-12, research G1, Pitfall 2).

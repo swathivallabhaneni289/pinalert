@@ -73,7 +73,11 @@ func TestCleanCommentBody(t *testing.T) {
 		{"isolate 2067", "a" + cmtRunes(0x2067) + "b", "", service.ErrCommentCharacters},
 		{"isolate 2068", "a" + cmtRunes(0x2068) + "b", "", service.ErrCommentCharacters},
 		{"isolate 2069", "a" + cmtRunes(0x2069) + "b", "", service.ErrCommentCharacters},
-		{"a tab", "a\tb", "", service.ErrCommentCharacters},
+		// Amended 2026-10-29 by review IN-S01: a tab pasted from a notes app or
+		// WhatsApp was refused; it is now read as a space, and an end tab trims.
+		{"a tab", "a\tb", "a b", nil},
+		{"tabs at the ends", "\ta b\t", "a b", nil},
+		{"only tabs", "\t\t", "", service.ErrCommentEmpty},
 		{"the bell character", "a" + cmtRunes(7) + "b", "", service.ErrCommentCharacters},
 		{"a lone carriage return", "a\rb", "", service.ErrCommentCharacters},
 		{"a Malayalam word with the non joiner", malayalam, malayalam, nil},

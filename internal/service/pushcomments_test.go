@@ -15,8 +15,102 @@ import (
 	"time"
 	"unicode/utf8"
 
+	sqlcgen "pinalert/internal/store/sqlc"
 	"pinalert/internal/testutil"
 )
+
+// TestCommentPushStillHolds proves the query behind review IN-S05 (2026-10-29)
+// on a real database: a queued comment note holds only while a clear, undeleted
+// comment it could be about is there, written by someone else, of the right
+// shape for the kind, and newer than the recipient's last read note of that
+// kind on that report.
+func TestCommentPushStillHolds(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	q := sqlcgen.New(pool)
+	ctx := context.Background()
+	reporter := testutil.SeedReporterAccount(t, pool, "in-s05-reporter@example.com", "in-s05-reporter")
+	first := testutil.SeedReporterAccount(t, pool, "in-s05-first@example.com")
+	second := testutil.SeedReporterAccount(t, pool, "in-s05-second@example.com")
+	now := time.Now()
+	newReport := func() int64 {
+		return testutil.InsertStoredReport(t, pool, testutil.StoredReport{
+			SessionID: "in-s05-reporter", Category: "flood", Severity: "low", Description: "water",
+			Latitude: 16.5062, Longitude: 80.6480, CreatedAt: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour),
+		})
+	}
+	holds := func(report, recipient int64, kind UpdateKind) bool {
+		t.Helper()
+		got, err := q.CommentPushStillHolds(ctx, sqlcgen.CommentPushStillHoldsParams{
+			ReportID: report, RecipientAccountID: recipient, Kind: string(kind),
+		})
+		if err != nil {
+			t.Fatalf("CommentPushStillHolds: %v", err)
+		}
+		return got
+	}
+
+	t.Run("comment on your report", func(t *testing.T) {
+		report := newReport()
+		id := testutil.SeedComment(t, pool, testutil.CommentSeed{ReportID: report, AccountID: first})
+		if !holds(report, reporter, UpdateCommentOnYours) {
+			t.Error("a clear comment does not hold")
+		}
+		testutil.MustExec(t, pool, `UPDATE comments SET moderation_state = 'removed' WHERE id = $1`, id)
+		if holds(report, reporter, UpdateCommentOnYours) {
+			t.Error("a removed comment still holds")
+		}
+		again := testutil.SeedComment(t, pool, testutil.CommentSeed{ReportID: report, AccountID: first})
+		if !holds(report, reporter, UpdateCommentOnYours) {
+			t.Error("a second clear comment does not hold")
+		}
+		testutil.MustExec(t, pool, `UPDATE comments SET deleted_at = now(), body = '' WHERE id = $1`, again)
+		if holds(report, reporter, UpdateCommentOnYours) {
+			t.Error("a deleted comment still holds")
+		}
+		testutil.SeedComment(t, pool, testutil.CommentSeed{ReportID: report, AccountID: reporter})
+		if holds(report, reporter, UpdateCommentOnYours) {
+			t.Error("the recipient's own comment holds")
+		}
+	})
+
+	t.Run("reply to your comment", func(t *testing.T) {
+		report := newReport()
+		root := testutil.SeedComment(t, pool, testutil.CommentSeed{ReportID: report, AccountID: first})
+		if holds(report, first, UpdateReplyToYours) {
+			t.Error("a thread with no reply holds a reply note")
+		}
+		other := testutil.SeedComment(t, pool, testutil.CommentSeed{ReportID: report, AccountID: second})
+		testutil.SeedComment(t, pool, testutil.CommentSeed{ReportID: report, AccountID: reporter, ParentID: other})
+		if holds(report, first, UpdateReplyToYours) {
+			t.Error("a reply to someone else holds a reply note")
+		}
+		reply := testutil.SeedComment(t, pool, testutil.CommentSeed{ReportID: report, AccountID: second, ParentID: root})
+		if !holds(report, first, UpdateReplyToYours) {
+			t.Error("a clear reply to your comment does not hold")
+		}
+		testutil.MustExec(t, pool, `UPDATE comments SET moderation_state = 'removed' WHERE id = $1`, reply)
+		if holds(report, first, UpdateReplyToYours) {
+			t.Error("a removed reply still holds")
+		}
+	})
+
+	t.Run("only comments after the last read note count", func(t *testing.T) {
+		report := newReport()
+		testutil.SeedComment(t, pool, testutil.CommentSeed{ReportID: report, AccountID: first})
+		testutil.MustExec(t, pool,
+			`INSERT INTO updates (account_id, report_id, kind, read_at) VALUES ($1, $2, 'comment_on_yours', now() - interval '1 minute')`,
+			reporter, report)
+		if !holds(report, reporter, UpdateCommentOnYours) {
+			t.Error("a comment newer than the last read note does not hold")
+		}
+		testutil.MustExec(t, pool,
+			`INSERT INTO updates (account_id, report_id, kind, read_at) VALUES ($1, $2, 'comment_on_yours', now() + interval '1 minute')`,
+			reporter, report)
+		if holds(report, reporter, UpdateCommentOnYours) {
+			t.Error("a comment the recipient already read about still holds")
+		}
+	})
+}
 
 func TestPushCommentWords(t *testing.T) {
 	const (

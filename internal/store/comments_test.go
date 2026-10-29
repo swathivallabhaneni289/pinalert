@@ -355,8 +355,11 @@ func TestCommentsForReportVisibility(t *testing.T) {
 		if got, want := ids(w.listRows(t, 0, r2, 5, 1000)), []int64{r3, a3};!same(got, want) {
 			t.Errorf("after_id = %v, want %v", got, want)
 		}
-		if got := ids(w.listRows(t, 0, 0, 5, 1)); len(got) != 4 {
-			t.Errorf("reply_cap 1 = %v, want 3 roots and 1 reply", got)
+		// Amended 2026-10-29 by review WR-S02: reply_cap was one total bound over
+		// every root (3 roots and 1 reply); it is now a bound per thread, so r1
+		// keeps its first reply and r3 its one reply.
+		if got, want := ids(w.listRows(t, 0, 0, 5, 1)), []int64{r1, a1, r2, r3, a3}; !same(got, want) {
+			t.Errorf("reply_cap 1 = %v, want %v (3 roots and at most 1 reply per thread)", got, want)
 		}
 	})
 

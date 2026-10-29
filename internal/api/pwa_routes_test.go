@@ -167,9 +167,18 @@ func TestPWASkipSetMatchesRoutes(t *testing.T) {
 	skip := sessionSkipSet()
 	set := skip.get
 	tilePaths := handlers.GlobeTilePaths()
-	if len(set) != len(handlers.PWAPublicPaths)+len(tilePaths) {
-		t.Errorf("sessionSkipSet has %d GET keys, PWAPublicPaths and GlobeTilePaths have %d entries together",
-			len(set), len(handlers.PWAPublicPaths)+len(tilePaths))
+	// Amended 2026-10-29 by review WR-T02: the GET set also holds the one exact
+	// path handlers.FaviconPath, which must be a registered GET route. Every other
+	// assertion is unchanged.
+	if len(set) != len(handlers.PWAPublicPaths)+len(tilePaths)+1 {
+		t.Errorf("sessionSkipSet has %d GET keys, PWAPublicPaths, GlobeTilePaths and FaviconPath have %d entries together",
+			len(set), len(handlers.PWAPublicPaths)+len(tilePaths)+1)
+	}
+	if !set[handlers.FaviconPath] {
+		t.Errorf("%s is not in the skip set", handlers.FaviconPath)
+	}
+	if !getRoutes[handlers.FaviconPath] {
+		t.Errorf("%s is in the skip set but is not a registered GET route", handlers.FaviconPath)
 	}
 	if len(tilePaths) != 85 {
 		t.Errorf("GlobeTilePaths has %d entries, want 85", len(tilePaths))
@@ -234,7 +243,7 @@ func TestPWASkipSetMatchesRoutes(t *testing.T) {
 		}
 	}
 	for p := range set {
-		if !slices.Contains(handlers.PWAPublicPaths, p) && !slices.Contains(tilePaths, p) {
+		if !slices.Contains(handlers.PWAPublicPaths, p) && !slices.Contains(tilePaths, p) && p != handlers.FaviconPath {
 			t.Errorf("%s is in the skip set but not on the list", p)
 		}
 	}

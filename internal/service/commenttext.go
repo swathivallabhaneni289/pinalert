@@ -48,7 +48,9 @@ func isCommentJoiner(r rune) bool {
 // ErrCommentEmpty, ErrCommentCharacters and ErrCommentTooLong. The order is
 // part of the specification:
 //
-//  1. Carriage return line feed becomes a line feed, and the ends are trimmed.
+//  1. Carriage return line feed becomes a line feed, a tab becomes a space
+//     (text pasted from a notes app or WhatsApp holds tabs, review IN-S01), and
+//     the ends are trimmed.
 //  2. Any control character other than a line feed, and any format character
 //     (unicode.Cf) other than the two joiners, answers ErrCommentCharacters.
 //  3. Joiners and white space are trimmed from both ends together until
@@ -60,6 +62,7 @@ func isCommentJoiner(r rune) bool {
 //  6. More than CommentMaxRunes code points answers ErrCommentTooLong.
 func CleanCommentBody(s string) (string, error) {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\t", " ")
 	s = strings.TrimSpace(s)
 
 	for _, r := range s {

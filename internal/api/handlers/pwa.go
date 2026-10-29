@@ -57,6 +57,19 @@ var PWAPublicPaths = []string{
 	rootApplePrecomp,
 }
 
+// FaviconPath is the address a browser asks for when a page names no icon
+// (review WR-T02, 2026-10-29). Pinalert serves no favicon.ico: every page links
+// /icons/app.svg. The path is one exact GET route that answers a plain 404, and
+// the router skips the session middleware for it, so a reader with no account
+// who opens a shared link never gets a cookie or a sessions row from it.
+const FaviconPath = "/favicon.ico"
+
+// FaviconNotFound answers GET /favicon.ico with a plain 404. It reads and
+// writes no session and no account.
+func FaviconNotFound(w http.ResponseWriter, r *http.Request) {
+	http.NotFound(w, r)
+}
+
 // Cache headers. The manifest and the worker are checked on every use, so a
 // changed worker is found at once. The icons are the same for everyone and
 // carry an ETag.

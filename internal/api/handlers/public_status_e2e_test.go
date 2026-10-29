@@ -387,8 +387,10 @@ func TestSharePageRateLimited(t *testing.T) {
 	if second.status != http.StatusTooManyRequests {
 		t.Fatalf("second GET = %d, want 429", second.status)
 	}
-	if got := second.header.Get("Retry-After"); got != "1" {
-		t.Errorf("Retry-After = %q, want 1", got)
+	// Amended 2026-10-29 by review IN-T04: Retry-After was 1 second while the
+	// page says to wait a minute; it is now 60, matching the words.
+	if got := second.header.Get("Retry-After"); got != "60" {
+		t.Errorf("Retry-After = %q, want 60", got)
 	}
 	p804CheckHeaders(t, "rate limited", second)
 	for _, want := range []string{service.PublicTooManyTitle, service.PublicTooManyLine, "Sign in to see more"} {

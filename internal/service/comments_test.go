@@ -279,7 +279,9 @@ func TestCommentScreeningOutcomes(t *testing.T) {
 		if _, err := r.post(rep, r.alice, "   ", nil); !errors.Is(err, service.ErrCommentEmpty) {
 			t.Errorf("empty Post = %v, want ErrCommentEmpty", err)
 		}
-		if _, err := r.post(rep, r.alice, "a\tb", nil); !errors.Is(err, service.ErrCommentCharacters) {
+		// Amended 2026-10-29 by review IN-S01: a tab is now read as a space, so
+		// the refused control character is the bell character instead.
+		if _, err := r.post(rep, r.alice, "a\ab", nil); !errors.Is(err, service.ErrCommentCharacters) {
 			t.Errorf("control character Post = %v, want ErrCommentCharacters", err)
 		}
 		if r.scr.calls != calls {
@@ -352,6 +354,46 @@ func TestCommentReplyJoinsThread(t *testing.T) {
 			t.Errorf("ReplyToAuthor = %q, want empty for a username that has not passed its screen", got.ReplyToAuthor)
 		}
 	})
+}
+
+// TestCommentReplyCapPerThread proves review WR-S02 (2026-10-29): the reply cap
+// is per thread, so one busy thread never hides a later thread's replies, and
+// ReplyCount is the real number of replies the viewer may see in that thread,
+// not the number returned. Thread A holds one reply more than the cap; thread B,
+// posted after all of them, holds one.
+func TestCommentReplyCapPerThread(t *testing.T) {
+	r := newCmsRig(t)
+	rep := r.open(t)
+
+	a := r.mustPost(t, rep, r.alice, "is the road open", nil)
+	testutil.MustExec(t, r.pool,
+		`INSERT INTO comments (report_id, account_id, parent_id, reply_to_id, body, created_at)
+		 SELECT $1, $2, $3, $3, 'still closed ' || g, $4
+		 FROM generate_series(1, $5::int) AS g`,
+		rep, r.carol, a.ID, r.now, service.CommentReplyCap+1)
+	b := r.mustPost(t, rep, r.carol, "shelter at the school is full", nil)
+	bReply := r.mustPost(t, rep, r.alice, "the hall next door has room", &b.ID)
+
+	l := r.list(t, rep, 0)
+	if len(l.Comments) != 2 || l.Comments[0].ID != a.ID || l.Comments[1].ID != b.ID {
+		t.Fatalf("list = %d threads, want threads A and B", len(l.Comments))
+	}
+	ta, tb := l.Comments[0], l.Comments[1]
+	if len(ta.Replies) != service.CommentReplyCap {
+		t.Errorf("thread A lists %d replies, want the cap %d", len(ta.Replies), service.CommentReplyCap)
+	}
+	if ta.ReplyCount != service.CommentReplyCap+1 {
+		t.Errorf("thread A ReplyCount = %d, want the real count %d", ta.ReplyCount, service.CommentReplyCap+1)
+	}
+	if len(tb.Replies) != 1 || tb.Replies[0].ID != bReply.ID {
+		t.Errorf("thread B lists %d replies, want its one reply", len(tb.Replies))
+	}
+	if tb.ReplyCount != 1 {
+		t.Errorf("thread B ReplyCount = %d, want 1", tb.ReplyCount)
+	}
+	if want := service.CommentReplyCap + 4; l.Count != want {
+		t.Errorf("Count = %d, want %d", l.Count, want)
+	}
 }
 
 func TestCommentReplyTargetMustBeVisible(t *testing.T) {
@@ -676,6 +718,51 @@ func TestCommentFinishedRescueHidden(t *testing.T) {
 		testutil.SeedComment(t, r.pool, testutil.CommentSeed{ReportID: past, AccountID: r.alice})
 		if l := r.list(t, past, r.carol); len(l.Comments) != 1 || l.Open {
 			t.Errorf("past flood list = %+v, want one comment and closed", l)
+		}
+	})
+}
+
+// TestCommentCountHiddenOnFinishedRescue proves review WR-S03 (2026-10-29): a
+// finished Rescue report lists no comments (03.1 D-23), so every view of it
+// says 0 comments too, the same number List answers, whether it faded or was
+// resolved. A finished report of another category keeps its real count.
+func TestCommentCountHiddenOnFinishedRescue(t *testing.T) {
+	r := newCmsRig(t)
+	reports := service.NewReportService(r.q)
+
+	focusCount := func(t *testing.T, id int64) int {
+		t.Helper()
+		res, err := reports.Focus(context.Background(), service.FocusQuery{
+			ReportID: id, Latitude: 16.5062, Longitude: 80.6480, ViewerAccountID: r.carol,
+		})
+		if err != nil || res.Status != service.FocusOK || res.View == nil {
+			t.Fatalf("Focus(%d) = %+v, %v, want a view", id, res, err)
+		}
+		return res.View.CommentCount
+	}
+
+	past := r.report(t, "rescue_needed", "critical", "clear", -time.Hour)
+	resolved := r.report(t, "rescue_needed", "critical", "clear", 6*time.Hour)
+	for _, id := range []int64{past, resolved} {
+		testutil.SeedComment(t, r.pool, testutil.CommentSeed{ReportID: id, AccountID: r.alice})
+		testutil.SeedComment(t, r.pool, testutil.CommentSeed{ReportID: id, AccountID: r.carol})
+	}
+	r.resolve(t, resolved, time.Minute)
+
+	for name, id := range map[string]int64{"faded": past, "resolved": resolved} {
+		t.Run(name, func(t *testing.T) {
+			listed := r.list(t, id, r.carol).Count
+			if got := focusCount(t, id); got != 0 || listed != 0 {
+				t.Errorf("finished Rescue: Focus count %d, List count %d, want both 0", got, listed)
+			}
+		})
+	}
+
+	t.Run("a finished flood report keeps its count", func(t *testing.T) {
+		flood := r.report(t, "flood", "low", "clear", -time.Hour)
+		testutil.SeedComment(t, r.pool, testutil.CommentSeed{ReportID: flood, AccountID: r.alice})
+		if got, listed := focusCount(t, flood), r.list(t, flood, r.carol).Count; got != 1 || listed != 1 {
+			t.Errorf("past flood: Focus count %d, List count %d, want both 1", got, listed)
 		}
 	})
 }

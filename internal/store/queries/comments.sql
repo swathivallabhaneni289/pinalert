@@ -56,9 +56,10 @@ WHERE c.id = sqlc.arg(comment_id);
 --               Threads are one level deep, so a deleted reply is not listed.
 --
 -- Parameters: after_id lists roots with a larger id only (paging); root_cap
--- limits the number of roots, in id order; reply_cap is a total bound on the
--- reply rows returned for those roots, in id order (the service passes
--- CommentReplyCap as a safety bound, not a per thread page size).
+-- limits the number of roots, in id order; reply_cap is a bound per thread: at
+-- most reply_cap replies of each listed root, oldest first (the service passes
+-- CommentReplyCap). It was one total bound over every root until review WR-S02
+-- (2026-10-29), which let one busy thread hide every later thread's replies.
 --
 -- Columns, in this order:
 --   id, parent_id, reply_to_id   the thread position; parent_id is the root id
@@ -86,6 +87,11 @@ WHERE c.id = sqlc.arg(comment_id);
 --                                sessions.session_id, as ReportVoteContext
 --                                does); false on a placeholder.
 --   likes, viewer_liked, viewer_flagged   0, false, false on a placeholder.
+--   shown_replies                on a root (a placeholder included): the real
+--                                number of its replies shown to the viewer, under
+--                                the same rule as a listed reply, uncapped; 0 on
+--                                a reply. It can be larger than the replies
+--                                returned when the thread passes reply_cap.
 --
 -- The result is ordered by thread: each root, then its replies, oldest first.
 -- A viewer id of 0 matches no account, so viewer 0 sees exactly the clear,
@@ -112,12 +118,15 @@ roots AS (
     LIMIT sqlc.arg(root_cap)::int
 ),
 replies AS (
-    SELECT v.*
-    FROM visible v
-    JOIN roots ON v.parent_id = roots.id
-    WHERE v.shown
-    ORDER BY v.id
-    LIMIT sqlc.arg(reply_cap)::int
+    SELECT x.id, x.parent_id, x.reply_to_id, x.account_id, x.body, x.created_at,
+           x.deleted_at, x.moderation_state, x.shown
+    FROM (
+        SELECT v.*, ROW_NUMBER() OVER (PARTITION BY v.parent_id ORDER BY v.id) AS rn
+        FROM visible v
+        JOIN roots ON v.parent_id = roots.id
+        WHERE v.shown
+    ) x
+    WHERE x.rn <= sqlc.arg(reply_cap)::int
 ),
 listed AS (
     SELECT * FROM roots
@@ -146,7 +155,10 @@ SELECT l.id,
        (l.shown AND EXISTS (SELECT 1 FROM comment_likes k
                              WHERE k.comment_id = l.id AND k.account_id = sqlc.arg(viewer_account_id)::bigint))::bool AS viewer_liked,
        (l.shown AND EXISTS (SELECT 1 FROM comment_flags f
-                             WHERE f.comment_id = l.id AND f.account_id = sqlc.arg(viewer_account_id)::bigint))::bool AS viewer_flagged
+                             WHERE f.comment_id = l.id AND f.account_id = sqlc.arg(viewer_account_id)::bigint))::bool AS viewer_flagged,
+       (CASE WHEN l.parent_id IS NULL
+             THEN (SELECT count(*) FROM visible r WHERE r.parent_id = l.id AND r.shown)
+             ELSE 0 END)::int AS shown_replies
 FROM listed l
 JOIN accounts a ON a.id = l.account_id
 JOIN reports rp ON rp.id = sqlc.arg(report_id)

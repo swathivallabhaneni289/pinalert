@@ -56,8 +56,11 @@ import (
 const (
 	// CommentPageSize is how many top level comments one List returns.
 	CommentPageSize = 50
-	// CommentReplyCap is a total bound on the reply rows one List returns.
-	CommentReplyCap = 500
+	// CommentReplyCap is the most replies one List returns for one thread,
+	// oldest first. It is per thread (review WR-S02, 2026-10-29): it was one
+	// total bound of 500 over the whole page, so one busy thread could hide every
+	// later thread's replies. ReplyCount stays the real count of the thread.
+	CommentReplyCap = 100
 )
 
 var (
@@ -502,6 +505,9 @@ func (s *CommentService) List(ctx context.Context, reportID, viewerAccountID, af
 	for _, row := range rows {
 		v := commentViewFromRow(row, viewerAccountID)
 		if row.ParentID == nil {
+			// The real number of replies the viewer may see in this thread, which
+			// can be more than the CommentReplyCap rows returned (WR-S02).
+			v.ReplyCount = int(row.ShownReplies)
 			rootIndex[row.ID] = len(roots)
 			roots = append(roots, v)
 			continue
@@ -511,7 +517,6 @@ func (s *CommentService) List(ctx context.Context, reportID, viewerAccountID, af
 			continue
 		}
 		roots[i].Replies = append(roots[i].Replies, v)
-		roots[i].ReplyCount++
 	}
 
 	out := CommentList{Open: rep.open, Comments: roots}

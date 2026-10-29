@@ -263,12 +263,15 @@ roots AS (
     LIMIT $4::int
 ),
 replies AS (
-    SELECT v.id, v.parent_id, v.reply_to_id, v.account_id, v.body, v.created_at, v.deleted_at, v.moderation_state, v.shown
-    FROM visible v
-    JOIN roots ON v.parent_id = roots.id
-    WHERE v.shown
-    ORDER BY v.id
-    LIMIT $5::int
+    SELECT x.id, x.parent_id, x.reply_to_id, x.account_id, x.body, x.created_at,
+           x.deleted_at, x.moderation_state, x.shown
+    FROM (
+        SELECT v.id, v.parent_id, v.reply_to_id, v.account_id, v.body, v.created_at, v.deleted_at, v.moderation_state, v.shown, ROW_NUMBER() OVER (PARTITION BY v.parent_id ORDER BY v.id) AS rn
+        FROM visible v
+        JOIN roots ON v.parent_id = roots.id
+        WHERE v.shown
+    ) x
+    WHERE x.rn <= $5::int
 ),
 listed AS (
     SELECT id, parent_id, reply_to_id, account_id, body, created_at, deleted_at, moderation_state, shown FROM roots
@@ -297,7 +300,10 @@ SELECT l.id,
        (l.shown AND EXISTS (SELECT 1 FROM comment_likes k
                              WHERE k.comment_id = l.id AND k.account_id = $1::bigint))::bool AS viewer_liked,
        (l.shown AND EXISTS (SELECT 1 FROM comment_flags f
-                             WHERE f.comment_id = l.id AND f.account_id = $1::bigint))::bool AS viewer_flagged
+                             WHERE f.comment_id = l.id AND f.account_id = $1::bigint))::bool AS viewer_flagged,
+       (CASE WHEN l.parent_id IS NULL
+             THEN (SELECT count(*) FROM visible r WHERE r.parent_id = l.id AND r.shown)
+             ELSE 0 END)::int AS shown_replies
 FROM listed l
 JOIN accounts a ON a.id = l.account_id
 JOIN reports rp ON rp.id = $2
@@ -338,6 +344,7 @@ type CommentsForReportRow struct {
 	Likes          int32
 	ViewerLiked    bool
 	ViewerFlagged  bool
+	ShownReplies   int32
 }
 
 // The one place that decides, for one viewer, which comments of a report are
@@ -361,9 +368,10 @@ type CommentsForReportRow struct {
 //	            Threads are one level deep, so a deleted reply is not listed.
 //
 // Parameters: after_id lists roots with a larger id only (paging); root_cap
-// limits the number of roots, in id order; reply_cap is a total bound on the
-// reply rows returned for those roots, in id order (the service passes
-// CommentReplyCap as a safety bound, not a per thread page size).
+// limits the number of roots, in id order; reply_cap is a bound per thread: at
+// most reply_cap replies of each listed root, oldest first (the service passes
+// CommentReplyCap). It was one total bound over every root until review WR-S02
+// (2026-10-29), which let one busy thread hide every later thread's replies.
 //
 // Columns, in this order:
 //
@@ -392,6 +400,11 @@ type CommentsForReportRow struct {
 //	                             sessions.session_id, as ReportVoteContext
 //	                             does); false on a placeholder.
 //	likes, viewer_liked, viewer_flagged   0, false, false on a placeholder.
+//	shown_replies                on a root (a placeholder included): the real
+//	                             number of its replies shown to the viewer, under
+//	                             the same rule as a listed reply, uncapped; 0 on
+//	                             a reply. It can be larger than the replies
+//	                             returned when the thread passes reply_cap.
 //
 // The result is ordered by thread: each root, then its replies, oldest first.
 // A viewer id of 0 matches no account, so viewer 0 sees exactly the clear,
@@ -435,6 +448,7 @@ func (q *Queries) CommentsForReport(ctx context.Context, arg CommentsForReportPa
 			&i.Likes,
 			&i.ViewerLiked,
 			&i.ViewerFlagged,
+			&i.ShownReplies,
 		); err != nil {
 			return nil, err
 		}

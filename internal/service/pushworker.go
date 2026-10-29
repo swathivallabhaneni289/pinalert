@@ -135,6 +135,7 @@ type PushWorkerQuerier interface {
 	PushAccountHome(ctx context.Context, arg sqlcgen.PushAccountHomeParams) (sqlcgen.PushAccountHomeRow, error)
 	CountAccountPushesInWindow(ctx context.Context, arg sqlcgen.CountAccountPushesInWindowParams) (int64, error)
 	AccountPushSentAboutReport(ctx context.Context, arg sqlcgen.AccountPushSentAboutReportParams) (bool, error)
+	CommentPushStillHolds(ctx context.Context, arg sqlcgen.CommentPushStillHoldsParams) (bool, error)
 	VoteLogForReport(ctx context.Context, reportID int64) ([]sqlcgen.VoteLogForReportRow, error)
 	PushSubscriptionsForAccount(ctx context.Context, accountID int64) ([]sqlcgen.PushSubscriptionsForAccountRow, error)
 	MarkPushSubscriptionOK(ctx context.Context, arg sqlcgen.MarkPushSubscriptionOKParams) error
@@ -422,6 +423,22 @@ func (w *PushWorker) sendRow(ctx context.Context, claim sqlcgen.ClaimDuePushesRo
 	// 3. The kind's predicate, the one the feed and the bell use.
 	if !w.stillHolds(run) {
 		return w.skip(ctx, run, pushSkipNotEligible)
+	}
+	// A comment note also needs a comment to be about (review IN-S05): one a
+	// moderator removed or its author deleted after the row was queued, with no
+	// other unread one, sends nothing. Only the two comment events read this.
+	if run.kind == PushKindChanged && claim.UpdateKind != nil && isCommentEvent(UpdateKind(*claim.UpdateKind)) {
+		holds, err := w.q.CommentPushStillHolds(ctx, sqlcgen.CommentPushStillHoldsParams{
+			ReportID:           claim.ReportID,
+			RecipientAccountID: claim.AccountID,
+			Kind:               *claim.UpdateKind,
+		})
+		if err != nil {
+			return w.rowErr(claim.ID, err)
+		}
+		if !holds {
+			return w.skip(ctx, run, pushSkipNotEligible)
+		}
 	}
 
 	// 4. The switches and the mute, read again (W5).
