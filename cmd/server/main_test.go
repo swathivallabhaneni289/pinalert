@@ -257,3 +257,51 @@ func TestClientIPHeaderRequiredOutsideDevelopment(t *testing.T) {
 		t.Error(`main must read the header through clientIPHeaderFor(env, os.Getenv("CLIENT_IP_HEADER"))`)
 	}
 }
+
+// TestPublicBaseURLNeedsHTTPSOutsideDevelopment is W9 of the Phase 8 plan
+// review (plan 08-03): a share link and og:url are rooted in BASE_URL, so
+// outside ENV=development the server refuses to start unless it is an https
+// address. Development keeps the localhost guess.
+func TestPublicBaseURLNeedsHTTPSOutsideDevelopment(t *testing.T) {
+	cases := []struct {
+		name    string
+		env     string
+		raw     string
+		want    string
+		wantErr bool
+	}{
+		{"development with none", "development", "", "http://localhost:9123", false},
+		{"development as set", "development", "http://127.0.0.1:9000", "http://127.0.0.1:9000", false},
+		{"production with none", "production", "", "", true},
+		{"unset env with none", "", "", "", true},
+		{"production plain http", "production", "http://pinalert.example", "", true},
+		{"production no scheme", "production", "localhost:9000", "", true},
+		{"production scheme only", "production", "https://", "", true},
+		{"production https", "production", "https://pinalert.example", "https://pinalert.example", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := publicBaseURL(tc.env, tc.raw, "9123")
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("publicBaseURL(%q, %q) = %q and no error, want a refusal", tc.env, tc.raw, got)
+				}
+				if tc.raw != "" && strings.Contains(err.Error(), tc.raw) {
+					t.Errorf("the refusal %q prints the value", err.Error())
+				}
+				return
+			}
+			if err != nil || got != tc.want {
+				t.Errorf("publicBaseURL(%q, %q) = %q, %v; want %q", tc.env, tc.raw, got, err, tc.want)
+			}
+		})
+	}
+
+	raw, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("reading main.go: %v", err)
+	}
+	if !strings.Contains(string(raw), `publicBaseURL(env, os.Getenv("BASE_URL"), port)`) {
+		t.Error(`main must read the base through publicBaseURL(env, os.Getenv("BASE_URL"), port)`)
+	}
+}

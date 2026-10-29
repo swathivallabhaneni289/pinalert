@@ -87,3 +87,10 @@ func NetworkLimitMessage(report bool, wait time.Duration) string {
 func FlagLimitMessage(wait time.Duration) string {
 	return "You've flagged several reports in a short time. You can flag another in " + WaitPhrase(wait) + "."
 }
+
+// ShareLimitMessage is the sentence shown in the Share window when a reader has
+// made share links for several reports in a short time (Phase 8 plan 03). Its
+// 429 field is rate_share.
+func ShareLimitMessage(wait time.Duration) string {
+	return "You've shared several reports in a short time. You can share again in " + WaitPhrase(wait) + "."
+}

@@ -112,6 +112,11 @@ const (
 	voteChangeEvery    = 30 * time.Second
 	flagBurst          = 10
 	flagEvery          = 2 * time.Minute
+	// Share (Phase 8 plan 03, A-P8-4): a real reader shares a few reports in a
+	// minute, so a burst of 10 then one more every 30 seconds is generous, and
+	// it still bounds the reverse area lookups a share can spend.
+	shareBurst         = 10
+	shareEvery         = 30 * time.Second
 	submitAttemptBurst = 20
 	submitAttemptEvery = 6 * time.Second
 )
@@ -131,10 +136,13 @@ const (
 //     second, and still a cap of 60 posts a minute from one address.
 //   - Flags: burst 1000 = 100 x flagBurst 10; one more every 1.2 s =
 //     100 x one per flagEvery 2 minutes.
+//   - Shares (Phase 8 plan 03): burst 1000 = 100 x shareBurst 10; one more
+//     every 1.2 s, the same shape as the flag family.
 //
 // These are not owner numbers (D-11 sets only the account allowances); tune
 // them from the block log, whose bucket names are ip_backstop_report,
-// ip_backstop_vote and ip_backstop_flag. api.RateLimitsDefault mirrors them.
+// ip_backstop_vote, ip_backstop_flag and ip_backstop_share. api.RateLimitsDefault
+// mirrors them.
 const (
 	ipBackstopReportBurst = 2000
 	ipBackstopReportEvery = time.Second
@@ -142,6 +150,8 @@ const (
 	ipBackstopVoteEvery   = 150 * time.Millisecond
 	ipBackstopFlagBurst   = 1000
 	ipBackstopFlagEvery   = 1200 * time.Millisecond
+	ipBackstopShareBurst  = 1000
+	ipBackstopShareEvery  = 1200 * time.Millisecond
 )
 
 // The auth buckets of the code and password routes (Phase 7.1, plan 07, D-02).
@@ -274,9 +284,14 @@ func main() {
 	// address, so it defaults to a same-host guess only for local
 	// development and should always be set explicitly in any real
 	// deployment.
-	baseURL := os.Getenv("BASE_URL")
-	if baseURL == "" {
-		baseURL = "http://localhost:" + port
+	//
+	// It also roots every share link and the public page's og:url (Phase 8
+	// plan 03, W9). Outside ENV=development a share link must be the public
+	// https address, so the server stops here unless BASE_URL is one; the old
+	// localhost guess stays for ENV=development only.
+	baseURL, err := publicBaseURL(env, os.Getenv("BASE_URL"), port)
+	if err != nil {
+		log.Fatalf("BASE_URL: %v", err)
 	}
 
 	// LoadMailer selects the Resend-backed implementation when
@@ -471,8 +486,13 @@ func main() {
 		Reports:     reportService,
 		Votes:       voteService,
 		AuthService: service.NewAuthService(queries, mail, baseURL),
-		Credentials: credentials,
-		AuthLimits:  authLimits(),
+		// The configured public address that roots every share link and og:url
+		// (Phase 8 plan 03), and the share service. The one geocode client is
+		// also the share area namer, the dispatcher's precedent (T-07-01).
+		PublicBaseURL: baseURL,
+		Shares:        service.NewShareService(queries, reportService, service.WithShareAreaNamer(geocodeClient)),
+		Credentials:   credentials,
+		AuthLimits:    authLimits(),
 		Auth: handlers.AuthConfig{
 			AssetVersion: assetVersion,
 		},
@@ -541,6 +561,8 @@ func main() {
 			IPBackstopReport: api.BucketLimit{Every: ipBackstopReportEvery, Burst: ipBackstopReportBurst},
 			IPBackstopVote:   api.BucketLimit{Every: ipBackstopVoteEvery, Burst: ipBackstopVoteBurst},
 			IPBackstopFlag:   api.BucketLimit{Every: ipBackstopFlagEvery, Burst: ipBackstopFlagBurst},
+			Share:            api.BucketLimit{Every: shareEvery, Burst: shareBurst},
+			IPBackstopShare:  api.BucketLimit{Every: ipBackstopShareEvery, Burst: ipBackstopShareBurst},
 		},
 	}
 	router := api.NewRouter(deps)
@@ -689,6 +711,27 @@ func clientIPHeaderFor(env, raw string) (string, error) {
 		}
 	}
 	return header, nil
+}
+
+// publicBaseURL decides the public address that roots every share link and the
+// public page's og:url (Phase 8 plan 03, W9). ENV=development answers raw as
+// set, or "http://localhost:" + port when raw is empty. Any other ENV answers an
+// error when raw is empty or does not start with "https://" (with an address
+// after it), so a link someone forwards can never point at localhost or at plain
+// http. The error names BASE_URL only and never prints the value.
+func publicBaseURL(env, raw, port string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if env == "development" {
+		if raw == "" {
+			return "http://localhost:" + port, nil
+		}
+		return raw, nil
+	}
+	const scheme = "https://"
+	if !strings.HasPrefix(raw, scheme) || len(raw) == len(scheme) {
+		return "", errors.New("must be set to the public https address outside ENV=development (a share link would point at the wrong place)")
+	}
+	return raw, nil
 }
 
 // loadSessionSecret reads SESSION_SECRET, failing fast unless env is

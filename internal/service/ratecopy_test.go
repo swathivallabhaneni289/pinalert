@@ -111,3 +111,26 @@ func TestServerCopyRateLimits(t *testing.T) {
 		}
 	})
 }
+
+// TestShareLimitMessage pins the Share window's wait sentence (Phase 8 plan 03,
+// A-P8-4): the exact words for one minute and for twenty seconds, one wait
+// phrase, and no dash.
+func TestShareLimitMessage(t *testing.T) {
+	cases := []struct {
+		wait time.Duration
+		want string
+	}{
+		{time.Minute, "You've shared several reports in a short time. You can share again in 1 minute."},
+		{20 * time.Second, "You've shared several reports in a short time. You can share again in 20 seconds."},
+	}
+	for _, tc := range cases {
+		got := service.ShareLimitMessage(tc.wait)
+		if got != tc.want {
+			t.Errorf("ShareLimitMessage(%v) = %q, want %q", tc.wait, got, tc.want)
+		}
+		assertServerCopy(t, got)
+		if strings.ContainsRune(got, rune(0x2013)) || strings.ContainsRune(got, rune(0x2014)) {
+			t.Errorf("message %q holds a dash", got)
+		}
+	}
+}
