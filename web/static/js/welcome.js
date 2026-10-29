@@ -133,7 +133,9 @@
   var UNREAD_ATTR = 'data-unread';
   var END_MARGIN = '0px 0px 24px 0px';
 
-  var FOCUSABLE_SELECTOR = 'button, input, [tabindex]:not([tabindex="-1"])';
+  // Links count (Phase 5 review fix WR-B05): both Try the demo links are in the
+  // Tab loop, so Tab never leaves the flow from them and always reaches them.
+  var FOCUSABLE_SELECTOR = 'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
   function el(id) {
     return document.getElementById(id);

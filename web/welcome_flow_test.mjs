@@ -85,8 +85,11 @@ class FakeEl {
   removeEventListener(type, fn) { this.handlers[type] = (this.handlers[type] || []).filter((h) => h !== fn); }
   // A small selector matcher: comma lists of .class, tag name, or the focusable
   // tabindex form welcome.js uses.
+  // Amended 2026-10-29 by the Phase 5 review fix (WR-B05): a[href] matches a link
+  // with an href, as in the browser.
   matches(selector) {
     return selector.split(',').map((s) => s.trim()).some((part) => {
+      if (part === 'a[href]') { return this.tagName === 'A' && Object.hasOwn(this.attrs, 'href'); }
       if (part.startsWith('.')) { return this.className.split(/\s+/).includes(part.slice(1)); }
       if (part.startsWith('[tabindex]')) {
         return Object.hasOwn(this.attrs, 'tabindex') && this.attrs.tabindex !== '-1';
@@ -161,6 +164,10 @@ function buildPage({ start = 1, name = '', home = '', marker = true } = {}) {
     return sec;
   });
 
+  // Amended 2026-10-29 by the Phase 5 review fix (WR-B05): the two Try the demo
+  // links of the template, before Continue on step 1 and after Log out in the
+  // Disagree box.
+  make('a', 'welcome-try-demo-1', steps[0]).setAttribute('href', '/demo?from=welcome');
   make('button', 'welcome-continue-1', steps[0]);
   [2, 3, 4].forEach((n) => make('button', 'welcome-back-' + n, steps[n - 1], 'welcome__back'));
 
@@ -183,6 +190,7 @@ function buildPage({ start = 1, name = '', home = '', marker = true } = {}) {
   disagreeBox.hidden = true;
   make('button', 'welcome-reread', disagreeBox);
   make('button', 'welcome-logout', disagreeBox);
+  make('a', 'welcome-try-demo-2', disagreeBox).setAttribute('href', '/demo?from=welcome');
   make('p', 'welcome-error-2', steps[1]).hidden = true;
 
   make('button', 'welcome-allow-location', steps[2]);
@@ -395,7 +403,9 @@ test('Disagree shows the box, takes focus into it, sends nothing, and stays on s
   assert.equal(page.requests.length, 0, 'Disagree records nothing');
   assert.equal(byId(page, 'welcome-reread').hidden, false);
   assert.equal(byId(page, 'welcome-logout').hidden, false);
-  assert.equal(box.children.length, 2, 'the script left the box markup alone');
+  // Amended 2026-10-29 by the Phase 5 review fix (WR-B05): the fake box now holds
+  // the Try the demo link of the template too, so three children, not two.
+  assert.equal(box.children.length, 3, 'the script left the box markup alone');
 });
 
 test('Agree hides the Disagree box, and a step change puts it away', async () => {
@@ -1608,4 +1618,42 @@ test('once shown, Agree and Disagree stay shown: Disagree, Read again, Back, a f
   seeEnd(page, false);
   seeEnd(page, true);
   assert.equal(heldBack(page), false);
+});
+
+// ---- Try the demo is inside the Tab loop (Phase 5 review fix WR-B05) ----
+// Added 2026-10-29. The focus trap counts links, so both Try the demo links
+// are reached by Tab and Shift+Tab, and Tab from them stays in the flow.
+
+test('WR-B05: in the Disagree box Tab goes from Log out to Try the demo and then wraps', () => {
+  const page = load();
+  click(page, 'welcome-continue-1');
+  click(page, 'welcome-disagree');
+  assert.equal(byId(page, 'welcome-disagree-message').hidden, false);
+  byId(page, 'welcome-logout').focus();
+  const fromLogout = fire(page.root, 'keydown', { key: 'Tab' });
+  assert.equal(fromLogout.prevented, false, 'Log out is no longer the last control: the browser moves on to Try the demo');
+  byId(page, 'welcome-try-demo-2').focus();
+  const fromLink = fire(page.root, 'keydown', { key: 'Tab' });
+  assert.equal(fromLink.prevented, true, 'Tab from the last control wraps');
+  assert.ok(page.doc.activeElement === page.items[0].button, 'to the first control of the flow, never out of it');
+  page.items[0].button.focus();
+  const back = fire(page.root, 'keydown', { key: 'Tab', shiftKey: true });
+  assert.equal(back.prevented, true);
+  assert.ok(page.doc.activeElement === byId(page, 'welcome-try-demo-2'), 'Shift+Tab from the first control reaches Try the demo');
+});
+
+test('WR-B05: on a phone step 1 Tab and Shift+Tab reach Try the demo every time', () => {
+  const phone = load();
+  phone.side.hiddenByCss = true;
+  const link = byId(phone, 'welcome-try-demo-1');
+  const go = byId(phone, 'welcome-continue-1');
+  go.focus();
+  const forward = fire(phone.root, 'keydown', { key: 'Tab' });
+  assert.equal(forward.prevented, true);
+  assert.ok(phone.doc.activeElement === link, 'Tab from Continue wraps to Try the demo');
+  const back = fire(phone.root, 'keydown', { key: 'Tab', shiftKey: true });
+  assert.equal(back.prevented, true);
+  assert.ok(phone.doc.activeElement === go, 'Shift+Tab from Try the demo wraps to Continue');
+  go.focus();
+  assert.equal(fire(phone.root, 'keydown', { key: 'Tab', shiftKey: true }).prevented, false, 'Shift+Tab from Continue is left to the browser, which moves to Try the demo');
 });
