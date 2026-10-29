@@ -137,6 +137,10 @@ sender is the first):
 7. Set `OPENAI_API_KEY` and check that a fresh zero balance key is accepted by running the
    recorder once (see [docs/MODERATION.md](./docs/MODERATION.md)).
 8. Have a lawyer or mentor read the Disclaimer and Policy pages before any wide promotion.
+9. On the day of the first public deploy, move the Policy "Last updated" date and
+   `service.CurrentTermsVersion` (in `internal/service/profile.go`) together to that day, so every
+   account agrees again to the text that ships (`TestTermsVersionFollowsPolicyDate` keeps the two
+   equal).
 
 Resend's free tier is also quota-limited (roughly 100 sends/day at the time this was written;
 re-check the current figure in your own Resend dashboard rather than trusting this document). The
