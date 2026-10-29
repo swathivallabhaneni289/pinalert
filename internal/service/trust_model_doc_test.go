@@ -132,6 +132,12 @@ var p20MustCite = []string{
 	"TestTakeBackNeverEntersReopenCells",
 	"TestTakeBackLeavesRatingsUnchanged",
 	"TestFinishedRescueNeverLeaksOnPastOrLink",
+	// Amended 2026-10-29 by Phase 8 plan 19: the tests the new sections
+	// "Report history", "Comments and likes" and "Sharing" cite.
+	"TestTimelineMatchesTrust",
+	"TestLikesNeverFeedTrust",
+	"TestShareOpenGraph",
+	"TestSharePageSetsNoCookie",
 }
 
 // p20NoSpoofClaims are phrases the document must never contain. A spoofed
