@@ -472,6 +472,10 @@ func main() {
 	}
 	reportService := service.NewReportService(queries, reportOpts...)
 	voteService := service.NewVotingService(queries, voteOpts...)
+	// One comment service, shared by the router and the comment worker (plan 08-14),
+	// so a comment the worker releases tells its recipient through the same
+	// notifier as one posted clear.
+	commentService := service.NewCommentService(queries, commentOpts...)
 	if pushOn {
 		pushUpdates.set(service.NewUpdatesService(queries, reportService))
 	}
@@ -530,7 +534,7 @@ func main() {
 		// The public status page's per client IP limit (plan 08-04); used only
 		// with CLIENT_IP_HEADER.
 		SharePageRateLimit: api.SharePageRateLimit{Every: sharePageEvery, Burst: sharePageBurst},
-		Comments:           service.NewCommentService(queries, commentOpts...),
+		Comments:           commentService,
 		Shares:             service.NewShareService(queries, reportService, service.WithShareAreaNamer(geocodeClient)),
 		Credentials:        credentials,
 		AuthLimits:         authLimits(),
@@ -621,6 +625,14 @@ func main() {
 	// claim's row lock and lease keep a second instance from double screening.
 	moderationWorker := service.NewModerationWorker(queries, screener)
 	go moderationWorker.Run(context.Background())
+
+	// The comment worker retries the text checks that could not finish when a
+	// comment was posted (plan 08-14, D-12): one sweep at boot because the free
+	// host cold starts, then one every 30 seconds. The claim's row lock and lease
+	// keep a second instance from double screening, and the comment service is
+	// its notifier, so a released comment reaches its recipient once.
+	commentWorker := service.NewCommentWorker(queries, screener, commentService)
+	go commentWorker.Run(context.Background())
 
 	// The official feeds refresh while the host is awake: one sweep at boot
 	// because the free host cold starts, then one every five minutes (plan 05-12,

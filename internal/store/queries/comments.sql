@@ -293,3 +293,78 @@ WHERE a.id = sqlc.arg(recipient_account_id)::bigint
 ON CONFLICT (account_id, report_id, kind)
     WHERE read_at IS NULL AND kind IN ('comment_on_yours', 'reply_to_yours')
     DO NOTHING;
+
+-- name: ClaimDueCommentChecks :many
+-- Phase 8 plan 14 (D-12): hands the held comments whose text check is due to
+-- one claimant each. The claimed set is fixed once in a MATERIALIZED CTE and
+-- then updated, rather than written as an IN (subquery), because the planner
+-- may rescan an IN subquery that carries LIMIT and SKIP LOCKED and so lock and
+-- return more rows than the batch limit (the same reason as
+-- ClaimDueModerationChecks). SKIP LOCKED lets two workers claim different rows
+-- without waiting on each other, and the lease makes a crashed claimant's row
+-- claimable again once it lapses; check_attempts counts every claim. A comment
+-- is never claimed when it is not held, when its author deleted it (its words
+-- are already blanked, review W7), when it is not yet due, or when its report
+-- has expired or was removed. now, the lease end and the batch size come from
+-- the worker (its clock, 60 seconds, 5 rows). The only text that leaves this
+-- query is the body, and only toward the screener. Postgres does not promise
+-- the order of rows an UPDATE returns.
+WITH due AS MATERIALIZED (
+    SELECT c.id
+    FROM comments c
+    JOIN reports r2 ON r2.id = c.report_id
+    WHERE c.moderation_state = 'pending'
+      AND c.deleted_at IS NULL
+      AND c.next_attempt_at <= sqlc.arg(now)::timestamptz
+      AND (c.lease_until IS NULL OR c.lease_until < sqlc.arg(now)::timestamptz)
+      AND r2.expires_at > sqlc.arg(now)::timestamptz
+      AND r2.moderation_state <> 'removed'
+    ORDER BY c.next_attempt_at, c.id
+    LIMIT sqlc.arg(batch_limit)::int
+    FOR UPDATE OF c SKIP LOCKED
+)
+UPDATE comments cm
+SET lease_until    = sqlc.arg(lease_until)::timestamptz,
+    check_attempts = cm.check_attempts + 1
+FROM due, reports r
+WHERE cm.id = due.id
+  AND r.id = cm.report_id
+RETURNING cm.id, cm.body, cm.check_attempts, r.expires_at;
+
+-- name: FinishCommentCheck :execrows
+-- Settles a held comment with the check's answer: clear or removed, the review
+-- mark for a borderline answer, the verdict, the scores and the model, with the
+-- lease and the due time cleared. It changes the row only while it is still
+-- pending and undeleted. That one condition is the whole guard: a moderator's
+-- Keep or Remove (plan 08-13) holds the same row lock and has already moved the
+-- state, so under READ COMMITTED this statement waits, re-reads the row, finds
+-- it no longer pending and affects 0 rows, and an in flight check can never undo
+-- the moderator's decision. The caller notifies only when exactly one row
+-- changed, so the recipient is told once. Scores are numbers by category name,
+-- never comment text.
+UPDATE comments
+SET moderation_state = sqlc.arg(moderation_state)::text,
+    needs_review     = sqlc.arg(needs_review)::bool,
+    verdict          = sqlc.arg(verdict)::text,
+    scores           = sqlc.arg(scores)::jsonb,
+    model            = sqlc.narg(model),
+    checked_at       = sqlc.arg(checked_at)::timestamptz,
+    next_attempt_at  = NULL,
+    lease_until      = NULL,
+    last_error       = NULL
+WHERE id = sqlc.arg(comment_id)
+  AND moderation_state = 'pending'
+  AND deleted_at IS NULL;
+
+-- name: RescheduleCommentCheck :execrows
+-- Records a check that could not finish: when to try again and the error class
+-- word (transient, quota or permanent; never provider text and never comment
+-- text), and releases the lease. A quota or permanent error is given the
+-- report's expiry as its next attempt, a time the claim never reaches. Touches
+-- a row only while it is pending, so a moderator's decision stands.
+UPDATE comments
+SET next_attempt_at = sqlc.arg(next_attempt_at)::timestamptz,
+    last_error      = sqlc.arg(last_error)::text,
+    lease_until     = NULL
+WHERE id = sqlc.arg(comment_id)
+  AND moderation_state = 'pending';
