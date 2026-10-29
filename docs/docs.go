@@ -743,7 +743,7 @@ const docTemplate = `{
         },
         "/me/first-run-done": {
             "post": {
-                "description": "Records that the signed in account finished the first-time flow. It needs the current\nterms to be agreed first: without that it answers 409 with the field terms. Send no\nbody or an empty object. A repeat call keeps the first time.\nRequires a session verified by email; an unverified caller receives 401.",
+                "description": "Records that the signed in account finished the first-time flow. It needs the current\nterms to be agreed first: without that it answers 409 with the field terms. It also\nneeds the username, the name and the home area to be saved (step 4 of the flow is\nrequired): without them it answers 409 with the field profile. Send no body or an\nempty object. A repeat call keeps the first time.\nRequires a session verified by email; an unverified caller receives 401.",
                 "consumes": [
                     "application/json"
                 ],
@@ -867,7 +867,7 @@ const docTemplate = `{
         },
         "/me/profile": {
             "patch": {
-                "description": "Updates the optional name and home area of the signed in account. A key left out\nchanges nothing. An empty display_name clears the name. A home_area object saves the\npicked place, and home_area null removes it. The home area keeps only the place name\nand a cell about 5 km across; the coordinates you send are used once to find the cell\nand are never stored. The answer is the profile as stored, with no coordinates.\nRequires a session verified by email; an unverified caller receives 401.",
+                "description": "Updates the username, the name and the home area of the signed in account. A key left\nout changes nothing. The name and the home area can be changed but not emptied: an\nempty display_name and a null home_area are refused with 400. A home_area object saves\nthe picked place. The home area keeps only the place name and a cell about 5 km across;\nthe coordinates you send are used once to find the cell and are never stored. The answer\nis the profile as stored, with no coordinates.\nThe username is 3 to 20 letters, numbers, dots or underscores, unique, and can be changed\nonce every 7 days. Each refusal has one fixed status. 400 with the field username: the\nname is taken, has the wrong characters, is kept for official use, or is changed too\nsoon. 422 with the field username: the text screening refused the name; this is the only\n422. 429 with the field username and a Retry-After header: the account spent its save\nallowance (5, then one every 10 seconds).\nRequires a session verified by email; an unverified caller receives 401.",
                 "consumes": [
                     "application/json"
                 ],
@@ -877,7 +877,7 @@ const docTemplate = `{
                 "tags": [
                     "me"
                 ],
-                "summary": "Save or clear the optional name and home area",
+                "summary": "Save the username, name and home area",
                 "parameters": [
                     {
                         "description": "The rows to change",
@@ -906,6 +906,18 @@ const docTemplate = `{
                         "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
                         }
                     },
                     "500": {
@@ -2108,6 +2120,53 @@ const docTemplate = `{
                         "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/username/check": {
+            "get": {
+                "description": "Says whether a username can be saved by the signed in account: available, yours\n(it already is the account's name), taken (another account holds it), invalid (not\n3 to 20 letters, numbers, dots or underscores), reserved (kept for official use) or\nwait (the name was changed less than 7 days ago; days says how many days are left).\nThe check judges the format, the reserved words and whether another account holds\nthe name. It does not call the text screening: that runs once, when the name is saved,\nso a name that reads available can still be refused with 422 on save. Each account\nmay check 10 times, then once a second; past that the answer is 429 with Retry-After.\nThe answer is never cached.\nRequires a session verified by email; an unverified caller receives 401.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Check a username while typing",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The username to check, with or without a leading @",
+                        "name": "u",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.UsernameCheckResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
                         }
                     },
                     "500": {
@@ -3747,6 +3806,10 @@ const docTemplate = `{
                 },
                 "home_area": {
                     "$ref": "#/definitions/handlers.HomeAreaRequest"
+                },
+                "username": {
+                    "type": "string",
+                    "example": "asha_k"
                 }
             }
         },
@@ -3855,6 +3918,31 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/handlers.UpdateWire"
                     }
+                }
+            }
+        },
+        "handlers.UsernameCheckResponse": {
+            "type": "object",
+            "properties": {
+                "days": {
+                    "type": "integer",
+                    "example": 7
+                },
+                "message": {
+                    "type": "string",
+                    "example": "asha_k is available."
+                },
+                "state": {
+                    "type": "string",
+                    "enum": [
+                        "available",
+                        "yours",
+                        "taken",
+                        "invalid",
+                        "reserved",
+                        "wait"
+                    ],
+                    "example": "available"
                 }
             }
         },

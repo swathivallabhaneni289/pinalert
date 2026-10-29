@@ -7,8 +7,10 @@ package api
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"pinalert/internal/account"
@@ -40,6 +42,12 @@ func TestOnboardingRedirect(t *testing.T) {
 		"older terms version": {ID: 1, Email: "a@example.com", TermsVersion: "2020-01-01", FirstRunDone: true},
 		"terms but no flow":   {ID: 1, Email: "a@example.com", TermsVersion: service.CurrentTermsVersion},
 		"flow but no terms":   {ID: 1, Email: "a@example.com", FirstRunDone: true},
+		// Added 2026-10-29 by Phase 7.1 plan 10: step 4 is required, so a finished
+		// flow on the current terms with any one of the three fields missing is
+		// not onboarded either.
+		"no username": {ID: 1, Email: "a@example.com", TermsVersion: service.CurrentTermsVersion, FirstRunDone: true, HasName: true, HasHomeArea: true},
+		"no name":     {ID: 1, Email: "a@example.com", TermsVersion: service.CurrentTermsVersion, FirstRunDone: true, HasUsername: true, HasHomeArea: true},
+		"no home":     {ID: 1, Email: "a@example.com", TermsVersion: service.CurrentTermsVersion, FirstRunDone: true, HasUsername: true, HasName: true},
 	}
 	for label, acc := range notOnboarded {
 		for _, path := range []string{"/", "/low", "/profile", "/settings", "/alerts"} {
@@ -61,7 +69,12 @@ func TestOnboardingRedirect(t *testing.T) {
 		}
 	}
 
-	done := account.Account{ID: 1, Email: "a@example.com", TermsVersion: service.CurrentTermsVersion, FirstRunDone: true}
+	// Amended 2026-10-29 by Phase 7.1 plan 10: an onboarded account also has the
+	// three profile facts. Every other assertion is unchanged.
+	done := account.Account{
+		ID: 1, Email: "a@example.com", TermsVersion: service.CurrentTermsVersion, FirstRunDone: true,
+		HasUsername: true, HasName: true, HasHomeArea: true,
+	}
 	for _, path := range []string{"/", "/low", "/profile", "/settings", "/alerts"} {
 		rec := onboardingDo(true, &done, http.MethodGet, path)
 		if rec.Code != http.StatusOK || rec.Body.String() != "passed" {
@@ -174,6 +187,10 @@ func TestOnboardingRouterWiring(t *testing.T) {
 		service.CurrentTermsVersion, "wiring@example.com"); err != nil {
 		t.Fatalf("marking the account onboarded: %v", err)
 	}
+	// Amended 2026-10-29 by Phase 7.1 plan 10: the terms and the flow flag alone
+	// no longer open the pages; step 4 (username, name, home area) is required.
+	// The profile is filled through the real route, the way step 4 does it.
+	gateFillProfile(t, client, srv, "wiring.user")
 	resp, err = client.Get(srv.URL + "/profile")
 	if err != nil {
 		t.Fatalf("GET /profile after the flow: %v", err)
@@ -181,5 +198,73 @@ func TestOnboardingRouterWiring(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /profile after the flow: status %d, want 200", resp.StatusCode)
+	}
+}
+
+// gateFillProfile does what step 4 About you does for an account in the gate
+// harness: it saves a username, a name and a home area through PATCH
+// /api/me/profile and fails on anything but 200 (Phase 7.1 plan 10). username
+// must be a free, usable lower case name.
+func gateFillProfile(t *testing.T, client *http.Client, srv *httptest.Server, username string) {
+	t.Helper()
+	if name, class := service.ClassifyUsername(username); class != service.UsernameUsable || name != username {
+		t.Fatalf("gateFillProfile: %q is not a usable lower case username (normalised %q, class %d)", username, name, class)
+	}
+	body := `{"username":"` + username + `","display_name":"Test Person",` +
+		`"home_area":{"name":"Indiranagar, Bengaluru","lat":12.9784,"lon":77.6408}}`
+	req, err := http.NewRequest(http.MethodPatch, srv.URL+"/api/me/profile", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("building the profile request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH /api/me/profile: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("PATCH /api/me/profile for %s: status %d, body %s", username, resp.StatusCode, raw)
+	}
+}
+
+// TestOnboardingRoutesIncompleteToWelcome pins the one predicate in the real
+// router (Phase 7.1, D-06, D-08): an account on the current terms that finished
+// the flow before, but has no username, is sent from a page to /welcome, while
+// its /api/ calls are untouched, and after step 4 is filled the pages open.
+func TestOnboardingRoutesIncompleteToWelcome(t *testing.T) {
+	srv, pool, mailer := newGateTestServerWith(t, func(d *Deps, _ *sqlcgen.Queries) {
+		d.OnboardingGate = true
+	})
+	client := newGateJarClient(t)
+	gateVerifySession(t, client, srv, mailer, "incomplete@example.com")
+	if _, err := pool.Exec(context.Background(),
+		`UPDATE accounts SET terms_version = $1, terms_agreed_at = now(), first_run_done_at = now() WHERE email = $2`,
+		service.CurrentTermsVersion, "incomplete@example.com"); err != nil {
+		t.Fatalf("marking the flow finished: %v", err)
+	}
+
+	still := &http.Client{Jar: client.Jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	get := func(c *http.Client, path string) *http.Response {
+		t.Helper()
+		resp, err := c.Get(srv.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		resp.Body.Close()
+		return resp
+	}
+
+	resp := get(still, "/")
+	if resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "/welcome" {
+		t.Fatalf("GET / without a username: status %d Location %q, want 302 to /welcome", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	if resp := get(still, "/api/reports?lat=12.97&lon=77.59&radius_km=5"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/reports without a username: status %d, want 200 (the API never meets the gate)", resp.StatusCode)
+	}
+
+	gateFillProfile(t, client, srv, "incomplete.user")
+	if resp := get(still, "/"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET / after step 4: status %d, want 200", resp.StatusCode)
 	}
 }

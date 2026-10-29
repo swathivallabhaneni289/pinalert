@@ -14,11 +14,23 @@ import (
 // part of a request can build the redirect target (no open redirect, T-34-01).
 const WelcomePath = "/welcome"
 
-// onboarded reports whether the account agreed to the current terms version and
-// finished the first-time flow. An older stored version counts as not agreed,
-// because agreement is to a text and the text has changed (D-27).
+// onboarded reports whether the account agreed to the current terms version,
+// finished the first-time flow and has a username, a name and a home area. An
+// older stored version counts as not agreed, because agreement is to a text and
+// the text has changed (D-27).
+//
+// Amended 2026-10-29 by Phase 7.1 plan 10 (D-06, D-08): it is service.
+// OnboardingDone, the one predicate that the /welcome page and first-run-done
+// also use, so the three can never disagree and a legacy account cannot loop
+// between / and /welcome (research Pitfall 3).
 func onboarded(a account.Account) bool {
-	return a.TermsVersion == service.CurrentTermsVersion && a.FirstRunDone
+	return service.OnboardingDone(service.OnboardingState{
+		TermsVersion: a.TermsVersion,
+		FirstRunDone: a.FirstRunDone,
+		HasUsername:  a.HasUsername,
+		HasName:      a.HasName,
+		HasHomeArea:  a.HasHomeArea,
+	})
 }
 
 // noAccountOnce makes the wiring-mistake log line appear once, not per request.
@@ -42,6 +54,14 @@ var noAccountOnce sync.Once
 //
 // Existing accounts, the owner's included, have no consent stored and are not
 // backfilled: they see the first-time flow once (orchestrator decision 5).
+//
+// Amended 2026-10-29 by Phase 7.1 plan 10: the first-time flow now ends with
+// step 4, which is required, so an account without a username, a name or a home
+// area is not onboarded either. The /api/ rule above is unchanged and is the
+// rule Phases 8 and 9 rely on: every /api/ path passes for every account,
+// onboarded or not, so an API route that needs a username (a comment, a
+// profile) must check for it itself and answer its own refusal. The gate does
+// not do it for them (T-34-02).
 func requireOnboarded(enabled bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		if !enabled {

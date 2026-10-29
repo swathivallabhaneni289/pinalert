@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"pinalert/internal/api"
+	"pinalert/internal/service"
 	sqlcgen "pinalert/internal/store/sqlc"
 )
 
@@ -198,7 +199,11 @@ func TestOnboardingFlowEndToEnd(t *testing.T) {
 	welcomeWantRedirect(t, still, base, "/", http.StatusFound, "/welcome")
 
 	// Profile then done.
-	meWant(t, "profile", meSend(t, client, http.MethodPatch, base+"/api/me/profile", `{"display_name":"Asha"}`), http.StatusOK)
+	//
+	// Amended 2026-10-29 by Phase 7.1 plan 10 (D-06): step 4 is required, so the
+	// profile is the username, the name and the home area (a name alone is no
+	// longer enough to finish). Every other assertion is unchanged.
+	fillProfileAt(t, client, base, "flow.user")
 	meWant(t, "done", meSend(t, client, http.MethodPost, base+"/api/me/first-run-done", ""), http.StatusNoContent)
 
 	resp, body = welcomeGet(t, still, base, "/")
@@ -283,6 +288,77 @@ func TestWelcomeStartsAtStep3AfterAgree(t *testing.T) {
 	}
 }
 
+// welcomeAttr reads one data attribute of the flow root, or "" when absent.
+func welcomeAttr(t *testing.T, body, name string) string {
+	t.Helper()
+	tag := p25OpeningTag(t, body, `<div class="welcome" id="welcome"`)
+	m := regexp.MustCompile(name + `="([^"]*)"`).FindStringSubmatch(tag)
+	if m == nil {
+		return ""
+	}
+	return m[1]
+}
+
+// TestWelcomeStartsAtFirstMissingStep pins the start step of the one time fill
+// in (Phase 7.1, D-08, SC5): the first missing step among steps 1 to 4. A
+// finished account on the current terms that lacks a username goes to step 4;
+// one on older terms goes to step 2 (and, after Agree, straight on to step 4);
+// a complete account is sent to /; an account mid-flow starts where it did.
+func TestWelcomeStartsAtFirstMissingStep(t *testing.T) {
+	base, newClient, pool := welcomeServer(t)
+
+	step := func(label string, still *http.Client) string {
+		t.Helper()
+		resp, body := welcomeGet(t, still, base, "/welcome")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: GET /welcome: %d, want 200", label, resp.StatusCode)
+		}
+		return welcomeAttr(t, body, "data-start-step")
+	}
+
+	// Current terms, the flow finished before, nothing of step 4 saved.
+	client, still := newClient("welcome-missing-4@example.com")
+	meWant(t, "consent", meSend(t, client, http.MethodPost, base+"/api/me/consent", ""), http.StatusNoContent)
+	welcomeSetState(t, pool, "welcome-missing-4@example.com", service.CurrentTermsVersion, true)
+	if got := step("terms current, finished, no profile", still); got != "4" {
+		t.Errorf("terms current, finished, no profile: data-start-step = %q, want 4", got)
+	}
+	// Still step 4 with only the name saved, and the stored name is on the page.
+	meWant(t, "name", meSend(t, client, http.MethodPatch, base+"/api/me/profile", `{"display_name":"Asha"}`), http.StatusOK)
+	_, body := welcomeGet(t, still, base, "/welcome")
+	if welcomeAttr(t, body, "data-start-step") != "4" || !strings.Contains(body, `value="Asha"`) {
+		t.Errorf("a finished account with only a name: want step 4 with the stored name on the page")
+	}
+
+	// Older terms, the flow finished before: step 2, then Agree, then step 4.
+	client2, still2 := newClient("welcome-missing-2@example.com")
+	welcomeSetState(t, pool, "welcome-missing-2@example.com", "2020-01-01", true)
+	if got := step("terms older, finished", still2); got != "2" {
+		t.Errorf("terms older, finished: data-start-step = %q, want 2", got)
+	}
+	meWant(t, "consent", meSend(t, client2, http.MethodPost, base+"/api/me/consent", ""), http.StatusNoContent)
+	if got := step("after Agree", still2); got != "4" {
+		t.Errorf("after Agree for a finished account: data-start-step = %q, want 4", got)
+	}
+
+	// A new account starts at 1, and at 3 after Agree (unchanged).
+	client3, still3 := newClient("welcome-missing-1@example.com")
+	if got := step("new account", still3); got != "1" {
+		t.Errorf("new account: data-start-step = %q, want 1", got)
+	}
+	meWant(t, "consent", meSend(t, client3, http.MethodPost, base+"/api/me/consent", ""), http.StatusNoContent)
+	if got := step("new account after Agree", still3); got != "3" {
+		t.Errorf("new account after Agree: data-start-step = %q, want 3", got)
+	}
+
+	// A complete account is sent to /.
+	client4, still4 := newClient("welcome-complete@example.com")
+	meWant(t, "consent", meSend(t, client4, http.MethodPost, base+"/api/me/consent", ""), http.StatusNoContent)
+	fillProfileAt(t, client4, base, "complete.user")
+	meWant(t, "done", meSend(t, client4, http.MethodPost, base+"/api/me/first-run-done", ""), http.StatusNoContent)
+	welcomeWantRedirect(t, still4, base, "/welcome", http.StatusSeeOther, "/")
+}
+
 // TestWelcomeRedirectsOnboardedAccount pins that an account through the flow
 // gets a 303 to the constant "/" and never the flow again.
 func TestWelcomeRedirectsOnboardedAccount(t *testing.T) {
@@ -290,6 +366,8 @@ func TestWelcomeRedirectsOnboardedAccount(t *testing.T) {
 	client, still := newClient("welcome-done@example.com")
 
 	meWant(t, "consent", meSend(t, client, http.MethodPost, base+"/api/me/consent", ""), http.StatusNoContent)
+	// Amended 2026-10-29 by Phase 7.1 plan 10: done needs the full profile.
+	fillProfileAt(t, client, base, "done.account")
 	meWant(t, "done", meSend(t, client, http.MethodPost, base+"/api/me/first-run-done", ""), http.StatusNoContent)
 
 	resp, _ := welcomeGet(t, still, base, "/welcome")
@@ -325,7 +403,7 @@ func TestExistingAccountSeesFlowOnce(t *testing.T) {
 		{"older terms with the flow marked done", "welcome-old-2@example.com", "2020-01-01", true},
 		{"current terms but the flow not finished", "welcome-old-3@example.com", "current", false},
 	}
-	for _, c := range cases {
+	for i, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			client, still := newClient(c.email)
 			terms := c.terms
@@ -341,11 +419,13 @@ func TestExistingAccountSeesFlowOnce(t *testing.T) {
 			}
 
 			meWant(t, "consent", meSend(t, client, http.MethodPost, base+"/api/me/consent", ""), http.StatusNoContent)
+			// Amended 2026-10-29 by Phase 7.1 plan 10: done needs the full profile.
+			fillProfileAt(t, client, base, "existing.account"+strconv.Itoa(i))
 			meWant(t, "done", meSend(t, client, http.MethodPost, base+"/api/me/first-run-done", ""), http.StatusNoContent)
 
-			for i := 0; i < 2; i++ {
+			for visit := 0; visit < 2; visit++ {
 				if resp, _ := welcomeGet(t, still, base, "/"); resp.StatusCode != http.StatusOK {
-					t.Fatalf("GET / after finishing (visit %d): %d, want 200", i+1, resp.StatusCode)
+					t.Fatalf("GET / after finishing (visit %d): %d, want 200", visit+1, resp.StatusCode)
 				}
 			}
 			welcomeWantRedirect(t, still, base, "/welcome", http.StatusSeeOther, "/")
@@ -575,7 +655,9 @@ func TestWelcomeIsNotDoneBeforeFirstRunDone(t *testing.T) {
 	client, still := newClient(email)
 
 	meWant(t, "consent", meSend(t, client, http.MethodPost, base+"/api/me/consent", ""), http.StatusNoContent)
-	meWant(t, "profile", meSend(t, client, http.MethodPatch, base+"/api/me/profile", `{"display_name":"Asha"}`), http.StatusOK)
+	// Amended 2026-10-29 by Phase 7.1 plan 10: step 4 saves the username, the name
+	// and the home area (all three are required). Still not done by that alone.
+	fillProfileAt(t, client, base, "notdone.user")
 
 	var done bool
 	if err := pool.QueryRow(context.Background(),

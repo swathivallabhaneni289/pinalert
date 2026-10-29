@@ -354,6 +354,25 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 		}
 	}
 
+	// 2026-10-29, Phase 7.1 plan 10: the live username check is documented as
+	// a get, and PATCH /me/profile documents the 422 and 429 of the username.
+	if ops, ok := spec.Paths["/username/check"]; !ok {
+		t.Errorf("docs/swagger.json is missing the /username/check path")
+	} else if _, ok := ops["get"]; !ok {
+		t.Errorf("docs/swagger.json is missing the /username/check get operation")
+	}
+	if ops, ok := spec.Paths["/me/profile"]; !ok {
+		t.Errorf("docs/swagger.json is missing the /me/profile path")
+	} else if patch, ok := ops["patch"]; !ok {
+		t.Errorf("docs/swagger.json is missing the /me/profile patch operation")
+	} else {
+		for _, code := range []string{`"422"`, `"429"`} {
+			if !strings.Contains(string(patch), code) {
+				t.Errorf("docs/swagger.json /me/profile patch is missing the %s response", code)
+			}
+		}
+	}
+
 	// 02-03b's contribution to this same OPS-01 drift guard: four vote
 	// routes shipped, four vote routes documented, each with its 401 and
 	// 403 response declared — a mounted route that ships without a

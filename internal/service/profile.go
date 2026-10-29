@@ -438,6 +438,12 @@ func (s *AccountService) AcceptTerms(ctx context.Context, accountID int64) error
 
 // MarkFirstRunDone records that the first-time flow was finished. It refuses
 // with ErrTermsNotAgreed unless the account agreed to the current version.
+//
+// Amended 2026-10-29 by Phase 7.1 plan 10 (D-06): after the terms check it also
+// refuses with ErrProfileIncomplete unless the account has a username, a name
+// and a home area, because step 4 About you is required. The three facts are
+// read from the same row the gate reads (presence of each column), so this
+// refusal and the OnboardingDone predicate cannot disagree.
 func (s *AccountService) MarkFirstRunDone(ctx context.Context, accountID int64) error {
 	p, err := s.Profile(ctx, accountID)
 	if err != nil {
@@ -445,6 +451,13 @@ func (s *AccountService) MarkFirstRunDone(ctx context.Context, accountID int64) 
 	}
 	if p.TermsVersion != CurrentTermsVersion {
 		return ErrTermsNotAgreed
+	}
+	if !ProfileComplete(OnboardingState{
+		HasUsername: p.Username != nil,
+		HasName:     p.DisplayName != nil,
+		HasHomeArea: p.HomeAreaName != nil,
+	}) {
+		return ErrProfileIncomplete
 	}
 	if err := s.q.MarkFirstRunDone(ctx, accountID); err != nil {
 		return fmt.Errorf("service: marking first run done: %w", err)

@@ -902,8 +902,14 @@ func NewRouter(deps Deps) *chi.Mux {
 		// token is needed.
 		// POST /api/me/consent records agreement to the current terms version.
 		r.Post("/api/me/consent", handlers.AcceptTerms(accounts))
-		// PATCH /api/me/profile saves or clears the optional name and home area.
-		r.Patch("/api/me/profile", handlers.UpdateProfile(accounts))
+		// PATCH /api/me/profile saves the username, the name and the home area.
+		// Amended 2026-10-29 by Phase 7.1 plan 10: it takes the username and the
+		// per account save allowance of authGate.
+		r.Patch("/api/me/profile", handlers.UpdateProfile(accounts, authGate))
+		// GET /api/username/check answers the live check while a person types a
+		// username (Phase 7.1, D-07). Gated, per account limited by authGate,
+		// never cached, and it never calls the text screening.
+		r.Get("/api/username/check", handlers.UsernameCheck(accounts, authGate))
 		// PATCH /api/me/alerts saves the Reliable reporter alert switch and its
 		// distance from the home area (Phase 3.2, NOTIF-05, D-26). Gated; the
 		// account comes from the gate and the body names nothing else.

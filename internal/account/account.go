@@ -32,6 +32,15 @@ type Account struct {
 	// lookup of the account row and are never client asserted (D-27).
 	TermsVersion string
 	FirstRunDone bool
+
+	// HasUsername, HasName and HasHomeArea say whether the three required
+	// profile fields are present (Phase 7.1, D-06, D-08). They come from the
+	// gate's own lookup of the account row, in the same query that resolved the
+	// session, and are never client asserted. They hold presence only: the
+	// username, the name and the home area themselves never enter the context.
+	HasUsername bool
+	HasName     bool
+	HasHomeArea bool
 }
 
 // ctxKey is an unexported struct type (never a string) so a value stored by

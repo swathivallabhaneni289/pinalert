@@ -25,12 +25,14 @@ import (
 const maxMeBodyBytes = 4096
 
 // UpdateProfileRequest is the body of PATCH /api/me/profile. Each key is
-// optional: a key left out changes nothing. An empty display_name clears the
-// name. home_area is either an object that saves the picked place or null,
-// which removes the saved one.
+// optional: a key left out changes nothing. Amended 2026-10-29 by Phase 7.1
+// plan 10 (D-06, D-07): username is the public, unique name; display_name and
+// home_area can be changed but no longer emptied, so an empty display_name and
+// a null home_area are refused with 400.
 type UpdateProfileRequest struct {
 	DisplayName *string          `json:"display_name" example:"Asha"`
 	HomeArea    *HomeAreaRequest `json:"home_area"`
+	Username    *string          `json:"username" example:"asha_k"`
 }
 
 // HomeAreaRequest is the picked place. The server keeps only the name and a
@@ -102,12 +104,19 @@ func AcceptTerms(svc *service.AccountService) http.HandlerFunc {
 
 // UpdateProfile produces the handler of PATCH /me/profile.
 //
-// @Summary Save or clear the optional name and home area
-// @Description Updates the optional name and home area of the signed in account. A key left out
-// @Description changes nothing. An empty display_name clears the name. A home_area object saves the
-// @Description picked place, and home_area null removes it. The home area keeps only the place name
-// @Description and a cell about 5 km across; the coordinates you send are used once to find the cell
-// @Description and are never stored. The answer is the profile as stored, with no coordinates.
+// @Summary Save the username, name and home area
+// @Description Updates the username, the name and the home area of the signed in account. A key left
+// @Description out changes nothing. The name and the home area can be changed but not emptied: an
+// @Description empty display_name and a null home_area are refused with 400. A home_area object saves
+// @Description the picked place. The home area keeps only the place name and a cell about 5 km across;
+// @Description the coordinates you send are used once to find the cell and are never stored. The answer
+// @Description is the profile as stored, with no coordinates.
+// @Description The username is 3 to 20 letters, numbers, dots or underscores, unique, and can be changed
+// @Description once every 7 days. Each refusal has one fixed status. 400 with the field username: the
+// @Description name is taken, has the wrong characters, is kept for official use, or is changed too
+// @Description soon. 422 with the field username: the text screening refused the name; this is the only
+// @Description 422. 429 with the field username and a Retry-After header: the account spent its save
+// @Description allowance (5, then one every 10 seconds).
 // @Description Requires a session verified by email; an unverified caller receives 401.
 // @Tags me
 // @Accept json
@@ -116,9 +125,11 @@ func AcceptTerms(svc *service.AccountService) http.HandlerFunc {
 // @Success 200 {object} ProfileResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 401 {object} ErrorResponse
+// @Failure 422 {object} ErrorResponse
+// @Failure 429 {object} RateLimitResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /me/profile [patch]
-func UpdateProfile(svc *service.AccountService) http.HandlerFunc {
+func UpdateProfile(svc *service.AccountService, gate *AuthGate) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acc, ok := account.FromContext(r.Context())
 		if !ok {
@@ -135,13 +146,26 @@ func UpdateProfile(svc *service.AccountService) http.HandlerFunc {
 		var req struct {
 			DisplayName *string         `json:"display_name"`
 			HomeArea    json.RawMessage `json:"home_area"`
+			Username    *string         `json:"username"`
 		}
 		if err := dec.Decode(&req); err != nil {
 			writeFieldError(w, http.StatusBadRequest, "body", "Request body is missing or malformed.")
 			return
 		}
 
-		update := service.ProfileUpdate{DisplayName: req.DisplayName}
+		// A request that names a username spends one token of the per account
+		// save allowance before anything else (D-07). The token is not given
+		// back when the service refuses the name: a refused guess counts, which
+		// is what stops a script from walking the name space (W12).
+		if req.Username != nil {
+			if save := gate.ReserveUsernameSave(acc.ID); !save.OK {
+				w.Header().Set("Cache-Control", "no-store")
+				writeRateLimited(w, "username", authRateLimitedMessage, save.RetryAfter, false, "")
+				return
+			}
+		}
+
+		update := service.ProfileUpdate{DisplayName: req.DisplayName, Username: req.Username}
 		switch {
 		case req.HomeArea == nil:
 			// Key absent: unchanged.
@@ -167,6 +191,13 @@ func UpdateProfile(svc *service.AccountService) http.HandlerFunc {
 
 		profile, err := svc.UpdateProfile(r.Context(), acc.ID, update)
 		if err != nil {
+			// The screening refusal is the only 422. It is a sentinel, not a
+			// ValidationError, so it is matched first and can never fall into
+			// the 400 branch below.
+			if errors.Is(err, service.ErrUsernameRefused) {
+				writeFieldError(w, http.StatusUnprocessableEntity, "username", service.UsernameRefusedMessage)
+				return
+			}
 			var ve service.ValidationError
 			if errors.As(err, &ve) {
 				writeFieldError(w, http.StatusBadRequest, ve.Field, ve.Message)
@@ -287,8 +318,10 @@ func UpdateAlertSettings(accounts *service.AccountService) http.HandlerFunc {
 //
 // @Summary Mark the first-time flow as finished
 // @Description Records that the signed in account finished the first-time flow. It needs the current
-// @Description terms to be agreed first: without that it answers 409 with the field terms. Send no
-// @Description body or an empty object. A repeat call keeps the first time.
+// @Description terms to be agreed first: without that it answers 409 with the field terms. It also
+// @Description needs the username, the name and the home area to be saved (step 4 of the flow is
+// @Description required): without them it answers 409 with the field profile. Send no body or an
+// @Description empty object. A repeat call keeps the first time.
 // @Description Requires a session verified by email; an unverified caller receives 401.
 // @Tags me
 // @Accept json
@@ -312,6 +345,10 @@ func FirstRunDone(svc *service.AccountService) http.HandlerFunc {
 		if err := svc.MarkFirstRunDone(r.Context(), acc.ID); err != nil {
 			if errors.Is(err, service.ErrTermsNotAgreed) {
 				writeFieldError(w, http.StatusConflict, "terms", service.TermsNotAgreedMessage)
+				return
+			}
+			if errors.Is(err, service.ErrProfileIncomplete) {
+				writeFieldError(w, http.StatusConflict, "profile", service.ProfileIncompleteMessage)
 				return
 			}
 			log.Printf("handlers: FirstRunDone: %v", err)
