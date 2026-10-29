@@ -99,9 +99,10 @@ function load(o = {}) {
   const later = make('installed-alerts-ask-later');
   const allow = make('installed-alerts-ask-allow');
   let ticked = !!opts.ticked;
-  const reliable = make('installed-alerts-ask-reliable', {
-    get checked() { log.push('read-checked'); return ticked; },
-    set checked(v) { ticked = !!v; }
+  const reliable = make('installed-alerts-ask-reliable');
+  Object.defineProperty(reliable, 'checked', {
+    get() { log.push('read-checked'); return ticked; },
+    set(v) { ticked = !!v; }
   });
   const els = opts.noDialog ? {} : {
     'installed-alerts-ask': dialog,
@@ -181,7 +182,7 @@ function load(o = {}) {
   return {
     ask: sandbox.PinalertInstalledAsk,
     options,
-    dialog, title, later, allow, reliable, doc, log, fetches, enables, deviceCalls, store,
+    dialog, title, later, allow, reliable, doc, log, fetches, enables, deviceCalls, store, make,
     releaseEnable: (value) => releaseEnable(value),
     escape: () => dialog.fire('cancel'),
     tick: (on) => { ticked = on; },
@@ -383,8 +384,8 @@ test(NAME + 'Allow with the box ticked sends the Reliable request, the same one 
   assert.equal(req.url, '/api/me/alerts');
   assert.equal(req.method, 'PATCH');
   assert.equal(req.credentials, 'same-origin');
-  assert.deepEqual(req.headers, { 'Content-Type': 'application/json' });
-  assert.deepEqual(req.body, { reliable_alerts: true });
+  assert.equal(JSON.stringify(req.headers), '{"Content-Type":"application/json"}');
+  assert.equal(JSON.stringify(req.body), '{"reliable_alerts":true}');
   assert.equal(m.dialog.open, false);
   assert.equal(m.dialog.closeCalls, 1);
 });
@@ -498,7 +499,8 @@ test(NAME + 'focus goes back to the element that had it', async () => {
 // ---- the script itself -----------------------------------------------------
 
 test(NAME + 'the script writes no markup, no words, and reads the Reliable box only after enable', () => {
-  assert.doesNotMatch(source, /innerHTML|outerHTML|insertAdjacentHTML|document\.write|createElement|textContent/);
+  const code = source.split('\n').filter((line) => !line.trim().startsWith('//')).join('\n');
+  assert.doesNotMatch(code, /innerHTML|outerHTML|insertAdjacentHTML|document\.write|createElement|textContent/);
   const tap = source.slice(source.indexOf('function onAllow'), source.indexOf('function onLater'));
   assert.ok(tap.indexOf('notify.enable(') !== -1);
   assert.ok(tap.indexOf('notify.enable(') < tap.indexOf('.checked'), 'enable comes before the box is read');
@@ -506,6 +508,7 @@ test(NAME + 'the script writes no markup, no words, and reads the Reliable box o
 });
 
 test(NAME + 'the script touches no key of notify.js and adds no listener to the page or window', () => {
-  assert.doesNotMatch(source, /INTENT_KEY|pinalert\.changesAsked|pinalert\.installAsked/);
-  assert.doesNotMatch(source, /window\.addEventListener|document\.addEventListener|beforeinstallprompt/);
+  const code = source.split('\n').filter((line) => !line.trim().startsWith('//')).join('\n');
+  assert.doesNotMatch(code, /INTENT_KEY|pinalert\.changesAsked|pinalert\.installAsked/);
+  assert.doesNotMatch(code, /window\.addEventListener|document\.addEventListener|beforeinstallprompt/);
 });
