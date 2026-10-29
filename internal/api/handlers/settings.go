@@ -33,6 +33,12 @@ type settingsViewModel struct {
 	// The home area's coarse cell is never read into the page.
 	DisplayName  string
 	HomeAreaName string
+	// Username is the stored username as a plain string, empty when none is
+	// saved (only an account that has not finished the fill in has none, and
+	// the gate sends it to /welcome first). Added by Phase 7.1 plan 10 (D-07):
+	// the Settings page shows it and offers the change window, drawn by plan
+	// 15. html/template escapes it.
+	Username string
 	// Legal is the text of the in app reader window opened from the About
 	// Pinalert rows (D-31). It holds nothing about the account (R-07).
 	Legal LegalText
@@ -139,6 +145,9 @@ func SettingsPage(tmpl *template.Template, accounts *service.AccountService, mut
 		}
 		if profile.HomeAreaName != nil {
 			vm.HomeAreaName = *profile.HomeAreaName
+		}
+		if profile.Username != nil {
+			vm.Username = *profile.Username
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
