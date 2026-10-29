@@ -117,6 +117,21 @@
   padding: 0;
 }
 
+/* Phase 9 plan 15: the Ratings section reuses the find form, the rows and the
+   state chip above. These three only space its parts: the error line under the
+   form, the polite note region and the list of rows. */
+#mod-ratings-error {
+  margin-top: var(--space-sm);
+}
+
+#mod-ratings-status {
+  margin-top: var(--space-sm);
+}
+
+#mod-ratings-list:not([hidden]) {
+  margin-top: var(--space-md);
+}
+
 .mod-empty {
   margin: 0;
   font-size: var(--font-size-body);

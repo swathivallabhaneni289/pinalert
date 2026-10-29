@@ -371,14 +371,18 @@ func TestModerateTransportAndNoPolling(t *testing.T) {
 	if n := strings.Count(js, "fetch("); n != 1 {
 		t.Errorf("fetch( occurs %d times, want exactly 1", n)
 	}
-	api := jsFunctionBody(t, js, "apiRequest(method, path, timeoutMs)")
+	// Amended 2026-10-29 by Phase 9 plan 15: apiRequest takes an optional fourth
+	// argument, the JSON body of the one rating removal.
+	api := jsFunctionBody(t, js, "apiRequest(method, path, timeoutMs, payload)")
 	p426WantAll(t, "apiRequest", api, "fetch(", "credentials: 'same-origin'", "cache: 'no-store'", "timeoutMs > 0",
 		"Pinalert.requestTimeout(timeoutMs, ", "Promise.race([promise, limit.expired])",
 		"withinLimit(fetch(path, options))", "withinLimit(res.json())", "res.ok", "noAnswer: true")
 	p426WantNone(t, "whole file", js, "setInterval", "indexedDB", "localStorage", "sessionStorage",
 		"document.addEventListener", "window.addEventListener")
-	if n := strings.Count(js, "addEventListener("); n != 3 {
-		t.Errorf("addEventListener( occurs %d times, want exactly 3", n)
+	// Amended 2026-10-29 by Phase 9 plan 15: the Ratings form and its box add two
+	// listeners (the form's submit and the box's cancel), so the count is 5.
+	if n := strings.Count(js, "addEventListener("); n != 5 {
+		t.Errorf("addEventListener( occurs %d times, want exactly 5", n)
 	}
 	send := jsFunctionBody(t, js, "sendAction(entry, action)")
 	p426WantAll(t, "sendAction", send, "apiRequest('POST', ", ", 0)")
@@ -541,14 +545,18 @@ func TestModeratePageAssets(t *testing.T) {
 	// Amended 2026-10-29 by Phase 8 plan 18 (D-14): the Comments section is the
 	// fourth heading and the fourth section; its empty line is pinned by
 	// TestModerateCommentsSection. The mod-section__line count stays 3.
-	if n := strings.Count(tmpl, "<h2"); n != 4 {
-		t.Errorf("<h2 occurs %d times, want 4", n)
+	// Amended 2026-10-29 by Phase 9 plan 15 (UI-SPEC P9-C30): the Ratings section
+	// is the fifth section and its line the fourth mod-section__line, and the
+	// title of its Remove all box is a sixth heading. TestModeratorRatingsSection
+	// pins that section and box.
+	if n := strings.Count(tmpl, "<h2"); n != 6 {
+		t.Errorf("<h2 occurs %d times, want 6", n)
 	}
-	if n := strings.Count(tmpl, `class="mod-section"`); n != 4 {
-		t.Errorf(`class="mod-section" occurs %d times, want 4`, n)
+	if n := strings.Count(tmpl, `class="mod-section"`); n != 5 {
+		t.Errorf(`class="mod-section" occurs %d times, want 5`, n)
 	}
-	if n := strings.Count(tmpl, `class="mod-section__line"`); n != 3 {
-		t.Errorf(`class="mod-section__line" occurs %d times, want 3`, n)
+	if n := strings.Count(tmpl, `class="mod-section__line"`); n != 4 {
+		t.Errorf(`class="mod-section__line" occurs %d times, want 4`, n)
 	}
 }
 
@@ -828,8 +836,8 @@ func TestModerateCommentsSection(t *testing.T) {
 	if n := strings.Count(js, "fetch("); n != 1 {
 		t.Errorf("fetch( occurs %d times, want exactly 1", n)
 	}
-	if n := strings.Count(js, "addEventListener("); n != 3 {
-		t.Errorf("addEventListener( occurs %d times, want exactly 3", n)
+	if n := strings.Count(js, "addEventListener("); n != 5 {
+		t.Errorf("addEventListener( occurs %d times, want exactly 5", n)
 	}
 	p426WantNone(t, "moderate.js", js, "innerHTML", "setInterval")
 
