@@ -484,6 +484,9 @@ var phaseScripts = []string{
 	// Amended 2026-10-29 by Phase 8 plan 05: the report page builder joins the
 	// scripts held to the plain punctuation rule. No other entry changed.
 	"report-page.js",
+	// Amended 2026-10-29 by Phase 8 plan 06: the Share window script joins the
+	// scripts held to the plain punctuation rule. No other entry changed.
+	"share.js",
 }
 
 // TestNewScriptsUsePlainPunctuation holds the phase's new scripts to the house

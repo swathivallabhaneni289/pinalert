@@ -146,6 +146,12 @@ func TestVendorMapScriptsLoadInDependencyOrder(t *testing.T) {
 		// builds the page). TestReportPageIsLinkedInOrder pins its order against
 		// votes.js, trust.js and map.js, and report-page.css after trust.css.
 		"/static/js/report-page.js",
+		// Amended 2026-10-29 by Phase 8 plan 06 (COORD-08, D-04): share.js is one
+		// more app module under the same vendor-layer-first rule, listed in its
+		// actual template position (right after report-page.js, before map.js, so
+		// window.PinalertShare exists before any card is built).
+		// TestShareScriptIsLinkedInOrder pins its order.
+		"/static/js/share.js",
 		"/static/js/map.js",
 		"/static/js/modal.js",
 		"/static/js/feed.js",

@@ -142,3 +142,60 @@ func TestShareWindowCardIsNeutral(t *testing.T) {
 	css := stripCSSComments(p16ReadStatic(t, "static/css/share.css"))
 	p13MustNotContain(t, "share.css", css, "--color-severity", "--color-tone", "opacity")
 }
+
+// TestShareScriptIsLinkedInOrder pins where index.html.tmpl loads share.js: once,
+// deferred, right after report-page.js and before map.js, so window.PinalertShare
+// exists before the page builds a Share button (the button stays hidden until it
+// does, plan 08-05).
+func TestShareScriptIsLinkedInOrder(t *testing.T) {
+	index := p13ReadTemplate(t, "index.html.tmpl")
+	if n := strings.Count(index, "/static/js/share.js"); n != 1 {
+		t.Fatalf("index.html.tmpl loads share.js %d times, want 1", n)
+	}
+	p13MustContain(t, "share.js tag", findTagWindow(t, index, "/static/js/share.js"), " defer", "?v={{.AssetVersion}}")
+	p13Ordered(t, index, "index.html.tmpl scripts",
+		"/static/js/app.js", "/static/js/report-page.js", "/static/js/share.js", "/static/js/map.js")
+}
+
+// TestShareScriptContract pins the rules of share.js that the node tests cannot
+// see in the source: the module name and the call the page makes, the closed
+// set of words, the wa.me chooser link, and the rules of the owner's windows (no
+// backdrop close, a paired page lock). The browser's own share sheet is never
+// called anywhere in the script (research Pitfall 8: a share after an await is
+// refused by Safari, and the plan's default is the chooser link).
+func TestShareScriptContract(t *testing.T) {
+	raw := p13ReadStatic(t, "static/js/share.js")
+	code := p13CodeLines(raw)
+
+	p13MustContain(t, "share.js", code,
+		"'use strict'", "window.PinalertShare", "open: open",
+		"SHARE_TIMEOUT_MS = 10000", "COPIED_MS = 3000",
+		"Pinalert.requestTimeout(SHARE_TIMEOUT_MS", "Pinalert.lockPage(", "Pinalert.unlockPage(",
+		"Pinalert.iconClass(", "Pinalert.categoryLabel(", "Pinalert.setText(",
+		"'https://wa.me/?text='", "encodeURIComponent(title + ' ' + body.url)",
+		"/share'", "method: 'POST'", "credentials: 'same-origin'",
+		"'Open to see if this is still true right now'",
+		"'Link copied'", "'Link copied.'", "\"Couldn't copy. Select the link and copy it.\"",
+		"\"Couldn't make a link. Try again.\"",
+		"\"You're offline, so there is no link yet. Try again when you have a signal.\"",
+		"'This report is no longer available.'", "'Copy link'",
+		"navigator.clipboard.writeText(")
+	p13MustNotContain(t, "share.js", code,
+		"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "DOMParser",
+		"navigator.share", "navigator.canShare", "execCommand", "window.open(", "location.href", "location.assign")
+	if regexp.MustCompile(`(?i)verified`).MatchString(code) {
+		t.Errorf("share.js names the word verified on a code line; a forward carries no claim (D-04)")
+	}
+	// A tap on the backdrop must not close the window (03.4 R2, D-14): the only
+	// click listeners are on the X, Try again, Copy link and the WhatsApp link.
+	if n := strings.Count(code, "backdrop.addEventListener('click'"); n != 0 {
+		t.Errorf("share.js binds a click listener on the backdrop %d times, want 0", n)
+	}
+	p13Ordered(t, jsFunctionBody(t, code, "closeWindow()"), "closeWindow",
+		"refs.backdrop.hidden = true", "Pinalert.unlockPage(", "returnFocus(state)")
+	p13MustContain(t, "onWindowKeydown", jsFunctionBody(t, code, "onWindowKeydown(evt)"),
+		"'Escape'", "closeWindow(", "'Tab'", "focusableInPanel(")
+	if strings.ContainsFunc(raw, func(r rune) bool { return r == 0x2013 || r == 0x2014 }) {
+		t.Errorf("share.js holds an em or en dash")
+	}
+}
