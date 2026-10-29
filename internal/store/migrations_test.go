@@ -1753,3 +1753,91 @@ func TestMigrationRevokesPasswordlessSessions(t *testing.T) {
 		t.Error("a later Up must not revoke a fresh session of an account with a password")
 	}
 }
+
+// TestMigration00015 covers the migration that drops the sign in link token
+// table (Phase 7.1 plan 16, D-12, research Pitfall 15). The text part runs
+// without a database: Up drops the table, Down recreates it with its columns
+// and index as migration 00002 made them. With DATABASE_URL the table is absent
+// after Up, goose.DownTo 14 brings it back with its columns and index, and
+// goose.Up removes it again.
+func TestMigration00015(t *testing.T) {
+	const linkTable = "magic_link_" + "tokens" // Phase 7.1 plan 16: the dropped table, named once
+	const linkIndex = "idx_" + linkTable + "_email_created"
+	const file = "migrations/00015_drop_" + linkTable + ".sql"
+	contents, err := MigrationsFS.ReadFile(file)
+	if err != nil {
+		t.Fatalf("reading embedded %s: %v", file, err)
+	}
+	text := string(contents)
+	up := strings.Index(text, "+goose Up")
+	down := strings.Index(text, "+goose Down")
+	if up < 0 || down < 0 || down < up {
+		t.Fatalf("%s must carry +goose Up then +goose Down", file)
+	}
+	if !strings.Contains(text[up:down], "DROP TABLE "+linkTable+";") {
+		t.Error("migration 00015 Up must drop the link token table")
+	}
+	for _, want := range []string{
+		"CREATE TABLE " + linkTable,
+		"token_hash  TEXT NOT NULL UNIQUE",
+		"CREATE INDEX " + linkIndex + " ON " + linkTable + " (email, created_at DESC);",
+	} {
+		if !strings.Contains(text[down:], want) {
+			t.Errorf("migration 00015 Down must contain %q", want)
+		}
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping the database part of the 00015 migration test")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("opening database: %v", err)
+	}
+	goose.SetBaseFS(MigrationsFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = goose.Up(db, "migrations")
+		_ = db.Close()
+	})
+
+	present := func() (table, cols, indexes int) {
+		t.Helper()
+		if err := db.QueryRow(`SELECT count(*) FROM information_schema.tables
+			WHERE table_schema = 'public' AND table_name = $1`, linkTable).Scan(&table); err != nil {
+			t.Fatalf("counting the table: %v", err)
+		}
+		if err := db.QueryRow(`SELECT count(*) FROM information_schema.columns
+			WHERE table_schema = 'public' AND table_name = $1
+			AND column_name IN ('id', 'token_hash', 'email', 'created_at', 'expires_at', 'used_at')`, linkTable).Scan(&cols); err != nil {
+			t.Fatalf("counting columns: %v", err)
+		}
+		if err := db.QueryRow(`SELECT count(*) FROM pg_indexes
+			WHERE schemaname = 'public' AND tablename = $1
+			AND indexname = $2`, linkTable, linkIndex).Scan(&indexes); err != nil {
+			t.Fatalf("counting indexes: %v", err)
+		}
+		return table, cols, indexes
+	}
+	if tbl, cols, idx := present(); tbl != 0 || cols != 0 || idx != 0 {
+		t.Errorf("after Up: table %d, columns %d, index %d still present, want none", tbl, cols, idx)
+	}
+	if err := goose.DownTo(db, "migrations", 14); err != nil {
+		t.Fatalf("goose down to 14: %v", err)
+	}
+	if tbl, cols, idx := present(); tbl != 1 || cols != 6 || idx != 1 {
+		t.Errorf("after Down: table %d, columns %d, index %d, want 1, 6 and 1", tbl, cols, idx)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up again: %v", err)
+	}
+	if tbl, cols, idx := present(); tbl != 0 || cols != 0 || idx != 0 {
+		t.Errorf("after Up again: table %d, columns %d, index %d still present, want none", tbl, cols, idx)
+	}
+}

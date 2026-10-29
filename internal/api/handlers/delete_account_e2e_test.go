@@ -207,15 +207,12 @@ func TestDeleteAccountRemovesPersonalRows(t *testing.T) {
 
 	// Amended 2026-10-29 by Phase 7.1 plan 08: the sign in used to leave a login
 	// link token and a resend cooldown row for the address. The password flow
-	// still leaves the cooldown row (the code send claim) but no link token, so
-	// the token is seeded here and the assertions below (the delete removes
-	// both) keep their meaning until the cleanup plan drops the link tables.
-	testutil.MustExec(t, pool,
-		`INSERT INTO magic_link_tokens (token_hash, email, expires_at) VALUES ($1, $2, now() + interval '15 minutes')`,
-		"del-rows-seeded-token-hash", email)
-	if delCount(t, pool, `SELECT count(*) FROM magic_link_tokens WHERE email = $1`, email) == 0 ||
-		delCount(t, pool, `SELECT count(*) FROM email_cooldowns WHERE email = $1`, email) == 0 {
-		t.Fatalf("the fixture is wrong: the sign in left no token or cooldown row for the address")
+	// still leaves the cooldown row (the code send claim) but no link token.
+	// Amended 2026-10-29 by Phase 7.1 plan 16 (orchestrator addition): the link
+	// token table is dropped (migration 00015), so the token is no longer seeded
+	// or checked; the cooldown row is the one personal row of the address left.
+	if delCount(t, pool, `SELECT count(*) FROM email_cooldowns WHERE email = $1`, email) == 0 {
+		t.Fatalf("the fixture is wrong: the sign in left no cooldown row for the address")
 	}
 	votesBefore := delCount(t, pool, `SELECT count(*) FROM votes`)
 	reportsBefore := delCount(t, pool, `SELECT count(*) FROM reports`)
@@ -231,9 +228,6 @@ func TestDeleteAccountRemovesPersonalRows(t *testing.T) {
 		if n := delCount(t, pool, `SELECT count(*) FROM `+table+` WHERE account_id = $1`, bID); n != 1 {
 			t.Errorf("%s has %d rows for the other account, want 1", table, n)
 		}
-	}
-	if n := delCount(t, pool, `SELECT count(*) FROM magic_link_tokens WHERE email = $1`, email); n != 0 {
-		t.Errorf("%d sign in links of the old address remain", n)
 	}
 	if n := delCount(t, pool, `SELECT count(*) FROM email_cooldowns WHERE email = $1`, email); n != 0 {
 		t.Errorf("%d resend cooldowns of the old address remain", n)

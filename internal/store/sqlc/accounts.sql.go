@@ -48,9 +48,11 @@ type AccountEmailForDeleteRow struct {
 }
 
 // Delete my account step 1: reads the real address and the deleted stamp
-// before anything is scrubbed, because the magic link tokens and the resend
-// cooldown of that address are removed by it, and a repeat call must find the
-// account already deleted. Option A, anonymise (owner confirmed 2026-10-18).
+// before anything is scrubbed, because the resend cooldown, the typed code
+// rows and the throttle row of that address are removed by it, and a repeat
+// call must find the account already deleted. Option A, anonymise (owner
+// confirmed 2026-10-18). Amended 2026-10-29 by Phase 7.1 plan 16: the sign in
+// link tokens are gone with their table.
 func (q *Queries) AccountEmailForDelete(ctx context.Context, id int64) (AccountEmailForDeleteRow, error) {
 	row := q.db.QueryRow(ctx, accountEmailForDelete, id)
 	var i AccountEmailForDeleteRow
@@ -107,17 +109,6 @@ DELETE FROM email_cooldowns WHERE email = $1
 // address can sign up again at once as a brand new account.
 func (q *Queries) DeleteEmailCooldownForEmail(ctx context.Context, email string) error {
 	_, err := q.db.Exec(ctx, deleteEmailCooldownForEmail, email)
-	return err
-}
-
-const deleteMagicLinkTokensForEmail = `-- name: DeleteMagicLinkTokensForEmail :exec
-DELETE FROM magic_link_tokens WHERE email = $1
-`
-
-// Delete my account: the sign in links ever sent to the real address are the
-// person's own rows. Nothing else reads this table for another account.
-func (q *Queries) DeleteMagicLinkTokensForEmail(ctx context.Context, email string) error {
-	_, err := q.db.Exec(ctx, deleteMagicLinkTokensForEmail, email)
 	return err
 }
 

@@ -30,7 +30,6 @@ const deletedEmailDomain = "deleted.invalid"
 // is. RevokeAccountSessions is the same statement Log out of all devices runs.
 type AccountDeleteQuerier interface {
 	AccountEmailForDelete(ctx context.Context, id int64) (sqlcgen.AccountEmailForDeleteRow, error)
-	DeleteMagicLinkTokensForEmail(ctx context.Context, email string) error
 	DeleteEmailCooldownForEmail(ctx context.Context, email string) error
 	// Phase 7.1 plan 06 (T-07.1-22): the typed code rows of the real address and
 	// its sign in throttle row go with the other personal rows.
@@ -128,10 +127,12 @@ func DeletedEmailFor(accountID int64) string {
 // account is revoked. The person's own rows are deleted: updates, update
 // cursors, mutes, alert settings, the queued phone alerts and phone alert
 // subscriptions (Phase 3.3), the queued official alert pushes (Phase 5), and
-// the magic link tokens and resend cooldown of
-// the real address, and (Phase 7.1) its typed code rows and, when a throttle
+// the resend cooldown of the real address, and (Phase 7.1) its typed code rows and, when a throttle
 // keyer is set, its sign in throttle row. The scrub also clears the password
 // hash and frees the username.
+//
+// Amended 2026-10-29 by Phase 7.1 plan 16: the sign in link tokens step is
+// gone, because the link token table was dropped (migration 00015).
 //
 // Its effect on other people: none. Reports and votes are not touched, so they
 // stay attributed to a row nobody can identify. Every confirmed count, every
@@ -156,9 +157,6 @@ func (s *AccountDeletionService) DeleteAccount(ctx context.Context, accountID in
 		}
 		if row.DeletedAt.Valid {
 			return fmt.Errorf("service: DeleteAccount: account %d: %w", accountID, ErrAccountAlreadyDeleted)
-		}
-		if err := q.DeleteMagicLinkTokensForEmail(ctx, row.Email); err != nil {
-			return fmt.Errorf("service: DeleteAccount: account %d: deleting sign in links: %w", accountID, err)
 		}
 		if err := q.DeleteEmailCooldownForEmail(ctx, row.Email); err != nil {
 			return fmt.Errorf("service: DeleteAccount: account %d: deleting the resend cooldown: %w", accountID, err)

@@ -61,17 +61,14 @@ WHERE id = sqlc.arg(id);
 
 -- name: AccountEmailForDelete :one
 -- Delete my account step 1: reads the real address and the deleted stamp
--- before anything is scrubbed, because the magic link tokens and the resend
--- cooldown of that address are removed by it, and a repeat call must find the
--- account already deleted. Option A, anonymise (owner confirmed 2026-10-18).
+-- before anything is scrubbed, because the resend cooldown, the typed code
+-- rows and the throttle row of that address are removed by it, and a repeat
+-- call must find the account already deleted. Option A, anonymise (owner
+-- confirmed 2026-10-18). Amended 2026-10-29 by Phase 7.1 plan 16: the sign in
+-- link tokens are gone with their table.
 SELECT email, deleted_at
 FROM accounts
 WHERE id = sqlc.arg(id);
-
--- name: DeleteMagicLinkTokensForEmail :exec
--- Delete my account: the sign in links ever sent to the real address are the
--- person's own rows. Nothing else reads this table for another account.
-DELETE FROM magic_link_tokens WHERE email = sqlc.arg(email);
 
 -- name: DeleteEmailCooldownForEmail :exec
 -- Delete my account: the resend cooldown of the real address, so the same

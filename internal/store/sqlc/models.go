@@ -68,15 +68,6 @@ type EmailCooldown struct {
 	WindowSends     int32
 }
 
-type MagicLinkToken struct {
-	ID        int64
-	TokenHash string
-	Email     string
-	CreatedAt time.Time
-	ExpiresAt time.Time
-	UsedAt    pgtype.Timestamptz
-}
-
 type ModerationAction struct {
 	ID                 int64
 	ReportID           int64
