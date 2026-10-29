@@ -25,7 +25,7 @@ human_verification:
     expected: "After a rating from the box under the resolve message, the box collapses to one status line and leaves 6 seconds later (RATE_HOST_LINE_MS in web/static/js/votes.js). Decide whether 6 seconds is right or the box should vanish at the tap"
     why_human: "Timing feel; changing it is one line"
   - test: "People list after a server restart"
-    expected: "A Followers or Following list that was open before a restart reads 'That page could not be read' when Show more is tapped (the cursor is signed with a key that is new each start); closing and reopening the list works"
+    expected: "A Followers or Following list that was open before a restart starts again from the top when Show more is tapped, with the server's sentence shown once (fix round 3, SK-W02; the cursor is sealed with a key that is new each start)"
     why_human: "Needs a restart of the test copy; decide whether the sentence is acceptable"
 ---
 
@@ -184,7 +184,8 @@ Also from 09-VALIDATION: the 40 point note about five raters in TRUST-MODEL (B4)
 1. **The h1 swap at phone width.** Under 900px the top bar title is the page's h1 and the username is a plain line; from 900px the username is the h1; the Profile not found, You blocked and Couldn't load pages show one h1 on the laptop without anything jumping. Look at it in a real browser at both widths.
 2. **Forced colours in Chromium.** Turn on forced colours (DevTools, Rendering, Emulate CSS forced-colors) and check the bell, the More chevron, the stars total icon and the five star control stay visible.
 3. **The star box status line.** After a rating the box collapses to one status line that stays 6 seconds (`RATE_HOST_LINE_MS` in `web/static/js/votes.js`). Say whether 6 seconds is right. Making the box vanish at the tap instead is a one line change.
-4. **The people list cursor after a server restart.** Open a Followers or Following list, restart the test copy, tap Show more. It reads "That page could not be read". Closing and reopening the list works. Say if that sentence is acceptable.
+4. **The people list cursor after a server restart.** Open a Followers or Following list, restart the test copy, tap Show more. Since fix round 3 (SK-W02) the list starts again from the top and shows the server's sentence once. Say if that reads calmly.
+5. **The hosted star box (fix round 3, SK-W01).** After the resolve that closes a report, the star box sits under windows and the phone report card, goes away when another report or window opens, and ends by itself after 30 seconds (`RATE_HOST_MAX_MS`). Check on the phone that it never covers a button.
 
 ### Two questions for the owner
 
