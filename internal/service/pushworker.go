@@ -18,6 +18,13 @@
 // cap is dropped with nothing extra shown (decision 6) and stays in the bell
 // (heldByHourlyCap).
 //
+// A follow note (Phase 9 plan 26) is checked again at send time against the
+// follow, the bell, the person's standing, any block or mute and the Reliable
+// reporter tag with the ratings (followHolds), so it stops the moment any of
+// them goes, before a sweep runs. It is about a person and not a place, so a
+// missing home area or the distance never stops it. It goes through the same
+// per device first push check and the same cap order as every other kind.
+//
 // Delivery is at least once. A crash, or a lost database write, between a push
 // service's 201 and the mark sends the row again once its lease passes. Android
 // and desktop show the second send as the same notification, replaced through
@@ -137,6 +144,15 @@ type PushWorkerQuerier interface {
 	AccountPushSentAboutReport(ctx context.Context, arg sqlcgen.AccountPushSentAboutReportParams) (bool, error)
 	CommentPushStillHolds(ctx context.Context, arg sqlcgen.CommentPushStillHoldsParams) (bool, error)
 	VoteLogForReport(ctx context.Context, reportID int64) ([]sqlcgen.VoteLogForReportRow, error)
+	// Phase 9 plan 26 (D-24): the facts a follow note is checked against at send
+	// time. ReporterHistoryReports and CurrentVotesForReports (through
+	// PushFactsQuerier) make the worker a ReporterTagQuerier for
+	// LoadReporterSignals.
+	ActiveFollowNotify(ctx context.Context, arg sqlcgen.ActiveFollowNotifyParams) (bool, error)
+	FolloweeStanding(ctx context.Context, accountIds []int64) ([]sqlcgen.FolloweeStandingRow, error)
+	PersonRelation(ctx context.Context, arg sqlcgen.PersonRelationParams) (sqlcgen.PersonRelationRow, error)
+	PersonMuted(ctx context.Context, arg sqlcgen.PersonMutedParams) (bool, error)
+	ReporterHistoryReports(ctx context.Context, arg sqlcgen.ReporterHistoryReportsParams) ([]sqlcgen.ReporterHistoryReportsRow, error)
 	PushSubscriptionsForAccount(ctx context.Context, accountID int64) ([]sqlcgen.PushSubscriptionsForAccountRow, error)
 	MarkPushSubscriptionOK(ctx context.Context, arg sqlcgen.MarkPushSubscriptionOKParams) error
 	DeletePushSubscriptionByID(ctx context.Context, id int64) error
@@ -153,10 +169,24 @@ type PushWorker struct {
 	now      func() time.Time
 	jitter   func() float64
 	interval time.Duration
+	// signals is the source of extra reporter tag inputs (the tapped ratings), so
+	// the send time check of a follow note reads the same tag as every other
+	// surface (plan 09-26, review W8). Nil means outcomes only.
+	signals SignalSource
 }
 
 // PushWorkerOption adjusts a PushWorker at construction.
 type PushWorkerOption func(*PushWorker)
+
+// WithPushWorkerSignals hands the worker the source of extra reporter tag
+// inputs, so a follow note is rechecked against the rated Reliable reporter tag
+// and not the outcomes only one (plan 09-26, D-24, review W8). main.go passes the
+// one rating service, and TestRatingsSourceWiredEverywhere requires it.
+func WithPushWorkerSignals(src SignalSource) PushWorkerOption {
+	return func(w *PushWorker) {
+		w.signals = src
+	}
+}
 
 // WithPushWorkerClock replaces the clock the worker decides with. The database
 // clock still decides which rows are due and when a lease passes.
@@ -302,6 +332,14 @@ type pushRowRun struct {
 	// wasConfirmed is filled in sendRow for a changed row whose event is hidden:
 	// whether people nearby had confirmed the report at some point before.
 	wasConfirmed bool
+	// base is the kind of the first alert this row stands for: the row's own kind,
+	// or for a confirmed update the kind of the alert it replaces
+	// (confirmedBaseKind).
+	base PushKind
+	// followHolds is filled in sendRow, before stillHolds, for a row whose base is
+	// follow: the follow facts that decide at send time (followHolds). It is false
+	// for every other row and never read for them.
+	followHolds bool
 }
 
 // reportWasConfirmed says whether people nearby had confirmed a report at some
@@ -420,6 +458,24 @@ func (w *PushWorker) sendRow(ctx context.Context, claim sqlcgen.ClaimDuePushesRo
 		run.wasConfirmed = reportWasConfirmed(facts.Meta, history, claim.ReportID, facts.ReporterAccountID, run.now)
 	}
 
+	// A follow note, and the confirmed update that replaces one, is checked
+	// against the follow facts as they are now, before the predicate (plan 09-26,
+	// D-24, research 5.2 item 3): the follow, the bell, the person's standing, any
+	// block or mute, and the Reliable reporter tag with the ratings. Nothing here
+	// waits for a sweep, so a note whose tag fell away since it was queued is
+	// never sent.
+	run.base = run.kind
+	if run.kind == PushKindConfirmedUpdate {
+		run.base = confirmedBaseKind(claim.FirstKind, facts.Meta.Serious())
+	}
+	if run.base == PushKindFollow {
+		holds, err := w.followHolds(ctx, run)
+		if err != nil {
+			return w.rowErr(claim.ID, err)
+		}
+		run.followHolds = holds
+	}
+
 	// 3. The kind's predicate, the one the feed and the bell use.
 	if !w.stillHolds(run) {
 		return w.skip(ctx, run, pushSkipNotEligible)
@@ -465,7 +521,12 @@ func (w *PushWorker) sendRow(ctx context.Context, claim sqlcgen.ClaimDuePushesRo
 			}
 		}
 	}
-	if run.kind != PushKindChanged {
+	// A follow note, and the confirmed update of one, is about a person the
+	// reader chose to follow and not about a place, so neither a missing home
+	// area nor the distance can stop it (research Pitfall 4, UI-SPEC Defaults
+	// 19); the words simply leave the distance out. Every other kind keeps the
+	// rule. A follow note counts toward the hourly cap below like the others.
+	if run.kind != PushKindChanged && run.base != PushKindFollow {
 		if !haveHome || distance == nil {
 			return w.skip(ctx, run, pushSkipNoHome)
 		}
@@ -573,9 +634,10 @@ func (w *PushWorker) sendRow(ctx context.Context, claim sqlcgen.ClaimDuePushesRo
 // toward the limit through CountAccountPushesInWindow, so changed and Reliable
 // pushes are held back first. A confirmed update is never counted and never
 // held, because it replaces a note already on the screen. Every other kind
-// (today reliable and changed; Phase 9 adds follow) is held once sentInHour
-// reaches PushPerAccountPerHour. A kind counts toward the limit when
-// CountAccountPushesInWindow lists it.
+// (reliable, follow and changed) is held once sentInHour reaches
+// PushPerAccountPerHour, so a follow note can use up the hour, and a Critical
+// alert still goes out after it (D-25, plan 09-26). A kind counts toward the
+// limit when CountAccountPushesInWindow lists it, and it lists follow.
 func heldByHourlyCap(kind PushKind, sentInHour int64) bool {
 	switch kind {
 	case PushKindCritical, PushKindConfirmedUpdate:
@@ -616,12 +678,66 @@ func (w *PushWorker) stillHolds(run *pushRowRun) bool {
 		return f.Meta.Serious() && MayNotifyAboutReport(UpdateCriticalNearby, f.Vis, f.ExpiresAt, run.now)
 	case PushKindReliable:
 		return MayNotifyAboutReport(UpdateReliableNearby, f.Vis, f.ExpiresAt, run.now)
+	case PushKindFollow:
+		return MayNotifyAboutReport(UpdateFollowedPosted, f.Vis, f.ExpiresAt, run.now) && run.followHolds
 	case PushKindConfirmedUpdate:
-		return f.Confirmed && f.View == FeedViewActive
+		// The confirmed update of a follow note also needs the follow facts, because
+		// the cleanup deletes queued follow rows only and this row is stopped here.
+		return f.Confirmed && f.View == FeedViewActive && (run.base != PushKindFollow || run.followHolds)
 	case PushKindChanged:
 		return run.claim.UpdateKind != nil && w.eventStillHolds(UpdateKind(*run.claim.UpdateKind), f, run.now, run.wasConfirmed)
 	}
 	return false
+}
+
+// followHolds reads, at send time, the facts a follow note stands on, cheapest
+// first, and answers false at the first one that no longer holds (plan 09-26,
+// D-24, research 5.2 item 3): the report has a reporter who is not the reader;
+// an active follow with the Notify me bell on still exists; the reporter is
+// still followable (opted in, a clear username, not deleted); no block stands
+// between the two in either direction; the reader has not muted the reporter;
+// and the reporter still reads Reliable reporter now, through the one tag loader
+// with the worker's ratings source, the same read the feed and the dispatcher
+// make. The report's own state is the predicate's job (stillHolds). The errors
+// are database errors only.
+func (w *PushWorker) followHolds(ctx context.Context, run *pushRowRun) (bool, error) {
+	if run.facts.ReporterAccountID == nil {
+		return false, nil
+	}
+	reporter, follower := *run.facts.ReporterAccountID, run.claim.AccountID
+	if reporter == follower {
+		return false, nil
+	}
+	bell, err := w.q.ActiveFollowNotify(ctx, sqlcgen.ActiveFollowNotifyParams{FollowerID: follower, FolloweeID: reporter})
+	if err != nil || !bell {
+		return false, err
+	}
+	standing, err := w.q.FolloweeStanding(ctx, []int64{reporter})
+	if err != nil {
+		return false, err
+	}
+	followable := false
+	for _, s := range standing {
+		if s.ID == reporter && s.Followable {
+			followable = true
+		}
+	}
+	if !followable {
+		return false, nil
+	}
+	rel, err := w.q.PersonRelation(ctx, sqlcgen.PersonRelationParams{ViewerID: follower, OtherID: reporter})
+	if err != nil || rel.ViewerBlocked || rel.BlockedViewer {
+		return false, err
+	}
+	muted, err := w.q.PersonMuted(ctx, sqlcgen.PersonMutedParams{MuterID: follower, MutedID: reporter})
+	if err != nil || muted {
+		return false, err
+	}
+	signals, err := LoadReporterSignals(ctx, w.q, w.signals, []int64{reporter}, run.now)
+	if err != nil {
+		return false, err
+	}
+	return signals[reporter].Tag == ReporterReliable, nil
 }
 
 // eventStillHolds says whether a report still shows the event a changed row
@@ -676,7 +792,7 @@ func (w *PushWorker) eventStillHolds(event UpdateKind, f pushReportFacts, now ti
 func confirmedBaseKind(first *string, serious bool) PushKind {
 	if first != nil {
 		switch k := PushKind(*first); k {
-		case PushKindCritical, PushKindReliable:
+		case PushKindCritical, PushKindReliable, PushKindFollow:
 			return k
 		}
 	}
@@ -699,6 +815,10 @@ func (w *PushWorker) kindSwitchOn(kind PushKind, first *string, serious bool, h 
 		return h.ReliableAlertsOn
 	case PushKindChanged:
 		return h.ChangesPushOn
+	case PushKindFollow:
+		// There is no account switch for follow notes: the Notify me bell on the
+		// follow is the switch, and followHolds reads it at send time (plan 09-26).
+		return true
 	}
 	return false
 }

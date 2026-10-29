@@ -140,6 +140,25 @@ type fakeSweepQuerier struct {
 	historyN   int
 	ended      []int64
 	reasons    []string
+	// cleaned holds the followee id of every DeleteQueuedFollowPushesForFollowee
+	// call (plan 09-26, 2026-10-30): the sweep's follow ends reach the queued note
+	// cleanup through endFollowsOf.
+	cleaned []int64
+}
+
+// DeleteQueuedFollowPushesForFollowee records the cleanup of a followee's queued
+// follow notes. The sweep reaches it through endFollowsOf (plan 09-26).
+func (f *fakeSweepQuerier) DeleteQueuedFollowPushesForFollowee(_ context.Context, followeeID int64) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cleaned = append(f.cleaned, followeeID)
+	return 0, nil
+}
+
+// DeleteQueuedFollowPush is part of followEnder; the sweep ends whole followees
+// and never a pair, so it only answers.
+func (f *fakeSweepQuerier) DeleteQueuedFollowPush(_ context.Context, _ sqlcgen.DeleteQueuedFollowPushParams) (int64, error) {
+	return 0, nil
 }
 
 func (f *fakeSweepQuerier) ReporterHistoryReports(_ context.Context, _ sqlcgen.ReporterHistoryReportsParams) ([]sqlcgen.ReporterHistoryReportsRow, error) {
@@ -213,6 +232,10 @@ func TestFollowSweepPagesBatches(t *testing.T) {
 	// The fake has no history, so nobody is Reliable and every followee ends.
 	if ended != 450 || len(f.ended) != 450 {
 		t.Errorf("ended = %d over %d calls, want 450", ended, len(f.ended))
+	}
+	// Every end also cleaned the queued notes of that followee (plan 09-26).
+	if fmt.Sprint(f.cleaned) != fmt.Sprint(f.ended) {
+		t.Errorf("queued note cleanups = %d, want one per ended followee (%d)", len(f.cleaned), len(f.ended))
 	}
 	for _, r := range f.reasons {
 		if r != string(FollowEndTagLost) {

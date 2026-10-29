@@ -78,6 +78,10 @@ type PeopleQuerier interface {
 	FollowAccount(ctx context.Context, arg sqlcgen.FollowAccountParams) (int64, error)
 	EndFollowPair(ctx context.Context, arg sqlcgen.EndFollowPairParams) (int64, error)
 	EndFollowsOf(ctx context.Context, arg sqlcgen.EndFollowsOfParams) (int64, error)
+	// Plan 09-26 (SC5, research Q9): the queued phone notes that the two follow
+	// ending helpers and the bell and mute paths delete.
+	DeleteQueuedFollowPushesForFollowee(ctx context.Context, followeeID int64) (int64, error)
+	DeleteQueuedFollowPush(ctx context.Context, arg sqlcgen.DeleteQueuedFollowPushParams) (int64, error)
 	CountFollowing(ctx context.Context, followerID int64) (int64, error)
 	PersonRelation(ctx context.Context, arg sqlcgen.PersonRelationParams) (sqlcgen.PersonRelationRow, error)
 	FollowCounts(ctx context.Context, accountID int64) (sqlcgen.FollowCountsRow, error)
@@ -438,6 +442,11 @@ func (s *PeopleService) SetNotify(ctx context.Context, followerID int64, usernam
 		return ErrNotifyUnavailable
 	}
 	if !on {
+		// The bell is off: a follow note already queued for this pair is deleted
+		// (plan 09-26, SC5, research Q9, D-24). Sent notes and bell rows stay.
+		if _, err := s.q.DeleteQueuedFollowPush(ctx, sqlcgen.DeleteQueuedFollowPushParams{FollowerID: followerID, FolloweeID: person.ID}); err != nil {
+			return fmt.Errorf("service: SetNotify: deleting the queued follow notes: %w", err)
+		}
 		return nil
 	}
 	muted, err = s.q.PersonMuted(ctx, sqlcgen.PersonMutedParams{MuterID: followerID, MutedID: person.ID})

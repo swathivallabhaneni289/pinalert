@@ -14,9 +14,9 @@ import (
 )
 
 // ratingsWiringCalls lists, per file (paths relative to internal/service, where
-// go test runs), every call the file must contain. Plan 09-26 adds
+// go test runs), every call the file must contain. Plan 09-26 added
 // WithPushWorkerSignals(ratingService) to the main.go list when the push worker
-// gains its option (review W8).
+// gained its option (review W8).
 var ratingsWiringCalls = []struct {
 	file  string
 	calls []string
@@ -30,6 +30,9 @@ var ratingsWiringCalls = []struct {
 			"WithAuthSignals(ratingService)",
 			"WithDispatchSignals(ratingService)",
 			"WithFollowSweepSignals(ratingService)",
+			// 2026-10-30, plan 09-26 (review W8): the push worker rechecks a follow
+			// note against the rated tag at send time.
+			"WithPushWorkerSignals(ratingService)",
 		},
 	},
 	{
