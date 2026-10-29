@@ -232,22 +232,6 @@ func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 	}
 }
 
-// verifyOutcomeTemplateName and verifyOutcomeViewModel belonged to the handler
-// that opened an emailed link. Amended 2026-10-29 by Phase 7.1 plan 14: no
-// handler executes the template any more, but the type and the name stay,
-// unused by production code, because chrome_render_test.go (not a file of plan
-// 14) still renders the page in its "verify" subtest. Plan 16 deletes the
-// template, this name and this type together with that subtest.
-const verifyOutcomeTemplateName = "verify_outcome.html.tmpl"
-
-type verifyOutcomeViewModel struct {
-	AssetVersion string
-	Outcome      string
-	Email        string
-	CurrentEmail string
-	Chrome       Chrome
-}
-
 // retiredLinkTarget is where an old emailed link lands: the sign in page with the
 // old-link done word, a constant with no address and no token in it (Phase 7.1
 // plan 14, D-12, UI-SPEC Surface 9).

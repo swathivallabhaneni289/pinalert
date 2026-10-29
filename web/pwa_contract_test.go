@@ -73,8 +73,11 @@ func TestEveryPageIncludesAppHead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("walking embedded templates: %v", err)
 	}
-	if checked < 10 {
-		t.Fatalf("found only %d templates with a head element, want at least 10: this test's premise may have evaporated", checked)
+	// Amended 2026-10-29 by Phase 7.1 plan 16: the floor drops from 10 to 9 because
+	// the link landing page, one of the pages with a head element, is deleted
+	// (D-12). The test still fails if the walk finds almost nothing.
+	if checked < 9 {
+		t.Fatalf("found only %d templates with a head element, want at least 9: this test's premise may have evaporated", checked)
 	}
 }
 

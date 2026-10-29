@@ -63,7 +63,9 @@ func TestStripOnlyOnNearby(t *testing.T) {
 	for _, name := range []string{
 		"profile.html.tmpl", "alerts.html.tmpl", "settings.html.tmpl",
 		"low.html.tmpl", "moderate.html.tmpl", "login_gate.html.tmpl",
-		"verify_outcome.html.tmpl", "reader.html.tmpl", "legal_body.html.tmpl",
+		"reader.html.tmpl", "legal_body.html.tmpl",
+		// Amended 2026-10-29 by Phase 7.1 plan 16: the link landing page is
+		// deleted, so its name is no longer in this list (D-12).
 	} {
 		if strings.Contains(stripReadTemplate(t, name), "notice_strip") {
 			t.Errorf("%s includes the strip; it is drawn on Nearby only (D-29)", name)

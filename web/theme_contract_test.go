@@ -22,7 +22,7 @@ const (
 // findFullPageTemplates walks every file under templates/*.tmpl in
 // TemplatesFS and treats a file as a full page if its text contains an
 // "<html" element — a partial included by another template (e.g.
-// check_inbox.html.tmpl, account_header.html.tmpl) never opens its own
+// account_header.html.tmpl) never opens its own
 // <html> element and is excluded by this check. Deriving the set from the
 // embedded filesystem, rather than hardcoding four filenames, is what lets
 // this test fail the build the day a future fifth full page ships without
@@ -385,14 +385,12 @@ func TestThemeToggleRendersAsAFloatingControl(t *testing.T) {
 	}
 
 	// h. That same include action appears zero times on the three
-	// headerless pages. login_gate and verify_outcome are full pages;
-	// check_inbox is a partial login_gate itself includes and reaches a
-	// reader only through that page. All three render no header and no
-	// theme control today, and this assertion is what keeps that true.
+	// headerless pages. Amended 2026-10-29 by Phase 7.1 plan 16: the two link
+	// pages (the check inbox partial and the link landing page) are deleted
+	// (D-12), so only login_gate remains in this list. It renders no header and
+	// no theme control today, and this assertion is what keeps that true.
 	for _, page := range []string{
 		"templates/login_gate.html.tmpl",
-		"templates/check_inbox.html.tmpl",
-		"templates/verify_outcome.html.tmpl",
 	} {
 		raw, err := TemplatesFS.ReadFile(page)
 		if err != nil {

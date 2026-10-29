@@ -311,7 +311,7 @@
   mask-image: url("/static/icons/check-circle.svg");
 }
 
-/* Link-landing outcome screen (plan 01.1-02: web/templates/verify_outcome.html.tmpl) —
+/* Link-landing outcome screen (plan 01.1-02; the page was deleted by Phase 7.1 plan 16, so these rules are unused),
    the same .login-card surface as the login gate, centered instead of
    left-aligned, with a single large status glyph above the heading. */
 .verify-outcome-card {
