@@ -38,6 +38,82 @@ func (q *Queries) BlankAccountComments(ctx context.Context, arg BlankAccountComm
 	return result.RowsAffected(), nil
 }
 
+const claimDueCommentChecks = `-- name: ClaimDueCommentChecks :many
+WITH due AS MATERIALIZED (
+    SELECT c.id
+    FROM comments c
+    JOIN reports r2 ON r2.id = c.report_id
+    WHERE c.moderation_state = 'pending'
+      AND c.deleted_at IS NULL
+      AND c.next_attempt_at <= $2::timestamptz
+      AND (c.lease_until IS NULL OR c.lease_until < $2::timestamptz)
+      AND r2.expires_at > $2::timestamptz
+      AND r2.moderation_state <> 'removed'
+    ORDER BY c.next_attempt_at, c.id
+    LIMIT $3::int
+    FOR UPDATE OF c SKIP LOCKED
+)
+UPDATE comments cm
+SET lease_until    = $1::timestamptz,
+    check_attempts = cm.check_attempts + 1
+FROM due, reports r
+WHERE cm.id = due.id
+  AND r.id = cm.report_id
+RETURNING cm.id, cm.body, cm.check_attempts, r.expires_at
+`
+
+type ClaimDueCommentChecksParams struct {
+	LeaseUntil time.Time
+	Now        time.Time
+	BatchLimit int32
+}
+
+type ClaimDueCommentChecksRow struct {
+	ID            int64
+	Body          string
+	CheckAttempts int32
+	ExpiresAt     time.Time
+}
+
+// Phase 8 plan 14 (D-12): hands the held comments whose text check is due to
+// one claimant each. The claimed set is fixed once in a MATERIALIZED CTE and
+// then updated, rather than written as an IN (subquery), because the planner
+// may rescan an IN subquery that carries LIMIT and SKIP LOCKED and so lock and
+// return more rows than the batch limit (the same reason as
+// ClaimDueModerationChecks). SKIP LOCKED lets two workers claim different rows
+// without waiting on each other, and the lease makes a crashed claimant's row
+// claimable again once it lapses; check_attempts counts every claim. A comment
+// is never claimed when it is not held, when its author deleted it (its words
+// are already blanked, review W7), when it is not yet due, or when its report
+// has expired or was removed. now, the lease end and the batch size come from
+// the worker (its clock, 60 seconds, 5 rows). The only text that leaves this
+// query is the body, and only toward the screener. Postgres does not promise
+// the order of rows an UPDATE returns.
+func (q *Queries) ClaimDueCommentChecks(ctx context.Context, arg ClaimDueCommentChecksParams) ([]ClaimDueCommentChecksRow, error) {
+	rows, err := q.db.Query(ctx, claimDueCommentChecks, arg.LeaseUntil, arg.Now, arg.BatchLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ClaimDueCommentChecksRow
+	for rows.Next() {
+		var i ClaimDueCommentChecksRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Body,
+			&i.CheckAttempts,
+			&i.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const commentForNotify = `-- name: CommentForNotify :one
 SELECT c.id, c.report_id, c.account_id, c.parent_id, c.reply_to_id,
        c.moderation_state,
@@ -391,6 +467,58 @@ func (q *Queries) DeleteAccountCommentLikes(ctx context.Context, accountID int64
 	return err
 }
 
+const finishCommentCheck = `-- name: FinishCommentCheck :execrows
+UPDATE comments
+SET moderation_state = $1::text,
+    needs_review     = $2::bool,
+    verdict          = $3::text,
+    scores           = $4::jsonb,
+    model            = $5,
+    checked_at       = $6::timestamptz,
+    next_attempt_at  = NULL,
+    lease_until      = NULL,
+    last_error       = NULL
+WHERE id = $7
+  AND moderation_state = 'pending'
+  AND deleted_at IS NULL
+`
+
+type FinishCommentCheckParams struct {
+	ModerationState string
+	NeedsReview     bool
+	Verdict         string
+	Scores          []byte
+	Model           *string
+	CheckedAt       time.Time
+	CommentID       int64
+}
+
+// Settles a held comment with the check's answer: clear or removed, the review
+// mark for a borderline answer, the verdict, the scores and the model, with the
+// lease and the due time cleared. It changes the row only while it is still
+// pending and undeleted. That one condition is the whole guard: a moderator's
+// Keep or Remove (plan 08-13) holds the same row lock and has already moved the
+// state, so under READ COMMITTED this statement waits, re-reads the row, finds
+// it no longer pending and affects 0 rows, and an in flight check can never undo
+// the moderator's decision. The caller notifies only when exactly one row
+// changed, so the recipient is told once. Scores are numbers by category name,
+// never comment text.
+func (q *Queries) FinishCommentCheck(ctx context.Context, arg FinishCommentCheckParams) (int64, error) {
+	result, err := q.db.Exec(ctx, finishCommentCheck,
+		arg.ModerationState,
+		arg.NeedsReview,
+		arg.Verdict,
+		arg.Scores,
+		arg.Model,
+		arg.CheckedAt,
+		arg.CommentID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const insertComment = `-- name: InsertComment :one
 INSERT INTO comments (
     report_id, account_id, parent_id, reply_to_id, body,
@@ -584,6 +712,34 @@ type MarkCommentDeletedParams struct {
 // CommentTarget.
 func (q *Queries) MarkCommentDeleted(ctx context.Context, arg MarkCommentDeletedParams) (int64, error) {
 	result, err := q.db.Exec(ctx, markCommentDeleted, arg.Now, arg.CommentID, arg.AccountID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const rescheduleCommentCheck = `-- name: RescheduleCommentCheck :execrows
+UPDATE comments
+SET next_attempt_at = $1::timestamptz,
+    last_error      = $2::text,
+    lease_until     = NULL
+WHERE id = $3
+  AND moderation_state = 'pending'
+`
+
+type RescheduleCommentCheckParams struct {
+	NextAttemptAt time.Time
+	LastError     string
+	CommentID     int64
+}
+
+// Records a check that could not finish: when to try again and the error class
+// word (transient, quota or permanent; never provider text and never comment
+// text), and releases the lease. A quota or permanent error is given the
+// report's expiry as its next attempt, a time the claim never reaches. Touches
+// a row only while it is pending, so a moderator's decision stands.
+func (q *Queries) RescheduleCommentCheck(ctx context.Context, arg RescheduleCommentCheckParams) (int64, error) {
+	result, err := q.db.Exec(ctx, rescheduleCommentCheck, arg.NextAttemptAt, arg.LastError, arg.CommentID)
 	if err != nil {
 		return 0, err
 	}
