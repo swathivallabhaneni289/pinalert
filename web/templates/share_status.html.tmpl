@@ -1,0 +1,75 @@
+{{/*
+  The public status page a shared link opens (Phase 8 plan 04; D-05, D-06; UI-SPEC Surface 6).
+
+  It is a small server rendered document for one report, readable with no account:
+  no script, no app head (that would register the service worker), no app bars, no
+  map, no bell and no light and dark button. It follows the device's light or dark
+  setting through main.css's own tokens. It shows only the category and the rough
+  area (the h1), a neutral status word, the server's own sentence, the severity,
+  what is happening for a Critical report with a pick, and when. The view model has
+  no field for the reporter's words, a name, a comment, a distance or a place.
+
+  Every value goes through html/template, attributes included. The Open Graph
+  title is the h1 text and the description is the fixed line, so a link preview
+  carries no count and no claim. The separators are the middle dot.
+*/}}
+{{define "share_status"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{{.Title}} · Pinalert</title>
+  <meta property="og:title" content="{{.Title}}">
+  <meta property="og:description" content="{{.OGDescription}}">
+  <meta property="og:url" content="{{.CanonicalURL}}">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="{{.OGImageURL}}">
+  <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
+  <link rel="stylesheet" href="/static/css/public.css?v={{.AssetVersion}}">
+</head>
+<body class="public-page">
+  <header class="public-top">
+    <span class="public-wordmark">Pinalert</span>
+  </header>
+  <main class="public-body">
+    <div class="public-head">
+      <h1 class="public-title">{{.Title}}</h1>
+      {{if .Chip}}<span class="public-chip">{{.Chip}}</span>{{end}}
+    </div>
+    <div class="public-main">
+      {{if .TooMany}}<p class="public-line">{{.TooManyLine}}</p>{{end}}
+      {{if .Chip}}<div class="public-box">
+        <p class="public-box__lead">{{.Sentence}}</p>
+        <dl class="public-rows">
+          <div class="public-row">
+            <dt>Severity</dt>
+            <dd><span class="public-dot {{.SeverityClass}}" aria-hidden="true"></span>{{.SeverityWord}}</dd>
+          </div>
+          {{if .Happening}}<div class="public-row">
+            <dt>What is happening</dt>
+            <dd>{{.Happening}}</dd>
+          </div>
+          {{end}}<div class="public-row">
+            <dt>Posted</dt>
+            <dd>{{.PostedText}}</dd>
+          </div>
+          {{if and .EndedLabel .EndedText}}<div class="public-row">
+            <dt>{{.EndedLabel}}</dt>
+            <dd>{{.EndedText}}</dd>
+          </div>
+          {{end}}
+        </dl>
+      </div>
+      {{end}}<a class="btn btn--primary public-signin" href="/login">Sign in to see more</a>
+      <p class="public-legal">Unofficial, not a government service. Pinalert cannot send help, it shows what people near you are seeing. Reports can sometimes be wrong. In danger, call {{.Chrome.Numbers.Primary}}.</p>
+      <div class="public-links">
+        <a class="btn" href="/disclaimer">Disclaimer</a>
+        <a class="btn" href="/policy">Policy</a>
+      </div>
+    </div>
+  </main>
+</body>
+</html>
+{{end}}

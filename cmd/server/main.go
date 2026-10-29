@@ -154,6 +154,22 @@ const (
 	ipBackstopShareEvery  = 1200 * time.Millisecond
 )
 
+// The public status page of a shared link, GET /r/{token} (Phase 8 plan 04,
+// D-05). It is limited per client IP, a burst of 120 and then one more a second,
+// and only when CLIENT_IP_HEADER is set, like the network backstops above:
+// without the header the peer address is the host's proxy, shared by every
+// reader and by WhatsApp's crawler, so a limit there would lock real readers
+// out of a link forwarded into a busy group, and the 128 bit token already
+// stops anyone walking through reports. Even with the header the numbers are
+// loose, because the crawler's addresses are shared by every WhatsApp user and
+// a forward into a big group makes it fetch the page once for each group. A
+// refusal is a plain page that asks the reader to open the link again, not an
+// outage. api.SharePageRateLimitDefault mirrors these.
+const (
+	sharePageBurst = 120
+	sharePageEvery = time.Second
+)
+
 // The auth buckets of the code and password routes (Phase 7.1, plan 07, D-02).
 // Each bucket allows Burst at once and then one more every Every.
 //
@@ -490,9 +506,12 @@ func main() {
 		// (Phase 8 plan 03), and the share service. The one geocode client is
 		// also the share area namer, the dispatcher's precedent (T-07-01).
 		PublicBaseURL: baseURL,
-		Shares:        service.NewShareService(queries, reportService, service.WithShareAreaNamer(geocodeClient)),
-		Credentials:   credentials,
-		AuthLimits:    authLimits(),
+		// The public status page's per client IP limit (plan 08-04); used only
+		// with CLIENT_IP_HEADER.
+		SharePageRateLimit: api.SharePageRateLimit{Every: sharePageEvery, Burst: sharePageBurst},
+		Shares:             service.NewShareService(queries, reportService, service.WithShareAreaNamer(geocodeClient)),
+		Credentials:        credentials,
+		AuthLimits:         authLimits(),
 		Auth: handlers.AuthConfig{
 			AssetVersion: assetVersion,
 		},

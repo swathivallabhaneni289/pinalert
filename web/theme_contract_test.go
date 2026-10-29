@@ -80,6 +80,14 @@ func TestThemeScriptLoadsBeforeFirstPaintOnEveryFullPage(t *testing.T) {
 	pages := findFullPageTemplates(t)
 
 	for path, text := range pages {
+		// Amended 2026-10-29 by Phase 8 plan 04 (D-05, D-06, UI-SPEC Surface 6a):
+		// the public status page of a shared link runs no script at all and
+		// follows the device's light or dark setting through the stylesheet's own
+		// tokens, so it loads no theme script. The exemption is this one named
+		// file; TestPublicPageHasNoScript pins that it holds no script of any kind.
+		if path == "templates/share_status.html.tmpl" {
+			continue
+		}
 		if got := strings.Count(text, themeScriptSource); got != 1 {
 			t.Errorf("%s: expected %q to appear exactly once, found %d", path, themeScriptSource, got)
 			continue

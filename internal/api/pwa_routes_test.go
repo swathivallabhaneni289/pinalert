@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -133,6 +134,14 @@ func TestSkipSessionFor(t *testing.T) {
 // are now exactly ["/demo", "/static"], so a cookieless fetch of a stylesheet,
 // script or icon writes no sessions row, and /static/* must be a registered route.
 // Every other assertion is unchanged.
+//
+// Amended 2026-10-29 by Phase 8 plan 04 (D-05, A-P8-8): the prefixes are now
+// exactly ["/demo", "/static", "/r"], so a cookieless fetch of the public status
+// page of a shared link, by a person or by WhatsApp's crawler, writes no sessions
+// row, and GET /r/{token} must be a registered route. The POST set keeps its one
+// entry, /internal/official/refresh, as Phase 7.1 left it; this plan's own
+// expectation, written before that entry existed, is read with it. Every other
+// assertion is unchanged.
 func TestPWASkipSetMatchesRoutes(t *testing.T) {
 	mgr, err := session.NewManager([]byte("pwa-routes-test-secret-not-for-production"), false)
 	if err != nil {
@@ -191,11 +200,27 @@ func TestPWASkipSetMatchesRoutes(t *testing.T) {
 	// unchanged.
 	// Amended 2026-10-29 by the Phase 5 follow up to plan 05-13 (D-05): "/static"
 	// joins the Demo prefix, and the static route is a registered route.
-	if !slices.Equal(skip.prefixes, []string{"/demo", "/static"}) {
-		t.Errorf("sessionSkipSet prefixes = %v, want exactly [/demo /static]", skip.prefixes)
+	// Amended 2026-10-29 by Phase 8 plan 04 (D-05): "/r" joins them, and every
+	// prefix must prefix a registered GET route.
+	if !slices.Equal(skip.prefixes, []string{"/demo", "/static", "/r"}) {
+		t.Errorf("sessionSkipSet prefixes = %v, want exactly [/demo /static /r]", skip.prefixes)
 	}
 	if !getRoutes["/static/*"] {
 		t.Errorf("/static/* is a skip set prefix but is not a registered GET route")
+	}
+	if !getRoutes["/r/{token}"] {
+		t.Errorf("/r is a skip set prefix but /r/{token} is not a registered GET route")
+	}
+	for _, prefix := range skip.prefixes {
+		covered := false
+		for route := range getRoutes {
+			if route == prefix || strings.HasPrefix(route, prefix+"/") {
+				covered = true
+			}
+		}
+		if !covered {
+			t.Errorf("prefix %s covers no registered GET route", prefix)
+		}
 	}
 	if len(handlers.PWAPublicPaths) != 10 {
 		t.Errorf("PWAPublicPaths has %d entries, want 10", len(handlers.PWAPublicPaths))

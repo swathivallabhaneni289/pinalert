@@ -449,6 +449,15 @@ func TestAccessGateAllowsVerified(t *testing.T) {
 // with no session (no redirect to /login, and the 401 the endpoint gives a wrong
 // token is its own, checked separately), a GET of it is a 404, and on a server
 // with no token it is a 404. Every older row and loop is unchanged.
+//
+// Amended 2026-10-29 by Phase 8 plan 04 (D-05, D-06, A-P8-8): the public status
+// page of a shared link joins the exempt list. One row "shared report page" was
+// added for GET /r/<a real token seeded for the test>, which must answer 200
+// with no session, and a near miss loop proves that "/r", "/r/", a numeric id, a
+// trailing path, another case, an unknown token, a dot segment and a double
+// slash never answer 200 (the unknown token answers exactly 404). Every older
+// row and loop is unchanged. The table now has 24 rows (the 23 of the Phase 7.1
+// paragraph above plus this one).
 func TestAccessGateExemptRoutes(t *testing.T) {
 	globeUp := fakeGlobeUpstream(t)
 	demoStore := demo.NewStore(demo.WithWorldSetup(demo.SeedSetup))
@@ -457,13 +466,17 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 		t.Fatalf("creating a Demo world: %v", err)
 	}
 	demoFeedPath := "/demo/api/v/" + demoWorld.ID + "/reports?lat=16.5424&lon=80.6386&radius_km=10"
-	srv, _, _ := newGateTestServerWith(t, func(d *Deps, _ *sqlcgen.Queries) {
+	srv, pool, _ := newGateTestServerWith(t, func(d *Deps, _ *sqlcgen.Queries) {
 		d.GlobeUpstream = globeUp.URL
 		d.Demo = demoStore
 		// Amended 2026-10-29 by plan 05-12: the refresh door for the rows below.
 		d.Official = &refreshStub{}
 		d.OfficialRefreshToken = routeRefreshToken
 	})
+	// Amended 2026-10-29 by Phase 8 plan 04: a real share token for the shared
+	// report page row and its near misses.
+	shareToken := seedSharedReport(t, pool, "exempt")
+	sharePath := "/r/" + shareToken
 
 	appAssets := []string{
 		"/manifest.webmanifest",
@@ -477,7 +490,7 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 		"/apple-touch-icon.png",
 		"/apple-touch-icon-precomposed.png",
 	}
-	mustBeOK := map[string]bool{"/disclaimer": true, "/policy": true, "/globe/tiles/0/0/0.jpg": true, demoFeedPath: true}
+	mustBeOK := map[string]bool{"/disclaimer": true, "/policy": true, "/globe/tiles/0/0/0.jpg": true, demoFeedPath: true, sharePath: true}
 	for _, p := range appAssets {
 		mustBeOK[p] = true
 	}
@@ -495,6 +508,9 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 		{"policy page", http.MethodGet, "/policy", ""},
 		{"globe tile", http.MethodGet, "/globe/tiles/0/0/0.jpg", ""},
 		{"demo feed", http.MethodGet, demoFeedPath, ""},
+		// Amended 2026-10-29 by Phase 8 plan 04 (D-05): the public status page of
+		// a shared link, reached with no session.
+		{"shared report page", http.MethodGet, sharePath, ""},
 		// Amended 2026-10-29 by Phase 7.1 plan 09: the six POST routes of the
 		// password sign in. A person with no session must reach every one (D-03)
 		// and never be answered 401 or a redirect (research Pitfall 18, which is why
@@ -620,6 +636,40 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 			defer resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				t.Fatalf("GET %s returned 200: only the 85 listed globe tile paths are public", p)
+			}
+		})
+	}
+
+	// Amended 2026-10-29 by Phase 8 plan 04 (D-05, A-P8-8): opening /r/{token}
+	// opens no other address. A numeric id, a bad token and every near miss
+	// spelling never answer 200; a well formed token nobody holds answers exactly
+	// 404 (the same page a held, removed or too old report gets), never a redirect
+	// to /login that would tell a stranger which tokens exist.
+	unknownToken := strings.Repeat("A", service.ShareTokenLen)
+	for _, g := range []struct {
+		name, path string
+		want404    bool
+	}{
+		{"bare prefix", "/r", false},
+		{"trailing slash only", "/r/", false},
+		{"numeric id", "/r/1", false},
+		{"extra path segment", sharePath + "/x", false},
+		{"other case prefix", "/R/" + shareToken, false},
+		{"unknown token", "/r/" + unknownToken, true},
+		{"dot segments", "/r/%2e%2e/login", false},
+		{"double slash", "//r/" + shareToken, false},
+	} {
+		t.Run("shared page near miss "+g.name, func(t *testing.T) {
+			resp, err := newGateJarClient(t).Get(srv.URL + g.path)
+			if err != nil {
+				t.Fatalf("GET %s: %v", g.path, err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				t.Fatalf("GET %s returned 200: only /r/<a real token> is the shared page", g.path)
+			}
+			if g.want404 && resp.StatusCode != http.StatusNotFound {
+				t.Fatalf("GET %s = %d, want exactly 404 for an unknown token", g.path, resp.StatusCode)
 			}
 		})
 	}

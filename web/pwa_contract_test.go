@@ -49,8 +49,14 @@ func TestEveryPageIncludesAppHead(t *testing.T) {
 		// activity pages are exempt for the same reason (each is pinned to carry
 		// no app head by its own markup test, TestDemoAlertsPageMarkup and
 		// TestDemoActivityPageMarkup).
+		//
+		// Amended 2026-10-29 by Phase 8 plan 04 (D-05, UI-SPEC Surface 6a): the
+		// public status page of a shared link is exempt too. A reader with no
+		// account must not have a service worker registered by opening a forwarded
+		// link; TestPublicPageHasNoScript pins that it holds no app head and no
+		// script.
 		if path == "templates/demo.html.tmpl" || path == "templates/demo_alerts.html.tmpl" ||
-			path == "templates/demo_activity.html.tmpl" {
+			path == "templates/demo_activity.html.tmpl" || path == "templates/share_status.html.tmpl" {
 			return nil
 		}
 		checked++

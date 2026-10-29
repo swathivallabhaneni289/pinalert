@@ -187,6 +187,10 @@ type Deps struct {
 	// no area. cmd/server/main.go sets it with the one geocode client as the
 	// namer.
 	Shares *service.ShareService
+	// SharePageRateLimit is the per client IP budget of GET /r/{token} (Phase 8
+	// plan 04). A zero value takes SharePageRateLimitDefault. It is used only when
+	// ClientIPHeader is set; without it every request is admitted.
+	SharePageRateLimit SharePageRateLimit
 }
 
 // requestLogger returns the access log middleware. It replaces chi's
@@ -239,6 +243,26 @@ func (e *pathOnlyLogEntry) Write(status, bytes int, _ http.Header, elapsed time.
 func (e *pathOnlyLogEntry) Panic(v interface{}, _ []byte) {
 	e.logger.Printf("[%s] %s %s panic: %v", e.reqID, e.method, e.path, v)
 }
+
+// SharePageRateLimit is the per client IP budget of the public status page
+// GET /r/{token} (Phase 8 plan 04). It is used only when Deps.ClientIPHeader is
+// set, exactly like the Phase 4 network backstops: without that header the peer
+// address is the host's proxy, shared by every reader and by WhatsApp's
+// crawler, so a limit keyed on it would lock real readers out of a link
+// forwarded into a busy group, in the emergency the page exists for. The 128 bit
+// token already stops anyone walking through reports. Even with the header the
+// numbers stay loose, because the crawler's addresses are shared by every
+// WhatsApp user; a refusal means a plain link in the chat, not an outage. It is
+// never router wide.
+type SharePageRateLimit struct {
+	Every time.Duration
+	Burst int
+}
+
+// SharePageRateLimitDefault is used whenever Deps leaves SharePageRateLimit at
+// its zero value: a burst of 120, then one more a second. cmd/server/main.go
+// sets the same numbers from its constants.
+var SharePageRateLimitDefault = SharePageRateLimit{Every: time.Second, Burst: 120}
 
 // GeocodeRateLimit is the burst/refill configuration for the per account
 // budget of GET /api/geocode only.
@@ -507,6 +531,13 @@ var compressibleContentTypes = []string{"text/html", "text/css", "text/javascrip
 // middleware: the typed code row and the new session binding are keyed on the
 // browser's session id. The older link routes stay until the cleanup plans.
 //
+// Amended 2026-10-29 by Phase 8 plan 04 (D-05, D-06): GET /r/{token} joins the
+// exempt set and skips the session middleware under the /r prefix; it is server
+// rendered, limited per client IP only when CLIENT_IP_HEADER is set, and reads
+// one report's public status by a random token. A numeric id, a bad token and
+// every near miss spelling never answer 200, and opening the page, by a person
+// or by WhatsApp's crawler, writes no sessions row and sets no cookie.
+//
 // The route table has a third part, the moderator group (D-08), which is the
 // one exception to "every other route" above. It sits outside the access gate
 // and answers a plain 404 that is byte equal to an unknown route to everyone
@@ -558,7 +589,8 @@ func NewRouter(deps Deps) *chi.Mux {
 	// launcher or manifest fetch without a cookie must not create a session) and
 	// the 85 globe tile paths (plan 05-04), everything under /demo (plan 05-10),
 	// the cron's refresh POST (plan 05-12) and the static files under /static
-	// (2026-10-29, follow up to plan 05-13).
+	// (2026-10-29, follow up to plan 05-13), and the public status page under /r
+	// (plan 08-04).
 	r.Use(skipSessionFor(sessionSkipSet(), deps.Session.Middleware(deps.persistSession)))
 
 	// Local copies of the page and auth configs that carry the shared Chrome
@@ -672,6 +704,27 @@ func NewRouter(deps Deps) *chi.Mux {
 	// The public legal pages (D-23, P4-A18): no account data (R-07), cacheable only in the browser.
 	r.Get("/disclaimer", handlers.Legal(deps.Template, auth, handlers.LegalDisclaimerPage))
 	r.Get("/policy", handlers.Legal(deps.Template, auth, handlers.LegalPolicyPage))
+	// The public status page of a shared link (plan 08-04, D-05): the one Phase 8
+	// route that opens without an account. It is addressed by a random 128 bit
+	// token, never by a report id, so nobody can walk through reports, and it is
+	// server rendered with no script, no session and no cookie (the /r prefix is in
+	// sessionSkipSet). The per client IP limit exists only when CLIENT_IP_HEADER is
+	// set; with no header the peer address is the host's shared proxy, so every
+	// request is admitted and the token's size is the guard (review B1).
+	sharePageAllow := func(*http.Request) bool { return true }
+	if strings.TrimSpace(deps.ClientIPHeader) != "" {
+		pageLimit := deps.SharePageRateLimit
+		if pageLimit == (SharePageRateLimit{}) {
+			pageLimit = SharePageRateLimitDefault
+		}
+		sharePageLimiter := ratelimit.NewPerIP(pageLimit.Every, pageLimit.Burst)
+		sharePageAllow = func(req *http.Request) bool {
+			ip := middleware.GetClientIP(req.Context())
+			// An address that is unknown is admitted, as the network backstops skip it.
+			return ip == "" || sharePageLimiter.Allow(ip)
+		}
+	}
+	r.Get("/r/{token}", handlers.PublicStatusPage(deps.Template, auth, shares, shareBase, sharePageAllow))
 	// The Demo (plan 05-10, D-04, owner 2026-10-17): a visitor with no account can
 	// try Pinalert first. Everything under /demo is public and sessionless (the
 	// prefix is in sessionSkipSet), and it reads and writes no account and no
@@ -1081,8 +1134,8 @@ func (s sessionSkip) matches(r *http.Request) bool {
 // sessionSkipSet builds the rule set the router uses, from the same lists the
 // routes are registered from: the exact GET paths are handlers.PWAPublicPaths
 // (plan 03.3-04) and handlers.GlobeTilePaths() (plan 05-04). The one exact POST
-// path is the external cron's refresh endpoint (plan 05-12). The one prefix is
-// /demo (plan 05-10).
+// path is the external cron's refresh endpoint (plan 05-12). The prefixes are
+// /demo (plan 05-10), /static (the Phase 5 follow up) and /r (plan 08-04).
 func sessionSkipSet() sessionSkip {
 	tiles := handlers.GlobeTilePaths()
 	get := make(map[string]bool, len(handlers.PWAPublicPaths)+len(tiles))
@@ -1101,7 +1154,12 @@ func sessionSkipSet() sessionSkip {
 	// first visit to the Demo or the sign in page, and each fetch used to set a
 	// cookie and write a sessions row (12 rows for one Demo visit). The files are
 	// public and read nothing from a session.
-	return sessionSkip{get: get, post: post, prefixes: []string{"/demo", "/static"}}
+	// "/r" (added 2026-10-29, Phase 8 plan 04, D-05): the public status page of a
+	// shared link. WhatsApp's crawler and a reader with no account fetch it with
+	// no cookie, and the page needs no session, so neither a cookie nor a sessions
+	// row is written (research Pitfall 2). Only GET /r/{token} is a route; a POST
+	// under the prefix is skipped too and is answered 405.
+	return sessionSkip{get: get, post: post, prefixes: []string{"/demo", "/static", "/r"}}
 }
 
 // skipSessionFor wraps the session middleware so a request goes straight to the
