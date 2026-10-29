@@ -153,6 +153,51 @@ func newTestRefresher(feeds *fakeFeeds, c *clock) *Refresher {
 	return NewRefresher(nil, nil, withStores(feeds, newFakeAlerts()), WithRefresherClock(c.now))
 }
 
+// heldPanicFetcher waits until it is released, then panics.
+type heldPanicFetcher struct{ started, release chan struct{} }
+
+func (f heldPanicFetcher) Fetch(context.Context, FeedStatus) (Result, error) {
+	close(f.started)
+	<-f.release
+	panic("a bug inside the run")
+}
+
+// TestRefreshWaiterSeesALeaderPanic pins IN-S04 of the Phase 5 review: when the
+// run a caller waits on panics, the waiter gets an error, never a clean zero
+// result, and the panic still reaches the leader's own recover.
+func TestRefreshWaiterSeesALeaderPanic(t *testing.T) {
+	c := &clock{t: refreshT0}
+	r := newTestRefresher(newFakeFeeds(0), c)
+	f := heldPanicFetcher{started: make(chan struct{}), release: make(chan struct{})}
+	r.Register(FeedGdacs, f, time.Minute)
+
+	leaderPanicked := make(chan bool, 1)
+	go func() {
+		defer func() { leaderPanicked <- recover() != nil }()
+		_, _ = r.RefreshIfDue(context.Background(), FeedGdacs)
+	}()
+	<-f.started
+	type out struct {
+		res Result
+		err error
+	}
+	waited := make(chan out, 1)
+	go func() {
+		res, err := r.RefreshIfDue(context.Background(), FeedGdacs)
+		waited <- out{res, err}
+	}()
+	time.Sleep(50 * time.Millisecond) // the waiter reaches the in flight run
+	close(f.release)
+
+	if !<-leaderPanicked {
+		t.Errorf("the leader's panic was swallowed")
+	}
+	got := <-waited
+	if got.err == nil || got.res.Skipped || got.res.ErrorClass == "" {
+		t.Errorf("the waiter got %+v, %v; want an error with a closed word", got.res, got.err)
+	}
+}
+
 func TestRefreshSkipsWithinGap(t *testing.T) {
 	feeds := newFakeFeeds(0)
 	c := &clock{t: refreshT0}

@@ -67,6 +67,9 @@ const saveTimeout = 10 * time.Second
 
 var errAnomaly = errors.New("official: the feed returned no items after a full one")
 
+// errRunPanicked is what the callers waiting on a run get when that run panicked.
+var errRunPanicked = errors.New("official: the refresh run failed")
+
 // ErrUnknownFeed is returned for a feed nothing was registered for.
 var ErrUnknownFeed = errors.New("official: feed is not registered")
 
@@ -277,10 +280,20 @@ func (r *Refresher) RefreshIfDue(ctx context.Context, feed Feed) (Result, error)
 	r.mu.Unlock()
 
 	defer func() {
+		// A run that panicked hands its waiters an error, never a clean zero
+		// result (IN-S04 of the Phase 5 review); the panic then goes on to the
+		// caller's own recover.
+		p := recover()
+		if p != nil {
+			c.res, c.err = Result{Feed: feed, ErrorClass: "network"}, errRunPanicked
+		}
 		r.mu.Lock()
 		delete(r.inflight, feed)
 		r.mu.Unlock()
 		close(c.done)
+		if p != nil {
+			panic(p)
+		}
 	}()
 	c.res, c.err = r.run(ctx, feed, reg)
 	return c.res, c.err
