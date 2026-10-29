@@ -109,6 +109,8 @@
     tries: 0,
     expired: false,
     resendLeft: 0,
+    resendAt: 0,
+    expiresAt: 0,
     resendBusy: false,
     resendTimer: null,
     expiryTimer: null
@@ -125,6 +127,12 @@
     var n = parseInt(card.getAttribute(name), 10);
     return n > 0 ? n : 0;
   }
+
+  // The full Resend wait, started after every send. data-resend-seconds is the
+  // wait left when the page was drawn (review fix WR-B02), which on an entry
+  // panel is the whole wait. A page that also draws data-resend-cooldown-seconds
+  // names the whole wait everywhere, the code screen after a reload included.
+  var fullResendSeconds = numberAttr('data-resend-cooldown-seconds') || numberAttr('data-resend-seconds');
 
   // ---- Errors and the field marks ------------------------------------------------
 
@@ -433,30 +441,42 @@
     }
   }
 
-  // startResendWait counts the Resend wait down each second. It is its own clock,
-  // separate from the code's lifetime below. The countdown is not a live region; it
-  // announces once, when the wait is over.
+  // Both clocks below are wall clock deadlines (review fix WR-B02). A tick only
+  // redraws from Date.now, so a tab that iOS suspended or a desktop browser
+  // throttled shows the right wait the moment it runs again, and coming back to
+  // the page (visibilitychange, pageshow) catches up at once.
+  function secondsUntil(at) {
+    var left = Math.ceil((at - Date.now()) / 1000);
+    return left > 0 ? left : 0;
+  }
+
+  function tickResend() {
+    state.resendLeft = secondsUntil(state.resendAt);
+    renderResend();
+    if (state.resendLeft <= 0 && state.resendTimer !== null) {
+      clearInterval(state.resendTimer);
+      state.resendTimer = null;
+      setText(codeReadyLive, 'Resend code');
+    }
+  }
+
+  // startResendWait starts the Resend wait: the seconds left at this moment. It is
+  // its own clock, separate from the code's lifetime below. The countdown is not a
+  // live region; it announces once, when the wait is over.
   function startResendWait(seconds) {
     if (state.resendTimer !== null) {
       clearInterval(state.resendTimer);
       state.resendTimer = null;
     }
     state.resendBusy = false;
+    state.resendAt = Date.now() + seconds * 1000;
     state.resendLeft = seconds;
     setText(codeReadyLive, '');
     renderResend();
     if (seconds <= 0) {
       return;
     }
-    state.resendTimer = setInterval(function () {
-      state.resendLeft -= 1;
-      renderResend();
-      if (state.resendLeft <= 0) {
-        clearInterval(state.resendTimer);
-        state.resendTimer = null;
-        setText(codeReadyLive, 'Resend code');
-      }
-    }, 1000);
+    state.resendTimer = setInterval(tickResend, 1000);
   }
 
   function expireNow() {
@@ -469,21 +489,31 @@
     codeStatus.hidden = false;
   }
 
-  // startExpiry shows the expiry notice once the code's lifetime has run out. The
-  // button stays pressable; a press still asks the server.
+  function tickExpiry() {
+    if (state.expiryTimer !== null && Date.now() >= state.expiresAt) {
+      expireNow();
+    }
+  }
+
+  // startExpiry shows the expiry notice once the code's lifetime (the seconds left
+  // at this moment) has run out. The button stays pressable; a press still asks
+  // the server.
   function startExpiry(seconds) {
     if (state.expiryTimer !== null) {
       clearInterval(state.expiryTimer);
       state.expiryTimer = null;
     }
     state.expired = false;
-    var left = seconds;
-    state.expiryTimer = setInterval(function () {
-      left -= 1;
-      if (left <= 0) {
-        expireNow();
-      }
-    }, 1000);
+    state.expiresAt = Date.now() + seconds * 1000;
+    state.expiryTimer = setInterval(tickExpiry, 1000);
+  }
+
+  // catchUp redraws both clocks from the wall clock when the person comes back.
+  function catchUp() {
+    if (state.resendTimer !== null) {
+      tickResend();
+    }
+    tickExpiry();
   }
 
   // ---- The code screen: field, modes, tries ---------------------------------------
@@ -541,7 +571,7 @@
     setCodeMode(mode);
     lockCodeButton(false);
     showPanel('code');
-    startResendWait(numberAttr('data-resend-seconds'));
+    startResendWait(fullResendSeconds);
     startExpiry(numberAttr('data-code-ttl-seconds'));
   }
 
@@ -702,7 +732,7 @@
       }
       state.tries = 0;
       lockCodeButton(false);
-      startResendWait(numberAttr('data-resend-seconds'));
+      startResendWait(fullResendSeconds);
       startExpiry(numberAttr('data-code-ttl-seconds'));
       setText(codeStatus, CODE_SENT_MESSAGE);
       codeStatus.hidden = false;
@@ -770,6 +800,14 @@
     }
   });
   codeInput.addEventListener('paste', onCodePaste);
+
+  // Back from Mail, or from the back and forward cache: the clocks catch up.
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'hidden') {
+      catchUp();
+    }
+  });
+  window.addEventListener('pageshow', catchUp);
 
   // ---- Start ----------------------------------------------------------------------
 

@@ -83,14 +83,19 @@ class FakeEl {
 }
 
 // The markup of login_gate.html.tmpl, as the ids and attributes auth.js reads.
-function buildPage({ start = 'create', mode = 'create', secondsLeft = 0, ttl = 600, resend = 45, email = '', done = false } = {}) {
+// Amended 2026-10-29 by the Phase 7.1 review fix (browser), WR-B02: the document
+// keeps its listeners (visibilitychange) so a case can fire them, and cooldown
+// draws data-resend-cooldown-seconds, the full wait after a send, when given.
+function buildPage({ start = 'create', mode = 'create', secondsLeft = 0, ttl = 600, resend = 45, email = '', done = false, cooldown } = {}) {
   const doc = {
     activeElement: null,
     selected: null,
     byId: {},
+    listeners: {},
+    visibilityState: 'visible',
     createElement(tag) { return new FakeEl(doc, tag); },
     getElementById(id) { return doc.byId[id] || null; },
-    addEventListener() {},
+    addEventListener(type, fn) { (doc.listeners[type] = doc.listeners[type] || []).push(fn); },
     removeEventListener() {}
   };
   const make = (tag, id, parent, attrs) => {
@@ -109,6 +114,7 @@ function buildPage({ start = 'create', mode = 'create', secondsLeft = 0, ttl = 6
     'data-resend-seconds': String(resend),
     'data-password-min': '8'
   });
+  if (cooldown !== undefined) { card.setAttribute('data-resend-cooldown-seconds', String(cooldown)); }
   if (done) {
     make('p', 'login-done', card).textContent = 'You are logged out of all devices.';
   }
@@ -193,8 +199,18 @@ function load(options) {
     }
     now = end;
   };
+  // Amended 2026-10-29 by the Phase 7.1 review fix (browser), WR-B02: sleep moves
+  // the clock with every timer paused, as iOS does to a tab in the background: the
+  // timers run on from where they stopped, but Date.now has moved on. The sandbox
+  // Date reads this clock, and the window keeps its listeners (pageshow).
+  const sleep = (ms) => {
+    now += ms;
+    timers.forEach((t) => { t.at += ms; });
+  };
+  const winListeners = {};
   const sandbox = {
     console,
+    Date: { now: () => now },
     document: page.doc,
     fetch(target, init) {
       return new Promise((resolve, reject) => {
@@ -205,7 +221,7 @@ function load(options) {
     clearTimeout(id) { timers.delete(id); },
     setInterval(fn, ms) { const id = nextId++; timers.set(id, { fn, at: now + ms, every: ms }); return id; },
     clearInterval(id) { timers.delete(id); },
-    addEventListener() {}
+    addEventListener(type, fn) { (winListeners[type] = winListeners[type] || []).push(fn); }
   };
   sandbox.location = {
     get search() { touched.push('location.search'); return ''; },
@@ -223,7 +239,9 @@ function load(options) {
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox, { filename: 'auth.js' });
-  return { ...page, requests, assigned, touched, advance, timers, sandbox };
+  const fireDoc = (type) => (page.doc.listeners[type] || []).forEach((fn) => fn({ type }));
+  const fireWin = (type, extra) => (winListeners[type] || []).forEach((fn) => fn({ type, ...extra }));
+  return { ...page, requests, assigned, touched, advance, sleep, fireDoc, fireWin, timers, sandbox };
 }
 
 const flush = async () => { for (let i = 0; i < 8; i++) { await new Promise((r) => setImmediate(r)); } };
@@ -1014,4 +1032,72 @@ test('WR-B01: Resend and the code submit are bounded too', async () => {
   assert.equal(text(page, 'code-resend'), 'Resend code');
   click(page, 'code-resend');
   assert.equal(page.requests.length, before + 1, 'Resend can be pressed again');
+});
+
+// Phase 7.1 review fix (browser), WR-B02: the Resend wait and the code's lifetime
+// are wall clock deadlines (Date.now), set at page load from the seconds left that
+// the page carries and after each send, so a trip to Mail or a reload never shows a
+// stale wait and the expiry never stalls.
+test('WR-B02: after a minute in Mail, one tick shows Resend code, not the wait where it stopped', async () => {
+  const page = load({ start: 'create' });
+  await toCodeScreen(page);
+  page.advance(5000);
+  assert.equal(text(page, 'code-resend'), 'Resend in 40s');
+  page.sleep(60000);
+  page.advance(1000);
+  assert.equal(text(page, 'code-resend'), 'Resend code');
+  assert.equal(byId(page, 'code-resend').getAttribute('aria-disabled'), null);
+  assert.equal(text(page, 'code-ready-live'), 'Resend code', 'the end of the wait is announced once');
+  click(page, 'code-resend');
+  assert.equal(page.requests[page.requests.length - 1].url, '/api/auth/code/resend');
+});
+
+test('WR-B02: coming back to the page catches both clocks up at once, with no tick needed', async () => {
+  const page = load({ start: 'create', ttl: 600 });
+  await toCodeScreen(page);
+  page.sleep(50000);
+  page.fireDoc('visibilitychange');
+  assert.equal(text(page, 'code-resend'), 'Resend code');
+  assert.equal(byId(page, 'code-status').hidden, true, 'the code is still alive');
+
+  page.sleep(560000);
+  page.fireWin('pageshow', { persisted: true });
+  assert.equal(byId(page, 'code-status').hidden, false);
+  assert.equal(text(page, 'code-status'), 'The code has expired. Get a new one.');
+});
+
+test('WR-B02: a reload takes the seconds left from the page and counts them on the clock', () => {
+  const page = load({ start: 'code', email: 'priya@example.com', secondsLeft: 300, resend: 12 });
+  assert.equal(text(page, 'code-resend'), 'Resend in 12s');
+  page.sleep(12000);
+  page.fireDoc('visibilitychange');
+  assert.equal(text(page, 'code-resend'), 'Resend code');
+  page.sleep(288000);
+  page.fireDoc('visibilitychange');
+  assert.equal(text(page, 'code-status'), 'The code has expired. Get a new one.');
+
+  // A page drawn with nothing left shows Resend code and the expiry at once.
+  const late = load({ start: 'code', email: 'priya@example.com', secondsLeft: 0, resend: 0 });
+  assert.equal(text(late, 'code-resend'), 'Resend code');
+  assert.equal(text(late, 'code-status'), 'The code has expired. Get a new one.');
+});
+
+test('WR-B02: the wait after a send is the full wait, also on a page reloaded with less left', async () => {
+  // An entry page: data-resend-seconds is the full wait (as the server draws it
+  // with no code out), and every send starts it again on the clock.
+  const page = load({ start: 'create', resend: 45 });
+  await toCodeScreen(page);
+  assert.equal(text(page, 'code-resend'), 'Resend in 45s');
+
+  // A code screen reloaded with 3 seconds left; the page also names the full wait.
+  const reloaded = load({ start: 'code', email: 'priya@example.com', secondsLeft: 300, resend: 3, cooldown: 45 });
+  assert.equal(text(reloaded, 'code-resend'), 'Resend in 3s');
+  reloaded.advance(3000);
+  click(reloaded, 'code-resend');
+  answer(reloaded.requests[0], 200, { sent: true });
+  await flush();
+  assert.equal(text(reloaded, 'code-resend'), 'Resend in 45s');
+  reloaded.sleep(45000);
+  reloaded.fireWin('pageshow', { persisted: false });
+  assert.equal(text(reloaded, 'code-resend'), 'Resend code');
 });
