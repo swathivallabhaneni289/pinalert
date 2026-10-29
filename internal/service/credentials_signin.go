@@ -121,6 +121,18 @@ func spend(ctx context.Context, q CredentialQuerier, row sqlcgen.BumpAuthCodeAtt
 	return nil
 }
 
+// lockAddress is the first statement of both confirm transactions (review fix
+// skeptic SK-05): one advisory lock per normalised address, keyed by its
+// throttle key, so a sign up confirm and a reset confirm for one address, or
+// two sign up confirms, run one after the other instead of taking the account
+// row and the code rows in opposite orders and deadlocking.
+func (s *CredentialService) lockAddress(ctx context.Context, q CredentialQuerier, email string) error {
+	if err := q.LockCredentialAddress(ctx, s.ThrottleKey(email)); err != nil {
+		return fmt.Errorf("service: locking the address: %w", err)
+	}
+	return nil
+}
+
 // ConfirmSignUp is the typed code of Create account. A right code creates the
 // account, or keeps the account made with the old link and so its reports,
 // sets the password typed at Create account, clears the sign in throttle and
@@ -129,7 +141,8 @@ func spend(ctx context.Context, q CredentialQuerier, row sqlcgen.BumpAuthCodeAtt
 // Everything after the code is proved runs in one transaction (Phase 7.1
 // review CR-S02, IN-S07): the spend, the account, the password, the throttle
 // and the bind, so a failure leaves the code usable and nothing half written.
-// When the account already existed (made with the old link, or one that gained
+// It first takes the address lock the reset confirm takes too (review fix
+// skeptic SK-05), so the two never deadlock. When the account already existed (made with the old link, or one that gained
 // a password meanwhile) the password is set with a new epoch, under the account
 // row lock, and every session and phone alert device of the account is ended,
 // so a session the old binary made from an emailed link, or one opened with a
@@ -149,6 +162,9 @@ func (s *CredentialService) ConfirmSignUp(ctx context.Context, sessionID, rawCod
 	}
 	var result SignInResult
 	err = s.inTx(ctx, func(q CredentialQuerier) error {
+		if err := s.lockAddress(ctx, q, row.Email); err != nil {
+			return err
+		}
 		if err := spend(ctx, q, row); err != nil {
 			return err
 		}
@@ -324,7 +340,8 @@ func (s *CredentialService) reserveTry(ctx context.Context, key string) (sqlcgen
 // (a locked address can always be recovered this way). It never signs the
 // browser in: the person signs in with the new password.
 //
-// The writes run in one transaction, the password first (Phase 7.1 review
+// The writes run in one transaction, after the address lock both confirms take
+// first (review fix skeptic SK-05), the password first (Phase 7.1 review
 // CR-S02): the password is set with a new epoch, which takes the account row
 // lock, then the code is spent, the throttle cleared and every session ended.
 // A sign in that read the old epoch cannot bind after it, and the gate refuses
@@ -369,6 +386,9 @@ func (s *CredentialService) ConfirmReset(ctx context.Context, sessionID, rawCode
 		return s.hashError(err)
 	}
 	return s.inTx(ctx, func(q CredentialQuerier) error {
+		if err := s.lockAddress(ctx, q, row.Email); err != nil {
+			return err
+		}
 		if _, err := s.setPasswordNewEpoch(ctx, q, account.ID, hash); err != nil {
 			return err
 		}

@@ -291,6 +291,16 @@ func (f *credFakeQuerier) DeleteAuthCodesForEmail(_ context.Context, email strin
 	return nil
 }
 
+// LockCredentialAddress stands for the advisory lock of the confirm
+// transactions (review fix skeptic SK-05); the fake runs one call at a time.
+func (f *credFakeQuerier) LockCredentialAddress(_ context.Context, key string) error {
+	f.log("LockCredentialAddress")
+	if key == "" {
+		return fmt.Errorf("fake: empty address lock key")
+	}
+	return nil
+}
+
 func (f *credFakeQuerier) PruneAuthCodes(_ context.Context, _ time.Time) (int64, error) {
 	f.log("PruneAuthCodes")
 	f.pruneCodes++

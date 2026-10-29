@@ -73,6 +73,17 @@ LIMIT 1;
 -- Delete my account: the code rows ever written for the real address.
 DELETE FROM auth_codes WHERE email = sqlc.arg(email);
 
+-- name: LockCredentialAddress :exec
+-- The first statement of both confirm transactions, Create account's typed
+-- code and Forgot password's (Phase 7.1 review fix skeptic SK-05): one
+-- transaction scoped advisory lock per normalised address, keyed by its keyed
+-- throttle hash, so two confirms for one address run one after the other. Each
+-- takes the account row and the address's code rows, in different orders; under
+-- this lock they can no longer deadlock, and the lock also covers a brand new
+-- account, which has no row yet to lock. The class 71 keeps these keys apart
+-- from any other advisory lock. It ends with the transaction.
+SELECT pg_advisory_xact_lock(71, hashtext(sqlc.arg(address_key)::text));
+
 -- name: PruneAuthCodes :execrows
 -- Removes rows that expired before the cutoff, so the table holds only codes
 -- that could still matter.
