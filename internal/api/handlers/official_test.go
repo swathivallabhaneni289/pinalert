@@ -44,6 +44,23 @@ func officialRequest(t *testing.T, h http.Handler, target string, withAccount bo
 	return rec
 }
 
+// TestOfficialRowZeroTimesAreEmpty pins WR-S04 of the Phase 5 review: a GDACS
+// row with no from or to date sends empty times, never the year 1, and an
+// ended hazard says so.
+func TestOfficialRowZeroTimesAreEmpty(t *testing.T) {
+	v := official.View{Groups: []official.Group{{Kind: "reader", Rows: []official.Row{
+		{ID: 1, Source: "gdacs", Ended: true},
+		{ID: 2, Source: "sachet", IssuedAt: time.Date(2026, 10, 29, 5, 40, 0, 0, time.UTC), ExpiresAt: time.Date(2026, 10, 29, 14, 35, 0, 0, time.UTC)},
+	}}}}
+	rows := officialViewToResponse(v).Groups[0].Rows
+	if rows[0].IssuedAt != "" || rows[0].ExpiresAt != "" || !rows[0].Ended {
+		t.Errorf("zero times sent as %q and %q, ended %t; want empty and ended", rows[0].IssuedAt, rows[0].ExpiresAt, rows[0].Ended)
+	}
+	if rows[1].IssuedAt != "2026-10-29T05:40:00Z" || rows[1].ExpiresAt != "2026-10-29T14:35:00Z" || rows[1].Ended {
+		t.Errorf("set times sent as %q and %q, ended %t", rows[1].IssuedAt, rows[1].ExpiresAt, rows[1].Ended)
+	}
+}
+
 func TestOfficialAlertsValidatesPosition(t *testing.T) {
 	cases := []struct {
 		name, query, field string

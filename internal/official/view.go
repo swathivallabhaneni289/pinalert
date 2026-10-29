@@ -165,7 +165,11 @@ type Row struct {
 	ExpiresAt            time.Time
 	ExpiresInferred      bool
 	GroupedCount         int
-	Details              Details
+	// Ended is a GDACS row whose end date has passed. It stays listed (D-12)
+	// but is not in force, so Count leaves it out (WR-S04 of the Phase 5
+	// review).
+	Ended   bool
+	Details Details
 }
 
 // Details is the disclosure panel of a row. Every part is empty when the feed
@@ -310,7 +314,7 @@ func BuildView(in ViewInput) View {
 				target = &homeSec
 			}
 			if target != nil {
-				hazardRows[target] = append(hazardRows[target], hazardEntry(h))
+				hazardRows[target] = append(hazardRows[target], hazardEntry(h, in.Now))
 			}
 		}
 	}
@@ -338,7 +342,11 @@ func BuildView(in ViewInput) View {
 			rows[i] = e.row
 		}
 		v.Groups = append(v.Groups, Group{Kind: sec.kind, Label: sec.label, Rows: rows})
-		v.Count += len(rows)
+		for _, r := range rows {
+			if !r.Ended {
+				v.Count++
+			}
+		}
 	}
 
 	v.DistrictsLine = districtsLine(districtNames(in, homeShown, listed))
@@ -413,7 +421,7 @@ func sortEntries(out []entry) {
 // Severe for the chip colour and the order; Green is neutral and sorts with the
 // unknown ones. The line on the row says what GDACS is: an automatic estimate.
 // Nothing here is a vote, a count or a reliability tag.
-func hazardEntry(h StoredHazard) entry {
+func hazardEntry(h StoredHazard, now time.Time) entry {
 	word := GdacsLevelWord(h.AlertLevel)
 	level, rank := "neutral", severityRank("")
 	switch word {
@@ -439,6 +447,7 @@ func hazardEntry(h StoredHazard) entry {
 			IssuedAt:     h.FromDate,
 			ExpiresAt:    h.ToDate,
 			GroupedCount: 1,
+			Ended:        !h.ToDate.IsZero() && !h.ToDate.After(now),
 			Details: Details{
 				Description: h.SeverityText,
 				Areas:       h.Country,
