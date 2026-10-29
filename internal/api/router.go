@@ -407,6 +407,9 @@ var RateLimitsDefault = RateLimits{
 	// churn. Both are keyed per account, never per network address (CGNAT).
 	PeopleRead:   BucketLimit{Every: time.Second, Burst: 60},
 	PeopleAction: BucketLimit{Every: 3 * time.Second, Burst: 20},
+	// Rate (Phase 9 plan 14, D-02, T-09-54): a burst of 10 then one every 30
+	// seconds, per account. The once a day change rule sits on top of it.
+	Rate: BucketLimit{Every: 30 * time.Second, Burst: 10},
 }
 
 // resolveRateLimits replaces every field equal to BucketLimit{} with the
@@ -435,6 +438,7 @@ func resolveRateLimits(l RateLimits) RateLimits {
 	fill(&l.IPBackstopLike, RateLimitsDefault.IPBackstopLike)
 	fill(&l.PeopleRead, RateLimitsDefault.PeopleRead)
 	fill(&l.PeopleAction, RateLimitsDefault.PeopleAction)
+	fill(&l.Rate, RateLimitsDefault.Rate)
 	return l
 }
 
@@ -1028,6 +1032,11 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.With(rateGate.PeopleActionMiddleware()).Post("/api/people/{username}/remove-follower", handlers.RemoveFollower(people))
 		r.With(rateGate.PeopleActionMiddleware()).Post("/api/people/{username}/block", handlers.BlockPerson(people))
 		r.With(rateGate.PeopleActionMiddleware()).Post("/api/people/{username}/unblock", handlers.UnblockPerson(people))
+		// The two rating routes (Phase 9 plan 14, D-02): give or remove a star
+		// rating, through the per account Rate bucket. Without a ratings service
+		// both answer the uniform 404.
+		r.With(rateGate.RateMiddleware()).Post("/api/people/{username}/rating", handlers.RatePerson(deps.Ratings))
+		r.With(rateGate.RateMiddleware()).Post("/api/people/{username}/rating/clear", handlers.ClearPersonRating(deps.Ratings))
 		r.With(rateGate.PeopleActionMiddleware()).Post("/api/me/followers/remove-all", handlers.RemoveAllFollowers(people))
 		r.With(rateGate.PeopleReadMiddleware()).Get("/api/me/blocked", handlers.BlockedPeopleList(people))
 		r.With(rateGate.PeopleActionMiddleware()).Patch("/api/me/visibility", handlers.UpdateVisibility(people))

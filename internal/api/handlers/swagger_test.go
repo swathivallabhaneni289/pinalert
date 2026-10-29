@@ -460,6 +460,9 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 	// people routes are pinned with the answers each can give. Every one is
 	// gated, so each carries 401, and every one is limited per account, so each
 	// carries a 429 with Retry-After.
+	//
+	// Amended 2026-10-29 by Phase 9 plan 14 (D-02): the two rating routes join the
+	// list. Every other pin is unchanged.
 	for _, rt := range []struct {
 		path, method string
 		codes        []string
@@ -473,6 +476,8 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 		{"/people/{username}/remove-follower", "post", []string{"204", "401", "404", "429"}},
 		{"/people/{username}/block", "post", []string{"204", "401", "404", "429"}},
 		{"/people/{username}/unblock", "post", []string{"204", "401", "404", "429"}},
+		{"/people/{username}/rating", "post", []string{"204", "400", "401", "404", "409", "429"}},
+		{"/people/{username}/rating/clear", "post", []string{"204", "400", "401", "404", "409", "429"}},
 		{"/me/followers/remove-all", "post", []string{"204", "401", "429"}},
 		{"/me/blocked", "get", []string{"200", "401", "429"}},
 		{"/me/visibility", "patch", []string{"200", "400", "401", "422", "429"}},

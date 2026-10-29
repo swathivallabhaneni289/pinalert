@@ -80,6 +80,9 @@ func (c *p20Clock) Advance(d time.Duration) {
 // Amended 2026-10-29 by Phase 9 plan 07 (D-03, D-12): it also opens the
 // PeopleRead and PeopleAction buckets, for the same reason. Every other
 // assertion is unchanged.
+//
+// Amended 2026-10-29 by Phase 9 plan 14 (D-02, T-09-54): it also opens the Rate
+// bucket, for the same reason. Every other assertion is unchanged.
 func p20Tweak(clk *p20Clock, mutate func(d *api.Deps)) func(d *api.Deps, q *sqlcgen.Queries) {
 	return func(d *api.Deps, q *sqlcgen.Queries) {
 		d.RateLimits = api.RateLimits{
@@ -101,6 +104,7 @@ func p20Tweak(clk *p20Clock, mutate func(d *api.Deps)) func(d *api.Deps, q *sqlc
 			IPBackstopLike:    p20Open,
 			PeopleRead:        p20Open,
 			PeopleAction:      p20Open,
+			Rate:              p20Open,
 		}
 		d.LimiterClock = clk.Now
 		if mutate != nil {

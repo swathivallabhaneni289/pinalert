@@ -1138,6 +1138,12 @@ definitions:
       is_self:
         example: false
         type: boolean
+      may_rate:
+        description: |-
+          MayRate says the caller may rate this person now. YourRating is the caller's
+          own current rating, 1 to 5, or 0 for none.
+        example: true
+        type: boolean
       member_since:
         example: Member since October 2026
         type: string
@@ -1150,6 +1156,15 @@ definitions:
       reliable:
         example: true
         type: boolean
+      stars_from_ratings:
+        example: 4.0 from ratings by 12 people
+        type: string
+      stars_from_reports:
+        description: |-
+          StarsFromReports and StarsFromRatings are the two parts of the stars total.
+          Both are empty until five people have rated (a different place each).
+        example: 3.6 from reports
+        type: string
       stars_label:
         example: 3.6 stars
         type: string
@@ -1171,6 +1186,9 @@ definitions:
       username:
         example: asha_k
         type: string
+      your_rating:
+        example: 4
+        type: integer
     type: object
   handlers.PlaceResponse:
     properties:
@@ -1338,6 +1356,12 @@ definitions:
       serious:
         example: true
         type: boolean
+    type: object
+  handlers.RateRequest:
+    properties:
+      stars:
+        example: 4
+        type: integer
     type: object
   handlers.RecentResponse:
     properties:
@@ -3430,6 +3454,120 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       summary: List the people a person follows
+      tags:
+      - people
+  /people/{username}/rating:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Saves the caller's rating of a person, 1 to 5 stars. Only someone who confirmed, disputed,
+        resolved or reopened one of that person's reports may rate them, and never yourself. The
+        first rating is free; a different rating can be given again after a day. The same stars
+        again change nothing and answer 204. Every reason a rating is not allowed answers 409 with
+        the field stars and the same sentence, and a change inside the day answers 409 with the
+        field stars and its own sentence, so the route does not tell who voted on whose report.
+        Stars outside 1 to 5, or a body that is not {"stars": n}, answers 400 with the field stars.
+        A person the caller may not see answers the same 404 as the profile.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Username
+        in: path
+        name: username
+        required: true
+        type: string
+      - description: The stars
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.RateRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Saved
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Rate a person
+      tags:
+      - people
+  /people/{username}/rating/clear:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Removes the caller's rating of a person. Send no body or an empty object. Removing counts
+        as a change, so it needs a day since the last change and answers 409 with the field stars
+        inside it. A person you have not rated answers 204 and changes nothing. A person the caller
+        may not see answers the same 404 as the profile.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Username
+        in: path
+        name: username
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Removed
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Blocked by a limit, see Retry-After
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before trying again
+              type: integer
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Remove your rating of a person
       tags:
       - people
   /people/{username}/remove-follower:

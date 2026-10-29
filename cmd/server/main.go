@@ -132,10 +132,17 @@ const (
 	// actions are bounded to slow follow churn (a burst of 20 then one every 3
 	// seconds). Both are keyed per account and never per network address,
 	// because many phones share one carrier address.
-	peopleReadBurst    = 60
-	peopleReadEvery    = time.Second
-	peopleActionBurst  = 20
-	peopleActionEvery  = 3 * time.Second
+	peopleReadBurst   = 60
+	peopleReadEvery   = time.Second
+	peopleActionBurst = 20
+	peopleActionEvery = 3 * time.Second
+	// Ratings (Phase 9 plan 14, D-02, T-09-54): a real reader rates a few people a
+	// day, and the once a day change rule sits on top, so a burst of 10 then one
+	// more every 30 seconds is generous and still bounds rating spam. Keyed per
+	// account and never per network address, because many phones share one carrier
+	// address.
+	rateBurst          = 10
+	rateEvery          = 30 * time.Second
 	submitAttemptBurst = 20
 	submitAttemptEvery = 6 * time.Second
 )
@@ -635,6 +642,7 @@ func main() {
 			IPBackstopLike:    api.BucketLimit{Every: ipBackstopLikeEvery, Burst: ipBackstopLikeBurst},
 			PeopleRead:        api.BucketLimit{Every: peopleReadEvery, Burst: peopleReadBurst},
 			PeopleAction:      api.BucketLimit{Every: peopleActionEvery, Burst: peopleActionBurst},
+			Rate:              api.BucketLimit{Every: rateEvery, Burst: rateBurst},
 		},
 	}
 	router := api.NewRouter(deps)
