@@ -55,6 +55,12 @@ type RateLimits struct {
 	IPBackstopReport BucketLimit
 	IPBackstopVote   BucketLimit
 	IPBackstopFlag   BucketLimit
+	// Share is the allowance for making share links, keyed per account; each
+	// attempt may spend a reverse area lookup (Phase 8 plan 03, A-P8-4).
+	Share BucketLimit
+	// IPBackstopShare is the network backstop for the share family, a bucket of
+	// its own so share taps can never starve report posting (WR-S02).
+	IPBackstopShare BucketLimit
 }
 
 // RateLimitResponse is the one 429 body of every Phase 4 limiter. The
@@ -77,6 +83,11 @@ const (
 	ipBackstopReportBucket = "ip_backstop_report"
 	ipBackstopVoteBucket   = "ip_backstop_vote"
 	ipBackstopFlagBucket   = "ip_backstop_flag"
+	ipBackstopShareBucket  = "ip_backstop_share"
+
+	// The share bucket (Phase 8 plan 03). The name goes to the block log only.
+	shareBucketName = "share"
+	shareRateField  = "rate_share"
 
 	voteRateField       = "rate_vote"
 	voteChangeRateField = "rate_vote_change"
@@ -105,6 +116,8 @@ type RateGate struct {
 	ipBackstopReport *ratelimit.PerKey
 	ipBackstopVote   *ratelimit.PerKey
 	ipBackstopFlag   *ratelimit.PerKey
+	share            *ratelimit.PerKey
+	ipBackstopShare  *ratelimit.PerKey
 	reportSerious    *ratelimit.PerKey
 	reportOther      *ratelimit.PerKey
 	submitAttempt    *ratelimit.PerKey
@@ -131,6 +144,8 @@ func NewRateGate(limits RateLimits, clock func() time.Time, clientIPHeader strin
 		ipBackstopReport: ratelimit.NewPerKey(bucketConfig(limits.IPBackstopReport, clock)),
 		ipBackstopVote:   ratelimit.NewPerKey(bucketConfig(limits.IPBackstopVote, clock)),
 		ipBackstopFlag:   ratelimit.NewPerKey(bucketConfig(limits.IPBackstopFlag, clock)),
+		share:            ratelimit.NewPerKey(bucketConfig(limits.Share, clock)),
+		ipBackstopShare:  ratelimit.NewPerKey(bucketConfig(limits.IPBackstopShare, clock)),
 		reportSerious:    ratelimit.NewPerKey(bucketConfig(limits.ReportSerious, clock)),
 		reportOther:      ratelimit.NewPerKey(bucketConfig(limits.ReportOther, clock)),
 		submitAttempt:    ratelimit.NewPerKey(bucketConfig(limits.SubmitAttempt, clock)),
@@ -341,6 +356,37 @@ func (g *RateGate) FlagMiddleware() func(http.Handler) http.Handler {
 			if d := g.flag.Reserve(accountKey(acc.ID)); !d.OK {
 				logBlock(flagBucketName, acc.ID, d.RetryAfter)
 				writeRateLimited(w, flagRateField, service.FlagLimitMessage(d.RetryAfter), d.RetryAfter, false, "")
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// ShareMiddleware throttles the share route (COORD-08, A-P8-4). The order is
+// the network backstop, then the per account share bucket keyed acct:<id>.
+// Every admitted attempt costs one token and nothing is refunded, like the
+// flag bucket: an attempt may mint a token and spend a reverse area lookup, so
+// a 404 probe pays too.
+func (g *RateGate) ShareMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			acc, ok := account.FromContext(r.Context())
+			if !ok {
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+
+			if d := g.reserveIPBackstop(r, g.ipBackstopShare); !d.OK {
+				logBlock(ipBackstopShareBucket, acc.ID, d.RetryAfter)
+				writeRateLimited(w, shareRateField, service.NetworkLimitMessage(false, d.RetryAfter), d.RetryAfter, false, "")
+				return
+			}
+
+			if d := g.share.Reserve(accountKey(acc.ID)); !d.OK {
+				logBlock(shareBucketName, acc.ID, d.RetryAfter)
+				writeRateLimited(w, shareRateField, service.ShareLimitMessage(d.RetryAfter), d.RetryAfter, false, "")
 				return
 			}
 

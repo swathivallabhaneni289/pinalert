@@ -312,6 +312,12 @@ var RateLimitsDefault = RateLimits{
 	IPBackstopReport: BucketLimit{Every: time.Second, Burst: 2000},
 	IPBackstopVote:   BucketLimit{Every: 150 * time.Millisecond, Burst: 2000},
 	IPBackstopFlag:   BucketLimit{Every: 1200 * time.Millisecond, Burst: 1000},
+	// Share (Phase 8 plan 03, A-P8-4): a real reader shares a few reports in a
+	// minute, so a burst of 10 then one more every 30 seconds is generous, and
+	// it still bounds the reverse area lookups a share can spend. The share
+	// backstop matches the flag family's.
+	Share:           BucketLimit{Every: 30 * time.Second, Burst: 10},
+	IPBackstopShare: BucketLimit{Every: 1200 * time.Millisecond, Burst: 1000},
 }
 
 // resolveRateLimits replaces every field equal to BucketLimit{} with the
@@ -332,6 +338,8 @@ func resolveRateLimits(l RateLimits) RateLimits {
 	fill(&l.IPBackstopReport, RateLimitsDefault.IPBackstopReport)
 	fill(&l.IPBackstopVote, RateLimitsDefault.IPBackstopVote)
 	fill(&l.IPBackstopFlag, RateLimitsDefault.IPBackstopFlag)
+	fill(&l.Share, RateLimitsDefault.Share)
+	fill(&l.IPBackstopShare, RateLimitsDefault.IPBackstopShare)
 	return l
 }
 

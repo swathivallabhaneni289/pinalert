@@ -112,6 +112,11 @@ const (
 	voteChangeEvery    = 30 * time.Second
 	flagBurst          = 10
 	flagEvery          = 2 * time.Minute
+	// Share (Phase 8 plan 03, A-P8-4): a real reader shares a few reports in a
+	// minute, so a burst of 10 then one more every 30 seconds is generous, and
+	// it still bounds the reverse area lookups a share can spend.
+	shareBurst         = 10
+	shareEvery         = 30 * time.Second
 	submitAttemptBurst = 20
 	submitAttemptEvery = 6 * time.Second
 )
@@ -131,10 +136,13 @@ const (
 //     second, and still a cap of 60 posts a minute from one address.
 //   - Flags: burst 1000 = 100 x flagBurst 10; one more every 1.2 s =
 //     100 x one per flagEvery 2 minutes.
+//   - Shares (Phase 8 plan 03): burst 1000 = 100 x shareBurst 10; one more
+//     every 1.2 s, the same shape as the flag family.
 //
 // These are not owner numbers (D-11 sets only the account allowances); tune
 // them from the block log, whose bucket names are ip_backstop_report,
-// ip_backstop_vote and ip_backstop_flag. api.RateLimitsDefault mirrors them.
+// ip_backstop_vote, ip_backstop_flag and ip_backstop_share. api.RateLimitsDefault
+// mirrors them.
 const (
 	ipBackstopReportBurst = 2000
 	ipBackstopReportEvery = time.Second
@@ -142,6 +150,8 @@ const (
 	ipBackstopVoteEvery   = 150 * time.Millisecond
 	ipBackstopFlagBurst   = 1000
 	ipBackstopFlagEvery   = 1200 * time.Millisecond
+	ipBackstopShareBurst  = 1000
+	ipBackstopShareEvery  = 1200 * time.Millisecond
 )
 
 // The auth buckets of the code and password routes (Phase 7.1, plan 07, D-02).
@@ -541,6 +551,8 @@ func main() {
 			IPBackstopReport: api.BucketLimit{Every: ipBackstopReportEvery, Burst: ipBackstopReportBurst},
 			IPBackstopVote:   api.BucketLimit{Every: ipBackstopVoteEvery, Burst: ipBackstopVoteBurst},
 			IPBackstopFlag:   api.BucketLimit{Every: ipBackstopFlagEvery, Burst: ipBackstopFlagBurst},
+			Share:            api.BucketLimit{Every: shareEvery, Burst: shareBurst},
+			IPBackstopShare:  api.BucketLimit{Every: ipBackstopShareEvery, Burst: ipBackstopShareBurst},
 		},
 	}
 	router := api.NewRouter(deps)

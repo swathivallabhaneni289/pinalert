@@ -68,6 +68,10 @@ func (c *p20Clock) Advance(d time.Duration) {
 // buckets, injects the clock, opens the request link limiter (several accounts
 // verify from one address), then runs mutate. A frozen clock never refills, so
 // no bucket a case does not exercise may be left at a default.
+//
+// Amended 2026-10-29 by Phase 8 plan 03 (D-13, A-P8-4): it also opens the Share
+// bucket and its network backstop, so a test that does not exercise sharing is
+// never refused by them. Every other assertion is unchanged.
 func p20Tweak(clk *p20Clock, mutate func(d *api.Deps)) func(d *api.Deps, q *sqlcgen.Queries) {
 	return func(d *api.Deps, q *sqlcgen.Queries) {
 		d.RateLimits = api.RateLimits{
@@ -80,6 +84,8 @@ func p20Tweak(clk *p20Clock, mutate func(d *api.Deps)) func(d *api.Deps, q *sqlc
 			IPBackstopReport: p20Open,
 			IPBackstopVote:   p20Open,
 			IPBackstopFlag:   p20Open,
+			Share:            p20Open,
+			IPBackstopShare:  p20Open,
 		}
 		d.LimiterClock = clk.Now
 		if mutate != nil {
