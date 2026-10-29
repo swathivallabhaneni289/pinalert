@@ -109,6 +109,8 @@ window.PinalertReportPage = (function () {
     var inflight = null;
     var inflightTimer = null;
     var pollTimer = null;
+    // The history rows on the page, one record per event, in order.
+    var rows = [];
 
     var el = element('section', 'report-page');
     el.hidden = true;
@@ -172,6 +174,7 @@ window.PinalertReportPage = (function () {
     }
 
     function clearList() {
+      rows = [];
       while (list.firstChild) {
         list.removeChild(list.firstChild);
       }
@@ -230,16 +233,16 @@ window.PinalertReportPage = (function () {
       row.appendChild(time);
       row.appendChild(dot);
       row.appendChild(text);
-      return row;
+      return { el: row, time: time, dot: dot, text: text };
     }
 
     // writeRow writes one event into a row it already has. A node is written
     // only when its words change, so a refresh leaves a reader's selection
     // alone.
     function writeRow(row, event) {
-      var time = row.children[0];
-      var dot = row.children[1];
-      var text = row.children[2];
+      var time = row.time;
+      var dot = row.dot;
+      var text = row.text;
       var tone = TONES.indexOf(event.tone) >= 0 ? event.tone : 'neutral';
       var when = formatTimelineTime(event.at, Date.now(), event.yours === true);
       if (time.textContent !== when) {
@@ -270,15 +273,14 @@ window.PinalertReportPage = (function () {
         mode = 'rows';
       }
       for (var i = 0; i < events.length; i++) {
-        var row = list.children[i];
-        if (!row) {
-          row = makeRow();
-          list.appendChild(row);
+        if (!rows[i]) {
+          rows[i] = makeRow();
+          list.appendChild(rows[i].el);
         }
-        writeRow(row, events[i]);
+        writeRow(rows[i], events[i]);
       }
-      while (list.children.length > events.length) {
-        list.removeChild(list.lastChild);
+      while (rows.length > events.length) {
+        list.removeChild(rows.pop().el);
       }
       list.setAttribute('aria-busy', 'false');
       list.hidden = false;

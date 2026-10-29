@@ -153,11 +153,20 @@ func TestMuteMountedBeforeFlag(t *testing.T) {
 	// Plan 04-30 (owner, 2026-10-22): arrangeCard puts Mute, its error line
 	// and then Flag last, on both sizes, in the body on a phone and in the
 	// actions block on a laptop, so Mute is the row just above Flag.
+	//
+	// Amended 2026-10-29 by Phase 8 plan 05 (research Pitfall 5b): the three
+	// appends became place(mute.el), place(mute.error) and place(flag), which
+	// append to the same lastParent but put the node before the report page node
+	// when the parent is the body, so Stop updates and Flag stay above the
+	// history and the comments. The order Mute, its error line, Flag is
+	// unchanged, and lastParent is still declared first.
 	arrange := jsFunctionBody(t, mapjs, "arrangeCard(card, phone)")
 	p424Ordered(t, "arrangeCard", arrange,
 		"var lastParent = phone ? body : actions;",
-		"lastParent.appendChild(mute.el);", "lastParent.appendChild(mute.error);",
-		"lastParent.appendChild(flag);")
+		"place(mute.el);", "place(mute.error);",
+		"place(flag);")
+	p424Ordered(t, "arrangeCard place", arrange,
+		"function place(node) {", "body.insertBefore(node, pageEl);", "lastParent.appendChild(node);")
 
 	// The list rows and the Past cards never build the control: it lives in the
 	// opened report only, as Flag does.

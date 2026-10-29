@@ -338,6 +338,11 @@ var touchControls = []string{
 	// 20px, and UI-SPEC Spacing says every link is 44px. It was missing from
 	// this list, so the guard did not see it. Added; no check weakened.
 	".notice-strip__link",
+	// Amended 2026-10-29 by Phase 8 plan 05 (D-01, D-17, UI-SPEC P8-R4): the
+	// Share button of the report page and the Try again button of its history
+	// error block, each 44px through --touch-target-min in report-page.css. No
+	// other entry changed.
+	".report-page__share", ".report-page__retry",
 }
 
 // touchValue reads a height or min-height value as pixels: a px length, a
@@ -471,6 +476,9 @@ func TestNewControlsMeetTouchTarget(t *testing.T) {
 var phaseScripts = []string{
 	"app-bar.js", "settings.js", "reader.js", "welcome.js", "position.js",
 	"show-menu.js", "ended-cards.js", "ended-nearby.js", "sheet.js",
+	// Amended 2026-10-29 by Phase 8 plan 05: the report page builder joins the
+	// scripts held to the plain punctuation rule. No other entry changed.
+	"report-page.js",
 }
 
 // TestNewScriptsUsePlainPunctuation holds the phase's new scripts to the house

@@ -469,3 +469,60 @@ test('share hidden without the window script', () => {
 test('the page script has no markup sink', () => {
   assert.equal(/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(pageSource), false);
 });
+
+// ---------------------------------------------------------------------------
+// Child order across a resize (research Pitfall 5b)
+// ---------------------------------------------------------------------------
+
+function buildOrderFixture() {
+  const doc = { createElement(tag) { return new FakeEl(doc, tag); } };
+  const make = (cls) => { const n = doc.createElement('div'); n.className = cls; return n; };
+  const body = make('popup-card__body');
+  const header = make('header');
+  const title = make('title');
+  const meta = make('meta');
+  const trust = make('trust');
+  const fade = make('fade');
+  const actions = make('actions');
+  const muteEl = make('mute');
+  const muteError = make('mute-error');
+  const flag = make('flag');
+  const pageEl = make('page');
+  [header, title, meta, trust, fade, actions, pageEl].forEach((n) => body.appendChild(n));
+  actions.appendChild(muteEl);
+  actions.appendChild(muteError);
+  actions.appendChild(flag);
+  const card = {
+    trust: { el: trust },
+    fade,
+    actions,
+    mute: { el: muteEl, error: muteError },
+    flag: { el: flag },
+    page: { el: pageEl }
+  };
+  return { body, card, names: () => body.children.map((n) => n.className) };
+}
+
+test('child order across a resize', () => {
+  const source = between(mapSource, '  function arrangeCard(card, phone) {', '\n  }\n') + '\n  }\n';
+  const sandbox = {};
+  vm.createContext(sandbox);
+  vm.runInContext(source + '\nthis.arrangeCard = arrangeCard;', sandbox, { filename: 'arrangeCard' });
+
+  const fixture = buildOrderFixture();
+  sandbox.arrangeCard(fixture.card, true);
+  assert.deepEqual(fixture.names(),
+    ['header', 'title', 'meta', 'fade', 'actions', 'trust', 'mute', 'mute-error', 'flag', 'page'],
+    'the phone order: Stop updates and Flag above the page');
+
+  sandbox.arrangeCard(fixture.card, false);
+  assert.equal(fixture.body.lastChild.className, 'page', 'the laptop pass leaves the page last');
+  assert.deepEqual(fixture.names(), ['header', 'title', 'meta', 'trust', 'fade', 'actions', 'page']);
+
+  sandbox.arrangeCard(fixture.card, true);
+  assert.deepEqual(fixture.names(),
+    ['header', 'title', 'meta', 'fade', 'actions', 'trust', 'mute', 'mute-error', 'flag', 'page'],
+    'back to the phone after a resize');
+  sandbox.arrangeCard(fixture.card, true);
+  assert.equal(fixture.body.lastChild.className, 'page', 'a repeat placement keeps the page last');
+});
