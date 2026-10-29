@@ -1181,6 +1181,35 @@ test('IN-B03: a late code refusal is not counted against the new code and takes 
   assert.equal(isOff(page, 'code-submit'), false, 'four refusals of the new code do not lock it');
 });
 
+// Phase 7.1 review fix (browser), IN-B07: "A new code is on its way." goes when
+// the next code is sent, so it never sits beside "That code is wrong or has
+// expired."; the expiry notice stays, it is still true. The unread expired flag is
+// gone from the script.
+test('IN-B07: the code sent line goes with the next code submit; the expiry notice stays', async () => {
+  const page = load({ start: 'create' });
+  await toCodeScreen(page);
+  page.advance(45000);
+  click(page, 'code-resend');
+  answer(page.requests[page.requests.length - 1], 200, { sent: true });
+  await flush();
+  assert.equal(text(page, 'code-status'), 'A new code is on its way.');
+  byId(page, 'code-input').value = '111111';
+  submit(page, 'code');
+  assert.equal(byId(page, 'code-status').hidden, true);
+  answer(page.requests[page.requests.length - 1], 400, { error: { field: 'code', message: 'x' } });
+  await flush();
+  assert.equal(text(page, 'code-error'), 'That code is wrong or has expired.');
+  assert.equal(byId(page, 'code-status').hidden, true);
+
+  const expired = load({ start: 'code', email: 'priya@example.com', secondsLeft: 0, resend: 0 });
+  byId(expired, 'code-input').value = '111111';
+  submit(expired, 'code');
+  assert.equal(text(expired, 'code-status'), 'The code has expired. Get a new one.');
+  assert.equal(byId(expired, 'code-status').hidden, false);
+
+  assert.equal(/state\.expired|expired:/.test(source), false, 'no unread flag is kept');
+});
+
 test('IN-B03: a sign in that succeeded still goes on after the choice changed', async () => {
   const page = load({ start: 'signin' });
   byId(page, 'signin-email').value = 'priya@example.com';

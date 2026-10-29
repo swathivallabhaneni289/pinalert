@@ -107,7 +107,6 @@
     from: 'create',
     email: '',
     tries: 0,
-    expired: false,
     resendLeft: 0,
     resendAt: 0,
     expiresAt: 0,
@@ -489,7 +488,6 @@
       clearInterval(state.expiryTimer);
       state.expiryTimer = null;
     }
-    state.expired = true;
     setText(codeStatus, CODE_EXPIRED_MESSAGE);
     codeStatus.hidden = false;
   }
@@ -508,7 +506,6 @@
       clearInterval(state.expiryTimer);
       state.expiryTimer = null;
     }
-    state.expired = false;
     state.expiresAt = Date.now() + seconds * 1000;
     state.expiryTimer = setInterval(tickExpiry, 1000);
   }
@@ -695,6 +692,12 @@
       return;
     }
     clearErrors('code');
+    // The code sent line has done its job; it must not sit beside a refusal
+    // (review fix IN-B07). The expiry notice stays: it is still true.
+    if (codeStatus.textContent === CODE_SENT_MESSAGE) {
+      setText(codeStatus, '');
+      codeStatus.hidden = true;
+    }
     resetShow();
     var reset = state.mode === 'reset';
     var path = reset ? '/api/auth/reset/code' : '/api/auth/sign-up/code';
