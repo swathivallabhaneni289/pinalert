@@ -1738,6 +1738,25 @@ func TestLiveCode(t *testing.T) {
 		}
 	})
 
+	// Review WR-B02 (server half): the resend wait a reload shows is what is
+	// left of the cooldown since the stored send, rounded up, never negative.
+	t.Run("resend seconds left follow the stored send", func(t *testing.T) {
+		r := newCredRig(t)
+		r.signUpAndCode(t, "sess-a", credEmail, credPassword)
+		cooldown := int(service.DefaultCredentialLimits.SendCooldown / time.Second)
+		if lc, _, _ := r.svc.LiveCode(ctx, "sess-a"); lc.ResendSecondsLeft != cooldown {
+			t.Errorf("right after the send: resend left %d, want %d", lc.ResendSecondsLeft, cooldown)
+		}
+		r.clk.Advance(20*time.Second + 300*time.Millisecond)
+		if lc, _, _ := r.svc.LiveCode(ctx, "sess-a"); lc.ResendSecondsLeft != cooldown-20 {
+			t.Errorf("20.3 s later: resend left %d, want %d (rounded up)", lc.ResendSecondsLeft, cooldown-20)
+		}
+		r.clk.Advance(2 * time.Minute)
+		if lc, _, _ := r.svc.LiveCode(ctx, "sess-a"); lc.ResendSecondsLeft != 0 {
+			t.Errorf("after the cooldown: resend left %d, want 0", lc.ResendSecondsLeft)
+		}
+	})
+
 	t.Run("a consumed row is not live", func(t *testing.T) {
 		r := newCredRig(t)
 		code := r.signUpAndCode(t, "sess-a", credEmail, credPassword)

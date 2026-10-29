@@ -29,6 +29,10 @@ type LiveCode struct {
 	Purpose     string
 	Email       string
 	SecondsLeft int
+	// ResendSecondsLeft is what is left of the resend cooldown since the row's
+	// send, rounded up and never negative (review WR-B02), so a reload or a
+	// return from the mail app shows the wait that is really left.
+	ResendSecondsLeft int
 }
 
 // ThrottleKey is the stored form of an address in the sign in throttle: an
@@ -467,12 +471,25 @@ func (s *CredentialService) LiveCode(ctx context.Context, sessionID string) (Liv
 	if row.UsedAt.Valid {
 		return LiveCode{}, false, nil
 	}
-	left := row.ExpiresAt.Sub(now)
-	secs := int((left + time.Second - 1) / time.Second)
-	if left <= 0 || secs < 0 {
-		secs = 0
+	// The send time is the stored expiry minus the lifetime: both come from
+	// this service's clock, while created_at is the database's (review WR-B02).
+	sentAt := row.ExpiresAt.Add(-s.limits.CodeTTL)
+	return LiveCode{
+		Purpose:           row.Purpose,
+		Email:             row.Email,
+		SecondsLeft:       secondsUntil(now, row.ExpiresAt),
+		ResendSecondsLeft: secondsUntil(now, sentAt.Add(s.limits.SendCooldown)),
+	}, true, nil
+}
+
+// secondsUntil is the whole seconds from now to deadline, rounded up, and 0
+// once the deadline has passed.
+func secondsUntil(now, deadline time.Time) int {
+	left := deadline.Sub(now)
+	if left <= 0 {
+		return 0
 	}
-	return LiveCode{Purpose: row.Purpose, Email: row.Email, SecondsLeft: secs}, true, nil
+	return int((left + time.Second - 1) / time.Second)
 }
 
 // SignedIn is true only for a live session of an account that has a password

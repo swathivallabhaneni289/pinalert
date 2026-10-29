@@ -52,6 +52,10 @@ type LoginState interface {
 	SignedIn(ctx context.Context, sessionID string) (bool, error)
 	LiveCode(ctx context.Context, sessionID string) (service.LiveCode, bool, error)
 	EndedByPasswordSwitch(ctx context.Context, sessionID string) (bool, error)
+	// CodeTTL and ResendCooldown are the numbers the service enforces, so the
+	// page counts down the same ones (review IN-S02).
+	CodeTTL() time.Duration
+	ResendCooldown() time.Duration
 }
 
 // loginGateViewModel is exactly what login_gate.html.tmpl reads and nothing
@@ -79,7 +83,9 @@ type loginGateViewModel struct {
 	CodeEmail       string
 	CodeSecondsLeft int
 	// CodeDigits, CodeTTLSeconds and ResendSeconds are the numbers the script
-	// reads from data attributes.
+	// reads from data attributes. ResendSeconds is the full resend cooldown
+	// when there is no live code and the seconds left of it when there is one
+	// (review WR-B02); CodeSecondsLeft is the seconds left of a live code.
 	CodeDigits     int
 	CodeTTLSeconds int
 	ResendSeconds  int
@@ -157,6 +163,14 @@ func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 			PasswordMin:    auth.PasswordMinRunes,
 			PasswordMax:    auth.PasswordMaxRunes,
 		}
+		// The service's own numbers when there is one (review IN-S02). With no
+		// live code, data-resend-seconds is the full wait after the first send,
+		// which the page script counts from; with a live code it becomes the
+		// seconds left (below).
+		if cfg.Login != nil {
+			vm.CodeTTLSeconds = int(cfg.Login.CodeTTL() / time.Second)
+			vm.ResendSeconds = int(cfg.Login.ResendCooldown() / time.Second)
+		}
 
 		vm.LowDataDefault = lowDataChosen(r)
 		switch r.URL.Query().Get("low") {
@@ -210,7 +224,11 @@ func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 					vm.CodeMode = loginCodeReset
 				}
 				vm.CodeEmail = live.Email
+				// Review WR-B02: both clocks are the integer seconds left,
+				// clamped at 0, from the stored send and expiry, so a reload
+				// or a return from the mail app never restarts the full wait.
 				vm.CodeSecondsLeft = live.SecondsLeft
+				vm.ResendSeconds = live.ResendSecondsLeft
 			} else if vm.DoneLine == "" {
 				ended, err := login.EndedByPasswordSwitch(r.Context(), sessionID)
 				if err != nil {
