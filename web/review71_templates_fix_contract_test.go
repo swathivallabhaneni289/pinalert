@@ -434,6 +434,30 @@ func TestPushDocHomeAreaSearchIsFallback(t *testing.T) {
 	}
 }
 
+// TestPushDocStepZeroNamesEveryPhase71Migration (review fix round 3): owner
+// step 0 of docs/PUSH.md lists the migrations `make migrate` adds. Phase 7.1
+// adds three, so 00016 (the password epoch) stands beside 00014 and 00015.
+func TestPushDocStepZeroNamesEveryPhase71Migration(t *testing.T) {
+	raw, err := os.ReadFile("../docs/PUSH.md")
+	if err != nil {
+		t.Fatalf("reading docs/PUSH.md: %v", err)
+	}
+	var step string
+	for _, line := range strings.Split(string(raw), "\n") {
+		if strings.HasPrefix(line, "0. Before any of them") {
+			step = line
+		}
+	}
+	if step == "" {
+		t.Fatalf("docs/PUSH.md has no owner step 0")
+	}
+	for _, m := range []string{"00014 (", "00015 (", "00016 (the password epoch"} {
+		if !strings.Contains(step, m) {
+			t.Errorf("owner step 0 of docs/PUSH.md does not name migration %q", m)
+		}
+	}
+}
+
 // TestLoginGlobeBoxFrom360 (IN-T01): from 360px wide the gate and the card pad
 // 24px instead of 16px, so the card sits 16px lower and the 404px term of --g,
 // set for 320, left Email me a code 5 or 6px under the first screen at 360x640,
