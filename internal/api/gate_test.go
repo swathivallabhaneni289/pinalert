@@ -456,7 +456,8 @@ func TestAccessGateAllowsVerified(t *testing.T) {
 // with no session, and a near miss loop proves that "/r", "/r/", a numeric id, a
 // trailing path, another case, an unknown token, a dot segment and a double
 // slash never answer 200 (the unknown token answers exactly 404). Every older
-// row and loop is unchanged.
+// row and loop is unchanged. The table now has 24 rows (the 23 of the Phase 7.1
+// paragraph above plus this one).
 func TestAccessGateExemptRoutes(t *testing.T) {
 	globeUp := fakeGlobeUpstream(t)
 	demoStore := demo.NewStore(demo.WithWorldSetup(demo.SeedSetup))

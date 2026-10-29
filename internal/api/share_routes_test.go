@@ -155,8 +155,8 @@ func TestSharePageNearMisses(t *testing.T) {
 			t.Fatalf("GET %s: %v", path, err)
 		}
 		defer resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
-			t.Errorf("GET %s = 200, want never the page", path)
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("GET %s = %d, want 404 (the encoded spelling is never the page)", path, resp.StatusCode)
 		}
 	})
 
