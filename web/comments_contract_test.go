@@ -115,17 +115,22 @@ func TestCommentsHiddenGuard(t *testing.T) {
 
 // TestComposerPinnedOnLaptopOnly pins UI-SPEC 7c: the box is pinned to the
 // bottom of the laptop panel and sits in the flow after the last comment on a
-// phone. position sticky on the composer appears only inside report-panel.css's
-// min-width 900px block.
+// phone. A pinned position on the composer appears only inside
+// report-panel.css's min-width 900px block.
+//
+// Amended 2026-10-29 by the Phase 8 review fix (WR-T01): the pin is position
+// fixed, not sticky, because a sticky box only held while .comments was on
+// screen. TestPanelComposerPinnedToPanelBottom pins its geometry.
 func TestComposerPinnedOnLaptopOnly(t *testing.T) {
 	pinned := 0
 	for _, file := range []string{"static/css/comments.css", "static/css/phone.css", "static/css/report-panel.css"} {
 		for _, r := range commentRules(t, file) {
-			if r.Decls["position"] != "sticky" || !strings.Contains(r.Head, "composer") {
+			pos := r.Decls["position"]
+			if (pos != "sticky" && pos != "fixed") || !strings.Contains(r.Head, "composer") {
 				continue
 			}
 			if file != "static/css/report-panel.css" || !strings.Contains(r.Media, "min-width: 900px") {
-				t.Errorf("%s (%q) pins the box with position sticky outside report-panel.css's min-width block", file, r.Head)
+				t.Errorf("%s (%q) pins the box with position %s outside report-panel.css's min-width block", file, r.Head, pos)
 				continue
 			}
 			pinned++

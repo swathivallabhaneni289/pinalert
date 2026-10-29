@@ -74,6 +74,67 @@ func TestPolicyAndReadmeSharedPageFields(t *testing.T) {
 	r08tMust(t, "share_status.html.tmpl", page, "{{.SeverityWord}}", "{{.Happening}}", "{{.Sentence}}")
 }
 
+// TestPanelComposerPinnedToPanelBottom (WR-T01): D-02, sketch 008 and UI-SPEC
+// 2b pin the laptop box to the bottom of the panel whatever the scroll. The box
+// is a child of .comments, and a sticky box only sticks while its parent is on
+// screen, so sticky is not enough. The box is fixed to the panel's own left
+// edge, width and bottom (the panel popup is itself fixed with no transform,
+// map.js clears it), and the popup content keeps a reserve of the box's height
+// below the last comment so it stays reachable.
+func TestPanelComposerPinnedToPanelBottom(t *testing.T) {
+	const media = "min-width: 900px"
+	const pane = "html[data-report-panel] .leaflet-container .leaflet-detail-pane"
+	rules := commentRules(t, "static/css/report-panel.css")
+	popup := p16Rule(t, rules, media, pane+" .leaflet-popup")
+	box := p16Rule(t, rules, media, pane+" .report-page .comments .composer:not([hidden])")
+
+	// No composer rule anywhere is sticky: its parent is .comments.
+	for _, r := range p16AllCSS(t) {
+		if strings.Contains(r.Head, "composer") && r.Decls["position"] == "sticky" {
+			t.Errorf("%s: %q is sticky, which sticks only while .comments is on screen", r.File, r.Head)
+		}
+	}
+	if box.Decls["position"] != "fixed" || box.Decls["bottom"] != "0" {
+		t.Errorf("the panel box is position %q bottom %q, want fixed at 0", box.Decls["position"], box.Decls["bottom"])
+	}
+	for _, prop := range []string{"left", "width", "border-right"} {
+		if box.Decls[prop] == "" || box.Decls[prop] != popup.Decls[prop] {
+			t.Errorf("the panel box %s is %q, want the panel's own %q", prop, box.Decls[prop], popup.Decls[prop])
+		}
+	}
+	if box.Decls["box-sizing"] != "border-box" || popup.Decls["box-sizing"] != "border-box" {
+		t.Errorf("the box and the panel must both be border-box so equal widths match")
+	}
+	if box.Decls["margin"] != "0" {
+		t.Errorf("the fixed box has margin %q, want 0 (a negative margin moves it off the panel)", box.Decls["margin"])
+	}
+	// The popup is the containing block's stand in: it is fixed at the top
+	// left, so a transform on it would trap the box (map.js clears it).
+	if popup.Decls["position"] != "fixed" || popup.Decls["transform"] != "" {
+		t.Errorf("the panel popup is position %q transform %q", popup.Decls["position"], popup.Decls["transform"])
+	}
+
+	// The reserve: the content keeps the box's height free at the end of the
+	// scroll, only while a box is shown, and one row more for Replying to.
+	height := p16Rule(t, rules, media, pane+" .leaflet-popup").Decls["--panel-composer-height"]
+	for _, part := range []string{"1px", "var(--space-12)", "var(--space-md)", "var(--line-height-body)", "var(--font-size-body)"} {
+		if !strings.Contains(height, part) {
+			t.Errorf("--panel-composer-height %q lacks %s, a part of the box's own height", height, part)
+		}
+	}
+	if !strings.Contains(box.Decls["padding"], "var(--space-12)") || !strings.HasSuffix(box.Decls["padding"], "var(--space-md)") {
+		t.Errorf("the box padding %q no longer matches the reserve's parts", box.Decls["padding"])
+	}
+	reserve := p16Rule(t, rules, media, pane+" .leaflet-popup-content:has(.composer:not([hidden]))")
+	if reserve.Decls["padding-bottom"] != "var(--panel-composer-height)" {
+		t.Errorf("the content reserve is %q, want var(--panel-composer-height)", reserve.Decls["padding-bottom"])
+	}
+	replying := p16Rule(t, rules, media, pane+" .leaflet-popup-content:has(.composer__replying:not([hidden]))")
+	if replying.Decls["padding-bottom"] != "calc(var(--panel-composer-height) + var(--touch-target-min))" {
+		t.Errorf("the content reserve while replying is %q", replying.Decls["padding-bottom"])
+	}
+}
+
 // r08tReadRepo reads a file of the repository, relative to web/.
 func r08tReadRepo(t *testing.T, path string) string {
 	t.Helper()
