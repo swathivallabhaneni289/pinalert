@@ -357,6 +357,11 @@ var touchControls = []string{
 	// more comments, Post, Cancel reply and the comments Try again button, each
 	// 44px through --touch-target-min in comments.css. No other entry changed.
 	".comment__reply", ".comment-thread__toggle", ".comments__more", ".composer__post", ".composer__cancel", ".comments__retry",
+	// Amended 2026-10-29 by Phase 8 plan 17 (D-02, D-14, UI-SPEC 7a and D4):
+	// the Like, Delete and Flag buttons of a comment's meta line, each 44px
+	// high and wide through --touch-target-min in comments.css. No other entry
+	// changed.
+	".comment__like", ".comment__delete", ".comment__flag",
 }
 
 // touchValue reads a height or min-height value as pixels: a px length, a

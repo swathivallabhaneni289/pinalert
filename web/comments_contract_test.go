@@ -158,3 +158,114 @@ func TestCommentsAreLinkedInOrder(t *testing.T) {
 	p13Ordered(t, index, "index.html.tmpl styles",
 		"/static/css/report-page.css", "/static/css/comments.css", "/static/css/report-panel.css", "/static/css/phone.css")
 }
+
+// TestCommentFlagUsesCommentMode (Phase 8 plan 17, D-14, review B3): the Flag
+// control of a comment calls PinalertFlag.openForComment, and flag.js exports
+// it, so the two plans cannot drift apart and leave the flag path silently
+// absent while every other test stays green. The control sends nothing itself.
+func TestCommentFlagUsesCommentMode(t *testing.T) {
+	comments := p16ReadStatic(t, "static/js/comments.js")
+	flag := p16ReadStatic(t, "static/js/flag.js")
+	if !strings.Contains(comments, "PinalertFlag.openForComment(") {
+		t.Error("comments.js never calls PinalertFlag.openForComment, so a comment cannot be flagged (D-14)")
+	}
+	for _, want := range []string{"function openForComment(", "openForComment: openForComment"} {
+		if !strings.Contains(flag, want) {
+			t.Errorf("flag.js lacks %q, which the Flag control of a comment calls", want)
+		}
+	}
+	if strings.Contains(comments, "/flag") {
+		t.Error("comments.js names a /flag path; the dialog sends the flag, the control never does")
+	}
+	if strings.Contains(comments, "commentId: rec.id") == false || strings.Contains(comments, "onSent:") == false {
+		t.Error("comments.js must pass commentId, opener and onSent to openForComment")
+	}
+}
+
+// TestThumbsUpIconsRegistered (Phase 8 plan 17, D-02): both thumbs up glyphs
+// exist with the icons' licence line and are drawn by literal mask urls in
+// comments.css; the filled one carries a solid fill and the outline one a
+// plain stroke.
+func TestThumbsUpIconsRegistered(t *testing.T) {
+	css := p16ReadStatic(t, "static/css/comments.css")
+	for _, name := range []string{"thumbs-up.svg", "thumbs-up-filled.svg"} {
+		raw := p16ReadStatic(t, "static/icons/"+name)
+		first, _, _ := strings.Cut(raw, "\n")
+		if !strings.Contains(first, "@license lucide") {
+			t.Errorf("%s first line %q lacks the icons' licence line", name, first)
+		}
+		if !strings.Contains(raw, `viewBox="0 0 24 24"`) || !strings.Contains(raw, `stroke="currentColor"`) {
+			t.Errorf("%s is not a 24 by 24 currentColor glyph", name)
+		}
+		if strings.Contains(raw, "<script") || strings.Contains(raw, "href") {
+			t.Errorf("%s holds a script or a link, which a mask glyph never carries", name)
+		}
+		want := `url("/static/icons/` + name + `")`
+		if !strings.Contains(css, want) {
+			t.Errorf("comments.css does not draw %s with the literal %s", name, want)
+		}
+	}
+	if !strings.Contains(p16ReadStatic(t, "static/icons/thumbs-up.svg"), `fill="none"`) {
+		t.Error("thumbs-up.svg must be the outline glyph (fill none)")
+	}
+	if !strings.Contains(p16ReadStatic(t, "static/icons/thumbs-up-filled.svg"), `fill="currentColor"`) {
+		t.Error("thumbs-up-filled.svg must be the filled glyph (fill currentColor), so a liked comment is a shape and not colour alone")
+	}
+}
+
+// TestNoHeartOrEmojiLike (Phase 8 plan 17, owner 2026-10-17: a thumbs up, not
+// a heart): comments.js and comments.css name no heart, and comments.js holds
+// no character above U+2FFF other than the ellipsis U+2026, so no emoji can
+// stand in for the icon.
+func TestNoHeartOrEmojiLike(t *testing.T) {
+	for _, file := range []string{"static/js/comments.js", "static/css/comments.css"} {
+		text := p16ReadStatic(t, file)
+		if strings.Contains(strings.ToLower(text), "heart") {
+			t.Errorf("%s names a heart; a comment is liked with a thumbs up", file)
+		}
+		for i, r := range text {
+			if r > 0x2FFF || (r >= 0x2190 && r <= 0x2BFF) {
+				t.Errorf("%s holds the character %q (U+%04X) at byte %d; no emoji or symbol stands in for an icon", file, r, r, i)
+				break
+			}
+		}
+	}
+}
+
+// TestDeleteBoxReusesLogoutConfirm (Phase 8 plan 17, D-14, owner rule on
+// confirm boxes, 2026-10-22): the Delete comment box is the Log out box's own
+// markup, the .logout-confirm classes and the btn and btn--destructive buttons,
+// with no alert class of its own, and index.html.tmpl includes it.
+func TestDeleteBoxReusesLogoutConfirm(t *testing.T) {
+	box := p13ReadTemplate(t, "comment_delete_confirm.html.tmpl")
+	index := p13ReadTemplate(t, "index.html.tmpl")
+	p13MustContain(t, "the Delete box", box,
+		`<dialog id="comment-delete-confirm" class="logout-confirm"`,
+		`class="logout-confirm__body"`,
+		`class="logout-confirm__title" id="comment-delete-title" tabindex="-1">Delete this comment?<`,
+		`class="logout-confirm__actions"`,
+		`class="btn" id="comment-delete-cancel">Cancel<`,
+		`class="btn btn--destructive" id="comment-delete-yes">Delete<`)
+	allowed := map[string]bool{
+		"logout-confirm": true, "logout-confirm__body": true, "logout-confirm__title": true,
+		"logout-confirm__actions": true, "btn": true, "btn--destructive": true,
+	}
+	markup := box
+	if _, rest, ok := strings.Cut(box, `{{define "comment_delete_confirm"}}`); ok {
+		markup = rest
+	}
+	for _, chunk := range strings.Split(markup, `class="`)[1:] {
+		classes, _, _ := strings.Cut(chunk, `"`)
+		for _, name := range strings.Fields(classes) {
+			if !allowed[name] {
+				t.Errorf("the Delete box uses the class %q; it reuses .logout-confirm and adds no alert styling of its own", name)
+			}
+		}
+	}
+	if !strings.Contains(index, `{{template "comment_delete_confirm"}}`) {
+		t.Error("index.html.tmpl does not include the Delete box")
+	}
+	if strings.Contains(index, "<dialog id=\"comment-delete-confirm\"") {
+		t.Error("index.html.tmpl holds the Delete box itself; it lives in comment_delete_confirm.html.tmpl (TestReportFormPartialKeepsMainFormOrder keeps no bare Cancel button in the index)")
+	}
+}

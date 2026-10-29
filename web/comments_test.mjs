@@ -831,3 +831,252 @@ test('update follows the card without a rebuild', async () => {
   assert.equal(find(page.view.el, 'comments__closed').hidden, false);
   assert.equal(page.form.hidden, true);
 });
+
+// ---- Phase 8 plan 17 (PAGE-02, D-02, D-14): Like, Delete and Flag ----
+
+// addBoxes puts the Delete box into the fake page the way index.html.tmpl does.
+function addBoxes(env) {
+  const byId = {};
+  const make = (tag, id) => { const el = new FakeEl(env.doc, tag); el.id = id; byId[id] = el; return el; };
+  const box = make('dialog', 'comment-delete-confirm');
+  const title = make('h2', 'comment-delete-title');
+  const cancelButton = make('button', 'comment-delete-cancel');
+  const yes = make('button', 'comment-delete-yes');
+  box.open = false;
+  box.showModal = () => { box.open = true; };
+  box.close = () => { if (box.open) { box.open = false; box.fire('close'); } };
+  env.doc.getElementById = (id) => byId[id] || null;
+  return { box, title, cancel: cancelButton, yes };
+}
+
+function likeButton(li) { return find(li, 'comment__like'); }
+function deleteButton(li) { return find(li, 'comment__delete'); }
+function flagButton(li) { return find(li, 'comment__flag'); }
+function actionError(li) { return find(li, 'comment__error'); }
+
+test('like toggles with aria-pressed', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { likes: 2 })]);
+  const li = page.items()[0];
+  const like = likeButton(li);
+  assert.equal(like.getAttribute('aria-pressed'), 'false');
+  like.fire('click');
+  assert.equal(posts(env).length, 1);
+  assert.equal(lastFetch(env).address, '/api/comments/1/like');
+  assert.equal(like.getAttribute('aria-disabled'), 'true', 'busy while the request runs');
+  like.fire('click');
+  assert.equal(posts(env).length, 1, 'a second press sends nothing');
+  assert.equal(like.getAttribute('aria-pressed'), 'false', 'nothing is guessed before the answer');
+  lastFetch(env).reply(200, { likes: 3, viewer_liked: true });
+  await flush();
+  assert.equal(like.getAttribute('aria-pressed'), 'true');
+  assert.equal(like.hasAttribute('aria-disabled'), false);
+  assert.ok(like.hasClass('comment__like--on'));
+  assert.equal(find(like, 'comment__like-count').textContent, '3', 'the count is the server count');
+  like.fire('click');
+  assert.equal(lastFetch(env).address, '/api/comments/1/unlike');
+  lastFetch(env).reply(200, { likes: 2, viewer_liked: false });
+  await flush();
+  assert.equal(like.getAttribute('aria-pressed'), 'false');
+  assert.equal(find(like, 'comment__like-count').textContent, '2');
+  assert.equal(like.hasClass('comment__like--on'), false);
+});
+
+test('like names and counts', async () => {
+  const env = load();
+  const page = await start(env, [cm(1), cm(2, { likes: 1 }), cm(3, { likes: 3, viewer_liked: true })]);
+  const [zero, one, three] = page.items();
+  assert.equal(likeButton(zero).getAttribute('aria-label'), 'Like');
+  assert.equal(find(likeButton(zero), 'comment__like-count').hidden, true, 'no count at zero');
+  assert.equal(likeButton(one).getAttribute('aria-label'), 'Like, 1 like');
+  assert.equal(find(likeButton(one), 'comment__like-count').hidden, false);
+  assert.equal(likeButton(three).getAttribute('aria-label'), 'Like, 3 likes');
+  assert.equal(likeButton(three).getAttribute('aria-pressed'), 'true');
+  assert.equal(likeButton(zero).getAttribute('type'), 'button');
+});
+
+test('closed shows the count as text', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { likes: 4 }), cm(2), cm(3, { can_delete: true, is_own: true })], { comments_open: false });
+  const [counted, none, own] = page.items();
+  assert.equal(replyButton(counted).hidden, true);
+  assert.equal(likeButton(counted).hidden, true, 'the Like button is not drawn');
+  const text = find(counted, 'comment__likes');
+  assert.equal(text.hidden, false);
+  assert.equal(text.getAttribute('role'), 'img');
+  assert.equal(text.getAttribute('aria-label'), '4 likes');
+  assert.equal(text.tagName, 'SPAN');
+  assert.equal(find(none, 'comment__likes').hidden, true, 'hidden at zero');
+  assert.equal(flagButton(counted).hidden, false, 'Flag stays when comments are closed');
+  assert.equal(deleteButton(own).hidden, false, 'Delete stays when comments are closed');
+  assert.equal(flagButton(own).hidden, true);
+  assert.equal(deleteButton(counted).hidden, true);
+});
+
+test('delete asks first and leaves a placeholder', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  const page = await start(env, [
+    cm(1, { is_own: true, can_delete: true, author: 'me', replies: [cm(2, { reply_to_author: 'me' })], reply_count: 1, likes: 2 }),
+    cm(3, { is_own: true, can_delete: true, author: 'me' })
+  ]);
+  const [withReplies, alone] = page.items();
+  deleteButton(withReplies).fire('click');
+  assert.equal(boxes.box.open, true, 'the box opens');
+  assert.equal(posts(env).length, 0, 'nothing is sent until the box says Delete');
+  assert.equal(env.doc.activeElement, boxes.title, 'focus is on the title');
+  assert.equal(boxes.cancel.focusCalls + boxes.yes.focusCalls, 0, 'no button is focused');
+  boxes.cancel.fire('click');
+  assert.equal(boxes.box.open, false);
+  assert.equal(posts(env).length, 0, 'Cancel sends nothing');
+  assert.equal(env.doc.activeElement, deleteButton(withReplies), 'focus returns to Delete');
+  deleteButton(withReplies).fire('click');
+  boxes.yes.fire('click');
+  assert.equal(lastFetch(env).address, '/api/comments/1/delete');
+  assert.equal(lastFetch(env).opts.method, 'POST');
+  lastFetch(env).reply(200, { deleted: true });
+  await flush();
+  assert.equal(find(withReplies, 'comment__gone').hidden, false);
+  assert.equal(find(withReplies, 'comment__gone').textContent, 'Comment deleted');
+  assert.equal(find(withReplies, 'comment__meta').hidden, true, 'no controls on the placeholder');
+  assert.equal(findAll(withReplies, 'comment--reply').length, 1, 'its replies stay');
+  // the list is asked again; answer it with the server's own picture
+  lastFetch(env).reply(200, body([cm(1, { deleted: true, author: '', words: '', replies: [cm(2)] }), cm(3, { is_own: true, can_delete: true, author: 'me' })]));
+  await flush();
+  assert.equal(page.items().length, 2);
+  deleteButton(alone).fire('click');
+  boxes.yes.fire('click');
+  lastFetch(env).reply(200, { deleted: true });
+  await flush();
+  assert.equal(page.items().length, 1, 'a comment with no replies disappears');
+  assert.equal(find(page.view.el, 'comments__status').textContent, 'Comment deleted.');
+});
+
+test('delete moves focus to the heading', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  const page = await start(env, [cm(1, { is_own: true, can_delete: true, author: 'me' })]);
+  const li = page.items()[0];
+  deleteButton(li).fire('click');
+  boxes.yes.fire('click');
+  assert.equal(deleteButton(li).getAttribute('aria-disabled'), 'true', 'busy while it runs');
+  lastFetch(env).reply(200, { deleted: true });
+  await flush();
+  assert.equal(env.doc.activeElement, find(page.view.el, 'comments__heading'));
+  assert.equal(find(page.view.el, 'comments__empty').hidden, false, 'an empty list says so');
+});
+
+test('delete failure keeps the comment and says why', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  const page = await start(env, [cm(1, { is_own: true, can_delete: true, author: 'me' })]);
+  const li = page.items()[0];
+  deleteButton(li).fire('click');
+  boxes.yes.fire('click');
+  lastFetch(env).reply(429, { error: { field: 'rate_like', message: "You're reacting very quickly. You can try again in 20 seconds." } });
+  await flush();
+  assert.equal(page.items().length, 1);
+  assert.equal(actionError(li).hidden, false);
+  assert.equal(actionError(li).textContent, "You're reacting very quickly. You can try again in 20 seconds.");
+  assert.equal(env.doc.activeElement, deleteButton(li));
+});
+
+test('flag opens comment mode', async () => {
+  const env = load();
+  const opened = [];
+  env.sandbox.PinalertFlag = { openForComment(opts) { opened.push(opts); } };
+  const page = await start(env, [cm(7)]);
+  const li = page.items()[0];
+  const flag = flagButton(li);
+  assert.equal(flag.getAttribute('aria-label'), 'Flag this comment');
+  assert.equal(flag.textContent, 'Flag');
+  flag.fire('click');
+  assert.equal(opened.length, 1);
+  assert.equal(String(opened[0].commentId), '7');
+  assert.equal(opened[0].opener, flag);
+  assert.equal(posts(env).length, 0, 'this control never sends a flag itself');
+  assert.equal(typeof opened[0].onSent, 'function');
+  opened[0].onSent();
+  assert.equal(flag.textContent, 'Flagged');
+  assert.equal(flag.getAttribute('aria-disabled'), 'true');
+  flag.fire('click');
+  assert.equal(opened.length, 1, 'Flagged opens nothing again');
+});
+
+test('flagged reads Flagged', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { viewer_flagged: true }), cm(2)]);
+  const [flagged, plain] = page.items();
+  assert.equal(flagButton(flagged).textContent, 'Flagged');
+  assert.equal(flagButton(flagged).getAttribute('aria-disabled'), 'true');
+  assert.equal(flagButton(flagged).getAttribute('aria-label'), null, 'its name is its word');
+  assert.equal(flagButton(plain).textContent, 'Flag');
+  assert.equal(flagButton(plain).hasAttribute('aria-disabled'), false);
+});
+
+test('placeholders have no controls', async () => {
+  const env = load();
+  const page = await start(env, [
+    cm(1, { deleted: true, author: '', words: '', likes: 3, viewer_liked: true, replies: [cm(2)] }),
+    cm(3, { removed: true, author: '', words: '', likes: 2 })
+  ]);
+  const [deleted, removed] = page.items();
+  for (const li of [deleted, removed]) {
+    assert.equal(find(li, 'comment__meta').hidden, true, 'the whole meta line is hidden');
+  }
+  // a poll never adds them back
+  page.view.refresh();
+  lastFetch(env).reply(200, body([
+    cm(1, { deleted: true, author: '', words: '', likes: 3, can_delete: true, replies: [cm(2)] }),
+    cm(3, { removed: true, author: '', words: '', likes: 2, can_delete: true })
+  ]));
+  await flush();
+  for (const li of page.items()) {
+    assert.equal(find(li, 'comment__meta').hidden, true);
+  }
+  // and the replies of a deleted comment keep theirs
+  assert.equal(flagButton(findAll(page.items()[0], 'comment--reply')[0]).hidden, false);
+});
+
+test('held own comment keeps Delete', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { held: true, is_own: true, can_delete: true, author: 'me' })]);
+  const li = page.items()[0];
+  assert.equal(deleteButton(li).hidden, false);
+  assert.equal(likeButton(li).hidden, true);
+  assert.equal(flagButton(li).hidden, true);
+});
+
+test('reacting too fast keeps the thread', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { replies: [cm(2)], reply_count: 1 })]);
+  const li = page.items()[0];
+  find(li, 'comment-thread__toggle').fire('click');
+  page.input.value = 'my words';
+  page.input.fire('input');
+  likeButton(li).fire('click');
+  lastFetch(env).reply(429, { error: { field: 'rate_like', message: "You're reacting very quickly. You can try again in 3 seconds." } });
+  await flush();
+  assert.equal(actionError(li).hidden, false);
+  assert.equal(actionError(li).textContent, "You're reacting very quickly. You can try again in 3 seconds.");
+  assert.equal(likeButton(li).getAttribute('aria-pressed'), 'false');
+  assert.equal(page.input.value, 'my words', 'the box keeps its words');
+  assert.equal(find(li, 'comment-thread').hidden, false, 'the open thread stays open');
+  likeButton(li).fire('click');
+  assert.equal(actionError(li).hidden, true, 'the sentence clears on the next try');
+  lastFetch(env).reply(200, { likes: 1, viewer_liked: true });
+  await flush();
+  assert.equal(actionError(li).hidden, true);
+  assert.equal(likeButton(li).getAttribute('aria-pressed'), 'true');
+});
+
+test('offline like says so', async () => {
+  const env = load();
+  const page = await start(env, [cm(1)]);
+  env.sandbox.navigator.onLine = false;
+  const li = page.items()[0];
+  const before = env.fetches.length;
+  likeButton(li).fire('click');
+  assert.equal(env.fetches.length, before, 'nothing is sent');
+  assert.equal(actionError(li).textContent, "You're offline, so this wasn't saved. Try again when you have a signal.");
+});

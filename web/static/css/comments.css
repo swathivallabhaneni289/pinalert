@@ -230,6 +230,8 @@
 }
 
 .leaflet-container .report-page .comments .comment__reply:not([hidden]),
+.leaflet-container .report-page .comments .comment__delete:not([hidden]),
+.leaflet-container .report-page .comments .comment__flag:not([hidden]),
 .leaflet-container .report-page .comments .comment-thread__toggle:not([hidden]),
 .leaflet-container .report-page .comments .composer__cancel:not([hidden]) {
   display: inline-flex;
@@ -251,9 +253,101 @@
 }
 
 .leaflet-container .report-page .comments .comment__reply:not([hidden]):hover,
+.leaflet-container .report-page .comments .comment__delete:not([hidden]):hover,
+.leaflet-container .report-page .comments .comment__flag:not([hidden]):hover,
 .leaflet-container .report-page .comments .comment-thread__toggle:not([hidden]):hover,
 .leaflet-container .report-page .comments .composer__cancel:not([hidden]):hover {
   color: var(--color-text);
+}
+
+/* Flagged keeps full contrast: it is the answer to the press, not an off
+   control, so it reads in --color-text and the pointer stays an arrow. */
+.leaflet-container .report-page .comments .comment__flag--sent:not([hidden]),
+.leaflet-container .report-page .comments .comment__flag--sent:not([hidden]):hover {
+  color: var(--color-text);
+  cursor: default;
+}
+
+/* ---- Like (UI-SPEC 7a, D4): the thumbs up and its count ---- */
+
+.leaflet-container .report-page .comments .comment__like:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.leaflet-container .report-page .comments .comment__like:not([hidden]):hover {
+  color: var(--color-text);
+}
+
+/* Liked: the filled thumb, the text colour and weight 600 on the count, so the
+   state is a shape and a weight and never colour alone. */
+.leaflet-container .report-page .comments .comment__like--on:not([hidden]) {
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+.leaflet-container .report-page .comments .comment__like[aria-disabled="true"]:not([hidden]) {
+  cursor: default;
+}
+
+.leaflet-container .report-page .comments .comment__like-icon:not([hidden]) {
+  display: block;
+  flex: none;
+  width: var(--comment-glyph);
+  height: var(--comment-glyph);
+  background-color: currentColor;
+  -webkit-mask-image: url("/static/icons/thumbs-up.svg");
+  mask-image: url("/static/icons/thumbs-up.svg");
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+.leaflet-container .report-page .comments .comment__like--on .comment__like-icon {
+  -webkit-mask-image: url("/static/icons/thumbs-up-filled.svg");
+  mask-image: url("/static/icons/thumbs-up-filled.svg");
+}
+
+.leaflet-container .report-page .comments .comment__like-count:not([hidden]) {
+  display: inline;
+}
+
+/* Comments closed: the count is plain text with the outline thumb, not a
+   control. */
+.leaflet-container .report-page .comments .comment__likes:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+}
+
+/* A refused or failed like, unlike or delete, under that comment's meta line. */
+.leaflet-container .report-page .comments .comment__error:not([hidden]) {
+  margin: 0 0 var(--space-sm);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
 }
 
 .leaflet-container .report-page .comments .comment__held:not([hidden]) {
@@ -531,5 +625,12 @@
 
   .leaflet-container .report-page .comments .composer__field {
     border-color: CanvasText;
+  }
+
+  /* The liked thumb keeps its filled shape: the icons are masks, so they take
+     the text colour of the system palette. */
+  .leaflet-container .report-page .comments .comment__like-icon {
+    forced-color-adjust: none;
+    background-color: CanvasText;
   }
 }

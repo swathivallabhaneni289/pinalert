@@ -12,8 +12,12 @@
 // reaches the page through text nodes (Pinalert.setText, createTextNode), so no
 // markup is ever parsed. The one bold part of a comment is the leading
 // @username of a reply, made with createElement, and only when it is exactly
-// the name the server sent as reply_to_author (review W3). Likes, Delete and
-// Flag on a comment join the meta line in plan 08-17, after the Reply button.
+// the name the server sent as reply_to_author (review W3). Plan 08-17 adds Like
+// (a thumbs up and nothing else, the count and the pressed state written only
+// from the server's answer), Delete (the author's, behind the app's confirm
+// box) and Flag (everyone else's, through the Flag dialog's comment mode) to
+// the meta line after the Reply button. A deleted or removed placeholder has
+// none of them.
 //
 // The list is built once and refreshed in place: a node map by comment id
 // means a poll, a post or a vote updates or inserts nodes and never rebuilds
@@ -65,8 +69,87 @@ window.PinalertComments = (function () {
   var DELETED_LINE = 'Comment deleted';
   var REMOVED_LINE = 'Comment removed';
   var KIND_USER = 'user';
+  var LIKE_LABEL = 'Like';
+  var DELETE_LABEL = 'Delete';
+  var DELETE_NAME = 'Delete your comment';
+  var FLAG_LABEL = 'Flag';
+  var FLAG_NAME = 'Flag this comment';
+  var FLAGGED_LABEL = 'Flagged';
+  var DELETED_STATUS = 'Comment deleted.';
+  var OFFLINE_ACTION = "You're offline, so this wasn't saved. Try again when you have a signal.";
+  var ACTION_ERROR = "Couldn't save that. Try again.";
+  var STATUS_OK = 200;
+  var DELETE_QUESTION = 'Delete this comment?';
+  var DELETE_BOX_ID = 'comment-delete-confirm';
+  var DELETE_TITLE_ID = 'comment-delete-title';
+  var DELETE_CANCEL_ID = 'comment-delete-cancel';
+  var DELETE_YES_ID = 'comment-delete-yes';
 
   var seqId = 0;
+
+  // The Delete box is one dialog in the page (index.html.tmpl), shared by every
+  // comments section, so its buttons are wired once and the section that asked
+  // is the one in pendingDelete (Phase 8 plan 17, D-14). It is the .logout-confirm
+  // box and behaves like it: the title takes focus, no button looks chosen, only
+  // its buttons close it.
+  var pendingDelete = null;
+  var boundDeleteBox = null;
+
+  function likeName(count) {
+    if (count === 1) {
+      return LIKE_LABEL + ', 1 like';
+    }
+    return count > 1 ? LIKE_LABEL + ', ' + count + ' likes' : LIKE_LABEL;
+  }
+
+  function likesName(count) {
+    return count === 1 ? '1 like' : count + ' likes';
+  }
+
+  function onDeleteBoxClose() {
+    var asked = pendingDelete;
+    pendingDelete = null;
+    if (asked && !asked.answered && asked.opener && typeof asked.opener.focus === 'function') {
+      asked.opener.focus();
+    }
+  }
+
+  // openDeleteBox returns false when the page has no box (the browser's own
+  // confirm then asks, with the box's own title).
+  function openDeleteBox(asked) {
+    var box = document.getElementById(DELETE_BOX_ID);
+    var title = document.getElementById(DELETE_TITLE_ID);
+    var cancelButton = document.getElementById(DELETE_CANCEL_ID);
+    var yesButton = document.getElementById(DELETE_YES_ID);
+    if (!box || !title || !cancelButton || !yesButton || typeof box.showModal !== 'function') {
+      return false;
+    }
+    if (boundDeleteBox !== box) {
+      boundDeleteBox = box;
+      cancelButton.addEventListener('click', function () {
+        box.close();
+      });
+      yesButton.addEventListener('click', function () {
+        var chosen = pendingDelete;
+        if (chosen) {
+          chosen.answered = true;
+        }
+        box.close();
+        if (chosen) {
+          chosen.run();
+        }
+      });
+      box.addEventListener('close', onDeleteBoxClose);
+    }
+    pendingDelete = asked;
+    box.showModal();
+    // The question takes the first focus and no button looks chosen, as the
+    // Log out box does (owner, 2026-10-22).
+    if (typeof title.focus === 'function') {
+      title.focus();
+    }
+    return true;
+  }
 
   function element(tag, className) {
     var el = document.createElement(tag);
@@ -218,7 +301,18 @@ window.PinalertComments = (function () {
     form.appendChild(counter);
     form.appendChild(status);
 
+    // A hidden status line of its own for a delete, because the box's own line
+    // is out of the page while comments are closed and Delete still works then.
+    var listStatus = element('p', 'comments__status visually-hidden');
+    listStatus.setAttribute('role', 'status');
+
+    function speakDeleted() {
+      Pinalert.setText(listStatus, '');
+      Pinalert.setText(listStatus, DELETED_STATUS);
+    }
+
     root.appendChild(heading);
+    root.appendChild(listStatus);
     root.appendChild(list);
     root.appendChild(emptyLine);
     root.appendChild(moreButton);
@@ -299,16 +393,56 @@ window.PinalertComments = (function () {
       var reply = element('button', 'comment__reply');
       reply.setAttribute('type', 'button');
       Pinalert.setText(reply, REPLY_LABEL);
+      // Like, Delete and Flag (plan 08-17, D-02, D-14): the thumbs up with its
+      // count, then Delete on your own comment or Flag on someone else's.
+      var like = element('button', 'comment__like');
+      like.setAttribute('type', 'button');
+      like.setAttribute('aria-pressed', 'false');
+      var likeIcon = element('span', 'comment__like-icon');
+      likeIcon.setAttribute('aria-hidden', 'true');
+      var likeCount = element('span', 'comment__like-count');
+      likeCount.hidden = true;
+      like.appendChild(likeIcon);
+      like.appendChild(likeCount);
+      // Comments closed: the like turns into plain text, the icon and the number.
+      var likes = element('span', 'comment__likes');
+      likes.setAttribute('role', 'img');
+      likes.hidden = true;
+      var likesIcon = element('span', 'comment__like-icon');
+      likesIcon.setAttribute('aria-hidden', 'true');
+      var likesCount = element('span', 'comment__like-count');
+      likes.appendChild(likesIcon);
+      likes.appendChild(likesCount);
+      var del = element('button', 'comment__delete');
+      del.setAttribute('type', 'button');
+      del.setAttribute('aria-label', DELETE_NAME);
+      Pinalert.setText(del, DELETE_LABEL);
+      del.hidden = true;
+      var flag = element('button', 'comment__flag');
+      flag.setAttribute('type', 'button');
+      flag.setAttribute('aria-label', FLAG_NAME);
+      Pinalert.setText(flag, FLAG_LABEL);
+      flag.hidden = true;
       var held = element('span', 'comment__held');
       Pinalert.setText(held, HELD_LINE);
       held.hidden = true;
       meta.appendChild(timeMeta);
       meta.appendChild(reply);
+      meta.appendChild(like);
+      meta.appendChild(likes);
+      meta.appendChild(del);
+      meta.appendChild(flag);
       meta.appendChild(held);
+      var actionError = element('div', 'inline-error comment__error');
+      actionError.setAttribute('role', 'alert');
+      actionError.hidden = true;
+      var actionErrorText = element('span', 'comment__error-text');
+      actionError.appendChild(actionErrorText);
       body.appendChild(head);
       body.appendChild(words);
       body.appendChild(gone);
       body.appendChild(meta);
+      body.appendChild(actionError);
       rowEl.appendChild(disc);
       rowEl.appendChild(body);
       li.appendChild(rowEl);
@@ -316,11 +450,26 @@ window.PinalertComments = (function () {
         id: String(data.id), isReply: isReply, rootId: String(rootId), data: data, li: li, disc: disc, discKey: '',
         head: head, author: author, tag: tag, timeHead: timeHead, words: words, gone: gone, meta: meta,
         timeMeta: timeMeta, reply: reply, held: held, wordsKey: null,
+        like: like, likeCount: likeCount, likes: likes, likesCount: likesCount, del: del, flag: flag,
+        error: actionError, errorText: actionErrorText,
+        likeBusy: false, deleteBusy: false, flagSent: false,
         thread: null
       };
       reply.addEventListener('click', function (evt) {
         evt.stopPropagation();
         startReply(rec);
+      });
+      like.addEventListener('click', function (evt) {
+        evt.stopPropagation();
+        onLike(rec);
+      });
+      del.addEventListener('click', function (evt) {
+        evt.stopPropagation();
+        onDelete(rec);
+      });
+      flag.addEventListener('click', function (evt) {
+        evt.stopPropagation();
+        onFlag(rec);
       });
       if (!isReply) {
         buildThread(rec);
@@ -387,6 +536,9 @@ window.PinalertComments = (function () {
       rec.gone.hidden = !placeholder;
       if (placeholder) {
         writeText(rec.gone, data.removed === true ? REMOVED_LINE : DELETED_LINE);
+        // A placeholder carries no Like, no count, no Delete and no Flag, and
+        // a poll never adds them back (review W4).
+        rec.error.hidden = true;
         return;
       }
       writeText(rec.author, String(data.author || ''));
@@ -401,6 +553,219 @@ window.PinalertComments = (function () {
       var held = data.held === true;
       rec.held.hidden = !held;
       rec.reply.hidden = held || !commentsOpen;
+      writeActions(rec);
+    }
+
+    // writeActions shows Like, the closed count, Delete and Flag from what the
+    // server last sent, and from nothing the client guessed: the count and the
+    // pressed state are the server's own answer (threat T-08-76).
+    function writeActions(rec) {
+      var data = rec.data;
+      var held = data.held === true;
+      var count = typeof data.likes === 'number' && data.likes > 0 ? data.likes : 0;
+      var liked = data.viewer_liked === true;
+      rec.like.hidden = held || !commentsOpen;
+      rec.like.setAttribute('aria-pressed', liked ? 'true' : 'false');
+      rec.like.setAttribute('aria-label', likeName(count));
+      writeClass(rec.like, liked ? 'comment__like comment__like--on' : 'comment__like');
+      if (rec.likeBusy) {
+        rec.like.setAttribute('aria-disabled', 'true');
+      } else {
+        rec.like.removeAttribute('aria-disabled');
+      }
+      rec.likeCount.hidden = count === 0;
+      writeText(rec.likeCount, count > 0 ? String(count) : '');
+      rec.likes.hidden = held || commentsOpen || count === 0;
+      rec.likes.setAttribute('aria-label', likesName(count));
+      writeText(rec.likesCount, count > 0 ? String(count) : '');
+      // Delete is the author's; Flag is everyone else's. A held comment is
+      // only ever the author's own, so it keeps Delete and has no Flag.
+      var mine = data.can_delete === true;
+      rec.del.hidden = !mine;
+      if (rec.deleteBusy) {
+        rec.del.setAttribute('aria-disabled', 'true');
+      } else {
+        rec.del.removeAttribute('aria-disabled');
+      }
+      rec.flag.hidden = mine || held || data.is_own === true;
+      var sent = rec.flagSent || data.viewer_flagged === true;
+      if (sent) {
+        rec.flag.setAttribute('aria-disabled', 'true');
+        rec.flag.removeAttribute('aria-label');
+        writeText(rec.flag, FLAGGED_LABEL);
+        writeClass(rec.flag, 'comment__flag comment__flag--sent');
+      } else {
+        rec.flag.removeAttribute('aria-disabled');
+        rec.flag.setAttribute('aria-label', FLAG_NAME);
+        writeText(rec.flag, FLAG_LABEL);
+        writeClass(rec.flag, 'comment__flag');
+      }
+    }
+
+    function showActionError(rec, words) {
+      writeText(rec.errorText, words);
+      rec.error.hidden = false;
+    }
+
+    function clearActionError(rec) {
+      rec.error.hidden = true;
+    }
+
+    // actionFailed words a refused or failed like, unlike or delete: the
+    // server's own sentence when it sent one (the rate limit's), the offline
+    // sentence when the device has no signal, a short line otherwise.
+    function actionFailed(rec, res) {
+      var message = res && res.body && res.body.error && typeof res.body.error.message === 'string' ? res.body.error.message : '';
+      var field = res && res.body && res.body.error && typeof res.body.error.field === 'string' ? res.body.error.field : '';
+      if (res && res.status === STATUS_CONFLICT && field === 'comments') {
+        applyOpenState(false);
+        return;
+      }
+      if (res && res.status === STATUS_GONE) {
+        load();
+        return;
+      }
+      if (message !== '' && res && (res.status === 429 || res.status === 403)) {
+        showActionError(rec, message);
+        return;
+      }
+      showActionError(rec, navigator.onLine === false ? OFFLINE_ACTION : ACTION_ERROR);
+    }
+
+    function commentPath(rec, verb) {
+      return '/api/comments/' + encodeURIComponent(rec.id) + '/' + verb;
+    }
+
+    function onLike(rec) {
+      if (rec.likeBusy || rec.data.deleted || rec.data.removed) {
+        return;
+      }
+      clearActionError(rec);
+      if (navigator.onLine === false) {
+        showActionError(rec, OFFLINE_ACTION);
+        return;
+      }
+      var verb = rec.data.viewer_liked === true ? 'unlike' : 'like';
+      rec.likeBusy = true;
+      writeActions(rec);
+      request('POST', commentPath(rec, verb)).promise.then(function (res) {
+        rec.likeBusy = false;
+        if (res.status === STATUS_OK && res.body && typeof res.body.likes === 'number') {
+          rec.data.likes = res.body.likes;
+          rec.data.viewer_liked = res.body.viewer_liked === true;
+          writeActions(rec);
+          return;
+        }
+        writeActions(rec);
+        actionFailed(rec, res);
+      }).catch(function () {
+        rec.likeBusy = false;
+        writeActions(rec);
+        showActionError(rec, navigator.onLine === false ? OFFLINE_ACTION : ACTION_ERROR);
+      });
+    }
+
+    // onDelete asks first, in the app's confirm box; only its Delete button
+    // sends anything.
+    function onDelete(rec) {
+      if (rec.deleteBusy || rec.data.deleted || rec.data.removed) {
+        return;
+      }
+      clearActionError(rec);
+      var asked = { opener: rec.del, answered: false, run: function () {
+        sendDelete(rec);
+      } };
+      if (!openDeleteBox(asked)) {
+        if (typeof window.confirm === 'function' && window.confirm(DELETE_QUESTION)) {
+          sendDelete(rec);
+        }
+      }
+    }
+
+    function sendDelete(rec) {
+      if (navigator.onLine === false) {
+        showActionError(rec, OFFLINE_ACTION);
+        rec.del.focus();
+        return;
+      }
+      rec.deleteBusy = true;
+      writeActions(rec);
+      request('POST', commentPath(rec, 'delete')).promise.then(function (res) {
+        rec.deleteBusy = false;
+        if (res.status === STATUS_OK) {
+          afterDelete(rec);
+          return;
+        }
+        writeActions(rec);
+        rec.del.focus();
+        actionFailed(rec, res);
+      }).catch(function () {
+        rec.deleteBusy = false;
+        writeActions(rec);
+        rec.del.focus();
+        showActionError(rec, navigator.onLine === false ? OFFLINE_ACTION : ACTION_ERROR);
+      });
+    }
+
+    // afterDelete: a comment with replies stays as "Comment deleted" so the
+    // thread still reads; one without disappears. Focus goes to the heading.
+    function afterDelete(rec) {
+      var hasReplies = !rec.isReply && rec.thread !== null && rec.thread.replyIds.length > 0;
+      if (hasReplies) {
+        rec.data.deleted = true;
+        rec.data.likes = 0;
+        rec.data.viewer_liked = false;
+        rec.data.is_reporter = false;
+        writeComment(rec, rec.data);
+      } else if (rec.isReply) {
+        removeReply(rec);
+      } else {
+        removeRoot(rec.id);
+      }
+      if (total > 0) {
+        total -= 1;
+      }
+      syncParts();
+      speakDeleted();
+      heading.focus({ preventScroll: true });
+      load();
+    }
+
+    function removeReply(rec) {
+      var parent = nodes[rec.rootId];
+      if (replyTarget && replyTarget.replyToId === rec.id) {
+        clearReplyTarget(false);
+      }
+      if (rec.li.parentNode) {
+        rec.li.parentNode.removeChild(rec.li);
+      }
+      delete nodes[rec.id];
+      if (parent && parent.thread) {
+        var at = parent.thread.replyIds.indexOf(rec.id);
+        if (at >= 0) {
+          parent.thread.replyIds.splice(at, 1);
+        }
+        writeThread(parent);
+      }
+    }
+
+    // onFlag opens the built Flag dialog in comment mode; the dialog sends the
+    // flag (plan 08-18), so this control never does. Once sent it reads Flagged.
+    function onFlag(rec) {
+      if (rec.flag.getAttribute('aria-disabled') === 'true') {
+        return;
+      }
+      if (!window.PinalertFlag || typeof window.PinalertFlag.openForComment !== 'function') {
+        return;
+      }
+      window.PinalertFlag.openForComment({
+        commentId: rec.id,
+        opener: rec.flag,
+        onSent: function () {
+          rec.flagSent = true;
+          writeActions(rec);
+        }
+      });
     }
 
     function writeThread(rec) {

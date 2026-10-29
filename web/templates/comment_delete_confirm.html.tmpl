@@ -1,0 +1,24 @@
+{{/*
+  comment_delete_confirm: the box that asks "Delete this comment?" before a
+  comment is deleted (Phase 8 plan 17, D-14, owner rule on confirm boxes,
+  2026-10-22: a confirm box reads like a normal system alert). It is the Log out
+  box exactly: the .logout-confirm classes of auth.css and no alert styling of
+  its own. comments.js opens it, puts focus on the title with no button
+  outlined, and only its two buttons close it. Its Delete button is the only
+  thing that sends a delete. index.html.tmpl includes it as a direct child of
+  the body, so no hidden ancestor takes its box away. It lives in its own file
+  because index.html.tmpl keeps no button whose whole text is the single word
+  Cancel (TestReportFormPartialKeepsMainFormOrder, P4-A23, which is about the
+  report form); the word is the built word of every .logout-confirm box.
+*/}}
+{{define "comment_delete_confirm"}}
+  <dialog id="comment-delete-confirm" class="logout-confirm" aria-labelledby="comment-delete-title">
+    <div class="logout-confirm__body">
+      <h2 class="logout-confirm__title" id="comment-delete-title" tabindex="-1">Delete this comment?</h2>
+      <div class="logout-confirm__actions">
+        <button type="button" class="btn" id="comment-delete-cancel">Cancel</button>
+        <button type="button" class="btn btn--destructive" id="comment-delete-yes">Delete</button>
+      </div>
+    </div>
+  </dialog>
+{{end}}

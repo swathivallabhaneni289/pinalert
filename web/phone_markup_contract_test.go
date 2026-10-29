@@ -101,6 +101,17 @@ func phoneExpandTemplate(t *testing.T, name string) string {
 				}
 				body, _, _ := strings.Cut(rest, "{{end}}")
 				return body
+			// Amended 2026-10-29 by Phase 8 plan 17 (D-14): comment_delete_confirm
+			// is a defined block inside comment_delete_confirm.html.tmpl, so a
+			// call expands to that block, as changes_ask does.
+			case "comment_delete_confirm":
+				whole := p13ReadTemplate(t, "comment_delete_confirm.html.tmpl")
+				_, rest, ok := strings.Cut(whole, `{{define "comment_delete_confirm"}}`)
+				if !ok {
+					t.Fatalf("comment_delete_confirm.html.tmpl defines no comment_delete_confirm")
+				}
+				body, _, _ := strings.Cut(rest, "{{end}}")
+				return body
 			case "account_header.html.tmpl":
 				whole := p13ReadTemplate(t, "account_header.html.tmpl")
 				_, root, ok := strings.Cut(whole, "{{end}}")
