@@ -2532,3 +2532,166 @@ func TestMigration00020(t *testing.T) {
 		t.Errorf("after Up again: %d of 2 tables, %d of 2 columns, %d of 4 indexes", tb, c, i)
 	}
 }
+
+// TestMigration00021 covers the Phase 9 ratings migration (plan 09-13): the file
+// carries both goose markers and builds nothing concurrently; on a database it
+// adds the profile_ratings table, its two indexes and the rater removed columns
+// of accounts, the named CHECK constraints refuse a self rating, stars outside 1
+// to 5 and both half stamped removal shapes, Down removes everything and Up
+// applies again (D-02, D-14, D-21, W4).
+func TestMigration00021(t *testing.T) {
+	const file = "migrations/00021_add_profile_ratings.sql"
+	contents, err := MigrationsFS.ReadFile(file)
+	if err != nil {
+		t.Fatalf("reading embedded %s: %v", file, err)
+	}
+	text := string(contents)
+	up := strings.Index(text, "+goose Up")
+	down := strings.Index(text, "+goose Down")
+	if up < 0 || down < 0 || down < up {
+		t.Fatalf("%s must carry +goose Up then +goose Down", file)
+	}
+	var code []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		code = append(code, line)
+	}
+	if strings.Contains(strings.ToUpper(strings.Join(code, "\n")), "CONCURRENTLY") {
+		t.Error("migration 00021 must not use CONCURRENTLY: goose runs it inside a transaction")
+	}
+	for _, name := range []string{
+		"CREATE TABLE profile_ratings", "profile_ratings_not_self", "profile_ratings_stars_range",
+		"profile_ratings_removed_shape", "idx_profile_ratings_reporter", "idx_profile_ratings_rater",
+		"accounts_rater_removed_shape", "rater_removed_at", "rater_removed_by",
+	} {
+		if !strings.Contains(text[:down], name) {
+			t.Errorf("migration 00021 Up must add %s", name)
+		}
+	}
+	for _, want := range []string{"DROP TABLE profile_ratings;", "DROP CONSTRAINT accounts_rater_removed_shape",
+		"DROP COLUMN rater_removed_by", "DROP COLUMN rater_removed_at"} {
+		if !strings.Contains(text[down:], want) {
+			t.Errorf("migration 00021 Down must contain %q", want)
+		}
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping the database part of the 00021 migration test")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("opening database: %v", err)
+	}
+	defer db.Close()
+
+	goose.SetBaseFS(MigrationsFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up: %v", err)
+	}
+
+	var a, b int64
+	t.Cleanup(func() {
+		_ = goose.Up(db, "migrations")
+		for _, id := range []int64{a, b} {
+			if id != 0 {
+				_, _ = db.Exec("DELETE FROM profile_ratings WHERE rater_id = $1 OR reporter_id = $1", id)
+				_, _ = db.Exec("UPDATE accounts SET rater_removed_at = NULL, rater_removed_by = NULL WHERE id = $1", id)
+				_, _ = db.Exec("DELETE FROM accounts WHERE id = $1", id)
+			}
+		}
+	})
+
+	present := func() (tables, columns, indexes int) {
+		t.Helper()
+		if err := db.QueryRow(`SELECT count(*) FROM information_schema.tables
+			WHERE table_schema = 'public' AND table_name = 'profile_ratings'`).Scan(&tables); err != nil {
+			t.Fatalf("counting tables: %v", err)
+		}
+		if err := db.QueryRow(`SELECT count(*) FROM information_schema.columns
+			WHERE table_schema = 'public' AND table_name = 'accounts'
+			  AND column_name IN ('rater_removed_at', 'rater_removed_by')`).Scan(&columns); err != nil {
+			t.Fatalf("counting columns: %v", err)
+		}
+		if err := db.QueryRow(`SELECT count(*) FROM pg_indexes WHERE indexname IN (
+			'idx_profile_ratings_reporter', 'idx_profile_ratings_rater')`).Scan(&indexes); err != nil {
+			t.Fatalf("counting indexes: %v", err)
+		}
+		return
+	}
+	if tb, c, i := present(); tb != 1 || c != 2 || i != 2 {
+		t.Errorf("after Up: %d of 1 tables, %d of 2 columns, %d of 2 indexes", tb, c, i)
+	}
+	for _, name := range []string{"profile_ratings_not_self", "profile_ratings_stars_range",
+		"profile_ratings_removed_shape", "accounts_rater_removed_shape"} {
+		var n int
+		if err := db.QueryRow(`SELECT count(*) FROM pg_constraint WHERE conname = $1`, name).Scan(&n); err != nil || n != 1 {
+			t.Errorf("after Up: constraint %s count %d (%v), want 1", name, n, err)
+		}
+	}
+
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00021-a@example.com') RETURNING id`).Scan(&a); err != nil {
+		t.Fatalf("inserting account: %v", err)
+	}
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00021-b@example.com') RETURNING id`).Scan(&b); err != nil {
+		t.Fatalf("inserting second account: %v", err)
+	}
+
+	wantCode := func(label, code, query string, args ...any) {
+		t.Helper()
+		_, err := db.Exec(query, args...)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != code {
+			t.Errorf("%s: want SQLSTATE %s, got %v", label, code, err)
+		}
+	}
+	wantCode("a self rating", "23514",
+		`INSERT INTO profile_ratings (rater_id, reporter_id, stars) VALUES ($1, $1, 3)`, a)
+	wantCode("zero stars", "23514",
+		`INSERT INTO profile_ratings (rater_id, reporter_id, stars) VALUES ($1, $2, 0)`, a, b)
+	wantCode("six stars", "23514",
+		`INSERT INTO profile_ratings (rater_id, reporter_id, stars) VALUES ($1, $2, 6)`, a, b)
+	wantCode("removed_at without removed_by", "23514",
+		`INSERT INTO profile_ratings (rater_id, reporter_id, stars, removed_at) VALUES ($1, $2, 3, now())`, a, b)
+	wantCode("removed_by without removed_at", "23514",
+		`INSERT INTO profile_ratings (rater_id, reporter_id, stars, removed_by) VALUES ($1, $2, 3, $1)`, a, b)
+	wantCode("rater_removed_at without rater_removed_by", "23514",
+		`UPDATE accounts SET rater_removed_at = now() WHERE id = $1`, a)
+	wantCode("rater_removed_by without rater_removed_at", "23514",
+		`UPDATE accounts SET rater_removed_by = $2 WHERE id = $1`, a, b)
+
+	if _, err := db.Exec(`INSERT INTO profile_ratings (rater_id, reporter_id, stars) VALUES ($1, $2, 5)`, a, b); err != nil {
+		t.Fatalf("inserting a rating: %v", err)
+	}
+	wantCode("the same rating twice", "23505",
+		`INSERT INTO profile_ratings (rater_id, reporter_id, stars) VALUES ($1, $2, 4)`, a, b)
+	if _, err := db.Exec(`INSERT INTO profile_ratings (rater_id, reporter_id, stars, removed_at, removed_by) VALUES ($1, $2, 1, now(), $1)`, b, a); err != nil {
+		t.Errorf("a removed rating with both stamps must insert: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE accounts SET rater_removed_at = now(), rater_removed_by = $2 WHERE id = $1`, a, b); err != nil {
+		t.Errorf("a rater removal with both stamps must update: %v", err)
+	}
+
+	version, err := goose.NumericComponent("00021_add_profile_ratings.sql")
+	if err != nil {
+		t.Fatalf("parsing version: %v", err)
+	}
+	// Down drops the table whole, so its rows need no clean up first.
+	if err := goose.DownTo(db, "migrations", version-1); err != nil {
+		t.Fatalf("goose down to %d: %v", version-1, err)
+	}
+	if tb, c, i := present(); tb != 0 || c != 0 || i != 0 {
+		t.Errorf("after Down: %d tables, %d columns, %d indexes still present", tb, c, i)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up again: %v", err)
+	}
+	if tb, c, i := present(); tb != 1 || c != 2 || i != 2 {
+		t.Errorf("after Up again: %d of 1 tables, %d of 2 columns, %d of 2 indexes", tb, c, i)
+	}
+}
