@@ -659,6 +659,12 @@ WHERE a.id = $3::bigint
       WHERE m.account_id = a.id
         AND m.report_id = $1::bigint
   )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM person_blocks pb
+      WHERE pb.blocker_id = a.id
+        AND pb.blocked_id = $4::bigint
+  )
 ON CONFLICT (account_id, report_id, kind)
     WHERE read_at IS NULL AND kind IN ('comment_on_yours', 'reply_to_yours')
     DO NOTHING
@@ -689,7 +695,12 @@ type InsertCommentUpdateParams struct {
 //
 // Comment rows never roll up into the "more" row and do not count toward the
 // hourly ceiling (the ceiling reads skip these kinds); the unread index is
-// their cap. Phase 9 plan 09-10 adds its block skip here.
+// their cap.
+//
+// Phase 9 plan 09-10 (D-12, review M1) adds one more skip: a person_blocks row
+// from the recipient to the commenter writes nothing, so a blocked person's
+// comment or reply never reaches the blocker's bell and, because the phone note
+// is queued only from a row this insert wrote, never their phone either.
 func (q *Queries) InsertCommentUpdate(ctx context.Context, arg InsertCommentUpdateParams) (int64, error) {
 	result, err := q.db.Exec(ctx, insertCommentUpdate,
 		arg.ReportID,

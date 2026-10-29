@@ -309,7 +309,12 @@ WHERE c.id = sqlc.arg(comment_id);
 --
 -- Comment rows never roll up into the "more" row and do not count toward the
 -- hourly ceiling (the ceiling reads skip these kinds); the unread index is
--- their cap. Phase 9 plan 09-10 adds its block skip here.
+-- their cap.
+--
+-- Phase 9 plan 09-10 (D-12, review M1) adds one more skip: a person_blocks row
+-- from the recipient to the commenter writes nothing, so a blocked person's
+-- comment or reply never reaches the blocker's bell and, because the phone note
+-- is queued only from a row this insert wrote, never their phone either.
 INSERT INTO updates (account_id, report_id, kind)
 SELECT a.id, sqlc.arg(report_id)::bigint, sqlc.arg(kind)::text
 FROM accounts a
@@ -321,6 +326,12 @@ WHERE a.id = sqlc.arg(recipient_account_id)::bigint
       FROM report_mutes m
       WHERE m.account_id = a.id
         AND m.report_id = sqlc.arg(report_id)::bigint
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM person_blocks pb
+      WHERE pb.blocker_id = a.id
+        AND pb.blocked_id = sqlc.arg(commenter_account_id)::bigint
   )
 ON CONFLICT (account_id, report_id, kind)
     WHERE read_at IS NULL AND kind IN ('comment_on_yours', 'reply_to_yours')

@@ -279,3 +279,69 @@ func TestBlockIsOneWayForComments(t *testing.T) {
 		t.Errorf("%d comments changed state after a block, want none", got)
 	}
 }
+
+func TestBlockedCommentDoesNotNotify(t *testing.T) {
+	const on, reply = "comment_on_yours", "reply_to_yours"
+
+	t.Run("a blocked person's comment on your report writes no row and queues no note", func(t *testing.T) {
+		p := newBlkPeople(t, "blk-note-on")
+		r := p.r
+		testutil.SeedBlock(t, r.pool, p.reporter, p.b)
+		pokes := r.note.calls
+
+		r.post(p.report, p.b, "words from the blocked person", nil)
+		if got := r.count(`SELECT count(*) FROM updates WHERE account_id = $1 AND kind = $2`, p.reporter, on); got != 0 {
+			t.Errorf("the blocker got %d comment_on_yours rows, want none", got)
+		}
+		if got := r.pushedKinds(p.report); len(got) != 0 {
+			t.Errorf("changed push rows = %v, want none", got)
+		}
+		if got := r.count(`SELECT count(*) FROM push_outbox WHERE account_id = $1`, p.reporter); got != 0 {
+			t.Errorf("push_outbox rows for the blocker = %d, want none", got)
+		}
+		if r.note.calls != pokes {
+			t.Errorf("dispatcher pokes %d -> %d, want none for a row that was not written", pokes, r.note.calls)
+		}
+
+		r.post(p.report, p.c, "words from someone else", nil)
+		if got := r.count(`SELECT count(*) FROM updates WHERE account_id = $1 AND kind = $2`, p.reporter, on); got != 1 {
+			t.Errorf("after c's comment the blocker has %d rows, want 1", got)
+		}
+		want := fmt.Sprintf("%d:%s", p.reporter, on)
+		if got := r.pushedKinds(p.report); len(got) != 1 || got[0] != want {
+			t.Errorf("changed push rows = %v, want [%s]", got, want)
+		}
+	})
+
+	t.Run("a blocked person's reply to you writes no row", func(t *testing.T) {
+		p := newBlkPeople(t, "blk-note-reply")
+		r := p.r
+		root := r.post(p.report, p.a, "my own words", nil)
+		testutil.SeedBlock(t, r.pool, p.a, p.b)
+
+		r.post(p.report, p.b, "an answer from the blocked person", &root.ID)
+		if got := r.count(`SELECT count(*) FROM updates WHERE account_id = $1 AND kind = $2`, p.a, reply); got != 0 {
+			t.Errorf("the blocker got %d reply_to_yours rows, want none", got)
+		}
+		for _, g := range r.pushedKinds(p.report) {
+			if g == fmt.Sprintf("%d:%s", p.a, reply) {
+				t.Errorf("a changed push was queued for the blocker: %v", r.pushedKinds(p.report))
+			}
+		}
+
+		r.post(p.report, p.c, "an answer from someone else", &root.ID)
+		if got := r.count(`SELECT count(*) FROM updates WHERE account_id = $1 AND kind = $2`, p.a, reply); got != 1 {
+			t.Errorf("after c's reply the blocker has %d rows, want 1", got)
+		}
+	})
+
+	t.Run("the block is one way: the person blocked still hears from the blocker", func(t *testing.T) {
+		p := newBlkPeople(t, "blk-note-oneway")
+		r := p.r
+		testutil.SeedBlock(t, r.pool, p.b, p.reporter) // b blocks the reporter
+		r.post(p.report, p.b, "b comments on the reporter's report", nil)
+		if got := r.count(`SELECT count(*) FROM updates WHERE account_id = $1 AND kind = $2`, p.reporter, on); got != 1 {
+			t.Errorf("the reporter, blocked by b, got %d rows for b's comment, want 1", got)
+		}
+	})
+}
