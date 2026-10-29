@@ -219,6 +219,24 @@ func TestModeratorRatings(t *testing.T) {
 		}
 	})
 
+	t.Run("a rater whose username is not screened yet is still named and removable", func(t *testing.T) {
+		// A deliberate moderator only exception to "a username shows only when its
+		// screen is clear": the tool acts by name, so hiding the name would leave
+		// the rating impossible to remove. The public profile never names a rater
+		// (TestModeratorRatingsHiddenFromOthers).
+		pend := p915SeedReporter(t, pool, "p915c", []int{2})
+		testutil.MustExec(t, pool, `UPDATE accounts SET username_screen = 'pending' WHERE id = $1`, pend.raters[0])
+		rows := p915List(t, mod, srv, pend.username)
+		if len(rows) != 1 || rows[0].Rater != pend.names[0] || rows[0].Removed {
+			t.Fatalf("pending rater: %+v, want one live rating by %s", rows, pend.names[0])
+		}
+		status, raw, _ := p907Do(t, mod, http.MethodPost, srv.URL+"/api/moderation/people/"+pend.username+"/ratings/remove",
+			`{"rater":"`+pend.names[0]+`"}`)
+		if status != http.StatusOK || !p915ByRater(p915Decode(t, raw))[pend.names[0]].Removed {
+			t.Errorf("removing the pending rater's rating: status %d body %s", status, raw)
+		}
+	})
+
 	t.Run("bad names and bodies", func(t *testing.T) {
 		for _, c := range []struct {
 			method, path, body string
