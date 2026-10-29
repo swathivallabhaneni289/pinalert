@@ -376,6 +376,9 @@ var touchControls = []string{
 	// More, Edit in Settings and Unblock buttons are .btn, listed above. No
 	// other entry changed.
 	".person-count", ".person-menu__item",
+	// Phase 9 plan 24 (UI-SPEC 1d): the Notify me bell of a profile, 44 by 44
+	// through --touch-target-min in person.css. No other entry changed.
+	".person-bell",
 	// Phase 9 plan 11 (UI-SPEC 4a, 5a and Interaction and Accessibility): the
 	// row link of a Followers or Following list, the Unblock button of a
 	// Blocked people row, and the live report row of Recent reports, each 44px

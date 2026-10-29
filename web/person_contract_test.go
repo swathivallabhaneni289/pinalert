@@ -467,3 +467,118 @@ func TestStarsControlLook(t *testing.T) {
 		t.Errorf("the forced colours block does not give the chosen star border: 1px solid Highlight")
 	}
 }
+
+// TestPersonBellMarkup pins plan 09-24 (D-08, D-10, UI-SPEC 1d, 1e and Defaults
+// 11): the Notify me bell is a button after Following and before More inside
+// #person-actions, it carries aria-pressed and the hidden name text, it is
+// hidden unless you follow the person and have not muted them, person.css draws
+// bell-off.svg while off and bell.svg while on at 44 by 44 with the surface fill
+// as the chosen look and a Highlight border under forced colours, and no
+// sentence promises a sound or a vibration.
+func TestPersonBellMarkup(t *testing.T) {
+	tmpl := p421ReadTemplate(t, "person.html.tmpl")
+	p421InOrder(t, "the bell sits in the action row after Following and before More", tmpl,
+		`id="person-actions"`, `id="person-follow"`, `id="person-unfollow"`, `id="person-bell"`, `id="person-more"`)
+
+	bell := regexp.MustCompile(`(?s)<button[^>]*id="person-bell".*?</button>`).FindString(tmpl)
+	if bell == "" {
+		t.Fatalf("person.html.tmpl has no button#person-bell")
+	}
+	for _, want := range []string{
+		`type="button"`, `class="person-bell"`, `aria-pressed="`, `.Profile.Notify`,
+		`class="visually-hidden">Notify me when {{.Profile.Username}} posts</span>`,
+		`class="person-bell__icon" aria-hidden="true"`,
+		`{{if or (not .Profile.Following) .Profile.Muted}} hidden{{end}}`,
+	} {
+		if !strings.Contains(bell, want) {
+			t.Errorf("the bell button lacks %s", want)
+		}
+	}
+	// The bell is in the branch for another person's page, never in your own.
+	selfStart := strings.Index(tmpl, "{{if .Profile.IsSelf}}\n      <div id=\"person-actions\"")
+	otherStart := strings.Index(tmpl, "{{else}}\n      {{/* Follow and Following")
+	if selfStart < 0 || otherStart < selfStart {
+		t.Fatalf("the IsSelf and other-person branches of #person-actions were not found")
+	}
+	if strings.Contains(tmpl[selfStart:otherStart], "person-bell") {
+		t.Errorf("your own page draws the bell")
+	}
+	if !strings.Contains(tmpl[otherStart:], `id="person-bell"`) {
+		t.Errorf("the bell is not in the other person's branch of #person-actions")
+	}
+
+	css := regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(p421ReadStatic(t, "css/person.css"), "")
+	rules := regexp.MustCompile(`([^{}]+)\{([^{}]*)\}`).FindAllStringSubmatch(css, -1)
+	var bellCSS strings.Builder
+	for _, r := range rules {
+		if strings.Contains(r[1], ".person-bell") {
+			bellCSS.WriteString(r[0])
+		}
+	}
+	b := bellCSS.String()
+	for _, want := range []string{
+		".person-bell:not([hidden])", "width: var(--touch-target-min);", "height: var(--touch-target-min);",
+		"min-height: var(--touch-target-min);", "border: 1px solid var(--color-border);", "border-radius: 8px;",
+		"width: 24px;", "height: 24px;",
+		`url("/static/icons/bell-off.svg")`, `url("/static/icons/bell.svg")`,
+		`.person-bell[aria-pressed="true"]`, "background: var(--color-surface);",
+	} {
+		if !strings.Contains(b, want) {
+			t.Errorf("the .person-bell rules lack %s", want)
+		}
+	}
+	if regexp.MustCompile(`border[a-z-]*:[^;]*var\(--color-text\)`).MatchString(b) {
+		t.Errorf("the bell has a dark border")
+	}
+	for _, bad := range []string{"!important", "animation", "transition", "@keyframes", "#"} {
+		if strings.Contains(b, bad) {
+			t.Errorf("the .person-bell rules hold %q: no animation, no hard coded colour", bad)
+		}
+	}
+	// A rule that shows the bell button must be guarded so the hidden attribute
+	// works (the icon span inside it is never hidden on its own).
+	for _, r := range rules {
+		if strings.Contains(r[1], ".person-bell") && !strings.Contains(r[1], "__icon") && strings.Contains(r[2], "display:") && !strings.Contains(r[1], ":not([hidden])") {
+			t.Errorf("%q sets display without :not([hidden])", strings.TrimSpace(r[1]))
+		}
+	}
+	// The pressed bell draws bell.svg and the unpressed one bell-off.svg.
+	on := regexp.MustCompile(`(?s)\.person-bell\[aria-pressed="true"\] \.person-bell__icon\s*\{(.*?)\}`).FindStringSubmatch(css)
+	if on == nil || !strings.Contains(on[1], `url("/static/icons/bell.svg")`) {
+		t.Errorf("a pressed bell does not draw bell.svg")
+	}
+	off := regexp.MustCompile(`(?s)\.person-bell__icon\s*\{(.*?)\}`).FindStringSubmatch(css)
+	if off == nil || !strings.Contains(off[1], `url("/static/icons/bell-off.svg")`) {
+		t.Errorf("an unpressed bell does not draw bell-off.svg")
+	}
+	at := strings.Index(css, "@media (forced-colors: active)")
+	if at < 0 {
+		t.Fatalf("person.css has no forced colours block")
+	}
+	forced := css[at:]
+	if !strings.Contains(forced, `.person-bell[aria-pressed="true"]`) || !strings.Contains(forced, "border: 1px solid Highlight;") {
+		t.Errorf("the forced colours block does not give the chosen bell border: 1px solid Highlight")
+	}
+
+	// The script: the exact status sentences, the refusal wording, the notify
+	// address and the element id; and no word that promises a sound or a
+	// vibration anywhere in the bell's markup, rules or script (D-10).
+	script := p421ReadStatic(t, "js/person.js")
+	for _, want := range []string{
+		"'You will be notified when ' + username + ' posts.'",
+		"'You will not be notified when ' + username + ' posts.'",
+		"notify: 'Couldn\\'t change this. Try again.'",
+		"postJSON('notify', { on: want })", "bell: 'person-bell'",
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("person.js lacks %s", want)
+		}
+	}
+	for _, text := range []string{bell, b, script} {
+		for _, bad := range []string{"buzz", "vibrat", "ringtone", "beep"} {
+			if strings.Contains(strings.ToLower(text), bad) {
+				t.Errorf("the bell wording holds %q: every phone note is silent (D-10)", bad)
+			}
+		}
+	}
+}
