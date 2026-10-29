@@ -42,7 +42,10 @@ WHERE id = sqlc.arg(id);
 -- Name that was not screened is written only while the profile is off, judged
 -- inside this statement, so an edit that read the switch as off cannot put an
 -- unscreened Name on a profile that turned public meanwhile (WR-S04, review
--- 2026-10-30). A Name write that loses this race changes nothing.
+-- 2026-10-30). A Name write that loses this race leaves the Name as it was, but
+-- the home area of the same statement is still written (and a username the
+-- caller wrote just before is already saved); the service then tells the person
+-- to try again.
 UPDATE accounts
 SET display_name   = CASE WHEN sqlc.arg(set_name)::boolean AND (sqlc.arg(name_screened)::boolean OR NOT profile_public) THEN sqlc.narg(display_name)::text ELSE display_name END,
     home_area_name = CASE WHEN sqlc.arg(set_home_area)::boolean THEN sqlc.narg(home_area_name)::text ELSE home_area_name END,

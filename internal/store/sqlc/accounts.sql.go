@@ -465,7 +465,10 @@ type UpdateAccountProfileParams struct {
 // Name that was not screened is written only while the profile is off, judged
 // inside this statement, so an edit that read the switch as off cannot put an
 // unscreened Name on a profile that turned public meanwhile (WR-S04, review
-// 2026-10-30). A Name write that loses this race changes nothing.
+// 2026-10-30). A Name write that loses this race leaves the Name as it was, but
+// the home area of the same statement is still written (and a username the
+// caller wrote just before is already saved); the service then tells the person
+// to try again.
 func (q *Queries) UpdateAccountProfile(ctx context.Context, arg UpdateAccountProfileParams) error {
 	_, err := q.db.Exec(ctx, updateAccountProfile,
 		arg.SetName,
