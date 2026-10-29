@@ -1,0 +1,175 @@
+/*
+ * Pinalert - report-panel.css
+ *
+ * Owned by Phase 8 plan 07 (PAGE-01, UI-SPEC Surface 2b, D-18 default A). The
+ * laptop report panel: while map.js keeps data-report-panel on the root, the
+ * report's popup sits in the detail pane host (outside the map container, so
+ * typing in it never reaches Leaflet's key handlers) as a 520px column that
+ * takes the Nearby list's place, with every pin still on the map to its right.
+ * It is the same card node and the same page sections as the phone's sheet,
+ * placed here by CSS alone.
+ *
+ * Everything is inside the one min-width 900px block below; the phone's sheet
+ * is phone.css's. If the owner picks D-01 option B, this file is unchanged:
+ * only the map.js panel section changes (see plan 08-07, "If the owner picks
+ * B").
+ *
+ * Leaflet writes bottom, left, a transform and a content width as inline
+ * styles. This file does not use the important flag to beat them. The popup
+ * states top and height, so its inline bottom is ignored; the content states a
+ * minimum and a maximum width, which an inline width cannot override; and
+ * map.js clears the inline left and transform the moment Leaflet writes them
+ * (holdPanelPosition). Every rule that sets display on an element that can be
+ * hidden carries :not([hidden]).
+ */
+
+@media (min-width: 900px) {
+  /* The list column gives its place to the panel: the grid column is the
+     panel's 520px, so the map takes the rest and no pin lies under the panel.
+     The map measures itself again through its resize watcher (map.js). */
+  html[data-report-panel] .app-shell {
+    grid-template-columns: 520px minmax(0, 1fr);
+  }
+
+  html[data-report-panel] .app-shell > .pane--list {
+    display: none;
+  }
+
+  /* The panel: fixed at the left edge under the top bar, the full height of
+     the content region, the page colour, a hairline on its right edge. The
+     top and the height are stated so Leaflet's inline bottom is ignored. */
+  html[data-report-panel] .leaflet-container .leaflet-detail-pane .leaflet-popup {
+    position: fixed;
+    top: calc(var(--disclaimer-bar-height) + var(--app-topbar-height));
+    left: 0;
+    box-sizing: border-box;
+    width: 520px;
+    height: calc(100dvh - var(--disclaimer-bar-height) - var(--app-topbar-height));
+    margin: 0;
+    overflow: hidden;
+    border-right: 1px solid var(--color-border);
+    background: var(--color-bg);
+    text-align: left;
+  }
+
+  /* The 200ms fade after a close keeps the old popup attached. It must not
+     take a press meant for the page under it. */
+  html[data-report-panel] .leaflet-container .leaflet-detail-pane .leaflet-popup:not([data-popup-open="true"]) {
+    pointer-events: none;
+  }
+
+  html[data-report-panel] .leaflet-container .leaflet-detail-pane .leaflet-popup-tip-container {
+    display: none;
+  }
+
+  /* The wrapper is the only scroll box, under the 44px Back row. */
+  html[data-report-panel] .leaflet-container .leaflet-detail-pane .leaflet-popup-content-wrapper {
+    box-sizing: border-box;
+    height: calc(100% - var(--touch-target-min));
+    min-height: 0;
+    margin-top: var(--touch-target-min);
+    padding: var(--space-md) var(--space-lg) 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: 0;
+    box-shadow: none;
+    background: var(--color-bg);
+  }
+
+  /* The content never scrolls on its own and takes the wrapper's width,
+     whatever width Leaflet measured for the bubble. */
+  html[data-report-panel] .leaflet-container .leaflet-detail-pane .leaflet-popup-content {
+    min-width: 100%;
+    max-width: 100%;
+    max-height: none;
+    margin: 0;
+    overflow: visible;
+  }
+
+  html[data-report-panel] .leaflet-container .leaflet-detail-pane .popup-card__body {
+    padding: 0 0 var(--space-lg) var(--space-md);
+  }
+
+  /* Back: the close anchor becomes a 44px high button at the top left of the
+     panel, the arrow-left glyph at 20px and the word Back. The word is drawn
+     by the stylesheet; the accessible name is the anchor's "Back to the list"
+     (map.js), which starts with the visible word. trust.css hides the anchor's
+     own multiplication sign. */
+  html[data-report-panel] .leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden]) {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: auto;
+    justify-content: flex-start;
+    gap: var(--space-sm);
+    width: auto;
+    min-width: var(--touch-target-min);
+    height: var(--touch-target-min);
+    padding: 0 var(--space-12);
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--color-text);
+    font-family: var(--font-family);
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
+    font-weight: var(--font-weight-semibold);
+    text-decoration: none;
+  }
+
+  html[data-report-panel] .leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden])::before {
+    -webkit-mask-image: url("/static/icons/arrow-left.svg");
+    mask-image: url("/static/icons/arrow-left.svg");
+  }
+
+  html[data-report-panel] .leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden])::after {
+    content: "Back";
+  }
+
+  html[data-report-panel] .leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden]):hover,
+  html[data-report-panel] .leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden]):focus-visible {
+    background: var(--color-surface);
+    color: var(--color-text);
+  }
+
+  html[data-report-panel] .leaflet-container .leaflet-detail-pane .leaflet-popup a.leaflet-popup-close-button:not([hidden]):active {
+    background: var(--color-border);
+    color: var(--color-text);
+  }
+
+  /* The phone order puts Mute and Flag in the body, not in the actions group.
+     They are the same calm rows as on the phone: a hairline above, no box and
+     no underline. */
+  html[data-report-panel] .leaflet-container .leaflet-detail-pane .popup-card__body > .flag-control:not([hidden]) {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    width: 100%;
+    min-height: 48px;
+    margin-top: var(--space-lg);
+    padding: 0;
+    border: 0;
+    border-top: 1px solid var(--color-text-muted);
+    border-radius: 0;
+    background: transparent;
+    color: var(--color-text);
+    font-weight: var(--font-weight-semibold);
+    text-align: left;
+    text-decoration: none;
+  }
+
+  html[data-report-panel] .leaflet-container .leaflet-detail-pane .popup-card__body > .flag-control:not([hidden])::before {
+    content: "";
+    flex: none;
+    width: 20px;
+    height: 20px;
+    background-color: currentColor;
+    -webkit-mask: url("/static/icons/circle-alert.svg") center / contain no-repeat;
+    mask: url("/static/icons/circle-alert.svg") center / contain no-repeat;
+  }
+
+  html[data-report-panel] .leaflet-container .leaflet-detail-pane .popup-card__body > .mute-control:not([hidden]) {
+    margin-top: var(--space-lg);
+  }
+}

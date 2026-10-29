@@ -348,6 +348,10 @@ var touchControls = []string{
 	// again button of the Share window, each 44px through --touch-target-min in
 	// share.css. No other entry changed.
 	".share-window__close", ".share-window__whatsapp", ".share-window__copy", ".share-window__retry",
+	// Amended 2026-10-29 by Phase 8 plan 07 (D-18, UI-SPEC Surface 8): the Open
+	// report row of the laptop bubble, 44px through --touch-target-min in trust.css.
+	// No other entry changed.
+	".popup-card__open-report",
 }
 
 // touchValue reads a height or min-height value as pixels: a px length, a
@@ -550,6 +554,16 @@ var sizeOnlyNamed = map[string]string{
 	".app-topbar > .app-topbar__post":       "laptop only: the Post a report link of the top bar; the phone has Report in the bottom bar (D-10, UI-SPEC 1c).",
 	".app-topbar > .app-header":             "laptop only: the person button and menu in the top bar; the phone reaches the same items through Settings (D-11, D-25, UI-SPEC 1c).",
 	"body > .notice-strip":                  "laptop only: the dark Unofficial strip on Nearby; the phone has no strip and no call box on its main screens (D-29, D-30).",
+
+	// Amended 2026-10-29 by Phase 8 plan 07 (D-18 default A, UI-SPEC Size specific
+	// elements and Surface 2): the three entries below name what the laptop panel
+	// adds. The entries above that quote the owner's 2026-10-19 sentence stay
+	// true: the laptop bubble is kept as built, and the panel opens only from its
+	// Open report row (a Nearby row tap keeps the bubble, review W10). No other
+	// entry changed.
+	".popup-card__open-report":                         "laptop popup only: the Open report row of the bubble (UI-SPEC Size specific elements, D-18); on the phone the card is already the page, and the count shows in the Comments heading on both sizes.",
+	"html[data-report-panel] .app-shell > .pane--list": "laptop panel: the Nearby list gives its column to the report panel while a report is open (UI-SPEC Surface 2a item 2); the phone does the same with html[data-popup-open] and its sheet, so the list is a state of the screen, not a feature one size lacks.",
+	"html[data-report-panel] .leaflet-container .leaflet-detail-pane .leaflet-popup-tip-container": "laptop panel: a panel has no pointer tip, the same as the phone detail sheet above (UI-SPEC Surface 2b).",
 
 	// Rules that swap one element for another on one screen, or that hide a part of
 	// one phone screen while another part shows. The feature stays on both sizes.

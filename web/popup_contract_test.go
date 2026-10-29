@@ -490,10 +490,20 @@ func TestPopupCardSurfaceAndGeometry(t *testing.T) {
 		}
 	}
 
-	// No footer, comments count or comments link (A11).
+	// No footer class name, and no comments link (A11).
+	//
+	// Amended 2026-10-29 by Phase 8 plan 07 (D-03, D-18, SC4): the laptop bubble
+	// carries one Open report row with the server's real comment count, so the
+	// old ban on a comments count is lifted for that row alone. No class name
+	// contains footer, so the negative checks below stay exactly as they were, and
+	// the positive checks pin the row: map.js builds popup-card__open-report and
+	// reads comment_count, and trust.css has the row rule. No other assertion
+	// changed.
 	mapJS := p17ReadStatic(t, "static/js/map.js")
 	p17MustNotContain(t, "map.js", mapJS, "popup-card__footer", "__footer", "-footer")
 	p17MustNotContain(t, "trust.css", css, "popup-card__footer", "__footer", ".footer", "-footer")
+	p17MustContain(t, "map.js", mapJS, "popup-card__open-report", "comment_count")
+	p17MustContain(t, "trust.css", css, ".popup-card__open-report")
 }
 
 // TestPopupCloseButtonComesFirst pins A20, A39 and RR-7: Leaflet's close
