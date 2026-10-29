@@ -311,6 +311,27 @@ func TestPolicyNamesOlderStorageKeys(t *testing.T) {
 	}
 }
 
+// TestPolicyNamesNearbyCentre (review fix round 3, skeptic SK2-05): the tab
+// keeps the place the feed is centred on, with the account number, under
+// pinalert.nearbyCentre in sessionStorage, so Official alerts asks about the
+// same place. It ends with the tab and is not used once it is 30 minutes old.
+// The Policy's storage list names it in plain words: what it holds, how long it
+// lasts and that it stays on the device.
+func TestPolicyNamesNearbyCentre(t *testing.T) {
+	storage := r71tPolicySection(t, "Cookies and storage on your device")
+	const line = "<li>Your position or the place you searched, with your account number, so official alerts near you load for the same place. It is kept until you close the tab, is not used after 30 minutes, and stays on this device.</li>"
+	if !strings.Contains(storage, line) {
+		t.Errorf("the Policy's storage list lacks:\n%s", line)
+	}
+	banner := stripJSComments(p421ReadStatic(t, "js/official-banner.js"))
+	if !strings.Contains(banner, "'pinalert.nearbyCentre'") || !strings.Contains(banner, "sessionStorage.setItem(NEARBY_CENTRE_KEY") {
+		t.Errorf("official-banner.js no longer keeps pinalert.nearbyCentre in sessionStorage; the Policy line about it may be stale")
+	}
+	if !strings.Contains(stripJSComments(p421ReadStatic(t, "js/official-alerts.js")), "STORED_PLACE_MAX_MS = 30 * 60000") {
+		t.Errorf("official-alerts.js no longer stops using a stored place after 30 minutes; the Policy line about it may be stale")
+	}
+}
+
 // TestPolicyNamesHomeSquareScreeningAndMail (IN-T02): the Policy says what is
 // kept and who sees it, in plain words. Pinalert keeps a 5 character geohash of
 // the home area (about 5 km wide, migration 00008, HomeAreaCellPrecision 5)
