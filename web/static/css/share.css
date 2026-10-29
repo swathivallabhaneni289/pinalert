@@ -214,7 +214,9 @@
 /* ---- The two buttons ------------------------------------------------------ */
 
 /* Two equal buttons with an 8px gap. They never shrink below their words, so
-   at 200 percent text they wrap onto two rows. */
+   at 200 percent text they wrap onto two rows. The 8px side padding is only
+   their least room: the words sit centred in a half row either way, and at
+   320 wide Link copied with its glyph still fits beside WhatsApp (IN-T03). */
 .share-window__actions:not([hidden]) {
   display: flex;
   flex-wrap: wrap;
@@ -227,6 +229,8 @@
   min-width: max-content;
   min-height: var(--touch-target-min);
   box-sizing: border-box;
+  padding-left: var(--space-sm);
+  padding-right: var(--space-sm);
   border-radius: 8px;
   gap: var(--space-sm);
 }

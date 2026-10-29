@@ -135,6 +135,39 @@ func TestPanelComposerPinnedToPanelBottom(t *testing.T) {
 	}
 }
 
+// TestShareButtonsSideBySideAt320 (IN-T03): UI-SPEC 5a says the phone stacks
+// nothing, so WhatsApp and Copy link share one row at 320 wide. Each button
+// is half the 288px row less half the 8px gap, and it never shrinks below its
+// words (min-width max-content). The widest words, Link copied, measured 91px
+// at body size in Chromium and WebKit; with the 20px glyph, the 8px gap, the
+// 1px .btn border on each side and the side padding they must fit in 140px.
+func TestShareButtonsSideBySideAt320(t *testing.T) {
+	const row, gap, glyph, border, words = 288, 8, 20, 1, 91
+	rules := commentRules(t, "static/css/share.css")
+	btn := p16Rule(t, rules, "", ".share-window__whatsapp:not([hidden]), .share-window__copy:not([hidden])")
+	if btn.Decls["min-width"] != "max-content" {
+		t.Fatalf("the Share buttons min-width is %q; the sum below assumes max-content", btn.Decls["min-width"])
+	}
+	tokens := map[string]int{"var(--space-xs)": 4, "var(--space-sm)": 8, "var(--space-12)": 12, "var(--space-md)": 16, "var(--space-lg)": 24}
+	side := -1
+	for _, prop := range []string{"padding-left", "padding-right"} {
+		v, ok := tokens[btn.Decls[prop]]
+		if !ok {
+			t.Fatalf("the Share buttons %s is %q, want a space token (else .btn's 24px sides apply)", prop, btn.Decls[prop])
+		}
+		if v > side {
+			side = v
+		}
+	}
+	need := 2*side + 2*border + glyph + gap + words
+	if half := (row - gap) / 2; need > half {
+		t.Errorf("Copy link needs %dpx at 320 wide but has %dpx, so the two buttons stack", need, half)
+	}
+	if btn.Decls["min-height"] != "var(--touch-target-min)" {
+		t.Errorf("the Share buttons lost their 44px height")
+	}
+}
+
 // r08tReadRepo reads a file of the repository, relative to web/.
 func r08tReadRepo(t *testing.T, path string) string {
 	t.Helper()
