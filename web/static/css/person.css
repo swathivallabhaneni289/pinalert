@@ -538,6 +538,109 @@ a.person-report__body:hover {
   line-height: var(--line-height-label);
 }
 
+/* Surface 4 (plan 09-11): the rows of the Followers, Following and Blocked
+   people window. The list runs edge to edge inside the window body, so a row's
+   hover fill reaches the window sides and its words line up with the body. */
+.people-list__subtitle {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  overflow-wrap: anywhere;
+}
+
+.people-list:not([hidden]) {
+  display: block;
+  margin: 0 calc(var(--space-md) * -1);
+  padding: 0;
+  list-style: none;
+}
+
+.people-list > li + li {
+  border-top: 1px solid var(--color-border);
+}
+
+.people-row {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 56px;
+}
+
+.people-row__link,
+.people-row--plain {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--space-12);
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 56px;
+  padding: var(--space-sm) var(--space-md);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.people-row__link:hover {
+  background: var(--color-surface);
+}
+
+.people-row__disc {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+.people-row__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people-row__chevron {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+
+.people-row__action {
+  flex: none;
+}
+
+.people-list__others:not([hidden]) {
+  margin: 0;
+  padding: var(--space-12) 0;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+}
+
+.people-list__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+
 /* Surface 6: the not found and You blocked boxes, the .empty-state look with
    32px above. The display rule is guarded, so the hidden attribute works. */
 .person-state:not([hidden]) {
@@ -637,6 +740,16 @@ a.person-report__body:hover {
   .person-report__foot {
     padding-top: 0;
     border-top: 0;
+  }
+
+  /* The window body is 24px wide here, so the list runs out 24px. */
+  .people-list:not([hidden]) {
+    margin: 0 calc(var(--space-lg) * -1);
+  }
+
+  .people-row__link,
+  .people-row--plain {
+    padding: var(--space-sm) var(--space-lg);
   }
 }
 

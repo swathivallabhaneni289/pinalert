@@ -617,6 +617,25 @@ window.PinalertPerson = (function () {
     });
   }
 
+  // ---- The Followers and Following windows (plan 09-11) -----------------------
+
+  // openList opens the shared list window for this profile. onChange redraws the
+  // header counts from the server after the list changed something (Remove all
+  // followers), so the button and the window never disagree.
+  function openList(kind, opener) {
+    var lists = typeof window !== 'undefined' ? window.PinalertPeopleList : null;
+    if (!lists || typeof lists.open !== 'function') {
+      return;
+    }
+    lists.open({
+      kind: kind,
+      username: username,
+      own: !!page && page.getAttribute('data-self') === 'true',
+      opener: opener,
+      onChange: function () { refresh(); }
+    });
+  }
+
   // ---- Wiring -----------------------------------------------------------------
 
   function on(node, type, fn) {
@@ -665,6 +684,8 @@ window.PinalertPerson = (function () {
     on(els.removeFollower, 'click', function () { choose(els.removeFollower); });
     on(els.block, 'click', function () { choose(els.block); });
     on(els.unblock, 'click', function () { unblock(); });
+    on(els.followersButton, 'click', function () { openList('followers', els.followersButton); });
+    on(els.followingButton, 'click', function () { openList('following', els.followingButton); });
     on(els.confirmGo, 'click', function () { runConfirmed(); });
     on(els.confirmCancel, 'click', function () {
       if (!busy) {
@@ -701,6 +722,8 @@ window.PinalertPerson = (function () {
     openMenu: openMenu,
     closeMenu: closeMenu,
     ask: ask,
-    unblock: unblock
+    unblock: unblock,
+    refresh: refresh,
+    openList: openList
   };
 }());

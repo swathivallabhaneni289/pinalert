@@ -164,6 +164,11 @@
   </dialog>
   {{end}}
 
+  {{if and (not .NotFound) (not .BlockedByYou)}}
+  {{/* The Followers and Following list window (plan 09-11, UI-SPEC Surface 4), opened by the two count buttons. */}}
+  {{template "people_list_window" .}}
+  {{end}}
+
   {{template "app_bottombar" .}}
 
   <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
@@ -171,6 +176,7 @@
   <script src="/static/js/updates.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/position.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/person-reports.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/people-list.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/person.js?v={{.AssetVersion}}" defer></script>
 </body>
 </html>
