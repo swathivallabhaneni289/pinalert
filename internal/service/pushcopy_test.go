@@ -5,6 +5,7 @@
 package service
 
 import (
+	"math"
 	"os"
 	"reflect"
 	"regexp"
@@ -171,6 +172,9 @@ func TestBuildPushText(t *testing.T) {
 	}
 }
 
+// Amended 2026-10-30 by Phase 9 plan 25 (D-09): the case "follow is reserved" is
+// gone because follow is a built kind now (TestBuildPushTextFollow builds it);
+// "follow with no category" takes its place and every other case is unchanged.
 func TestBuildPushTextRefuses(t *testing.T) {
 	cases := []struct {
 		name string
@@ -185,7 +189,8 @@ func TestBuildPushTextRefuses(t *testing.T) {
 		{"changed with no event", PushTextInput{Kind: PushKindChanged, Category: CategoryFlood, Severity: SeverityLow}},
 		{"confirmed update is built from the original kind", PushTextInput{Kind: PushKindConfirmedUpdate, Category: CategoryFlood, Severity: SeverityLow, DistanceKm: pushF(2)}},
 		{"official is reserved", PushTextInput{Kind: PushKindOfficial, Category: CategoryFlood, Severity: SeverityLow, DistanceKm: pushF(2)}},
-		{"follow is reserved", PushTextInput{Kind: PushKindFollow, Category: CategoryFlood, Severity: SeverityLow, DistanceKm: pushF(2)}},
+		{"follow with no category and no pick", PushTextInput{Kind: PushKindFollow, Severity: SeverityLow, DistanceKm: pushF(2)}},
+		{"follow with an unknown category", PushTextInput{Kind: PushKindFollow, Category: "mystery", Severity: SeverityLow, DistanceKm: pushF(2)}},
 		{"unknown kind", PushTextInput{Kind: "more", Category: CategoryFlood, Severity: SeverityLow, DistanceKm: pushF(2)}},
 		{"empty kind", PushTextInput{Category: CategoryFlood, Severity: SeverityLow, DistanceKm: pushF(2)}},
 		{"reliable with an unknown category", PushTextInput{Kind: PushKindReliable, Category: "mystery", Severity: SeverityLow, DistanceKm: pushF(2)}},
@@ -197,6 +202,121 @@ func TestBuildPushTextRefuses(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestBuildPushTextFollow pins the follow note's lock screen words (Phase 9
+// plan 25, UI-SPEC 2b, P9-C21, T-09-85): the area but nobody's name, no report
+// words, no coordinates; the distance part is left out with no home area and the
+// note is still built; a confirmed note keeps the title.
+func TestBuildPushTextFollow(t *testing.T) {
+	cases := []struct {
+		name      string
+		in        PushTextInput
+		wantTitle string
+		wantBody  string
+	}{
+		{
+			name:      "category, area and distance",
+			in:        PushTextInput{Kind: PushKindFollow, Category: CategoryFlood, Severity: SeverityMedium, AreaName: "Central Market", DistanceKm: pushF(2)},
+			wantTitle: "Flood near Central Market",
+			wantBody:  "From someone you follow. 2 km from your home area. Not confirmed yet.",
+		},
+		{
+			name:      "a Critical pick leads the title",
+			in:        PushTextInput{Kind: PushKindFollow, Happening: pushH(HappeningWaterRising), Category: CategoryFlood, Severity: SeverityCritical, AreaName: "Central Market", DistanceKm: pushF(2)},
+			wantTitle: "Water rising near Central Market",
+			wantBody:  "From someone you follow. 2 km from your home area. Not confirmed yet.",
+		},
+		{
+			name:      "no home area leaves the distance out and still builds",
+			in:        PushTextInput{Kind: PushKindFollow, Category: CategoryFlood, Severity: SeverityLow, AreaName: "Central Market"},
+			wantTitle: "Flood near Central Market",
+			wantBody:  "From someone you follow. Not confirmed yet.",
+		},
+		{
+			name:      "under one kilometre",
+			in:        PushTextInput{Kind: PushKindFollow, Category: CategoryPowerOutage, Severity: SeverityLow, AreaName: "Old Bridge", DistanceKm: pushF(0.4)},
+			wantTitle: "Power outage near Old Bridge",
+			wantBody:  "From someone you follow. Under 1 km from your home area. Not confirmed yet.",
+		},
+		{
+			name:      "no area name",
+			in:        PushTextInput{Kind: PushKindFollow, Category: CategoryShelterOpen, Severity: SeverityLow, DistanceKm: pushF(3)},
+			wantTitle: "Shelter open",
+			wantBody:  "From someone you follow. 3 km from your home area. Not confirmed yet.",
+		},
+		{
+			name:      "confirmed keeps the title and swaps the body",
+			in:        PushTextInput{Kind: PushKindFollow, Category: CategoryFlood, Severity: SeverityMedium, AreaName: "Central Market", DistanceKm: pushF(2), Confirmed: true},
+			wantTitle: "Flood near Central Market",
+			wantBody:  "Confirmed by people nearby. 2 km from your home area.",
+		},
+		{
+			name:      "confirmed with no home area",
+			in:        PushTextInput{Kind: PushKindFollow, Category: CategoryFlood, Severity: SeverityMedium, AreaName: "Central Market", Confirmed: true},
+			wantTitle: "Flood near Central Market",
+			wantBody:  "Confirmed by people nearby.",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, ok := BuildPushText(c.in)
+			if !ok {
+				t.Fatalf("BuildPushText(%+v) ok = false, want true", c.in)
+			}
+			if got.Title != c.wantTitle {
+				t.Errorf("Title = %q, want %q", got.Title, c.wantTitle)
+			}
+			if got.Body != c.wantBody {
+				t.Errorf("Body = %q, want %q", got.Body, c.wantBody)
+			}
+		})
+	}
+
+	// The longest title stays within the budget: the longest category word with
+	// a 28 rune area, and a NaN distance reads as no home area.
+	long, ok := BuildPushText(PushTextInput{Kind: PushKindFollow, Category: CategoryStormCyclone, AreaName: strings.Repeat("Mmmmmmmmm ", 6), DistanceKm: pushF(1)})
+	if !ok {
+		t.Fatal("the long title was not built")
+	}
+	if n := utf8.RuneCountInString(long.Title); n > PushTitleMaxRunes {
+		t.Errorf("title %q is %d runes, budget %d", long.Title, n, PushTitleMaxRunes)
+	}
+	nan := math.NaN()
+	if got, ok := BuildPushText(PushTextInput{Kind: PushKindFollow, Category: CategoryFlood, DistanceKm: &nan}); !ok || got.Body != "From someone you follow. Not confirmed yet." {
+		t.Errorf("a NaN distance = %+v, %v, want the no home area body", got, ok)
+	}
+
+	// Nobody is named: PushTextInput has no name field (see
+	// TestBuildPushTextHasNoReporterTextField), and no built follow text holds an
+	// at sign, the mark of a username mention.
+	for _, s := range allFollowTexts() {
+		if strings.Contains(strings.ToLower(s), "@") {
+			t.Errorf("follow text %q holds an at sign", s)
+		}
+	}
+}
+
+// allFollowTexts builds every follow title and body over the grid of picks,
+// categories, distances and confirmed values.
+func allFollowTexts() []string {
+	var out []string
+	picks := []*Happening{nil}
+	for _, h := range Happenings {
+		picks = append(picks, pushH(h))
+	}
+	for _, p := range picks {
+		for _, c := range Categories {
+			for _, d := range []*float64{nil, pushF(0.3), pushF(12)} {
+				for _, conf := range []bool{false, true} {
+					if got, ok := BuildPushText(PushTextInput{Kind: PushKindFollow, Happening: p, Category: c, Severity: SeverityLow, AreaName: "Central Market", DistanceKm: d, Confirmed: conf}); ok {
+						out = append(out, got.Title, got.Body)
+					}
+				}
+			}
+		}
+	}
+	return out
 }
 
 // TestBuildPushTextHasNoReporterTextField is the T-03.3-06 guard: the input
@@ -278,6 +398,10 @@ func TestPushTextBudgets(t *testing.T) {
 				for _, cat := range Categories {
 					check(PushTextInput{Kind: PushKindCritical, Category: cat, Severity: SeverityCritical, AreaName: area, DistanceKm: pushF(km), Confirmed: conf})
 					check(PushTextInput{Kind: PushKindReliable, Category: cat, Severity: SeverityCritical, AreaName: area, DistanceKm: pushF(km), Confirmed: conf})
+					// Phase 9 plan 25 (D-09): the follow note joins the budget sweep, with and
+					// without a home area. Every other assertion is unchanged.
+					check(PushTextInput{Kind: PushKindFollow, Category: cat, Severity: SeverityCritical, AreaName: area, DistanceKm: pushF(km), Confirmed: conf})
+					check(PushTextInput{Kind: PushKindFollow, Category: cat, Severity: SeverityCritical, AreaName: area, Confirmed: conf})
 					for _, sev := range Severities {
 						// Amended 2026-10-29 by Phase 8 plan 15 (D-16): the two comment
 						// events join the budget sweep. Every other assertion is unchanged.
@@ -380,6 +504,9 @@ func TestPushWordConstants(t *testing.T) {
 	}
 	if FromReliableReporterWords != "From a Reliable reporter." {
 		t.Errorf("FromReliableReporterWords = %q", FromReliableReporterWords)
+	}
+	if FromSomeoneYouFollowWords != "From someone you follow." {
+		t.Errorf("FromSomeoneYouFollowWords = %q", FromSomeoneYouFollowWords)
 	}
 	if AreaMaxRunes != 28 || PushTitleMaxRunes < 50 || PushBodyMaxRunes != 120 {
 		t.Errorf("budgets = %d, %d, %d", AreaMaxRunes, PushTitleMaxRunes, PushBodyMaxRunes)

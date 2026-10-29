@@ -14,8 +14,13 @@ import (
 // refusal of every unknown value are unchanged; only the count (four to five),
 // the new last entry and the reserved list (official and follow to follow alone)
 // moved.
+//
+// Amended 2026-10-30 by Phase 9 plan 25 (D-09): follow is a built kind too, so
+// PushKinds holds six (follow is the new last entry) and ReservedPushKinds is
+// empty. The wire values, the order of the first five and the refusal of every
+// unknown value are unchanged.
 func TestPushKindsClosed(t *testing.T) {
-	built := []PushKind{PushKindCritical, PushKindReliable, PushKindChanged, PushKindConfirmedUpdate, PushKindOfficial}
+	built := []PushKind{PushKindCritical, PushKindReliable, PushKindChanged, PushKindConfirmedUpdate, PushKindOfficial, PushKindFollow}
 	if len(PushKinds) != len(built) {
 		t.Fatalf("PushKinds has %d entries, want %d", len(PushKinds), len(built))
 	}
@@ -42,14 +47,23 @@ func TestPushKindsClosed(t *testing.T) {
 		}
 	}
 
-	if len(ReservedPushKinds) != 1 {
-		t.Fatalf("ReservedPushKinds has %d entries, want 1", len(ReservedPushKinds))
-	}
-	if ReservedPushKinds[0] != PushKindFollow {
-		t.Errorf("ReservedPushKinds = %v, want follow alone", ReservedPushKinds)
+	if len(ReservedPushKinds) != 0 {
+		t.Fatalf("ReservedPushKinds = %v, want empty (follow was built by plan 09-25)", ReservedPushKinds)
 	}
 	if !PushKindOfficial.Valid() {
 		t.Error("official must be valid: it is built by plan 05-11")
+	}
+	if !PushKindFollow.Valid() {
+		t.Error("follow must be valid: it is built by plan 09-25")
+	}
+	seen := 0
+	for _, k := range PushKinds {
+		if k == PushKindFollow {
+			seen++
+		}
+	}
+	if seen != 1 {
+		t.Errorf("PushKinds holds follow %d times, want once", seen)
 	}
 	for _, k := range ReservedPushKinds {
 		if k.Valid() {
@@ -65,6 +79,9 @@ func TestPushKindsClosed(t *testing.T) {
 	}
 }
 
+// Amended 2026-10-30 by Phase 9 plan 25 (D-09, D-25): every value is unchanged;
+// the new assertions at the end say a follow push counts toward the hourly cap
+// and is held back by it like Reliable, so follow notes stay few.
 func TestPushCapsAreNamed(t *testing.T) {
 	ints := []struct {
 		name      string
@@ -106,5 +123,17 @@ func TestPushCapsAreNamed(t *testing.T) {
 	}
 	if DefaultAlertRadiusForPushKm != 5 {
 		t.Errorf("DefaultAlertRadiusForPushKm = %v, want 5", DefaultAlertRadiusForPushKm)
+	}
+
+	// A follow push is held by the hourly cap once the person already got
+	// PushPerAccountPerHour, and not before (D-25: few notes, never piled up).
+	if heldByHourlyCap(PushKindFollow, PushPerAccountPerHour-1) {
+		t.Error("a follow push must not be held below the hourly cap")
+	}
+	if !heldByHourlyCap(PushKindFollow, PushPerAccountPerHour) {
+		t.Error("a follow push must be held at the hourly cap")
+	}
+	if heldByHourlyCap(PushKindCritical, PushPerAccountPerHour+5) {
+		t.Error("a Critical push is never held by the hourly cap")
 	}
 }

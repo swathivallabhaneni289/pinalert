@@ -9,14 +9,13 @@ import "time"
 
 // PushKind is the closed set of things a phone notification can be.
 //
-// Four kinds were built in Phase 3.3. One more name is reserved so a later
-// phase has a place to land without renaming anything: follow arrives with
-// Phase 9's per person Notify me bell (09-CONTEXT D-08 to D-11), with its own
-// migration. It gets no Settings row until that phase, and Valid refuses it
-// until that phase widens the list and its test. The official kind arrived
-// with Phase 5 plan 05-11 (D-11); its rows live in official_push_outbox, never
-// in push_outbox, and its words are built by BuildOfficialPushText, not by
-// BuildPushText. There is no rolled up kind: a push dropped by a cap shows
+// Four kinds were built in Phase 3.3. The official kind arrived with Phase 5
+// plan 05-11 (D-11); its rows live in official_push_outbox, never in
+// push_outbox, and its words are built by BuildOfficialPushText, not by
+// BuildPushText. The follow kind arrived with Phase 9 plan 25 (D-09, D-11): the
+// per person Notify me bell replaced any Settings switch, so the kind has no
+// account switch and no Settings row; its rows live in push_outbox with the
+// first alert kinds. There is no rolled up kind: a push dropped by a cap shows
 // nothing extra.
 type PushKind string
 
@@ -39,19 +38,24 @@ const (
 	// words come from BuildOfficialPushText.
 	PushKindOfficial PushKind = "official"
 
-	// PushKindFollow is reserved for Phase 9. It has no switch and no storage.
+	// PushKindFollow is a report by a person the reader follows with the Notify
+	// me bell on (Phase 9 plan 25, D-09 and D-11). It is a first alert kind: one
+	// per account and report with critical and reliable (uq_push_outbox_first),
+	// queued from the followed_posted bell row. It has no account switch; the
+	// bell on the follow is the switch.
 	PushKindFollow PushKind = "follow"
 )
 
-// PushKinds is the five built kinds, in the order the sender considers them
+// PushKinds is the six built kinds, in the order the sender considers them
 // for display and storage.
-var PushKinds = []PushKind{PushKindCritical, PushKindReliable, PushKindChanged, PushKindConfirmedUpdate, PushKindOfficial}
+var PushKinds = []PushKind{PushKindCritical, PushKindReliable, PushKindChanged, PushKindConfirmedUpdate, PushKindOfficial, PushKindFollow}
 
-// ReservedPushKinds is the one name held for a later phase.
-var ReservedPushKinds = []PushKind{PushKindFollow}
+// ReservedPushKinds is the names held for a later phase. It is empty: Phase 9
+// plan 25 built the follow kind, the last one that was held.
+var ReservedPushKinds = []PushKind{}
 
-// Valid reports whether k is one of the five built kinds. The reserved name,
-// the empty string and anything else are refused. Comparison is exact.
+// Valid reports whether k is one of the six built kinds. A reserved name, the
+// empty string and anything else are refused. Comparison is exact.
 func (k PushKind) Valid() bool {
 	for _, x := range PushKinds {
 		if x == k {
@@ -68,8 +72,9 @@ func (k PushKind) Valid() bool {
 // pinned by TestPushCapsAreNamed so a change is a deliberate edit.
 const (
 	// PushPerAccountPerHour is how many pushes one person gets in a rolling
-	// hour. It counts critical, reliable and changed pushes, and not confirmed
-	// updates, which replace a notification already on the screen. A Critical
+	// hour. It counts critical, reliable, follow and changed pushes (a follow
+	// push counts, Phase 9 D-25), and not confirmed updates, which replace a
+	// notification already on the screen. A Critical
 	// push is counted but never held back by this limit (heldByHourlyCap), so
 	// the other kinds are held back first.
 	PushPerAccountPerHour = 4

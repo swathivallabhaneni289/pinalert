@@ -37,6 +37,10 @@ const (
 	ConfirmedByPeopleWords = "Confirmed by people nearby."
 	// FromReliableReporterWords opens a Reliable reporter body.
 	FromReliableReporterWords = "From a Reliable reporter."
+	// FromSomeoneYouFollowWords opens a follow note body (Phase 9 plan 25,
+	// UI-SPEC 2b, P9-C21). It names nobody: a lock screen is read by bystanders,
+	// so no username, no report words and no coordinates ever appear (T-09-85).
+	FromSomeoneYouFollowWords = "From someone you follow."
 )
 
 const (
@@ -206,7 +210,9 @@ func titleWithArea(subject, area string) string {
 // an input no notification exists for: Critical or Reliable without a distance
 // (they need a home area), Changed with an event that is not one of the six
 // change events (the four 3.2 events and the two comment events), a category or severity that has no word where one is needed,
-// and the kinds confirmed_update, official, follow or an unknown one.
+// and the kinds confirmed_update, official or an unknown one. A follow note is
+// not about distance: it is built without a distance too (Phase 9 plan 25), so
+// a person with no home area still gets it.
 func BuildPushText(in PushTextInput) (PushText, bool) {
 	area := AreaWords(in.AreaName)
 	switch in.Kind {
@@ -238,6 +244,25 @@ func BuildPushText(in PushTextInput) (PushText, bool) {
 		return PushText{
 			Title: titleWithArea(category, area),
 			Body:  homeAreaBody(in, true),
+		}, true
+
+	case PushKindFollow:
+		// Phase 9 plan 25 (D-09, UI-SPEC 2b, P9-C21). The title is the pick for a
+		// Critical report, else the category, then the area, and names nobody.
+		// The body opens with who it is from in closed words only; the distance
+		// part is left out when there is no home area, and the note is still
+		// built. A confirmed note reads the same as a confirmed Reliable one.
+		pick, category := pickOrCategory(in)
+		subject := pick
+		if subject == "" {
+			subject = category
+		}
+		if subject == "" {
+			return PushText{}, false
+		}
+		return PushText{
+			Title: titleWithArea(subject, area),
+			Body:  followBody(in),
 		}, true
 
 	case PushKindChanged:
@@ -327,6 +352,21 @@ func homeAreaBody(in PushTextInput, reliable bool) string {
 		return FromReliableReporterWords + " " + distance + " " + NotConfirmedYetWords
 	}
 	return distance + " " + NotConfirmedYetWords
+}
+
+// followBody is the body of a follow note: "From someone you follow. {Distance}
+// from your home area. Not confirmed yet.", or without the distance part when
+// the person has no home area. Once confirmed it is "Confirmed by people
+// nearby. {Distance} from your home area." or "Confirmed by people nearby.".
+func followBody(in PushTextInput) string {
+	distance := ""
+	if distanceOK(in.DistanceKm) {
+		distance = " " + DistanceWords(*in.DistanceKm) + " " + fromHomeAreaWords
+	}
+	if in.Confirmed {
+		return ConfirmedByPeopleWords + distance
+	}
+	return FromSomeoneYouFollowWords + distance + " " + NotConfirmedYetWords
 }
 
 // changeEventWords is the event half of a Changed title, the lock screen form
