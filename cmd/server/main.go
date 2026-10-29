@@ -697,7 +697,10 @@ func main() {
 	if pushOn {
 		pushPolicy := push.DefaultEndpointPolicy()
 		pushSender := push.NewWebPushSender(pushCfg, push.NewGuardedClient(), pushPolicy)
-		pushWorker := service.NewPushWorker(queries, pushSender, service.WithPushWorkerPolicy(pushPolicy))
+		// The worker rechecks a follow note against the Reliable reporter tag at
+		// send time, so it reads the tag through the ratings source like every
+		// other surface (plan 09-26, review W8).
+		pushWorker := service.NewPushWorker(queries, pushSender, service.WithPushWorkerPolicy(pushPolicy), service.WithPushWorkerSignals(ratingService))
 		// The official lane of the phone channel (plan 05-16, D-11): it sends
 		// what plan 05-11 queued for Severe and Extreme official alerts, from the
 		// same sender and policy values, with one sweep at boot. It is a runner
