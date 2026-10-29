@@ -230,6 +230,14 @@
   .official-row:hover {
     background: var(--color-surface);
   }
+
+  /* Muted grey on the surface fill is 4.34 to 1 in the light theme, under 4.5,
+     so the area and "N alerts like this" lines take the normal text colour
+     while the row is hovered (Phase 5 review fix WR-T06, 2026-10-29). */
+  .official-row:hover .official-row__area,
+  .official-row:hover .official-row__grouped {
+    color: var(--color-text);
+  }
 }
 
 /* ---- Level chip, authority badge, tags ------------------------------------- */

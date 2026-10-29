@@ -369,3 +369,28 @@ func TestOfficialAlertsCopy(t *testing.T) {
 		}
 	}
 }
+
+// TestOfficialRowHoverKeepsMutedTextReadable pins the Phase 5 review fix
+// WR-T06 (added 2026-10-29): a hovered laptop row fills with --color-surface,
+// where the muted grey is 4.34 to 1 in the light theme, under 4.5. The area and
+// "N alerts like this" lines take the normal text colour while the row is
+// hovered, so they clear 4.5 to 1 in light and dark.
+func TestOfficialRowHoverKeepsMutedTextReadable(t *testing.T) {
+	const hover = "@media (hover: hover)"
+	p16MustDecl(t, "hovered row", officialRule(t, hover, ".official-row:hover"), map[string]string{
+		"background": "var(--color-surface)",
+	})
+	for _, head := range []string{".official-row:hover .official-row__area", ".official-row:hover .official-row__grouped"} {
+		p16MustDecl(t, head, officialRule(t, hover, head), map[string]string{"color": "var(--color-text)"})
+	}
+	sheet := p16ParseCSS("static/css/main.css", p16ReadStatic(t, "static/css/main.css"))
+	themes := map[string]map[string]string{
+		"light": p16Rule(t, sheet, "", ":root").Decls,
+		"dark":  p16Rule(t, sheet, "", `:root[data-theme="dark"]`).Decls,
+	}
+	for name, tok := range themes {
+		if got := wcagContrastRatio(t, tok["--color-text"], tok["--color-surface"], name+" hovered row"); got < 4.5 {
+			t.Errorf("%s: the hovered row's area text is %.2f to 1, want at least 4.5", name, got)
+		}
+	}
+}
