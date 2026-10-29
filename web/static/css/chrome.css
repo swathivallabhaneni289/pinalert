@@ -229,6 +229,25 @@ html {
   cursor: not-allowed;
 }
 
+/* The switched off look that stays readable (Phase 7.1 plan 11, sketch 010
+   finding 3; UI-SPEC Surface 7 "Off look"). A button that is only waiting
+   (Resend while the wait runs, the code button after five refusals, step 4
+   Continue, Save username) carries aria-disabled and this class: surface fill,
+   full contrast text, hairline border. The rules above give an aria-disabled
+   button muted text on the page colour, and other built screens use them, so
+   this is an opt in class and they are left as they are. The outlined rule
+   above counts four (a class, two :not() arguments and the attribute), so this
+   selector is written to count four as well (the :not(.btn--destructive) is
+   there for that) and sits after it, which makes it win, hover included. A
+   test pins that order. */
+.btn.btn--off[aria-disabled="true"]:not(.btn--destructive) {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-border);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
 .btn--destructive:hover {
   background: color-mix(in srgb, var(--color-severity-critical) 85%, var(--color-text) 15%);
   color: var(--color-bg);
@@ -275,6 +294,11 @@ html {
   .btn--primary:disabled,
   .btn--primary[aria-disabled="true"] {
     border: 1px solid GrayText;
+  }
+
+  /* The readable switched off look keeps a plain text coloured border. */
+  .btn.btn--off[aria-disabled="true"]:not(.btn--destructive) {
+    border: 1px solid CanvasText;
   }
 
   .btn--destructive,

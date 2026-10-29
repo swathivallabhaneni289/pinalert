@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   {{template "app_head" .AssetVersion}}
-  <title>Pinalert: Verify your email</title>
+  <title>Pinalert: Sign in</title>
   <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/auth.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/chrome.css?v={{.AssetVersion}}">
@@ -12,35 +12,120 @@
   <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
 </head>
 <body>
+  {{/*
+    The sign in card (Phase 7.1 plan 11, UI-SPEC Surfaces 1 to 5, sketch 010).
+    One card, four panels that swap with the hidden attribute: Create account,
+    Sign in, the code screen and Forgot password. Every panel is a real POST
+    form so that, if the script has not loaded, Enter can never put an email or
+    a password in the page address (D-10). The address of a live code is page
+    text only (D-05). The data attributes on #login-form-panel are the numbers
+    the script reads (plan 12); it types none of them. Nothing goes under the
+    title: no tagline (owner rule: no hero text).
+  */}}
   <div class="login-gate{{if not .LowDataDefault}} has-globe{{end}}" id="login-gate">
     <div class="login-column">
-    <div class="login-card" id="login-form-panel"{{if .Sent}} hidden{{end}}>
-      {{if .DoneLine}}<p class="login-done" role="status">{{.DoneLine}}</p>{{end}}
-      <h1>Verify your email to continue</h1>
-      <p>Pinalert requires a verified email before you can view or report anything nearby. We'll send a one-time link. No password needed.</p>
+    <div class="login-card" id="login-form-panel"
+         data-start-panel="{{.StartPanel}}" data-code-mode="{{.CodeMode}}"
+         data-code-seconds-left="{{.CodeSecondsLeft}}" data-code-ttl-seconds="{{.CodeTTLSeconds}}"
+         data-resend-seconds="{{.ResendSeconds}}" data-password-min="{{.PasswordMin}}">
+      {{if .DoneLine}}<p class="login-done" id="login-done" role="status">{{.DoneLine}}</p>{{end}}
+      <h1 id="login-title" tabindex="-1">{{if eq .StartPanel "code"}}{{if eq .CodeMode "reset"}}Reset your password{{else}}Check your email{{end}}{{else}}Pinalert{{end}}</h1>
 
-      <label for="login-email">Email address</label>
-      <div class="login-field">
-        <span class="auth-icon auth-icon--mail" aria-hidden="true"></span>
-        <input type="email" id="login-email" name="email" placeholder="you@example.com"
-               autocomplete="email" required value="{{.Email}}">
+      <div class="login-choice" id="login-choice" role="tablist" aria-label="Account"{{if eq .StartPanel "code"}} hidden{{end}}>
+        <button type="button" class="login-choice__tab" role="tab" id="login-tab-create" aria-selected="{{if eq .StartPanel "signin"}}false{{else}}true{{end}}" aria-controls="auth-panel-create" tabindex="{{if eq .StartPanel "signin"}}-1{{else}}0{{end}}">Create account</button>
+        <button type="button" class="login-choice__tab" role="tab" id="login-tab-signin" aria-selected="{{if eq .StartPanel "signin"}}true{{else}}false{{end}}" aria-controls="auth-panel-signin" tabindex="{{if eq .StartPanel "signin"}}0{{else}}-1{{end}}">Sign in</button>
       </div>
 
-      <p id="auth-error" class="auth-error" role="alert"></p>
+      <section id="auth-panel-create" role="tabpanel" aria-labelledby="login-tab-create"{{if ne .StartPanel "create"}} hidden{{end}}>
+        <form id="auth-form-create" method="post" action="/login">
+          <label for="create-email">Email address</label>
+          <div class="login-field">
+            <span class="auth-icon auth-icon--mail" aria-hidden="true"></span>
+            <input type="email" id="create-email" name="email" placeholder="you@example.com" autocomplete="username" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+          </div>
+          <label for="create-password">Password</label>
+          <div class="login-field login-field--rule">
+            <span class="auth-icon auth-icon--lock" aria-hidden="true"></span>
+            <input type="password" id="create-password" name="new-password" autocomplete="new-password" minlength="{{.PasswordMin}}" maxlength="{{.PasswordMax}}" autocapitalize="none" autocorrect="off" spellcheck="false" required aria-describedby="create-rule">
+            <button type="button" class="login-show" id="create-show" data-show-for="create-password" aria-label="Show password">Show</button>
+          </div>
+          <p class="login-rule" id="create-rule">At least {{.PasswordMin}} characters.</p>
+          <p class="inline-error" id="create-error" role="alert" hidden></p>
+          <div class="login-actions">
+            <button type="submit" class="btn btn--primary" id="create-submit">Email me a code</button>
+          </div>
+        </form>
+      </section>
 
-      <button type="button" id="request-link" class="btn btn--primary">Send verification link</button>
+      <section id="auth-panel-signin" role="tabpanel" aria-labelledby="login-tab-signin"{{if ne .StartPanel "signin"}} hidden{{end}}>
+        <form id="auth-form-signin" method="post" action="/login">
+          <p class="login-status" id="signin-status" role="status" hidden></p>
+          <label for="signin-email">Email address</label>
+          <div class="login-field">
+            <span class="auth-icon auth-icon--mail" aria-hidden="true"></span>
+            <input type="email" id="signin-email" name="email" placeholder="you@example.com" autocomplete="username" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+          </div>
+          <label for="signin-password">Password</label>
+          <div class="login-field">
+            <span class="auth-icon auth-icon--lock" aria-hidden="true"></span>
+            <input type="password" id="signin-password" name="password" autocomplete="current-password" maxlength="{{.PasswordMax}}" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+            <button type="button" class="login-show" id="signin-show" data-show-for="signin-password" aria-label="Show password">Show</button>
+          </div>
+          <p class="inline-error" id="signin-error" role="alert" hidden></p>
+          <div class="login-actions">
+            <button type="submit" class="btn btn--primary" id="signin-submit">Sign in</button>
+            <button type="button" class="btn" id="signin-forgot">Forgot password</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="auth-panel-code" aria-labelledby="login-title"{{if ne .StartPanel "code"}} hidden{{end}}>
+        <form id="auth-form-code" method="post" action="/login">
+          <p id="code-lead">We emailed <span class="login-email" id="code-email">{{.CodeEmail}}</span>. Type the {{.CodeDigits}} digit code from that email.</p>
+          <label for="code-input">{{.CodeDigits}} digit code</label>
+          <div class="login-field login-field--code">
+            <span class="auth-icon auth-icon--shield-check" aria-hidden="true"></span>
+            <input type="text" id="code-input" name="code" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="{{.CodeDigits}}" enterkeyhint="done" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+          </div>
+          <div id="code-new-wrap"{{if ne .CodeMode "reset"}} hidden{{end}}>
+            <label for="code-new-password">New password</label>
+            <div class="login-field login-field--rule">
+              <span class="auth-icon auth-icon--lock" aria-hidden="true"></span>
+              <input type="password" id="code-new-password" name="new-password" autocomplete="new-password" minlength="{{.PasswordMin}}" maxlength="{{.PasswordMax}}" autocapitalize="none" autocorrect="off" spellcheck="false" aria-describedby="code-new-rule">
+              <button type="button" class="login-show" id="code-new-show" data-show-for="code-new-password" aria-label="Show password">Show</button>
+            </div>
+            <p class="login-rule" id="code-new-rule">At least {{.PasswordMin}} characters.</p>
+          </div>
+          <p class="login-status" id="code-status" role="status" hidden></p>
+          <p class="inline-error" id="code-error" role="alert" hidden></p>
+          <div class="login-actions">
+            <button type="submit" class="btn btn--primary btn--off" id="code-submit">{{if eq .CodeMode "reset"}}Set new password{{else}}Create account{{end}}</button>
+            <button type="button" class="btn btn--off" id="code-resend" aria-disabled="true">Resend in {{.ResendSeconds}}s</button>
+            <button type="button" class="btn" id="code-change-email"><span class="auth-icon auth-icon--arrow-left" aria-hidden="true"></span>Change email</button>
+          </div>
+          <span class="visually-hidden" id="code-ready-live" role="status"></span>
+        </form>
+      </section>
+
+      <section id="auth-panel-forgot" aria-labelledby="login-title" hidden>
+        <form id="auth-form-forgot" method="post" action="/login">
+          <p>We will email you a {{.CodeDigits}} digit code.</p>
+          <label for="forgot-email">Email address</label>
+          <div class="login-field">
+            <span class="auth-icon auth-icon--mail" aria-hidden="true"></span>
+            <input type="email" id="forgot-email" name="email" placeholder="you@example.com" autocomplete="username" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+          </div>
+          <p class="inline-error" id="forgot-error" role="alert" hidden></p>
+          <div class="login-actions">
+            <button type="submit" class="btn btn--primary" id="forgot-submit">Email me a code</button>
+            <button type="button" class="btn" id="forgot-back"><span class="auth-icon auth-icon--arrow-left" aria-hidden="true"></span>Back to sign in</button>
+          </div>
+        </form>
+      </section>
     </div>
 
-    {{template "check_inbox.html.tmpl" .}}
-
-    <div class="login-ways">
-      {{if .LowDataDefault}}
-      <p class="login-ways__note">Low data view is on for this device. It opens after you sign in.</p>
-      <a class="login-ways__off" href="/login?low=0">Turn off</a>
-      {{else}}
-      <a class="login-ways__low" href="/login?low=1">Low data view</a>
-      <p class="login-ways__line">Text only, no map</p>
-      {{end}}
+    <div class="login-ways" id="login-ways">
+      {{if .LowDataDefault}}<p class="login-ways__status" role="status">Low data view is on. It opens after you sign in.</p>{{end}}
       {{template "login_ways_links" .}}
     </div>
     </div>
