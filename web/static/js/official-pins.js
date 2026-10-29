@@ -75,6 +75,7 @@
   var entries = {}; // pin id -> { pin, key, marker, node }
   var requestOut = false;
   var requestSeq = 0; // moves on when a request is sent and when it ends
+  var cardSeq = 0; // numbers the card titles
   var openId = null; // the pin id of the open card, or null
   var lastFetchAt = 0;
 
@@ -277,7 +278,11 @@
 
     var body = make('div', 'official-card__body');
     var title = make('h3', 'official-card__title', pin.name);
-    title.setAttribute('id', 'official-card-title');
+    // Each card has its own title id (Phase 5 review fix WR-B04): a closing card
+    // stays in the page for its fade, and a shared id would name the new card
+    // with the old card's title.
+    cardSeq += 1;
+    title.setAttribute('id', 'official-card-title-' + cardSeq);
     body.appendChild(title);
     body.appendChild(line('Hazard', pin.kind.word));
     if (pin.from !== null) {

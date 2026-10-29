@@ -652,3 +652,17 @@ test('WR-B02: clearing with no card open asks the map for nothing', async () => 
   assert.equal(layer.closes.length, 0);
 });
 
+// ---- Each card names itself (Phase 5 review fix WR-B04) ----
+// Added 2026-10-29.
+
+test('WR-B04: two cards never share a title id', async () => {
+  const layer = await open(fresh([pin()]));
+  openFirst(layer);
+  openFirst(layer);
+  const a = layer.cards[0].node;
+  const b = layer.cards[1].node;
+  const idOf = (card) => byClass(card, 'official-card__title')[0].getAttribute('id');
+  assert.ok(idOf(a), 'the title has an id');
+  assert.match(idOf(a), /^official-card-title-\d+$/);
+  assert.notEqual(idOf(a), idOf(b));
+});
