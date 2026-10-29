@@ -207,7 +207,7 @@ moved to Phase 8.
 
 ## Context
 
-Picked from a shortlist of 5 portfolio project ideas (blood-donor network, industrial safety
+Picked from a shortlist of 5 project ideas (blood-donor network, industrial safety
 tracker, this local-info feed, a shared-fund tracker, a school early-warning tracker) — this one
 won on having a genuine differentiator (crowd trust verification) rather than being CRUD-over-a-
 database.
@@ -240,9 +240,9 @@ Decision below.
 
 ## Constraints
 
-- **Purpose**: Coding portfolio for job applications in India, not a startup — scope decisions
-  favor demonstrable engineering signal (architecture, testing, documented trust-model
-  reasoning) over business metrics or growth features.
+- **Purpose**: A personal project, not a startup. Scope decisions favor solid engineering
+  (architecture, testing, documented trust-model reasoning) over business metrics or growth
+  features.
 - **Timeline**: Core build targeted at 2-4 weeks solo; trust-model hardening and stretch items
   extend beyond that as an ongoing project, not a hard deadline.
 - **Team**: Solo developer.
@@ -252,7 +252,7 @@ Decision below.
   computation, server-rendered HTML (`html/template`) + vanilla JS, Leaflet.js as the map framework
   with MapLibre GL rendering OpenFreeMap vector tiles as the basemap (upgraded mid-Phase-1 from the
   original plain-OpenStreetMap-raster plan; OSM raster retained as the WebGL-less fallback).
-  Chosen for a clean API-first architecture that's a good portfolio signal and doesn't
+  Chosen for a clean API-first architecture that doesn't
   need paid infrastructure.
 - **Budget**: Free tiers only for the core build — no paid map API, no paid SMS/WhatsApp gateway
   (confirmed 2026-09-10: no phone-OTP provider — Firebase, MSG91, Twilio Verify, AWS SNS — has a
@@ -281,28 +281,28 @@ Decision below.
 - **Legal**: This is a public, unofficial emergency-information app — India's IT Rules 2021
   intermediary-safe-harbor conditions apply the moment it's public, regardless of real traffic.
   Research confidence on specific applicability is LOW; get an actual legal/mentor review before
-  any wide public promotion (not required before initial deploy, which is a portfolio artifact,
+  any wide public promotion (not required before initial deploy, which is a personal project,
   not a promoted public service).
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Verified local emergency feed over 4 other portfolio ideas | Confirm/dispute trust mechanic is a real differentiator, not just CRUD | — Pending |
+| Verified local emergency feed over 4 other project ideas | Confirm/dispute trust mechanic is a real differentiator, not just CRUD | — Pending |
 | API-first Go backend, website as first client | Enables PWA/native app later with no backend rewrite | ✓ Good — Phase 1 shipped a browsable OpenAPI/Swagger spec against the same handlers the web client consumes |
-| Stay a website that installs like an app (Phase 3.3: home screen icon, full screen, alerts when closed), no Play Store or App Store app (owner, 2026-10-17: "lets keep it as a website then") | Recruiters and people in an emergency open links, not store installs; one set of screens keeps phone and laptop the same; store fees ($25 once for Google, $99 a year for Apple) break the free tiers rule. The API-first backend still leaves a store app possible later, and an Android listing could wrap the same site | Pending: Phase 3.3 builds the install |
+| Stay a website that installs like an app (Phase 3.3: home screen icon, full screen, alerts when closed), no Play Store or App Store app (owner, 2026-10-17: "lets keep it as a website then") | People in an emergency open links, not store installs; one set of screens keeps phone and laptop the same; store fees ($25 once for Google, $99 a year for Apple) break the free tiers rule. The API-first backend still leaves a store app possible later, and an Android listing could wrap the same site | Pending: Phase 3.3 builds the install |
 | Anonymous posting, no signup, session-first/IP-secondary rate limiting | Signup friction is unacceptable for emergency reporting; pure IP limiting was reconsidered after research flagged CGNAT collateral damage in India | Shipped and verified in Phase 1 as originally specified — **then reversed 2026-09-10** (see the mandatory-login decision below); session-first/IP-secondary rate limiting itself is Phase 4 (ROBUST) scope, not yet built, and now applies underneath the login gate rather than to anonymous sessions |
-| Mandatory email + OTP login before reporting or voting, phone OTP explicitly rejected | User raised a real concern during Phase 2 discussion: fully anonymous voting is gameable via multiple devices/sessions from one person. Weighed against the independence predicate (distinct session + distinct geohash cell) already planned for Phase 2/3 — that predicate stops multi-device stuffing FROM ONE LOCATION, but not a person deliberately spoofing/visiting multiple locations. User judged the accountability gap worth closing directly. Researched current OTP pricing before deciding: no phone-OTP provider (Firebase, MSG91, Twilio Verify, AWS SNS) has a free tier at real volume, and the cheapest real option (AWS SNS, ~$0.003/SMS) requires India DLT sender registration (a business-entity paperwork requirement) to get that rate — conflicts with this project's free-tier-only budget and solo-developer/portfolio context. Email OTP (via Resend's free tier: 3,000/month, 100/day) closes the same accountability gap at zero cost. | Decided 2026-09-10, inserted as new Phase 1.1 (before Phase 2) — Pending implementation. Reverses Phase 1's already-shipped FOUND-01 (see REQUIREMENTS.md) |
+| Mandatory email + OTP login before reporting or voting, phone OTP explicitly rejected | User raised a real concern during Phase 2 discussion: fully anonymous voting is gameable via multiple devices/sessions from one person. Weighed against the independence predicate (distinct session + distinct geohash cell) already planned for Phase 2/3 — that predicate stops multi-device stuffing FROM ONE LOCATION, but not a person deliberately spoofing/visiting multiple locations. User judged the accountability gap worth closing directly. Researched current OTP pricing before deciding: no phone-OTP provider (Firebase, MSG91, Twilio Verify, AWS SNS) has a free tier at real volume, and the cheapest real option (AWS SNS, ~$0.003/SMS) requires India DLT sender registration (a business-entity paperwork requirement) to get that rate — conflicts with this project's free-tier-only budget and solo-developer context. Email OTP (via Resend's free tier: 3,000/month, 100/day) closes the same accountability gap at zero cost. | Decided 2026-09-10, inserted as new Phase 1.1 (before Phase 2) — Pending implementation. Reverses Phase 1's already-shipped FOUND-01 (see REQUIREMENTS.md) |
 | Plain lat/lon + Go/SQL distance calc instead of PostGIS | Sufficient accuracy at this scale, avoids infra overkill | ✓ Good — Phase 1's bounding-box + Haversine query confirmed using an index scan (`TestNearbyReportsUsesIndex`), not a full-table scan, against real Postgres |
-| Demo/replay mode + official open-data feed (GDACS) promoted to core, not stretch | Solves the empty-map-on-first-visit problem that would otherwise kill the demo for reviewers | — Pending |
+| Demo/replay mode + official open-data feed (GDACS) promoted to core, not stretch | Solves the empty-map-on-first-visit problem that would otherwise kill the demo for first-time visitors | — Pending |
 | Trust-model hardening (provisional gating, diversity-weighted confirms, confidence/reliability split, retraction propagation) promoted to core | These are documented fixes for real failure modes (single-source rumors, vote-stuffing, stale-info spreading via shared cards), not speculative extras — the trust mechanic is the Core Value, so it needs to hold up | — Pending |
 | Single `VisibilityResolver` function as sole authority for report visibility, called by every read path | Architecture research found every documented trust-model pitfall traces back to visibility logic drifting out of sync across feed/map/triage/share-card paths | — Pending |
 | Independence predicate (distinct session + geohash cell) built before diversity-weighting curve | A weighting scheme built on raw vote counts is trivially beaten by multiple votes from one device — the predicate must exist first, not as a later refinement | — Pending |
-| DB hosting on Neon or Supabase instead of Railway/Render free tiers | Research found Render's free Postgres expires after 30 days and Railway dropped its indefinite free tier — neither is "free and persistent," which a portfolio project needs; Neon/Supabase are | — Pending |
+| DB hosting on Neon or Supabase instead of Railway/Render free tiers | Research found Render's free Postgres expires after 30 days and Railway dropped its indefinite free tier — neither is "free and persistent," which a project meant to stay live needs; Neon/Supabase are | — Pending |
 | `go-chi/chi/v5` + `pgx/v5` + `sqlc`, `mmcloughlin/geohash`, OpenAI Moderation API | Chi replaces the originally-considered gorilla/mux (unmaintained since Dec 2022); pgx+sqlc gives type-safe SQL without an ORM fighting the custom geo/trust queries; OpenAI's Moderation API is free and covers text+image in one call, unlike Google's Perspective API (shutting down) | chi/pgx/sqlc validated in Phase 1 (routing, store layer, migrations); `mmcloughlin/geohash` is an added dependency with no diversity-weighting usage yet (Phase 3 scope); OpenAI Moderation API not yet integrated (Phase 4 scope) — Partially Pending |
 | Vector basemap migration: Leaflet + MapLibre GL rendering OpenFreeMap tiles, OSM raster as WebGL-less fallback (`01-11-RESEARCH.md`) | User-chosen mid-Phase-1 quality upgrade over the original plain-Leaflet/OSM-raster plan; sharper rendering with no paid API key, `@maplibre/maplibre-gl-leaflet` bridge keeps all existing Leaflet marker/popup code unchanged | ✓ Good — Phase 1, capability-probed WebGL2 fallback verified working |
 | Confirmer location-capture method for diversity weighting (GPS prompt vs. IP-derived geohash) | Materially different UX/signal-quality tradeoff — flagged by research as needing an explicit decision, not left implicit | ⚠️ Unresolved — decide in Phase 2/3 planning |
-| Repo public on GitHub (`swathivallabhaneni289/pinalert`) | Portfolio project — needs to be visible to recruiters/interviewers | ✓ Good |
+| Repo public on GitHub (`swathivallabhaneni289/pinalert`) | Anyone can read the code and the trust model write-up | ✓ Good |
 | NDMA SACHET (CAP RSS) as the primary official alert source, GDACS second, IMD's own APIs not used | Checked 2026-10-03: SACHET's India-wide RSS answers without a key, declares itself public domain, links to CAP 1.2 messages and aggregates IMD, CWC and state authority alerts (99 alerts that day). IMD's APIs answer "API key missing" or "IP needs to be whitelisted". Alerts are area based with a validity window, so they get their own table and not the reports table | Decided 2026-10-03 for roadmap Phase 5, pending a one day spike on polygons versus area names and NDMA's terms |
 | Following people is opt-in and limited to Reliable reporters, with no follower counts; Reliable-reporter alerts by tag come first | A public nickname makes one person's reports linkable, which turns a follow with notifications into a location tracker, and a notification on an unconfirmed report would bypass the provisional gate. Phase 3 D-10's "not a privacy risk" holds only while no nickname is shown | Decided 2026-10-03: tag based alerts in Phase 3.2, opt-in profiles and follows in Phase 9 (first to cut) |
 

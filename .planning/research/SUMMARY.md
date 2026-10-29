@@ -1,7 +1,7 @@
 # Project Research Summary
 
 **Project:** Pinalert
-**Domain:** Crowd-verified local emergency information feed (floods/cyclones, India context) — anonymous geo-tagged reporting with a confirm/dispute trust mechanic, solo-dev public portfolio build
+**Domain:** Crowd-verified local emergency information feed (floods/cyclones, India context) — anonymous geo-tagged reporting with a confirm/dispute trust mechanic, solo-dev public build
 **Researched:** 2026-09-05
 **Confidence:** MEDIUM-HIGH
 
@@ -17,7 +17,7 @@ Key risks: a full-table Haversine scan that silently degrades as the table grows
 
 ### Recommended Stack
 
-Go 1.25+, PostgreSQL 16/17 (no PostGIS), `go-chi/chi/v5` for routing, `jackc/pgx/v5` + `sqlc` for type-safe SQL, Leaflet 1.9.4 + OSM tiles via CDN (no npm build step), `html/template` for server rendering. Hosting: pick one deployment now (Render web free tier + Render **paid** Postgres, or Railway Hobby ~$5/mo) — Render's free Postgres expires after 30 days, which is fatal for a portfolio project meant to stay live indefinitely.
+Go 1.25+, PostgreSQL 16/17 (no PostGIS), `go-chi/chi/v5` for routing, `jackc/pgx/v5` + `sqlc` for type-safe SQL, Leaflet 1.9.4 + OSM tiles via CDN (no npm build step), `html/template` for server rendering. Hosting: pick one deployment now (Render web free tier + Render **paid** Postgres, or Railway Hobby ~$5/mo) — Render's free Postgres expires after 30 days, which is fatal for a project meant to stay live indefinitely.
 
 **Core technologies:**
 - `go-chi/chi/v5` — HTTP router/middleware; `gorilla/mux` is unmaintained since Dec 2022, do not use
@@ -96,7 +96,7 @@ Based on combined research, suggested phase structure:
 **Avoids:** Pitfall 3 (CGNAT collateral damage), Pitfall 6 (miscalibrated moderation), Pitfall 8 (legal/implied-authority exposure — LOW confidence, recommend a real legal check before wide promotion).
 
 ### Phase 5: Official feed + demo mode
-**Rationale:** Solves the empty-map-on-first-visit problem that would otherwise make a zero-traffic portfolio demo look broken; GDACS integration is independent of the trust pipeline and can be built in parallel with Phase 3/4 work.
+**Rationale:** Solves the empty-map-on-first-visit problem that would otherwise make a zero-traffic demo look broken; GDACS integration is independent of the trust pipeline and can be built in parallel with Phase 3/4 work.
 **Delivers:** GDACS poller (idempotent upsert, bypasses trust pipeline), authority badge for GDACS-sourced pins, demo/replay mode with a persistent, unmissable visual distinction between crowd/official/demo sources.
 **Addresses:** Official open-data feed integration, authority badge (GDACS half), demo/replay mode.
 **Avoids:** Pitfall 7 (demo data mistaken for real reports), the poller-silent-failure integration gotcha (needs a `last_successful_poll_at` health signal).
@@ -168,7 +168,7 @@ Standard patterns (skip research-phase):
 - Bounding-box + Haversine query pattern (MySQL-authored sources, database-agnostic technique)
 
 ### Tertiary (LOW confidence)
-- India IT Rules 2021 intermediary-liability application to a solo portfolio deployment (PRS India, Cyril Amarchand Mangaldas) — general framework is MEDIUM, specific applicability is LOW; needs independent legal check
+- India IT Rules 2021 intermediary-liability application to a solo deployment (PRS India, Cyril Amarchand Mangaldas) — general framework is MEDIUM, specific applicability is LOW; needs independent legal check
 - Feature-interaction pitfalls 9-12 (severity bypass, geohash precision, responder-claim abuse, shareable-card/retraction contradiction) — HIGH confidence the interaction exists (derived directly from the project's own stated scope), MEDIUM confidence on the specific numeric mitigations suggested (not independently benchmarked)
 
 ---

@@ -1,6 +1,6 @@
 # Pinalert — verified local-info feed for emergencies
 
-Portfolio project (job applications, India, not a startup). Go, PostgreSQL, Leaflet.js.
+Personal project (India, not a startup). Go, PostgreSQL, Leaflet.js.
 2-4 week core build, deployed live as a mobile-responsive website first, PWA/app later.
 
 Name: **Pinalert** (pin = location, alert = the report) — checked against real apps/companies, no conflict found.

@@ -260,7 +260,7 @@ FeedService.Query()
 
 | Scale | Architecture Adjustments |
 |-------|--------------------------|
-| 0–1k reports / low concurrent users (portfolio demo, initial real usage) | Single Postgres instance, single Go process, in-process goroutine poller acceptable for local/dev; plain lat/lon bbox + haversine is fast enough with an index on `(status, expires_at)` and a bbox-friendly index on `(latitude, longitude)` |
+| 0–1k reports / low concurrent users (demo, initial real usage) | Single Postgres instance, single Go process, in-process goroutine poller acceptable for local/dev; plain lat/lon bbox + haversine is fast enough with an index on `(status, expires_at)` and a bbox-friendly index on `(latitude, longitude)` |
 | 1k–100k reports / a real localized surge event | Add a composite index covering the feed's actual WHERE clause; consider caching the diversity-weighted count as a column updated on write (already recommended above) rather than aggregating votes per request; move the poller/sweep off the request-serving process's ticker onto an external cron hit against a protected endpoint (needed regardless of scale once deployed to Render/Railway free tier — see Pitfalls) |
 | 100k+ reports (beyond this project's realistic scope) | Only then consider PostGIS for spatial indexing (explicitly deferred per project constraints — plain lat/lon is sufficient at target scale) or splitting moderation/poller into a separate deployed service from the request-serving API |
 

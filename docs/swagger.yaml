@@ -1909,7 +1909,7 @@ info:
     for that; OPS-01's "OpenAPI/Swagger spec" requirement is satisfied by either
     format.
   license:
-    name: Unlicensed (portfolio project, all rights reserved)
+    name: Unlicensed (all rights reserved)
   title: Pinalert API
   version: "1.0"
 paths:

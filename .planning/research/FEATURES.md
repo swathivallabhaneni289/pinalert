@@ -41,7 +41,7 @@ the feature list — that research is already done and cited in `PROJECT-NOTES.m
 | Responder claim + coverage-gap layer | Documented duplication-of-effort problem in Kerala 2018 and Assam | MEDIUM | Depends on session identity to attribute a claim and prevent one anonymous user unclaiming another's claim, and on the triage view existing |
 | Human-contact verification tier | What the most effective real Kerala 2018 volunteers already did by hand; keralarescue.in has a field for this | LOW-MEDIUM | Depends conceptually on responder claim + triage view (same actor doing both) |
 | Official open-data feed integration (GDACS) | Solves the empty-map-on-first-visit problem; verified GDACS exposes a free, unauthenticated GeoJSON API (`gdacs.org/gdacsapi/api/Events/geteventlist`) — this is real, not aspirational | MEDIUM | Confirmed via web search: no auth required, GeoJSON format, only requires source attribution. Good core inclusion |
-| Demo/replay mode | Solves the "reviewer sees an empty feed" problem for a portfolio project specifically | LOW-MEDIUM | High ROI for the stated portfolio purpose; cheap relative to value |
+| Demo/replay mode | Solves the "first-time visitor sees an empty feed" problem | LOW-MEDIUM | High ROI for a project with little real traffic; cheap relative to value |
 | Authority badge (for GDACS-sourced pins only) | **Currently deferred as one unit — should be split.** The data model already carries `source: crowd/official` from the GDACS integration (Active), so badging official-sourced pins is nearly free once GDACS ships | LOW (for the GDACS-sourced half) | **Recommend splitting:** badge-for-existing-official-pins is cheap enough to ship alongside GDACS integration in Active; only the "verified authority *account*" flow (a real org submitting reports under its own identity) needs the deferral reasoning currently written |
 
 ### Anti-Features (Correctly Deferred or Worth Reconsidering)
@@ -138,10 +138,10 @@ Digitally-signed authority reports (V2) ──requires──> CAP-compliant feed
    status model.** `status` is `active/resolved/provisional/hidden`; there's no state for
    "visible but flagged." Needs either a 5th status value or a separate boolean/enum
    `moderation_flag` column. Also worth noting honestly: the "≤0.1% false-positive budget"
-   framing implies empirical calibration against labelled data, which won't exist at portfolio
+   framing implies empirical calibration against labelled data, which won't exist at this
    scale before launch. The credible version is a documented, reasoned threshold choice with the
-   calibration methodology written up as a design decision — that's still strong portfolio
-   signal, an actually-calibrated-from-data number is not achievable pre-launch.
+   calibration methodology written up as a design decision — that's still strong design
+   documentation, an actually-calibrated-from-data number is not achievable pre-launch.
 
 5. **Rater trust score (Stretch) depends on a terminal ground-truth state that doesn't fully
    exist yet.** Scoring whether a session's past votes matched "the eventual verified outcome"

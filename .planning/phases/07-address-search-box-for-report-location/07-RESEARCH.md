@@ -37,7 +37,7 @@ on the client side using the API" [CITED: operations.osmfoundation.org/policies/
 ("live suggestions as the person types") is exactly an autocomplete UI. Moving the call server-side
 resolves the *literal* violation the policy names (client-side implementation calling the API
 directly) but not its spirit — the app is still, in effect, offering autocomplete against the free
-shared Nominatim instance. Given this is a locked decision and a low-traffic portfolio project, the
+shared Nominatim instance. Given this is a locked decision and a low-traffic personal project, the
 practical risk is being rate-limited or IP-blocked under load, which D-04's existing "never blocks
 submission" design already absorbs gracefully (GPS/tap/drag keep working). If the user later judges
 this risk unacceptable, **Photon** (komoot, OSM-data-based, no API key, purpose-built for
@@ -86,7 +86,7 @@ None beyond the above — this phase adds no new npm/Go packages.
 | Go proxy in front of Nominatim | Direct browser → Nominatim `fetch` | **Rejected.** Cannot set a compliant `User-Agent` from browser JS [VERIFIED: MDN forbidden-header behavior, corroborated by web search]; cannot enforce a *global* rate ceiling from N independent browser tabs; would be the only untested code path in a Go-test-only codebase. |
 | Nominatim (locked by phase description/CONTEXT.md) | **Photon** (komoot, OSM-data-based) | Purpose-built for autocomplete/live search — the policy tension in the Summary does not apply to it. No API key. Not evaluated in depth here since Nominatim is already decided; recorded as the escape hatch if the autocomplete-policy risk materializes (e.g., the app's IP gets rate-limited/blocked in practice). |
 | Nominatim (locked) | LocationIQ (commercial layer over Nominatim data, explicit autocomplete support) | Requires an API key — directly excluded by CLAUDE.md's "no API key" framing of this feature and the free-tier-only budget constraint. Not recommended. |
-| Public `nominatim.openstreetmap.org` | Self-hosted Nominatim instance | Only worth it at real scale; adds real infrastructure cost against the project's free-tier-only budget. Not needed at portfolio-project traffic. |
+| Public `nominatim.openstreetmap.org` | Self-hosted Nominatim instance | Only worth it at real scale; adds real infrastructure cost against the project's free-tier-only budget. Not needed at this project's traffic. |
 
 **Installation:** none — no `go get` / `npm install` needed for this phase.
 
@@ -460,7 +460,7 @@ usage policy are both stable, long-lived surfaces; no recent breaking change fou
 | A1 | 600ms debounce + 3-char minimum is the right UX-feel starting point | Pattern 3 / Code Examples | Low — it's explicitly a tunable UX knob, not a compliance control; easy to adjust post-UAT with no architectural change |
 | A2 | Adding Nominatim's optional `email=` param (sourced from an env var, not hardcoded) meaningfully reduces block risk | Pattern 2 | Low-medium — policy doesn't mandate it, but Nominatim's own docs suggest it as a good-citizen identifier alongside User-Agent; omitting it doesn't break compliance, just loses a mitigation |
 | A3 | The existing Leaflet map's OpenStreetMap attribution control (already rendered in `modal.js` for both the vector and raster basemap layers) is sufficient attribution coverage for geocoding search results too, since both are the same ODbL-licensed OSM dataset and the control is visible for the modal's entire lifetime | Summary / Architecture | Low — if judged insufficient, the fix is a one-line addition to the existing attribution string, not a new UI surface |
-| A4 | A global rate.Limiter with burst=1 (rather than 2+) is an adequate starting value for this project's expected concurrency (single-digit simultaneous users at portfolio-project traffic) | Pattern 1 | Low — tunable constant; a real concurrency spike would surface as queued/timed-out searches (D-04's existing failure path), not a crash |
+| A4 | A global rate.Limiter with burst=1 (rather than 2+) is an adequate starting value for this project's expected concurrency (single-digit simultaneous users at this project's traffic) | Pattern 1 | Low — tunable constant; a real concurrency spike would surface as queued/timed-out searches (D-04's existing failure path), not a crash |
 
 **If this table is empty:** N/A — see above.
 
@@ -470,9 +470,9 @@ Both questions below were resolved during `/gsd-plan-phase 07`; each question's 
 kept for the record, with the resolution recorded under its recommendation.
 
 1. **Does the autocomplete-usage-policy risk (Pitfall 1) actually manifest under this app's real
-   traffic, or is it purely theoretical at portfolio-project scale?**
+   traffic, or is it purely theoretical at this project's scale?**
    - What we know: the policy text is unambiguous; the app's likely real-world traffic (a solo
-     developer's portfolio demo) is very low.
+     developer's demo) is very low.
    - What's unclear: whether Nominatim's abuse detection flags low-volume-but-shaped-like-autocomplete
      traffic, or only genuinely high-volume abuse.
    - Recommendation: ship as specified (server-side proxy, global limiter, min-length gate, cache),

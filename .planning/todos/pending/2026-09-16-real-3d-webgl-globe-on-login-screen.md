@@ -28,7 +28,7 @@ and dependency decision, not a copy tweak:
   vanilla JS + server-rendered `html/template` with no build step and no JS dependencies beyond
   Leaflet/MapLibre (which load as pinned CDN `<script>` tags, not bundled).
 - Needs to weigh perf/bundle-size cost for a purely decorative, unauthenticated login-page
-  background against this project's no-build-step / free-tier-only / portfolio-scope constraints.
+  background against this project's no-build-step / free-tier-only / small-scope constraints.
 - If pursued, follow the CDN-`<script>`-tag pattern already established for MapLibre GL (pinned
   exact version, SRI-hashed, UMD/global build only — see `01-11-PLAN.md`/`01-12-PLAN.md` for the
   precedent) rather than introducing a build step.

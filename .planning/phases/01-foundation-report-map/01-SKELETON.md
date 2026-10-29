@@ -18,7 +18,7 @@ That single sentence exercises every tier: browser JS → chi HTTP handler → v
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Language / runtime | Go 1.25+ (`go build ./...`, stdlib `testing`) | Locked in PROJECT.md constraints; stdlib-first keeps the portfolio signal legible and avoids a JS build step entirely |
+| Language / runtime | Go 1.25+ (`go build ./...`, stdlib `testing`) | Locked in PROJECT.md constraints; stdlib-first keeps the code easy to follow and avoids a JS build step entirely |
 | HTTP router | `github.com/go-chi/chi/v5` v5.3.2 | Locked in STACK.md. `gorilla/mux` archived Dec 2022. Route-group middleware needed once `/api/*`, `/static/*` and `/swagger/*` want different stacks |
 | Database | PostgreSQL 16/17, plain `latitude`/`longitude` `DOUBLE PRECISION` columns, **no PostGIS** | Locked in PROJECT.md. Proximity is a two-stage indexed bbox prefilter + Haversine, per PITFALLS.md Pitfall 1 |
 | DB driver / data access | `jackc/pgx/v5` v5.10.0 under `sqlc` v1.31.1 (`sql_package: "pgx/v5"`) | Type-safe params/results while keeping the geo SQL fully hand-written. No ORM — GORM would fight the Haversine/diversity queries |
@@ -30,7 +30,7 @@ That single sentence exercises every tier: browser JS → chi HTTP handler → v
 | Client data flow | One `GET /api/reports?lat=&lon=&radius_km=` endpoint feeds **both** the map and the list, through a single shared client store (`window.Pinalert`) | 01-RESEARCH.md Pattern 3. Two independently-polled endpoints would race and silently desync the D-06 side-by-side view |
 | Theming | CSS custom properties in `web/static/css/main.css`, light + dark declared from day one via `prefers-color-scheme` | D-13 — dark mode is a distinct palette, not an inverted light theme, and retrofitting variables later is expensive |
 | Directory layout | `cmd/` (server, migrate) · `internal/{api,service,session,store,testutil}` · `web/{templates,static}` · `docs/` (swag output) | Matches `.planning/research/ARCHITECTURE.md`'s locked structure verbatim |
-| Deployment target | Postgres on **Neon or Supabase** (genuinely persistent free tier); Go service on a free web tier. Phase 1 ships a documented full-stack local run (`make migrate && make run`) rather than a live deploy | PROJECT.md Key Decision — Render's free Postgres expires after 30 days and Railway dropped its indefinite free tier; neither survives "portfolio piece that must stay live" |
+| Deployment target | Postgres on **Neon or Supabase** (genuinely persistent free tier); Go service on a free web tier. Phase 1 ships a documented full-stack local run (`make migrate && make run`) rather than a live deploy | PROJECT.md Key Decision — Render's free Postgres expires after 30 days and Railway dropped its indefinite free tier; neither survives "demo that must stay live" |
 
 ## Stack Touched in Phase 1
 

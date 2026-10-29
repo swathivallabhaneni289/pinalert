@@ -782,14 +782,14 @@ Every structural property the existing test relies on survives:
 
 1. **Line 32** (inside `## Project` → `### Constraints` → the `- **Tech stack**:` bullet):
    > `computation, server-rendered HTML (\`html/template\`) + vanilla JS, Leaflet.js/OpenStreetMap for`
-   > `  the map. Chosen for a clean API-first architecture that's a good portfolio signal and doesn't`
+   > `  the map. Chosen for a clean API-first architecture that doesn't`
 
    The phrase to change is **`Leaflet.js/OpenStreetMap for the map`** (it wraps across lines 32-33).
 
 2. **Line 73** (`## Recommended Stack` → `### Core Technologies` table, the Leaflet row) — currently:
-   > `| Leaflet.js | **1.9.4** (verified via npm registry \`leaflet@latest\`, no 2.x shipped as of 2026-09) | Map rendering | Already chosen. No API key, no billing, pairs with free OSM tile servers (mind OSM's tile-usage policy at higher traffic — a portfolio demo is well within it). |`
+   > `| Leaflet.js | **1.9.4** (verified via npm registry \`leaflet@latest\`, no 2.x shipped as of 2026-09) | Map rendering | Already chosen. No API key, no billing, pairs with free OSM tile servers (mind OSM's tile-usage policy at higher traffic — a small demo is well within it). |`
 
-   The clause **"pairs with free OSM tile servers (mind OSM's tile-usage policy at higher traffic — a portfolio demo is well within it)"** becomes inaccurate: the app no longer touches OSM tile servers. Two new rows are also needed for `maplibre-gl` 5.24.0 and `@maplibre/maplibre-gl-leaflet` 0.1.4.
+   The clause **"pairs with free OSM tile servers (mind OSM's tile-usage policy at higher traffic — a small demo is well within it)"** becomes inaccurate: the app no longer touches OSM tile servers. Two new rows are also needed for `maplibre-gl` 5.24.0 and `@maplibre/maplibre-gl-leaflet` 0.1.4.
 
 3. **Line 163** (`## Sources`) — the npm-registry line for Leaflet. New source lines should be added for the two new packages and OpenFreeMap.
 
