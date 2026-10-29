@@ -739,7 +739,8 @@ func NewRouter(deps Deps) *chi.Mux {
 	if deps.Reports != nil {
 		peopleOpts = append(peopleOpts, service.WithPeopleScreener(deps.Reports.Screener()))
 	}
-	people := service.NewPeopleService(deps.Sessions, peopleOpts...)	// Delete my account (plan 03.2-09): built from the sessions store and the
+	people := service.NewPeopleService(deps.Sessions, peopleOpts...)
+	// Delete my account (plan 03.2-09): built from the sessions store and the
 	// optional transaction seam.
 	// With a CredentialService, deleting an account also clears the sign in
 	// throttle row of the address, through the service's own keyed hash.
