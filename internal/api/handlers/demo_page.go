@@ -59,8 +59,8 @@ const demoFromWelcome = "welcome"
 // demoViewModel is exactly what demo.html.tmpl and demo_strip.html.tmpl read.
 type demoViewModel struct {
 	AssetVersion string
-	// Chrome is the shared bar data. DemoPage is true on it. Since plan 05-17
-	// the shared report form reads the Demo field below instead.
+	// Chrome is the shared bar data. The shared report form reads the Demo
+	// field below (plan 05-17).
 	Chrome Chrome
 	// Demo is true on this page only. The shared report form reads it and
 	// leaves out the Call 112 box and the What is happening picks (plan 05-17,
@@ -156,7 +156,6 @@ func newDemoPlaceModel(w http.ResponseWriter, r *http.Request, store *demo.Store
 	}
 	from := demoFromWord(r)
 	chrome := cfg.Chrome.withDefaults()
-	chrome.DemoPage = true
 	return demoViewModel{
 		AssetVersion:    cfg.AssetVersion,
 		Chrome:          chrome,
