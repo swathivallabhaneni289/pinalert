@@ -157,3 +157,57 @@
   overflow: hidden;
   clip: rect(0 0 0 0);
 }
+
+/*
+ * The page host for the star box (09-REVIEW K2, UI-SPEC 3b).
+ *
+ * The resolve that closes a report takes its card away, and the message (the
+ * dark #toast) hides after a few seconds and is emptied by any later message, so
+ * neither can hold the box. #rate-host is the node beside the message that
+ * does: fixed, centred like the message (over the list pane from 900px), above
+ * the message while the message is showing and at the message's own place when
+ * it is not, under the message in the stack, and never a live region. It is
+ * empty unless votes.js mounted a box in it, and an empty host takes no room.
+ * The box inside keeps the look of .rate-box and drops its top margin. The same
+ * rules serve a phone and a laptop; only the base line differs, the phone's
+ * being above the bottom bar like the message's.
+ */
+#rate-host {
+  --rate-host-base: var(--space-2xl);
+  --rate-host-lift: 0px;
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--rate-host-base) + var(--rate-host-lift));
+  z-index: 1190;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  box-sizing: border-box;
+  width: min(360px, calc(100vw - 2 * var(--space-md)));
+}
+
+#rate-host:empty {
+  display: none;
+}
+
+#toast:not([hidden]) + #rate-host {
+  --rate-host-lift: calc(var(--touch-target-min) + 2 * var(--space-sm) + var(--space-md));
+}
+
+#rate-host .rate-box:not([hidden]) {
+  margin: 0;
+}
+
+@media (max-width: 899.98px) {
+  #rate-host {
+    --rate-host-base: max(calc(var(--touch-target-min) + var(--space-sm) + var(--space-md)), calc(var(--app-bottombar-height) + env(safe-area-inset-bottom)));
+  }
+}
+
+@media (min-width: 900px) {
+  .app-shell > #rate-host {
+    left: calc(420px / 2);
+    width: min(360px, calc(420px - var(--space-md) * 2));
+  }
+}

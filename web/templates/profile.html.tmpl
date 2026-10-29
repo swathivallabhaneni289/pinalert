@@ -167,6 +167,8 @@
   </div>
 
   <div id="toast" role="status" aria-live="polite" hidden></div>
+  {{/* Review fix K2 (09-REVIEW): the page host of the star box for the reader whose resolve closes the report. It is not a live region and holds nothing until votes.js mounts the box; stars.css places it above the message. It must follow the message directly. */}}
+  <div id="rate-host"></div>
 
   {{template "app_bottombar" .}}
 

@@ -147,7 +147,7 @@ class FakeDoc {
     this.activeElement = this.body;
   }
   createElement(tag) { return new FakeEl(this, tag); }
-  getElementById() { return null; }
+  getElementById(id) { return this.ids && this.ids[id] ? this.ids[id] : null; }
   querySelectorAll(selector) { return this.body.querySelectorAll(selector); }
   querySelector(selector) { return this.body.querySelector(selector); }
   dispatchEvent() {}
@@ -166,10 +166,26 @@ function fire(el, type = 'click') {
 // load evaluates stars.js (unless withStars is false) and votes.js on a small
 // page. answers maps a request tail to { status, body }; a resolve answers with
 // the prompt it is given.
-function load({ prompt, withStars = true, changesAsk = null, onRefetch = null, resolveBody = null } = {}) {
+function load({ prompt, withStars = true, changesAsk = null, onRefetch = null, resolveBody = null, withHost = false } = {}) {
   const doc = new FakeDoc();
   const calls = [];
   const toasts = [];
+  const timers = [];
+  doc.ids = {};
+  // 2026-10-30 (09-REVIEW K2): a page that carries the persistent star box host
+  // beside the message, as index and profile do. The message is there too.
+  let host = null;
+  let toastEl = null;
+  if (withHost) {
+    toastEl = doc.createElement('div');
+    toastEl.id = 'toast';
+    doc.ids.toast = toastEl;
+    doc.body.appendChild(toastEl);
+    host = doc.createElement('div');
+    host.id = 'rate-host';
+    doc.ids['rate-host'] = host;
+    doc.body.appendChild(host);
+  }
   const answers = { people: { status: 204, body: null } };
   const sandbox = {
     document: doc,
@@ -181,8 +197,8 @@ function load({ prompt, withStars = true, changesAsk = null, onRefetch = null, r
     },
     localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     CustomEvent: class CustomEvent { constructor(type) { this.type = type; } },
-    setTimeout() { return 1; },
-    clearTimeout() {},
+    setTimeout(fn, ms) { timers.push({ fn, ms, live: true }); return timers.length; },
+    clearTimeout(id) { if (timers[id - 1]) { timers[id - 1].live = false; } },
     setInterval() { return 1; },
     clearInterval() {},
     addEventListener() {},
@@ -227,7 +243,7 @@ function load({ prompt, withStars = true, changesAsk = null, onRefetch = null, r
   vm.createContext(sandbox);
   if (withStars) { vm.runInContext(starsSource, sandbox); }
   vm.runInContext(votesSource, sandbox);
-  return { votes: sandbox.PinalertVotes, doc, calls, toasts, answers, sandbox };
+  return { votes: sandbox.PinalertVotes, doc, calls, toasts, answers, sandbox, timers, host, toastEl };
 }
 
 // buildCard mirrors the order map.js buildPopupCard gives the card: a popup
@@ -554,4 +570,136 @@ test(NAME + 'a username with markup is shown as text and builds no element', asy
   const box = boxesIn(m.doc.body)[0];
   assert.equal(box.querySelector('.stars-control__legend').textContent, 'Rate <b>x</b>');
   assert.equal(box.querySelectorAll('.stars-control__star').length, 5);
+});
+
+// 2026-10-30 (09-REVIEW K2, UI-SPEC 3b): the reader whose resolve closes the
+// report loses the card, and the message cannot hold the box (it hides, and any
+// later message empties it). The page carries #rate-host beside the message, and
+// votes.js mounts the box there when the card is not live.
+function closeOnRefetch(holder) {
+  return () => {
+    holder.card.popup.setAttribute('data-popup-open', 'false');
+    if (holder.card.popup.parentNode) { holder.card.popup.parentNode.removeChild(holder.card.popup); }
+  };
+}
+
+const CLOSED = { visibility: 'retracted', reason: 'resolved', undos_left: 2 };
+
+test(NAME + 'K2: a resolve that closes the report mounts the box in the page host, with no live region and no move of focus', async () => {
+  const holder = { card: null };
+  const m = load({ prompt: PROMPT, withHost: true, resolveBody: CLOSED, onRefetch: closeOnRefetch(holder) });
+  holder.card = buildCard(m);
+  const focusBefore = m.doc.activeElement;
+  await resolve(holder.card);
+  const boxes = boxesIn(m.doc.body);
+  assert.equal(boxes.length, 1);
+  assert.equal(boxes[0].parentNode, m.host, 'the box is inside #rate-host');
+  assert.equal(boxes[0].dataset.reportId, String(REPORT));
+  assert.equal(boxes[0].querySelector('.stars-control__legend').textContent, 'Rate asha_k');
+  assert.equal(boxes[0].querySelectorAll('.stars-control__star').length, 5);
+  assert.equal(boxesIn(m.toastEl).length, 0, 'the message holds nothing');
+  assert.equal(m.host.getAttribute('role'), null, 'the host is not a live region');
+  assert.equal(m.host.getAttribute('aria-live'), null);
+  assert.equal(boxes[0].getAttribute('role'), null, 'the box is not a live region');
+  assert.equal(boxes[0].getAttribute('aria-live'), null);
+  assert.ok(!m.host.contains(m.doc.activeElement), 'focus did not move into the host');
+  assert.equal(m.doc.activeElement, focusBefore);
+  assert.equal(m.toasts.length, 1, 'the resolve message was shown as before');
+});
+
+test(NAME + 'K2: a page without the host shows no box for a closed report', async () => {
+  const holder = { card: null };
+  const m = load({ prompt: PROMPT, withHost: false, resolveBody: CLOSED, onRefetch: closeOnRefetch(holder) });
+  holder.card = buildCard(m);
+  await resolve(holder.card);
+  assert.equal(boxesIn(m.doc.body).length, 0);
+});
+
+test(NAME + 'K2: a card that stays open keeps the box in the card, not in the host', async () => {
+  const m = load({ prompt: PROMPT, withHost: true });
+  const card = buildCard(m);
+  await resolve(card);
+  assert.equal(boxesIn(m.host).length, 0);
+  assert.equal(boxesIn(card.actions).length, 1);
+});
+
+test(NAME + 'K2: Skip in the host removes the box, sends nothing and keeps it away for that report', async () => {
+  const holder = { card: null };
+  const m = load({ prompt: PROMPT, withHost: true, resolveBody: CLOSED, onRefetch: closeOnRefetch(holder) });
+  holder.card = buildCard(m);
+  await resolve(holder.card);
+  const before = m.calls.length;
+  fire(boxesIn(m.host)[0].querySelector('.rate-box__skip'));
+  assert.equal(boxesIn(m.doc.body).length, 0);
+  assert.equal(m.host.children.length, 0);
+  assert.equal(m.calls.length, before);
+});
+
+test(NAME + 'K2: a rating in the host shows its one line, then the box leaves', async () => {
+  const holder = { card: null };
+  const m = load({ prompt: PROMPT, withHost: true, resolveBody: CLOSED, onRefetch: closeOnRefetch(holder) });
+  holder.card = buildCard(m);
+  await resolve(holder.card);
+  const box = boxesIn(m.host)[0];
+  assert.equal(m.timers.filter((t) => t.live && t.ms === 6000).length, 0, 'no leave timer before a rating');
+  fire(box.querySelectorAll('.stars-control__star')[3]);
+  await settle();
+  assert.ok(m.calls.includes('POST /api/people/asha_k/rating {"stars":4}'), m.calls.join('\n'));
+  assert.equal(box.querySelector('.rate-box__status').textContent, 'You rated asha_k 4 stars.');
+  assert.equal(boxesIn(m.host).length, 1, 'the line is read first');
+  const leave = m.timers.filter((t) => t.live && t.ms === 6000);
+  assert.equal(leave.length, 1);
+  leave[0].fn();
+  assert.equal(boxesIn(m.doc.body).length, 0, 'the box leaves after the line');
+  assert.equal(m.host.children.length, 0);
+});
+
+test(NAME + 'K2: Undo in the message removes the box from the host, and so does Undo in the card', async () => {
+  for (const via of ['message', 'card']) {
+    const holder = { card: null };
+    const m = load({ prompt: PROMPT, withHost: true, resolveBody: CLOSED, onRefetch: closeOnRefetch(holder) });
+    holder.card = buildCard(m);
+    await resolve(holder.card);
+    assert.equal(boxesIn(m.host).length, 1);
+    if (via === 'message') {
+      await m.toasts[0].action.onClick();
+    } else {
+      fire(holder.card.block.controls.querySelector('.vote-btn--takeback'));
+      await settle();
+    }
+    assert.equal(boxesIn(m.doc.body).length, 0, 'removed by Undo in the ' + via);
+  }
+});
+
+test(NAME + 'K2: a 404 on a rating in the host removes the box and hands focus to the message Undo', async () => {
+  const holder = { card: null };
+  const m = load({ prompt: PROMPT, withHost: true, resolveBody: CLOSED, onRefetch: closeOnRefetch(holder) });
+  holder.card = buildCard(m);
+  const undo = m.doc.createElement('button');
+  undo.className = 'toast__action';
+  m.toastEl.appendChild(undo);
+  await resolve(holder.card);
+  m.answers.people = { status: 404, body: { error: { field: 'person', message: 'Profile not found.' } } };
+  const star = boxesIn(m.host)[0].querySelectorAll('.stars-control__star')[2];
+  star.focus();
+  fire(star);
+  await settle();
+  assert.equal(boxesIn(m.doc.body).length, 0);
+  assert.equal(m.doc.activeElement, undo);
+});
+
+test(NAME + 'K2: with the first post or vote pop-up on the page the host box waits too', async () => {
+  let release = null;
+  const pending = new Promise((resolveIt) => { release = resolveIt; });
+  const holder = { card: null };
+  const m = load({
+    prompt: PROMPT, withHost: true, resolveBody: CLOSED, onRefetch: closeOnRefetch(holder),
+    changesAsk: { offer() { return Promise.resolve(); }, settled() { return pending; } }
+  });
+  holder.card = buildCard(m);
+  await resolve(holder.card);
+  assert.equal(boxesIn(m.doc.body).length, 0);
+  release();
+  await settle();
+  assert.equal(boxesIn(m.host).length, 1);
 });
