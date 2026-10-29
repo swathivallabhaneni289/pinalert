@@ -179,3 +179,55 @@ func TestReliableTickBoxSharedLook(t *testing.T) {
 	p13MustContain(t, "welcome.html.tmpl", stripReadTemplate(t, "welcome.html.tmpl"),
 		`<label class="welcome-ask__check"><input type="checkbox" id="welcome-alerts-reliable"><span>A Reliable reporter posts near me</span></label>`)
 }
+
+// TestLoginGlobeBoxFrom360 (IN-T01): from 360px wide the gate and the card pad
+// 24px instead of 16px, so the card sits 16px lower and the 404px term of --g,
+// set for 320, left Email me a code 5 or 6px under the first screen at 360x640,
+// 375x548 and 389x600. A block from 360px reserves 420px (404 plus the two 8px
+// steps) in the same clamp, vh first and svh in @supports, after the phone
+// block so it wins. The phone block, its clamp and every fallback stay as they
+// are (TestLoginGlobePhoneBoxReserved and TestLoginGlassFallbacks).
+func TestLoginGlobeBoxFrom360(t *testing.T) {
+	css := stripCSSComments(p421ReadStatic(t, "css/login-globe.css"))
+	const prelude = "@media (min-width: 360px) and (max-width: 899.98px)"
+	const clampVH = "clamp(140px, min(100vw - 48px, (100vh - 420px) * 1.28), 300px)"
+	const clampSVH = "clamp(140px, min(100vw - 48px, (100svh - 420px) * 1.28), 300px)"
+	wide, ok := p47jFindBlock(css, prelude)
+	if !ok {
+		t.Fatalf("login-globe.css has no %q block, so the main button sits under the first screen from 360 to 389 wide", prelude)
+	}
+	phone, ok := p47jFindBlock(css, p47jPhonePrelude)
+	if !ok {
+		t.Fatalf("login-globe.css lost the phone block")
+	}
+	if wide.Start < phone.Start {
+		t.Errorf("the 360px block comes before the phone block and would lose to it")
+	}
+	gate := p47jRuleRaw(t, prelude, wide.Body, p47jGateHead)
+	if !strings.Contains(gate, "--g: "+clampVH+";") {
+		t.Errorf("the 360px block's %s lacks --g: %s (has %q)", p47jGateHead, clampVH, gate)
+	}
+	if n := strings.Count(gate, "--g:"); n != 1 {
+		t.Errorf("the 360px vh rule declares --g %d times, want 1", n)
+	}
+	supports, ok := p47jFindBlock(wide.Body, "@supports (height: 100svh)")
+	if !ok {
+		t.Fatalf("the 360px block has no nested @supports (height: 100svh)")
+	}
+	if svh := p47jRuleRaw(t, "360px svh", supports.Body, p47jGateHead); !strings.Contains(svh, "--g: "+clampSVH+";") {
+		t.Errorf("the 360px svh rule lacks --g: %s (has %q)", clampSVH, svh)
+	}
+	// The block declares only --g: the rest of the phone layout is the phone
+	// block's.
+	for _, it := range p47jLeaves(wide.Body) {
+		for _, decl := range strings.Split(it.Body, ";") {
+			if d := strings.TrimSpace(decl); d != "" && !strings.HasPrefix(d, "--g:") {
+				t.Errorf("the 360px block sets %q; it only moves --g", d)
+			}
+		}
+	}
+	// The width where the padding grows is the same as in auth.css.
+	if !strings.Contains(stripCSSComments(p421ReadStatic(t, "css/auth.css")), "@media (max-width: 359.98px)") {
+		t.Errorf("auth.css lost its 359.98px padding step; the 360px globe block follows it")
+	}
+}
