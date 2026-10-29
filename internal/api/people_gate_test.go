@@ -33,6 +33,10 @@ func TestAccessGateBlocksPeopleRoutes(t *testing.T) {
 		{http.MethodPost, "/api/people/asha_k/rating/clear"},
 		{http.MethodPost, "/api/me/followers/remove-all"},
 		{http.MethodGet, "/api/me/blocked"},
+		// Plan 09-19 (D-12): the three person mute routes are gated too.
+		{http.MethodPost, "/api/people/asha_k/mute"},
+		{http.MethodPost, "/api/people/asha_k/unmute"},
+		{http.MethodGet, "/api/me/muted-people"},
 		{http.MethodPatch, "/api/me/visibility"},
 	}
 	// Plan 09-08: the two HTML routes are gated like every page, so an
