@@ -146,7 +146,9 @@ const ids = [
 // reads: every state block starts hidden, as the template ships them.
 // Amended 2026-10-29 by the Phase 5 review fix (CR-B02): demo marks the page root
 // data-demo="1", as demo_alerts.html.tmpl does; without it the page has none.
-function buildPage({ withMarkup = true, account = '7', fixedLat, fixedLon, dataApiBase, hazardLine = false, demo = false } = {}) {
+// Amended 2026-10-29 by the Phase 5 review fix (WR-B06): noticeLive marks the
+// stale notice role="status" aria-live="polite", as the templates shipped it.
+function buildPage({ withMarkup = true, account = '7', fixedLat, fixedLon, dataApiBase, hazardLine = false, demo = false, noticeLive = false } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -190,6 +192,10 @@ function buildPage({ withMarkup = true, account = '7', fixedLat, fixedLon, dataA
     if (startHidden.includes(id)) { doc.byId[id].hidden = true; }
   }
   doc.byId['official-retry'].textContent = 'Try again';
+  if (noticeLive) {
+    doc.byId['official-notice'].setAttribute('role', 'status');
+    doc.byId['official-notice'].setAttribute('aria-live', 'polite');
+  }
   // Amended 2026-10-29 by plan 05-22: the second muted status line (hazard events
   // from GDACS) is drawn only by a page that carries it, as alerts.html.tmpl does
   // and the Demo's template does not, so the older cases above run on a page
@@ -1146,4 +1152,29 @@ test('WR-T02: the character before pm in the stale notice and a row Until is a n
   assert.equal(notice.charCodeAt(at - 1), 0xa0, 'U+00A0 before pm');
   assert.equal(page.api.untilText('2026-10-29T15:05:00Z', false).charCodeAt('Until 8:35'.length), 0xa0);
   assert.doesNotMatch(visibleText(page.doc.body), /\d:\d\d [ap]m/, 'no plain space before am or pm anywhere');
+});
+
+// ---- The stale notice is not a live region (Phase 5 review fix WR-B06, WR-T05) ----
+// Added 2026-10-29. The notice carries an age that moves every minute, so it is
+// never a live region: a screen reader would hear it once a minute. The page
+// already shows it on load; nothing needs announcing later.
+
+const liveRegions = (page) => findAll(page.doc.body, (n) => n.hasAttribute('role') || n.hasAttribute('aria-live'));
+
+test('WR-B06: the ticking stale notice is never a live region, even on a template that marks it', async () => {
+  // noticeLive marks the notice as both templates shipped it before the fix.
+  const page = await open({ noticeLive: true }, withRows(staleAt()));
+  assert.equal(shown(page, 'official-notice'), true);
+  assert.equal(liveRegions(page).length, 0, 'no live region on the page');
+  const before = el(page, 'official-notice-text').textContent;
+  page.advance(60000);
+  page.advance(60000);
+  assert.ok(el(page, 'official-notice-text').textContent !== '', before);
+  assert.equal(liveRegions(page).length, 0, 'still none after two minute ticks');
+});
+
+test('WR-T05: alerts.html.tmpl carries no live region on the stale notice', () => {
+  const real = fs.readFileSync(path.join(here, 'templates', 'alerts.html.tmpl'), 'utf8');
+  const tag = /<div[^>]*id="official-notice"[^>]*>/.exec(real)[0];
+  assert.doesNotMatch(tag, /role=|aria-live/);
 });

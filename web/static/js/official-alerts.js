@@ -90,6 +90,13 @@
     }
   }
 
+  // The stale notice carries an age that moves once a minute, so it is never a
+  // live region (Phase 5 review fix WR-B06, WR-T05): a screen reader would hear
+  // it every minute, and the page already shows it on load. A template that
+  // still marks it live is corrected here, so the Demo's page is covered too.
+  noticeEl.removeAttribute('role');
+  noticeEl.removeAttribute('aria-live');
+
   var STATES = { fresh: true, stale: true, unavailable: true };
   var LANG_CODE_PATTERN = /^[a-z]{2,3}$/;
   // The feed's own names for the languages it sends, mapped to valid codes.
