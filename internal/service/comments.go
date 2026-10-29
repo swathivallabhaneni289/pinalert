@@ -526,3 +526,129 @@ func (s *CommentService) Delete(ctx context.Context, commentID, accountID int64)
 	}
 	return nil
 }
+
+// actOnComment is the shared start of Like, Unlike and Flag. The order is part
+// of the specification:
+//
+//  1. The comment is read. No row is ErrCommentGone.
+//  2. The report of the comment gets the report check of Post, run on the
+//     comment's own report, so a withheld, unknown or too old report is
+//     ErrReportNotFound before anything about the comment is told, even for a
+//     deleted comment.
+//
+// The caller then decides what a closed report and a gone comment mean for it.
+func (s *CommentService) actOnComment(ctx context.Context, commentID int64) (sqlcgen.CommentTargetRow, commentReport, error) {
+	target, err := s.q.CommentTarget(ctx, commentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return sqlcgen.CommentTargetRow{}, commentReport{}, ErrCommentGone
+		}
+		return sqlcgen.CommentTargetRow{}, commentReport{}, fmt.Errorf("service: reading comment %d: %w", commentID, err)
+	}
+	rep, err := s.reportFor(ctx, target.ReportID, s.now().UTC())
+	if err != nil {
+		return sqlcgen.CommentTargetRow{}, commentReport{}, err
+	}
+	return target, rep, nil
+}
+
+// Like adds the account's like to a comment and returns the fresh count. One
+// like per account per comment is the primary key, so a second Like changes
+// nothing. Liking your own comment is allowed. A like touches no trust number
+// and sends no notification (D-02, D-16). The checks run in the order of
+// actOnComment, then a closed report is ErrCommentsClosed, then a comment that
+// is deleted, removed or held (even your own held one) is ErrCommentGone.
+func (s *CommentService) Like(ctx context.Context, commentID, accountID int64) (LikeState, error) {
+	return s.setLike(ctx, commentID, accountID, true)
+}
+
+// Unlike takes the account's like back and returns the fresh count. It follows
+// the same checks as Like.
+func (s *CommentService) Unlike(ctx context.Context, commentID, accountID int64) (LikeState, error) {
+	return s.setLike(ctx, commentID, accountID, false)
+}
+
+func (s *CommentService) setLike(ctx context.Context, commentID, accountID int64, like bool) (LikeState, error) {
+	target, rep, err := s.actOnComment(ctx, commentID)
+	if err != nil {
+		return LikeState{}, err
+	}
+	if !rep.open {
+		return LikeState{}, ErrCommentsClosed
+	}
+	if commentTargetGone(target) {
+		return LikeState{}, ErrCommentGone
+	}
+	if like {
+		_, err = s.q.LikeComment(ctx, sqlcgen.LikeCommentParams{CommentID: commentID, AccountID: accountID})
+	} else {
+		_, err = s.q.UnlikeComment(ctx, sqlcgen.UnlikeCommentParams{CommentID: commentID, AccountID: accountID})
+	}
+	if err != nil {
+		return LikeState{}, fmt.Errorf("service: setting like on comment %d: %w", commentID, err)
+	}
+	st, err := s.q.CommentLikeState(ctx, sqlcgen.CommentLikeStateParams{CommentID: commentID, AccountID: accountID})
+	if err != nil {
+		return LikeState{}, fmt.Errorf("service: reading likes of comment %d: %w", commentID, err)
+	}
+	return LikeState{Likes: int(st.Likes), ViewerLiked: st.ViewerLiked}, nil
+}
+
+// Flag stores one flag on someone else's comment. It stays allowed on a closed
+// report, because a flag is a safety action, and it never hides the comment
+// (D-14). The order of the checks is the specification:
+//
+//  1. ValidateFlagInput: the reasons and the note length.
+//  2. actOnComment: the comment, then the report check (ErrReportNotFound,
+//     review W5).
+//  3. A finished Rescue report shows no comments, and a comment that is
+//     deleted, removed or held is not listed to anyone else: both are
+//     ErrCommentGone.
+//  4. Your own comment is ErrCommentOwnFlag.
+//  5. A non empty note goes through ScreenAbuse; a refused note is
+//     FlagNoteRejectedError and nothing is stored. A borderline or unfinished
+//     check still stores the note, as a report flag does.
+//  6. InsertCommentFlag; no row back is ErrAlreadyFlagged.
+func (s *CommentService) Flag(ctx context.Context, commentID, accountID int64, in FlagInput) error {
+	reasons, note, err := ValidateFlagInput(in)
+	if err != nil {
+		return err
+	}
+	target, rep, err := s.actOnComment(ctx, commentID)
+	if err != nil {
+		return err
+	}
+	if rep.hidden || commentTargetGone(target) {
+		return ErrCommentGone
+	}
+	if target.AccountID == accountID {
+		return ErrCommentOwnFlag
+	}
+
+	var notePtr *string
+	if note != "" {
+		check := ScreenAbuse(ctx, s.screener, note)
+		if check.Outcome == TextRejected {
+			return FlagNoteRejectedError{Reason: check.Reason}
+		}
+		notePtr = &note
+	}
+
+	slugs := make([]string, len(reasons))
+	for i, r := range reasons {
+		slugs[i] = string(r)
+	}
+	_, err = s.q.InsertCommentFlag(ctx, sqlcgen.InsertCommentFlagParams{
+		CommentID: commentID,
+		AccountID: accountID,
+		Reasons:   slugs,
+		Note:      notePtr,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrAlreadyFlagged
+		}
+		return fmt.Errorf("service: Flag: storing flag on comment %d: %w", commentID, err)
+	}
+	return nil
+}

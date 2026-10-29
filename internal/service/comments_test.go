@@ -671,3 +671,216 @@ func TestCommentFinishedRescueHidden(t *testing.T) {
 		}
 	})
 }
+
+func TestCommentFlag(t *testing.T) {
+	r := newCmsRig(t)
+	ctx := context.Background()
+	rep := r.open(t)
+	c := testutil.SeedComment(t, r.pool, testutil.CommentSeed{ReportID: rep, AccountID: r.alice})
+	side := cmsSideRows(t, r)
+
+	flagRows := func() int {
+		var n int
+		if err := r.pool.QueryRow(ctx, "SELECT count(*) FROM comment_flags WHERE comment_id = $1", c).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	spam := []service.FlagReason{service.FlagSpam}
+
+	t.Run("a flag by another account stores the reasons and the note", func(t *testing.T) {
+		err := r.svc.Flag(ctx, c, r.carol, service.FlagInput{
+			Reasons: []service.FlagReason{service.FlagOther, service.FlagSpam}, Note: "  looks like an advert  ",
+		})
+		if err != nil {
+			t.Fatalf("Flag = %v", err)
+		}
+		var reasons []string
+		var note *string
+		if err := r.pool.QueryRow(ctx,
+			"SELECT reasons, note FROM comment_flags WHERE comment_id = $1 AND account_id = $2", c, r.carol,
+		).Scan(&reasons, &note); err != nil {
+			t.Fatal(err)
+		}
+		if len(reasons) != 2 || reasons[0] != "spam" || reasons[1] != "other" || note == nil || *note != "looks like an advert" {
+			t.Errorf("stored reasons %v note %v, want spam and other in list order and the trimmed note", reasons, note)
+		}
+	})
+
+	t.Run("a second flag is already flagged", func(t *testing.T) {
+		if err := r.svc.Flag(ctx, c, r.carol, service.FlagInput{Reasons: spam}); !errors.Is(err, service.ErrAlreadyFlagged) {
+			t.Errorf("second Flag = %v, want ErrAlreadyFlagged", err)
+		}
+		if n := flagRows(); n != 1 {
+			t.Errorf("flag rows = %d, want 1", n)
+		}
+	})
+
+	t.Run("a flag never hides the comment", func(t *testing.T) {
+		for _, viewer := range []int64{r.alice, r.carol, r.bob} {
+			l := r.list(t, rep, viewer)
+			if len(l.Comments) != 1 || l.Comments[0].ID != c {
+				t.Fatalf("viewer %d sees %+v, want the flagged comment still listed", viewer, l.Comments)
+			}
+			if got := l.Comments[0].ViewerFlagged; got != (viewer == r.carol) {
+				t.Errorf("viewer %d ViewerFlagged = %v", viewer, got)
+			}
+		}
+	})
+
+	t.Run("your own comment cannot be flagged", func(t *testing.T) {
+		if err := r.svc.Flag(ctx, c, r.alice, service.FlagInput{Reasons: spam}); !errors.Is(err, service.ErrCommentOwnFlag) {
+			t.Errorf("own Flag = %v, want ErrCommentOwnFlag", err)
+		}
+	})
+
+	t.Run("the reasons are validated first", func(t *testing.T) {
+		var ve service.ValidationError
+		if err := r.svc.Flag(ctx, c, r.bob, service.FlagInput{}); !errors.As(err, &ve) {
+			t.Errorf("Flag with no reason = %v, want a ValidationError", err)
+		}
+	})
+
+	t.Run("a refused note stores nothing", func(t *testing.T) {
+		r.scr.outcome = "reject"
+		defer func() { r.scr.outcome = "clear" }()
+		err := r.svc.Flag(ctx, c, r.bob, service.FlagInput{Reasons: spam, Note: "some hateful words"})
+		var nr service.FlagNoteRejectedError
+		if !errors.As(err, &nr) || !errors.Is(err, service.ErrFlagNoteRejected) {
+			t.Fatalf("Flag = %v, want a FlagNoteRejectedError", err)
+		}
+		if n := flagRows(); n != 1 {
+			t.Errorf("flag rows = %d, want still 1", n)
+		}
+	})
+
+	t.Run("a note the check could not finish still stores the flag", func(t *testing.T) {
+		r.scr.outcome = "unfinished"
+		defer func() { r.scr.outcome = "clear" }()
+		if err := r.svc.Flag(ctx, c, r.bob, service.FlagInput{Reasons: spam, Note: "please look"}); err != nil {
+			t.Errorf("Flag = %v, want it stored", err)
+		}
+		if n := flagRows(); n != 2 {
+			t.Errorf("flag rows = %d, want 2", n)
+		}
+	})
+
+	t.Run("a flag on a closed report is allowed", func(t *testing.T) {
+		closed := r.open(t)
+		r.resolve(t, closed, time.Hour)
+		id := testutil.SeedComment(t, r.pool, testutil.CommentSeed{ReportID: closed, AccountID: r.alice})
+		if err := r.svc.Flag(ctx, id, r.carol, service.FlagInput{Reasons: spam}); err != nil {
+			t.Errorf("Flag on a resolved report = %v, want nil", err)
+		}
+		faded := r.report(t, "flood", "low", "clear", -time.Hour)
+		id = testutil.SeedComment(t, r.pool, testutil.CommentSeed{ReportID: faded, AccountID: r.alice})
+		if err := r.svc.Flag(ctx, id, r.carol, service.FlagInput{Reasons: spam}); err != nil {
+			t.Errorf("Flag on a faded report = %v, want nil", err)
+		}
+	})
+
+	t.Run("a report nobody may open answers not found", func(t *testing.T) {
+		for name, rp := range map[string]int64{
+			"too old":  r.report(t, "flood", "low", "clear", -8*24*time.Hour),
+			"withheld": r.report(t, "flood", "low", "pending", 6*time.Hour),
+		} {
+			id := testutil.SeedComment(t, r.pool, testutil.CommentSeed{ReportID: rp, AccountID: r.alice})
+			if err := r.svc.Flag(ctx, id, r.carol, service.FlagInput{Reasons: spam}); !errors.Is(err, service.ErrReportNotFound) {
+				t.Errorf("%s: Flag = %v, want ErrReportNotFound", name, err)
+			}
+		}
+	})
+
+	t.Run("a comment nobody else can see is gone", func(t *testing.T) {
+		for name, seed := range map[string]testutil.CommentSeed{
+			"deleted": {ReportID: rep, AccountID: r.alice, Deleted: true},
+			"removed": {ReportID: rep, AccountID: r.alice, State: "removed"},
+			"held":    {ReportID: rep, AccountID: r.alice, State: "pending"},
+		} {
+			id := testutil.SeedComment(t, r.pool, seed)
+			if err := r.svc.Flag(ctx, id, r.carol, service.FlagInput{Reasons: spam}); !errors.Is(err, service.ErrCommentGone) {
+				t.Errorf("%s: Flag = %v, want ErrCommentGone", name, err)
+			}
+		}
+		if err := r.svc.Flag(ctx, 999999, r.carol, service.FlagInput{Reasons: spam}); !errors.Is(err, service.ErrCommentGone) {
+			t.Errorf("unknown id: Flag = %v, want ErrCommentGone", err)
+		}
+	})
+
+	t.Run("a finished Rescue report shows no comments, so none can be flagged", func(t *testing.T) {
+		fin := r.report(t, "rescue_needed", "critical", "clear", -time.Hour)
+		id := testutil.SeedComment(t, r.pool, testutil.CommentSeed{ReportID: fin, AccountID: r.alice})
+		if err := r.svc.Flag(ctx, id, r.carol, service.FlagInput{Reasons: spam}); !errors.Is(err, service.ErrCommentGone) {
+			t.Errorf("Flag = %v, want ErrCommentGone", err)
+		}
+	})
+
+	// Last, so every flag above has been made: none wrote a row or called out.
+	t.Run("a flag writes no update and no outbox row and calls no notifier", func(t *testing.T) {
+		if got := cmsSideRows(t, r); got != side {
+			t.Errorf("update and outbox rows %d -> %d, want none written", side, got)
+		}
+		if r.note.calls != 0 {
+			t.Errorf("notifier calls = %d, want 0", r.note.calls)
+		}
+	})
+}
+
+// TestCommentLikeAccess covers the access rules of Like and Unlike: a closed
+// report, a comment that is gone, and a report nobody may open.
+func TestCommentLikeAccess(t *testing.T) {
+	r := newCmsRig(t)
+	ctx := context.Background()
+	rep := r.open(t)
+
+	for name, seed := range map[string]testutil.CommentSeed{
+		"deleted":            {ReportID: rep, AccountID: r.alice, Deleted: true},
+		"removed":            {ReportID: rep, AccountID: r.alice, State: "removed"},
+		"held, someone else": {ReportID: rep, AccountID: r.alice, State: "pending"},
+		"held, your own":     {ReportID: rep, AccountID: r.carol, State: "pending"},
+	} {
+		id := testutil.SeedComment(t, r.pool, seed)
+		if _, err := r.svc.Like(ctx, id, r.carol); !errors.Is(err, service.ErrCommentGone) {
+			t.Errorf("%s: Like = %v, want ErrCommentGone", name, err)
+		}
+		if _, err := r.svc.Unlike(ctx, id, r.carol); !errors.Is(err, service.ErrCommentGone) {
+			t.Errorf("%s: Unlike = %v, want ErrCommentGone", name, err)
+		}
+	}
+	if _, err := r.svc.Like(ctx, 999999, r.carol); !errors.Is(err, service.ErrCommentGone) {
+		t.Errorf("unknown id: Like = %v, want ErrCommentGone", err)
+	}
+
+	t.Run("a closed report stops likes and unlikes", func(t *testing.T) {
+		resolved := r.open(t)
+		r.resolve(t, resolved, time.Hour)
+		faded := r.report(t, "flood", "low", "clear", -time.Hour)
+		for name, rp := range map[string]int64{"resolved": resolved, "faded": faded} {
+			id := testutil.SeedComment(t, r.pool, testutil.CommentSeed{ReportID: rp, AccountID: r.alice})
+			if _, err := r.svc.Like(ctx, id, r.carol); !errors.Is(err, service.ErrCommentsClosed) {
+				t.Errorf("%s: Like = %v, want ErrCommentsClosed", name, err)
+			}
+			if _, err := r.svc.Unlike(ctx, id, r.carol); !errors.Is(err, service.ErrCommentsClosed) {
+				t.Errorf("%s: Unlike = %v, want ErrCommentsClosed", name, err)
+			}
+		}
+	})
+
+	t.Run("a report nobody may open is not found, even for a deleted comment", func(t *testing.T) {
+		for name, rp := range map[string]int64{
+			"too old":  r.report(t, "flood", "low", "clear", -8*24*time.Hour),
+			"withheld": r.report(t, "flood", "low", "removed", 6*time.Hour),
+		} {
+			live := testutil.SeedComment(t, r.pool, testutil.CommentSeed{ReportID: rp, AccountID: r.alice})
+			dead := testutil.SeedComment(t, r.pool, testutil.CommentSeed{ReportID: rp, AccountID: r.alice, Deleted: true})
+			for _, id := range []int64{live, dead} {
+				if _, err := r.svc.Like(ctx, id, r.carol); !errors.Is(err, service.ErrReportNotFound) {
+					t.Errorf("%s: Like = %v, want ErrReportNotFound", name, err)
+				}
+				if _, err := r.svc.Unlike(ctx, id, r.carol); !errors.Is(err, service.ErrReportNotFound) {
+					t.Errorf("%s: Unlike = %v, want ErrReportNotFound", name, err)
+				}
+			}
+		}
+	})
+}
