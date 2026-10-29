@@ -103,9 +103,11 @@ DELETE FROM account_alert_settings WHERE account_id = sqlc.arg(account_id);
 -- touches votes, reports or sessions.account_id (Option A, owner confirmed
 -- 2026-10-18). Phase 7.1: the password hash is cleared and the username is freed
 -- at once, so another account can take it; Phase 8 renders a deleted account's
--- comments without a name.
+-- comments without a name. Phase 9 plan 02 (research G6): the profile is
+-- switched off too, so a scrubbed account can never be public or followable.
 UPDATE accounts
 SET email             = sqlc.arg(scrubbed_email),
+    profile_public    = false,
     display_name      = NULL,
     password_hash     = NULL,
     username          = NULL,

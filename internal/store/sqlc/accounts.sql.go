@@ -278,6 +278,7 @@ func (q *Queries) MarkFirstRunDone(ctx context.Context, id int64) error {
 const scrubDeletedAccount = `-- name: ScrubDeletedAccount :execrows
 UPDATE accounts
 SET email             = $1,
+    profile_public    = false,
     display_name      = NULL,
     password_hash     = NULL,
     username          = NULL,
@@ -309,7 +310,8 @@ type ScrubDeletedAccountParams struct {
 // touches votes, reports or sessions.account_id (Option A, owner confirmed
 // 2026-10-18). Phase 7.1: the password hash is cleared and the username is freed
 // at once, so another account can take it; Phase 8 renders a deleted account's
-// comments without a name.
+// comments without a name. Phase 9 plan 02 (research G6): the profile is
+// switched off too, so a scrubbed account can never be public or followable.
 func (q *Queries) ScrubDeletedAccount(ctx context.Context, arg ScrubDeletedAccountParams) (int64, error) {
 	result, err := q.db.Exec(ctx, scrubDeletedAccount, arg.ScrubbedEmail, arg.Now, arg.ID)
 	if err != nil {
