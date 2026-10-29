@@ -44,10 +44,10 @@
 
   // The profile row of plan 09-09: the one shape of path setProfileLink draws,
   // /u/{username}. A username is lowercase letters, digits, underscore and dot
-  // and starts with a letter or a digit; the length limit is the server's rule
-  // and this file keeps no number of its own. The words are the one copy this
-  // module owns, with no number or date in them.
-  var PROFILE_PATH = /^\/u\/[a-z\d][a-z\d_.][a-z\d_.]+$/;
+  // and may start with an underscore (not a dot); the length limit is the
+  // server's rule and this file keeps no number of its own. The words are the
+  // one copy this module owns, with no number or date in them.
+  var PROFILE_PATH = /^\/u\/[a-z\d_][a-z\d_.][a-z\d_.]+$/;
   var PROFILE_LINK_WORDS = 'See this reporter';
 
   // The kinds of fact row in the server's order, which is also the order of

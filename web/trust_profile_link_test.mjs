@@ -180,3 +180,17 @@ test('the module uses no markup sink', () => {
     assert.equal(src.includes(sink), false, sink);
   }
 });
+
+// 2026-10-30 (09-REVIEW WR-B01): a username may start with an underscore.
+test('a username that starts with an underscore gets its row', () => {
+  const trust = load();
+  const block = trust.createTrustBlock();
+  trust.setProfileLink(block, '/u/_ravi');
+  assert.equal(rows(block.panel).length, 1);
+  assert.equal(last(block.panel).getAttribute('href'), '/u/_ravi');
+  assert.equal(last(block.panel).textContent, 'See this reporter _ravi');
+  // A leading dot is still refused.
+  const other = trust.createTrustBlock();
+  trust.setProfileLink(other, '/u/.ravi');
+  assert.equal(rows(other.panel).length, 0);
+});
