@@ -74,6 +74,9 @@ func TestDisclaimerBarOnEveryFullPage(t *testing.T) {
 		// public status page of a shared link is a page of its own with no bar,
 		// no strip and no top wrapper (a wordmark row only).
 		"templates/share_status.html.tmpl": "none",
+		// Phase 9 plan 08 (UI-SPEC 1a): the profile page opens with the top
+		// bar like Settings, with no strip and no current item.
+		"templates/person.html.tmpl": "top",
 	}
 
 	wrapped := func(call string) *regexp.Regexp {

@@ -366,6 +366,12 @@ var touchControls = []string{
 	// button of a long thread, 44px through --touch-target-min in comments.css,
 	// in the same rule as Show more comments. No other entry changed.
 	".comment-thread__more",
+	// Phase 9 plan 08 (UI-SPEC Interaction and Accessibility): the Followers
+	// and Following buttons and the items of the More menu on a profile, each
+	// 44px through --touch-target-min in person.css. The Follow, Following,
+	// More, Edit in Settings and Unblock buttons are .btn, listed above. No
+	// other entry changed.
+	".person-count", ".person-menu__item",
 }
 
 // touchValue reads a height or min-height value as pixels: a px length, a
@@ -508,6 +514,9 @@ var phaseScripts = []string{
 	// Amended 2026-10-29 by Phase 8 plan 16: the comments script joins the
 	// scripts held to the plain punctuation rule. No other entry changed.
 	"comments.js",
+	// Phase 9 plan 08: the profile page script joins the scripts held to the
+	// plain punctuation rule. No other entry changed.
+	"person.js",
 }
 
 // TestNewScriptsUsePlainPunctuation holds the phase's new scripts to the house

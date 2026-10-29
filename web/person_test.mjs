@@ -1,0 +1,387 @@
+// person_test.mjs - runs the real web/static/js/person.js in a Node sandbox and
+// checks the actions of the profile page (Phase 9 plan 08, UI-SPEC 1d, 1e, 1h):
+// Follow and Following redraw from the refetched profile, the More menu keys,
+// Remove follower and Block ask first in the system style box with the exact
+// words, a refusal shows the server's sentence, and no markup sink is used.
+//
+// Run it with: node --test web/person_test.mjs
+// CI runs it with the other web/*.mjs files. It is not embedded in the server.
+// The fakes cover only what person.js calls.
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import url from 'node:url';
+import vm from 'node:vm';
+
+const here = path.dirname(url.fileURLToPath(import.meta.url));
+const source = fs.readFileSync(path.join(here, 'static', 'js', 'person.js'), 'utf8');
+
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+const PROFILE_FOLLOWING = {
+  followers_count: 13, followers_word: 'Followers', followers_text: '13 Followers',
+  following_count: 3, following_word: 'Following', following_text: '3 Following',
+  can_follow: false, following: true, follows_you: false, blocked_by_you: false
+};
+const PROFILE_NOT_FOLLOWING = {
+  followers_count: 12, followers_word: 'Followers', followers_text: '12 Followers',
+  following_count: 3, following_word: 'Following', following_text: '3 Following',
+  can_follow: true, following: false, follows_you: false, blocked_by_you: false
+};
+
+// load builds the page of another person's profile and runs person.js on it.
+// route(method, url) answers each call with {status, body} or a promise of one.
+function load({ route, online = true, dialogSupport = true, followsYou = true } = {}) {
+  const sinks = [];
+  const state = { active: null };
+  const calls = [];
+
+  function fakeEl(id, extra = {}) {
+    const el = {
+      id,
+      hidden: false,
+      attrs: {},
+      listeners: [],
+      focused: 0,
+      textContent: '',
+      disabled: false,
+      children: [],
+      get firstChild() { return this.children[0] || null; },
+      addEventListener(type, fn) { this.listeners.push({ type, fn }); },
+      removeEventListener() {},
+      setAttribute(name, value) { this.attrs[name] = String(value); },
+      getAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attrs, name) ? this.attrs[name] : null; },
+      removeAttribute(name) { delete this.attrs[name]; },
+      appendChild(node) { this.children.push(node); return node; },
+      removeChild(node) { this.children = this.children.filter((c) => c !== node); return node; },
+      contains(node) { return node === this || this.children.includes(node) || (this.kids || []).includes(node); },
+      querySelectorAll() { return this.kids || []; },
+      focus() { this.focused += 1; state.active = this; },
+      fire(type, e = {}) { this.listeners.filter((l) => l.type === type).forEach((l) => l.fn(e)); },
+      ...extra
+    };
+    for (const sink of ['innerHTML', 'outerHTML']) {
+      Object.defineProperty(el, sink, { set(v) { sinks.push(sink + ' = ' + v); }, get() { return ''; } });
+    }
+    el.insertAdjacentHTML = (...args) => { sinks.push('insertAdjacentHTML ' + args.join(' ')); };
+    return el;
+  }
+
+  const els = {};
+  function add(id, extra) { els[id] = fakeEl(id, extra); return els[id]; }
+
+  const page = add('person-page', { attrs: { 'data-username': 'asha_k', 'data-self': 'false' } });
+  add('notice-live');
+  add('person-header');
+  add('person-reports-section');
+  add('person-action-error', { hidden: true });
+  add('person-follow', { textContent: 'Follow' });
+  add('person-unfollow', { textContent: 'Following', hidden: true });
+  const more = add('person-more');
+  const removeFollower = add('person-remove-follower', { attrs: { role: 'menuitem' }, hidden: !followsYou });
+  const block = add('person-block', { attrs: { role: 'menuitem' } });
+  add('person-more-menu', { hidden: true, kids: [removeFollower, block] });
+  more.kids = [];
+  add('person-blocked', { hidden: true });
+  add('person-blocked-title', { tabindex: '-1' });
+  add('person-blocked-error', { hidden: true });
+  add('person-unblock');
+  add('person-followers-button');
+  add('person-following-button');
+  add('person-followers-count', { textContent: '12' });
+  add('person-followers-word', { textContent: 'Followers' });
+  add('person-following-count', { textContent: '3' });
+  add('person-following-word', { textContent: 'Following' });
+  const confirm = add('person-confirm', { open: false });
+  if (dialogSupport) {
+    confirm.showModal = function () { this.open = true; };
+    confirm.close = function () { if (this.open) { this.open = false; this.fire('close'); } };
+  }
+  add('person-confirm-title');
+  add('person-confirm-text');
+  add('person-confirm-error', { hidden: true });
+  add('person-confirm-cancel');
+  add('person-confirm-go');
+  page.attrs['data-username'] = 'asha_k';
+
+  const docListeners = [];
+  const asked = [];
+  const reloads = [];
+  const document = {
+    readyState: 'complete',
+    getElementById: (id) => els[id] || null,
+    createElement: (tag) => fakeEl(tag),
+    addEventListener(type, fn, capture) { docListeners.push({ type, fn, capture }); },
+    removeEventListener(type, fn) {
+      const at = docListeners.findIndex((l) => l.type === type && l.fn === fn);
+      if (at >= 0) { docListeners.splice(at, 1); }
+    },
+    write(...args) { sinks.push('document.write ' + args.join(' ')); },
+    get activeElement() { return state.active; }
+  };
+  const window = {
+    setTimeout: () => 1,
+    clearTimeout() {},
+    confirm(q) { asked.push(q); return false; },
+    location: { reload() { reloads.push(1); } }
+  };
+  const fetch = (address, init = {}) => {
+    const method = init.method || 'GET';
+    calls.push({ method, address, init });
+    return Promise.resolve(route(method, address)).then((answer) => ({
+      status: answer.status,
+      ok: answer.status >= 200 && answer.status < 300,
+      json: () => (answer.body === undefined ? Promise.reject(new Error('no body')) : Promise.resolve(answer.body))
+    }));
+  };
+  const navigator = { onLine: online };
+  vm.runInNewContext(source, { document, window, fetch, navigator, Promise });
+  window.PinalertPerson.init();
+
+  const click = (id) => els[id].fire('click', { target: els[id] });
+  const key = (id, k) => {
+    const e = { key: k, prevented: false, preventDefault() { this.prevented = true; } };
+    els[id].fire('keydown', e);
+    return e;
+  };
+  const outsideClick = () => {
+    docListeners.filter((l) => l.type === 'click').forEach((l) => l.fn({ target: {} }));
+  };
+  return { els, calls, sinks, asked, reloads, docListeners, click, key, outsideClick, api: window.PinalertPerson };
+}
+
+const FOLLOW_ROUTE = (profile) => (method, address) => {
+  if (method === 'POST') { return { status: 204 }; }
+  return { status: 200, body: profile };
+};
+
+test('Follow sends one POST and redraws from the refetched profile', async () => {
+  const m = load({ route: FOLLOW_ROUTE(PROFILE_FOLLOWING) });
+  m.click('person-follow');
+  await flush();
+  assert.deepEqual(m.calls.map((c) => c.method + ' ' + c.address), [
+    'POST /api/people/asha_k/follow',
+    'GET /api/people/asha_k'
+  ]);
+  assert.equal(m.els['person-followers-count'].textContent, '13', 'the count is the server\'s');
+  assert.equal(m.els['person-followers-button'].attrs['aria-label'], '13 Followers');
+  assert.equal(m.els['person-follow'].hidden, true);
+  assert.equal(m.els['person-unfollow'].hidden, false);
+  assert.equal(m.els['notice-live'].textContent, 'You followed asha_k.');
+  assert.equal(m.els['person-unfollow'].focused, 1, 'focus lands on the button now in its place');
+  assert.equal(m.els['person-follow'].disabled, false);
+  assert.equal(m.els['person-follow'].getAttribute('aria-busy'), null);
+});
+
+test('the button is disabled with aria-busy while the call is out and its label stays', async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const m = load({
+    route: (method) => (method === 'POST' ? gate.then(() => ({ status: 204 })) : { status: 200, body: PROFILE_FOLLOWING })
+  });
+  m.click('person-follow');
+  await flush();
+  assert.equal(m.els['person-follow'].disabled, true);
+  assert.equal(m.els['person-follow'].getAttribute('aria-busy'), 'true');
+  assert.equal(m.els['person-follow'].textContent, 'Follow', 'no spinner and no new label');
+  m.click('person-follow');
+  await flush();
+  assert.equal(m.calls.filter((c) => c.method === 'POST').length, 1, 'a second tap sends nothing');
+  release();
+  await flush();
+  assert.equal(m.els['person-follow'].disabled, false);
+});
+
+test('Following unfollows at once with no box, and focus goes to Follow', async () => {
+  const m = load({ route: FOLLOW_ROUTE(PROFILE_NOT_FOLLOWING) });
+  m.els['person-follow'].hidden = true;
+  m.els['person-unfollow'].hidden = false;
+  m.click('person-unfollow');
+  await flush();
+  assert.equal(m.calls[0].address, '/api/people/asha_k/unfollow');
+  assert.equal(m.els['person-confirm'].open, false, 'no confirmation');
+  assert.equal(m.els['notice-live'].textContent, 'You unfollowed asha_k.');
+  assert.equal(m.els['person-follow'].hidden, false);
+  assert.equal(m.els['person-follow'].focused, 1);
+});
+
+test('the More menu keys: open, arrows, Escape, outside click', () => {
+  const m = load({ route: FOLLOW_ROUTE(PROFILE_FOLLOWING) });
+  m.click('person-more');
+  assert.equal(m.els['person-more-menu'].hidden, false);
+  assert.equal(m.els['person-more'].attrs['aria-expanded'], 'true');
+  assert.equal(m.els['person-remove-follower'].focused, 1, 'the first item takes focus');
+  const down = m.key('person-more-menu', 'ArrowDown');
+  assert.equal(down.prevented, true);
+  assert.equal(m.els['person-block'].focused, 1);
+  m.key('person-more-menu', 'ArrowDown');
+  assert.equal(m.els['person-remove-follower'].focused, 2, 'the arrows wrap');
+  m.key('person-more-menu', 'ArrowUp');
+  assert.equal(m.els['person-block'].focused, 2);
+  m.key('person-more-menu', 'Escape');
+  assert.equal(m.els['person-more-menu'].hidden, true);
+  assert.equal(m.els['person-more'].attrs['aria-expanded'], 'false');
+  assert.equal(m.els['person-more'].focused, 1, 'Escape returns focus to More');
+
+  m.click('person-more');
+  assert.equal(m.docListeners.filter((l) => l.type === 'click' && l.capture === true).length, 1);
+  m.outsideClick();
+  assert.equal(m.els['person-more-menu'].hidden, true, 'an outside click closes it');
+  assert.equal(m.docListeners.filter((l) => l.type === 'click').length, 0, 'and the listener is removed');
+});
+
+test('a hidden menu item is skipped by the arrows', () => {
+  const m = load({ route: FOLLOW_ROUTE(PROFILE_FOLLOWING), followsYou: false });
+  m.click('person-more');
+  assert.equal(m.els['person-block'].focused, 1, 'Block is the only item');
+  m.key('person-more-menu', 'ArrowDown');
+  assert.equal(m.els['person-block'].focused, 2);
+});
+
+test('Remove follower asks first with the exact words; Cancel sends nothing', () => {
+  const m = load({ route: FOLLOW_ROUTE(PROFILE_FOLLOWING) });
+  m.click('person-more');
+  m.key('person-more-menu', 'Enter');
+  assert.equal(m.els['person-confirm'].open, true);
+  assert.equal(m.els['person-confirm-title'].textContent, 'Remove asha_k as a follower?');
+  assert.deepEqual(m.els['person-confirm-text'].children.map((p) => p.textContent),
+    ['They stop following you. They can follow you again.']);
+  assert.equal(m.els['person-confirm-go'].textContent, 'Remove');
+  assert.equal(m.els['person-confirm-title'].focused, 1, 'the question takes focus');
+  assert.equal(m.els['person-confirm-cancel'].focused, 0, 'no button looks chosen');
+  assert.equal(m.els['person-confirm-go'].focused, 0);
+  m.click('person-confirm-cancel');
+  assert.equal(m.els['person-confirm'].open, false);
+  assert.equal(m.calls.length, 0, 'Cancel sends nothing');
+  assert.equal(m.els['person-more'].focused > 0, true, 'focus goes back to More');
+});
+
+test('confirming Remove follower sends one POST, says so and drops the item', async () => {
+  const m = load({ route: FOLLOW_ROUTE({ ...PROFILE_FOLLOWING, follows_you: false }) });
+  m.click('person-remove-follower');
+  assert.equal(m.els['person-confirm'].open, true);
+  m.click('person-confirm-go');
+  await flush();
+  assert.equal(m.calls[0].method + ' ' + m.calls[0].address, 'POST /api/people/asha_k/remove-follower');
+  assert.equal(m.calls.filter((c) => c.method === 'POST').length, 1);
+  assert.equal(m.els['person-confirm'].open, false);
+  assert.equal(m.els['notice-live'].textContent, 'asha_k no longer follows you.');
+  assert.equal(m.els['person-remove-follower'].hidden, true);
+});
+
+test('Block asks with its two texts, then the blocked box gets focus', async () => {
+  const m = load({ route: FOLLOW_ROUTE(PROFILE_FOLLOWING) });
+  m.click('person-block');
+  assert.equal(m.els['person-confirm-title'].textContent, 'Block asha_k?');
+  assert.deepEqual(m.els['person-confirm-text'].children.map((p) => p.textContent), [
+    'They can no longer see your profile or follow you, and you stop following each other.',
+    'Their reports still show in the feed. You will not see their comments.'
+  ]);
+  assert.equal(m.els['person-confirm-go'].textContent, 'Block');
+  m.click('person-confirm-go');
+  await flush();
+  assert.equal(m.calls.length, 1);
+  assert.equal(m.calls[0].address, '/api/people/asha_k/block');
+  assert.equal(m.els['person-header'].hidden, true);
+  assert.equal(m.els['person-reports-section'].hidden, true);
+  assert.equal(m.els['person-blocked'].hidden, false);
+  assert.equal(m.els['person-blocked-title'].textContent, 'You blocked asha_k');
+  assert.equal(m.els['person-blocked-title'].focused, 1, 'focus lands on the heading');
+  assert.equal(m.els['person-more'].focused, 0, 'focus does not go back to a hidden More');
+});
+
+test('a 409 shows the server sentence and removes Follow', async () => {
+  const m = load({
+    route: () => ({ status: 409, body: { error: { field: 'follow', message: 'You can\'t follow this person right now.' } } })
+  });
+  m.click('person-follow');
+  await flush();
+  assert.equal(m.els['person-action-error'].hidden, false);
+  assert.equal(m.els['person-action-error'].textContent, 'You can\'t follow this person right now.');
+  assert.equal(m.els['person-follow'].hidden, true);
+  assert.equal(m.els['person-follow'].disabled, false);
+});
+
+test('a 404 on an action reloads the page so the server shows not found', async () => {
+  const m = load({ route: () => ({ status: 404, body: { error: { field: 'username', message: 'Not found' } } }) });
+  m.click('person-follow');
+  await flush();
+  assert.equal(m.reloads.length, 1);
+  assert.equal(m.els['person-action-error'].hidden, true, 'no line on a page that is being redrawn');
+});
+
+test('other failures show the sentence for that action; 429 shows the server own', async () => {
+  const wrong = load({ route: () => ({ status: 500, body: {} }) });
+  wrong.click('person-follow');
+  await flush();
+  assert.equal(wrong.els['person-action-error'].textContent, 'Couldn\'t follow. Try again.');
+
+  const slow = load({ route: () => ({ status: 429, body: { error: { field: 'rate_people_action', message: 'You\'re doing that very quickly. You can try again in 3 seconds.' } } }) });
+  slow.click('person-follow');
+  await flush();
+  assert.equal(slow.els['person-action-error'].textContent, 'You\'re doing that very quickly. You can try again in 3 seconds.');
+
+  const blockFail = load({ route: () => ({ status: 500, body: {} }) });
+  blockFail.click('person-block');
+  blockFail.click('person-confirm-go');
+  await flush();
+  assert.equal(blockFail.els['person-confirm-error'].textContent, 'Couldn\'t block. Try again.');
+  assert.equal(blockFail.els['person-confirm-error'].hidden, false);
+  assert.equal(blockFail.els['person-confirm'].open, true, 'the box stays open with the sentence inside');
+  assert.equal(blockFail.els['person-confirm-go'].disabled, false);
+});
+
+test('offline sends nothing and says the built line', async () => {
+  const m = load({ route: FOLLOW_ROUTE(PROFILE_FOLLOWING), online: false });
+  m.click('person-follow');
+  await flush();
+  assert.equal(m.calls.length, 0);
+  assert.equal(m.els['person-action-error'].textContent, 'You\'re offline, so this wasn\'t saved. Try again when you have a signal.');
+});
+
+test('Unblock sends one POST, says so and reloads', async () => {
+  const m = load({ route: FOLLOW_ROUTE(PROFILE_FOLLOWING) });
+  m.click('person-unblock');
+  await flush();
+  assert.equal(m.calls[0].method + ' ' + m.calls[0].address, 'POST /api/people/asha_k/unblock');
+  assert.equal(m.els['notice-live'].textContent, 'asha_k is unblocked.');
+  assert.equal(m.reloads.length, 1);
+});
+
+test('Escape on the box is refused while an action is out', async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const m = load({ route: (method) => (method === 'POST' ? gate.then(() => ({ status: 204 })) : { status: 200, body: PROFILE_FOLLOWING }) });
+  m.click('person-block');
+  m.click('person-confirm-go');
+  await flush();
+  const e = { prevented: false, preventDefault() { this.prevented = true; } };
+  m.els['person-confirm'].fire('cancel', e);
+  assert.equal(e.prevented, true);
+  assert.equal(m.els['person-confirm-go'].disabled, true);
+  release();
+  await flush();
+});
+
+test('without dialog support the browser confirm asks', () => {
+  const m = load({ route: FOLLOW_ROUTE(PROFILE_FOLLOWING), dialogSupport: false });
+  m.click('person-block');
+  assert.deepEqual(m.asked, ['Block asha_k?']);
+  assert.equal(m.calls.length, 0, 'No sends nothing');
+});
+
+test('no markup sink is ever used, and the script text has none', async () => {
+  const m = load({ route: FOLLOW_ROUTE(PROFILE_FOLLOWING) });
+  m.click('person-follow');
+  await flush();
+  m.click('person-block');
+  m.click('person-confirm-go');
+  await flush();
+  m.click('person-unblock');
+  await flush();
+  assert.deepEqual(m.sinks, [], 'nothing was assigned to a markup sink');
+  assert.equal(/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(/.test(source), false);
+  assert.ok((source.match(/textContent/g) || []).length >= 5);
+});

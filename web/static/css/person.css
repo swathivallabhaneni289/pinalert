@@ -1,0 +1,367 @@
+/*
+ * Pinalert person.css (Phase 9 plan 08, UI-SPEC Surface 1 and Surface 6)
+ *
+ * The profile page: the header block in the D-13 order, the action row, the
+ * options menu, and the not found and You blocked state boxes. Tokens only, no
+ * new token. Written mobile first: the phone stack is the base, and the laptop
+ * grid (a 320px header column beside the Recent reports) sits in the one
+ * min-width 900px block at the end. The same features and words show on both
+ * sizes; nothing here hides a control on one size.
+ *
+ * Muted text appears on --color-bg only. The letter disc, the tag chip and the
+ * hover fills take --color-text on --color-surface. The stars are drawn in
+ * --color-text and are never coloured. Loads after phone.css.
+ */
+
+/* ---- Phone (the base) ----------------------------------------------------- */
+
+.person-page {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  padding: var(--space-md);
+}
+
+.person-header:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  min-width: 0;
+}
+
+/* 1b part 1: the round letter picture and the username. */
+.person-ident {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-width: 0;
+}
+
+.person-ident__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.person-disc {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: var(--space-3xl);
+  height: var(--space-3xl);
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold);
+}
+
+.person-username {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.person-name {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+  overflow-wrap: anywhere;
+}
+
+/* 1b part 2 and 1c: the stars total, one glyph and the server's number. */
+.person-stars:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-12);
+}
+
+.person-stars__total {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+}
+
+.person-stars__icon {
+  display: block;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background-color: var(--color-text);
+  -webkit-mask-image: url("/static/icons/star-filled.svg");
+  mask-image: url("/static/icons/star-filled.svg");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.person-stars__number {
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* 1b part 3: the reporter tag chip and its counts sentence. */
+.person-tag-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-xs);
+}
+
+.person-tag {
+  display: inline-block;
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+.person-tag-sentence {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+}
+
+/* 1b parts 4 and 5: member since and the home area. */
+.person-meta {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  overflow-wrap: anywhere;
+}
+
+.person-meta--area {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.person-meta__icon {
+  width: var(--space-md);
+  height: var(--space-md);
+}
+
+/* 1b part 6: the Followers and Following buttons. */
+.person-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.person-count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  box-sizing: border-box;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-12);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+  cursor: pointer;
+}
+
+.person-count:hover {
+  background: var(--color-surface);
+}
+
+.person-count__number {
+  font-weight: var(--font-weight-semibold);
+}
+
+/* 1d to 1f: the action row. The options menu hangs from the row, not from the
+   More button, so on a 320px phone it never runs off the right edge. */
+.person-actions {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.person-more:not([hidden]) {
+  gap: var(--space-xs);
+}
+
+.person-more__chevron {
+  display: block;
+  flex: none;
+  width: var(--space-md);
+  height: var(--space-md);
+  background-color: currentColor;
+  -webkit-mask-image: url("/static/icons/chevron-down.svg");
+  mask-image: url("/static/icons/chevron-down.svg");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+/* 1e: the options menu. */
+.person-menu:not([hidden]) {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-width: 220px;
+  margin-top: var(--space-xs);
+  padding: var(--space-xs) 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-menu);
+}
+
+.person-menu__item:not([hidden]) {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--touch-target-min);
+  padding: 0 var(--space-md);
+  border: 0;
+  background: none;
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+  text-align: left;
+  cursor: pointer;
+}
+
+.person-menu__item:hover,
+.person-menu__item:focus-visible {
+  background: var(--color-surface);
+}
+
+.person-menu__item:focus-visible {
+  outline-offset: -2px;
+}
+
+/* 1g: the state line under the buttons on your own page. */
+.person-state-line {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+}
+
+/* Surface 5, the part this plan draws: the section title and its line. */
+.person-reports {
+  min-width: 0;
+}
+
+.person-reports__title {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+}
+
+.person-reports__line {
+  margin: var(--space-xs) 0 var(--space-12);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+/* Surface 6: the not found and You blocked boxes, the .empty-state look with
+   32px above. The display rule is guarded, so the hidden attribute works. */
+.person-state:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-xl) var(--space-lg) 0;
+  text-align: center;
+}
+
+.person-state__title {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.person-state__line {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+}
+
+/* ---- Laptop ---------------------------------------------------------------- */
+
+@media (min-width: 900px) {
+  /* Full width, never a centred column: the header in a 320px column on the
+     left, the Recent reports filling the right (03.4 R6). */
+  .person-page {
+    display: grid;
+    grid-template-columns: 320px minmax(0, 1fr);
+    gap: var(--space-xl);
+    align-items: start;
+    padding: var(--space-lg);
+  }
+
+  .person-header {
+    gap: var(--space-lg);
+  }
+
+  .person-state {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (forced-colors: active) {
+  .person-tag,
+  .person-count,
+  .person-disc {
+    border: 1px solid CanvasText;
+  }
+}
