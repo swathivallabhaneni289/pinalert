@@ -233,8 +233,33 @@ window.PinalertSettingsPeople = (function () {
     }
   }
 
+  // followerCountNow is the number of followers to decide on before turning the
+  // profile off. A shown number above zero is enough to ask. When zero is shown,
+  // the page may be old, so the count is read once more; a failed read keeps the
+  // shown number (09-REVIEW IN-B04).
+  function followerCountNow() {
+    var shown = followerCount();
+    if (shown > 0 || username === '' || offline()) {
+      return Promise.resolve(shown);
+    }
+    return request(PEOPLE_URL + encodeURIComponent(username), {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' }
+    }).then(function (answer) {
+      if (answer.ok && answer.body && typeof answer.body.followers_count === 'number') {
+        return answer.body.followers_count;
+      }
+      return shown;
+    }, function () {
+      return shown;
+    });
+  }
+
+  var checking = false;
+
   sw.addEventListener('change', function () {
-    if (saving) {
+    if (saving || checking) {
       sw.checked = saved;
       return;
     }
@@ -244,7 +269,22 @@ window.PinalertSettingsPeople = (function () {
       ask();
       return;
     }
-    save(sw.checked === true);
+    if (sw.checked !== true) {
+      checking = true;
+      followerCountNow().then(function (count) {
+        checking = false;
+        if (count > 0) {
+          // Keep it on while the box asks; Cancel leaves it as it is.
+          setText(followersValue, count);
+          sw.checked = true;
+          ask();
+          return;
+        }
+        save(false);
+      });
+      return;
+    }
+    save(true);
   });
 
   offCancel.addEventListener('click', function () {
