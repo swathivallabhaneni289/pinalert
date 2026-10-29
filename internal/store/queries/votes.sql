@@ -65,6 +65,40 @@ FROM reports r
 LEFT JOIN sessions s ON r.session_id = s.session_id
 WHERE r.id = sqlc.arg(report_id);
 
+-- name: TimelineVoteLog :many
+-- The whole append only vote log of one report, oldest first, for the report
+-- page's history "What happened so far" (Phase 8, PAGE-01, SC2). Four points a
+-- later reader would otherwise "correct":
+--
+-- (a) Why not CurrentVotesForReports. That read keeps only the latest row per
+-- account and kind, so a vote that was later changed is gone from it. A history
+-- needs every row, and the service replays them in id order, rebuilding the
+-- standing row per account and kind after each one, so every number it writes
+-- comes from the same BuildVoteTally the trust block reads.
+--
+-- (b) Privacy. account_id and geohash_cell are selected because the replay needs
+-- them to dedupe by account and to count distinct cells. They stay inside the
+-- service: the timeline response carries words, a tone and a time only, never
+-- an account, a session or a cell (TRUST-MODEL, what never leaves the server).
+--
+-- (c) The cap. row_cap bounds one read on a busy report (the service passes
+-- TimelineLogCap, 2000). The read is one equality on report_id, served by the
+-- report_id prefix of idx_votes_report_account_kind_created (migration 00004)
+-- and then ordered by the primary key.
+--
+-- (d) Why not the name VoteLogForReport. Phase 3.3 already owns that name
+-- (push.sql, read by the push worker, with no id column and no cap). This read
+-- adds the id and the cap and keeps its own name so the worker query stays as
+-- shipped.
+--
+-- It sits above VotedReportsByAccount on purpose: TestVotedReportsByAccountUsesTheAccountIndex
+-- reads the file from that query's name to the end of the file as one statement.
+SELECT id, account_id, kind, value, geohash_cell, created_at
+FROM votes
+WHERE report_id = sqlc.arg(report_id)::bigint
+ORDER BY id
+LIMIT sqlc.arg(row_cap)::int;
+
 -- name: VotedReportsByAccount :many
 -- The account's current content vote per report, with the report's own
 -- columns, for the Activity page's My votes and My disputes tabs. Five points

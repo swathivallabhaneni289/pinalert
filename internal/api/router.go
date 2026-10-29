@@ -576,6 +576,10 @@ func NewRouter(deps Deps) *chi.Mux {
 		flagOpts = append(flagOpts, service.WithFlagScreener(deps.Reports.Screener()))
 	}
 	flags := service.NewFlagService(deps.Sessions, flagOpts...)
+	// The report history service (Phase 8, plan 01). Like the flag service it has
+	// no Deps field. Its Focus gate is the report service, so without one every
+	// read is an error and the route is never reached by a real request.
+	timeline := service.NewTimelineService(deps.Sessions, deps.Reports)
 	// Same for the account service behind the /api/me routes (plan 03.4-01).
 	// Its name and home area edits go through the report service's text screener,
 	// like a flag note does (Phase 7.1, plan 06); without a report service they
@@ -793,6 +797,11 @@ func NewRouter(deps Deps) *chi.Mux {
 		// FlagMiddleware, scoped to this one route with r.With. A cross site
 		// POST carries no session cookie (DEC-L), so no CSRF token is needed.
 		r.With(rateGate.FlagMiddleware()).Post("/api/reports/{id}/flag", handlers.FlagReport(flags))
+		// GET /api/reports/{id}/timeline (Phase 8 plan 01, PAGE-01, SC2): the
+		// report page's history, built from the vote log. Gated like every /api
+		// route and flat like the vote routes. No rate gate: it is a read polled
+		// at the feed's 30 second cadence.
+		r.Get("/api/reports/{id}/timeline", handlers.ReportTimeline(timeline))
 		// The five Phase 3.2 routes (plan 07). Flat literal paths like the
 		// others, gated because they act only for the account the gate
 		// resolved. The bell polls every 30 seconds from its own script, so
