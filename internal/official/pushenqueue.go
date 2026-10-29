@@ -13,9 +13,10 @@ package official
 // touches one of those districts are told. If it is placed on a whole state, it
 // is pushed only when it is Extreme, and the people whose home is in that state
 // are told. A state level Severe alert queues nobody and never raises the Nearby
-// banner (D-16); it is listed under Across <state> on the alerts page only. An unplaced alert is never pushed. A cancelled
-// alert, an alert a stored message replaces, and an alert whose issuer is outside
-// the closed table (IMD, CWC or a state SDMA) are never pushed either.
+// banner (D-16); it is listed under Across <state> on the alerts page only.
+// An unplaced alert is never pushed. A cancelled alert, an alert a stored
+// message replaces, and an alert whose issuer is outside the closed table (IMD,
+// CWC or a state SDMA) are never pushed either.
 //
 // A later version of an alert queues a new push only when it escalates: it
 // raises the severity to Severe or Extreme, or it adds a district. A wording only
