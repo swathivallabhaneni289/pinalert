@@ -108,7 +108,7 @@ const flush = async () => { for (let i = 0; i < 20; i += 1) { await Promise.reso
 
 // load evaluates report-page.js in a sandbox. fetches keeps every request with
 // the hooks to answer it; timers is the fake clock.
-function load({ online = true, visible = true, share = false } = {}) {
+function load({ online = true, visible = true, share = false, comments = false } = {}) {
   const doc = {
     activeElement: null,
     visibilityState: visible ? 'visible' : 'hidden',
@@ -161,6 +161,20 @@ function load({ online = true, visible = true, share = false } = {}) {
   Object.assign(sandbox, clock);
   if (share) {
     sandbox.PinalertShare = { calls: [], open(arg) { this.calls.push(arg); } };
+  }
+  if (comments) {
+    // Amended 2026-10-29 by Phase 8 plan 16 (D-02): a fake comments module, so
+    // the page's forwarding of update, open and close can be seen.
+    sandbox.PinalertComments = {
+      views: [],
+      create(rep, mount) {
+        const calls = [];
+        const view = { calls, rep, mount, el: null };
+        for (const name of ['update', 'open', 'close', 'refresh']) { view[name] = (arg) => calls.push(name + (arg ? ':' + arg.id : '')); }
+        this.views.push(view);
+        return view;
+      }
+    };
   }
   vm.createContext(sandbox);
   vm.runInContext(pageSource, sandbox, { filename: 'report-page.js' });
@@ -525,4 +539,28 @@ test('child order across a resize', () => {
     'back to the phone after a resize');
   sandbox.arrangeCard(fixture.card, true);
   assert.equal(fixture.body.lastChild.className, 'page', 'a repeat placement keeps the page last');
+});
+
+// Amended 2026-10-29 by Phase 8 plan 16 (D-02): the page builds the comments
+// section into its mount point and forwards update, open and close, only while
+// a host shows it.
+test('the comments section is built into the mount and follows the page', () => {
+  const env = load({ comments: true });
+  const page = env.Page.create(report());
+  const views = env.sandbox.PinalertComments.views;
+  assert.equal(views.length, 1, 'one comments section per page');
+  const mount = find(page.el, 'report-page__comments');
+  assert.equal(views[0].mount, mount, 'built into the page mount point');
+  assert.equal(views[0].rep.id, 'r1');
+  page.open();
+  assert.deepEqual(views[0].calls, [], 'not hosted: the comments fetch nothing');
+  page.setHosted(true);
+  assert.deepEqual(views[0].calls, ['open'], 'hosted and open: the comments open');
+  page.update(report({ comment_count: 3 }));
+  assert.deepEqual(views[0].calls, ['open', 'update:r1']);
+  page.setHosted(false);
+  assert.equal(views[0].calls[views[0].calls.length - 1], 'close');
+  page.setHosted(true);
+  page.close();
+  assert.equal(views[0].calls[views[0].calls.length - 1], 'close');
 });
