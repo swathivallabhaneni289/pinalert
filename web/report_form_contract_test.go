@@ -172,7 +172,10 @@ func TestReportFormPartialKeepsMainFormOrder(t *testing.T) {
 	}
 	// Amended 2026-10-29 by plan 05-13 (UI-SPEC 4c, T-05-73): the window branch
 	// wraps the Call 112 box and the What is happening picks in
-	// {{if not .Chrome.DemoPage}} ... {{end}}, so the Demo page draws neither
+	// {{if not <Demo flag>}} ... {{end}}, so the Demo page draws neither
+	// (history, noted 2026-10-29 by the Phase 5 review fix follow-up: plan 05-13 first
+	// wrote the flag as .Chrome.DemoPage, which no handler set and which IN-S01
+	// removed; the guard reads .Demo, see the next note)
 	// (Amended 2026-10-29 by plan 05-17: the guard now reads the Demo field of
 	// the page view models, {{if not .Demo}}, still one if and one end, so the
 	// count of actions below is unchanged)
