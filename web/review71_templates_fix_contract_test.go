@@ -9,6 +9,9 @@
 package web
 
 import (
+	"bytes"
+	"go/format"
+	"os"
 	"strings"
 	"testing"
 )
@@ -333,6 +336,24 @@ func TestAuthCSSHasNoEmailedLinkRules(t *testing.T) {
 				t.Errorf("%s still uses %s; its rule in auth.css was removed", name, attr)
 			}
 		}
+	}
+}
+
+// TestChromeContractTestIsGofmtClean (IN-T04): the Phase 7.1 plan 16 edit
+// removed the longest key of a map literal in chrome_contract_test.go and left
+// the file unformatted. This checks that one file only, so an edit elsewhere in
+// web never fails here.
+func TestChromeContractTestIsGofmtClean(t *testing.T) {
+	src, err := os.ReadFile("chrome_contract_test.go")
+	if err != nil {
+		t.Fatalf("reading chrome_contract_test.go: %v", err)
+	}
+	formatted, err := format.Source(src)
+	if err != nil {
+		t.Fatalf("formatting chrome_contract_test.go: %v", err)
+	}
+	if !bytes.Equal(src, formatted) {
+		t.Errorf("chrome_contract_test.go is not gofmt clean; run gofmt -w on it")
 	}
 }
 
