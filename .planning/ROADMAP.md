@@ -838,7 +838,7 @@ Phases execute in the owner's build order (2026-10-16): 1 → 1.1 → 2 → 3 �
 | 5. Official Feed & Demo Mode | 22/22 | In Progress (built, waiting for the owner's check) | - |
 | 6. Coordination (removed 2026-10-16, share card moved to Phase 8) | - | Removed | - |
 | 7. Address search box for report location | 4/4 | Complete | 2026-09-29 |
-| 7.1 Password sign in and usernames | 0/23 | Planned | - |
+| 7.1 Password sign in and usernames | 23/23 | In Progress (built, reviewed and fixed, waiting for the owner's check) | - |
 | 8. Report page and comments | 0/20 | Planned | - |
 | 9. Followable reporter profiles | 0/29 | Planned | - |
 
@@ -1079,56 +1079,56 @@ Plans:
 
 **Wave 1**
 
-- [ ] 07.1-01-PLAN.md: Storage in one migration: password, username and screening columns, auth codes, auth throttles, the send counter, session revocation for accounts with no password (wave 1)
-- [ ] 07.1-02-PLAN.md: argon2id hashing, the password rule (8 characters plus a common password list), the 6 digit code and its keyed hash (wave 1)
-- [ ] 07.1-03-PLAN.md: The four auth emails with no link, and the daily send ceiling with a share kept for reset codes (wave 1)
-- [ ] 07.1-04-PLAN.md: Username rules, reserved official words, and the one onboarding predicate (wave 1)
+- [x] 07.1-01-PLAN.md: Storage in one migration: password, username and screening columns, auth codes, auth throttles, the send counter, session revocation for accounts with no password (wave 1)
+- [x] 07.1-02-PLAN.md: argon2id hashing, the password rule (8 characters plus a common password list), the 6 digit code and its keyed hash (wave 1)
+- [x] 07.1-03-PLAN.md: The four auth emails with no link, and the daily send ceiling with a share kept for reset codes (wave 1)
+- [x] 07.1-04-PLAN.md: Username rules, reserved official words, and the one onboarding predicate (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 07.1-05-PLAN.md: CredentialService: sign up, typed code, sign in, resend and reset, with the same answer for every branch (wave 2)
-- [ ] 07.1-06-PLAN.md: Username save and live check, Name and Home area that cannot be cleared, numbered street addresses refused (wave 2)
+- [x] 07.1-05-PLAN.md: CredentialService: sign up, typed code, sign in, resend and reset, with the same answer for every branch (wave 2)
+- [x] 07.1-06-PLAN.md: Username save and live check, Name and Home area that cannot be cleared, numbered street addresses refused (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 07.1-07-PLAN.md: The six public sign in routes with CSRF, strict JSON, device and network limits, and wiring (wave 3)
+- [x] 07.1-07-PLAN.md: The six public sign in routes with CSRF, strict JSON, device and network limits, and wiring (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 07.1-08-PLAN.md: The end to end sign in helpers moved to the new flow with unchanged signatures (wave 4)
+- [x] 07.1-08-PLAN.md: The end to end sign in helpers moved to the new flow with unchanged signatures (wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 07.1-09-PLAN.md: The security end to end suite: enumeration, limits, codes, CSRF, fixation, reset, no email in any address (wave 5)
-- [ ] 07.1-10-PLAN.md: Step 4 required on the server and the one time fill in for old accounts (wave 5)
-- [ ] 07.1-11-PLAN.md: The new sign in card on Phase 5's page, and one row of buttons under it (owner, 2026-10-27) (wave 5)
+- [x] 07.1-09-PLAN.md: The security end to end suite: enumeration, limits, codes, CSRF, fixation, reset, no email in any address (wave 5)
+- [x] 07.1-10-PLAN.md: Step 4 required on the server and the one time fill in for old accounts (wave 5)
+- [x] 07.1-11-PLAN.md: The new sign in card on Phase 5's page, and one row of buttons under it (owner, 2026-10-27) (wave 5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 07.1-10b-PLAN.md: A session on an account with no password is treated as signed out (wave 6)
-- [ ] 07.1-12-PLAN.md: auth.js as the panel state machine, with the code paste handler (wave 6)
-- [ ] 07.1-13-PLAN.md: Step 4 About you required in the first-time flow, with the shared live check (wave 6)
-- [ ] 07.1-14-PLAN.md: The emailed link's routes removed; an old link lands on sign in with a plain line (wave 6)
+- [x] 07.1-10b-PLAN.md: A session on an account with no password is treated as signed out (wave 6)
+- [x] 07.1-12-PLAN.md: auth.js as the panel state machine, with the code paste handler (wave 6)
+- [x] 07.1-13-PLAN.md: Step 4 About you required in the first-time flow, with the shared live check (wave 6)
+- [x] 07.1-14-PLAN.md: The emailed link's routes removed; an old link lands on sign in with a plain line (wave 6)
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 07.1-14b-PLAN.md: The link half of the auth service, tokens and the link email removed (wave 7)
-- [ ] 07.1-13b-PLAN.md: iPhone or iPad Safari tab: sign up ends with the Home Screen install steps; guide step 3 says sign in and tap Allow (owner, 2026-10-28) (wave 7)
-- [ ] 07.1-15-PLAN.md: Settings, About you: the Username row and window; Name and Home area cannot be emptied (wave 7)
+- [x] 07.1-14b-PLAN.md: The link half of the auth service, tokens and the link email removed (wave 7)
+- [x] 07.1-13b-PLAN.md: iPhone or iPad Safari tab: sign up ends with the Home Screen install steps; guide step 3 says sign in and tap Allow (owner, 2026-10-28) (wave 7)
+- [x] 07.1-15-PLAN.md: Settings, About you: the Username row and window; Name and Home area cannot be emptied (wave 7)
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
-- [ ] 07.1-14c-PLAN.md: The link limiter settings removed (wave 8)
-- [ ] 07.1-16-PLAN.md: The link token table dropped and the two link pages deleted (wave 8)
+- [x] 07.1-14c-PLAN.md: The link limiter settings removed (wave 8)
+- [x] 07.1-16-PLAN.md: The link token table dropped and the two link pages deleted (wave 8)
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
-- [ ] 07.1-14d-PLAN.md: API reference wording without the link (wave 9)
-- [ ] 07.1-13c-PLAN.md: The installed iPhone app asks about alerts once on Nearby, with the sign up words (owner, 2026-10-28) (wave 9)
+- [x] 07.1-14d-PLAN.md: API reference wording without the link (wave 9)
+- [x] 07.1-13c-PLAN.md: The installed iPhone app asks about alerts once on Nearby, with the sign up words (owner, 2026-10-28) (wave 9)
 
 **Wave 10** *(blocked on Wave 9 completion)*
 
-- [ ] 07.1-17-PLAN.md: Docs, the Policy and terms bump, the final gate and the owner's checks (wave 10)
+- [x] 07.1-17-PLAN.md: Docs, the Policy and terms bump, the final gate and the owner's checks (wave 10)
 
 ### Phase 8: Report page and comments
 
