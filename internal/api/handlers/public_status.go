@@ -30,8 +30,10 @@ const publicStatusTemplate = "share_status"
 // (UI-SPEC 6a). It is a 512 pixel PNG well under the 600 KB WhatsApp allows.
 const publicStatusOGImagePath = "/icons/app-512.png"
 
-// publicStatusRetryAfter is the Retry-After header of a refused request.
-const publicStatusRetryAfter = "1"
+// publicStatusRetryAfter is the Retry-After header of a refused request, in
+// seconds. It is a minute, the wait the page's own line asks for
+// (service.PublicTooManyLine, review IN-T04).
+const publicStatusRetryAfter = "60"
 
 // publicStatusViewModel is exactly what the public page template reads. It has
 // no field for a description, a coordinate, a distance, a username, a comment
