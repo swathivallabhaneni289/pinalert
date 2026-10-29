@@ -134,7 +134,7 @@ func Load(raw []byte) (*Index, error) {
 			return nil, fmt.Errorf("district %d has no polygon", d.Code)
 		}
 		dist := District{
-			Code: d.Code, Name: d.Name, StateCode: d.StateCode, State: d.State,
+			Code: d.Code, Name: displayName(d.Code, d.Name), StateCode: d.StateCode, State: d.State,
 			BBox: [4]float64{180, 90, -180, -90},
 		}
 		polys := make([]polygon, 0, len(d.Polys))

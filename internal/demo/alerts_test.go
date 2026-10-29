@@ -105,3 +105,16 @@ func TestSampleViewIsRelativeToNow(t *testing.T) {
 		}
 	}
 }
+
+// TestDemoAreaShownAsNTR pins WR-S07 of the Phase 5 review: the pretend
+// position lies in NTR, and the Demo shows it so, never as the raw "Ntr".
+func TestDemoAreaShownAsNTR(t *testing.T) {
+	d, ok := areas.Default().Locate(PretendLat, PretendLon)
+	if !ok || d.Name != "NTR" {
+		t.Fatalf("the pretend position is in %q (%t), want NTR", d.Name, ok)
+	}
+	v := SampleView(nil, time.Date(2026, 10, 29, 6, 0, 0, 0, time.UTC))
+	if v.Banner == nil || v.Banner.Area != "NTR district" {
+		t.Errorf("Demo banner = %+v, want the area NTR district", v.Banner)
+	}
+}

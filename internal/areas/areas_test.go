@@ -240,3 +240,29 @@ func TestLocateIsFast(t *testing.T) {
 		t.Fatalf("1000 lookups took %v, want under 1s", el)
 	}
 }
+
+// TestDisplayNamesApply pins WR-S07 of the Phase 5 review: every entry of the
+// display table matches its code and raw LGD name in the embedded file, so the
+// shown name is used, and a district outside the table keeps its LGD name.
+func TestDisplayNamesApply(t *testing.T) {
+	ix := Default()
+	for code, n := range displayNames {
+		d, ok := ix.ByCode(code)
+		if !ok {
+			t.Errorf("display table code %d is not in the boundary file", code)
+			continue
+		}
+		if d.Name != n.shown {
+			t.Errorf("district %d is named %q, want %q (is its LGD name still %q?)", code, d.Name, n.shown, n.raw)
+		}
+	}
+	if d, _ := ix.ByCode(749); d.Name != "NTR" {
+		t.Errorf("district 749 = %q, want NTR", d.Name)
+	}
+	if d, _ := ix.ByCode(79); d.Name != "New Delhi" {
+		t.Errorf("district 79 = %q, want New Delhi as the file has it", d.Name)
+	}
+	if got := displayName(749, "Something else"); got != "Something else" {
+		t.Errorf("a code whose raw name changed is shown as %q, want its own name", got)
+	}
+}
