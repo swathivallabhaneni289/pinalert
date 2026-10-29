@@ -503,3 +503,25 @@ func TestChromeReachesViewModels(t *testing.T) {
 		})
 	}
 }
+
+// TestNoTemplateReadsChromeDemoPage pins IN-S01 of the Phase 5 review: the
+// dead Chrome.DemoPage flag is gone, and no template guards on it (the report
+// form reads .Demo since plan 05-17).
+func TestNoTemplateReadsChromeDemoPage(t *testing.T) {
+	if _, ok := reflect.TypeOf(Chrome{}).FieldByName("DemoPage"); ok {
+		t.Errorf("Chrome still has a DemoPage field")
+	}
+	names, err := fs.Glob(web.TemplatesFS, "templates/*.tmpl")
+	if err != nil || len(names) == 0 {
+		t.Fatalf("listing the templates: %v (%d)", err, len(names))
+	}
+	for _, name := range names {
+		raw, err := fs.ReadFile(web.TemplatesFS, name)
+		if err != nil {
+			t.Fatalf("reading %s: %v", name, err)
+		}
+		if strings.Contains(string(raw), "Chrome.DemoPage") {
+			t.Errorf("%s reads .Chrome.DemoPage, which no handler sets", name)
+		}
+	}
+}

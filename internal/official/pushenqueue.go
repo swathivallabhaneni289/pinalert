@@ -12,10 +12,11 @@ package official
 // ten minutes from now. If it is placed on districts, the people whose home area
 // touches one of those districts are told. If it is placed on a whole state, it
 // is pushed only when it is Extreme, and the people whose home is in that state
-// are told. A state level Severe alert queues nobody; it is on the Nearby banner
-// and on the alerts page only. An unplaced alert is never pushed. A cancelled
-// alert, an alert a stored message replaces, and an alert whose issuer is outside
-// the closed table (IMD, CWC or a state SDMA) are never pushed either.
+// are told. A state level Severe alert queues nobody and never raises the Nearby
+// banner (D-16); it is listed under Across <state> on the alerts page only.
+// An unplaced alert is never pushed. A cancelled alert, an alert a stored
+// message replaces, and an alert whose issuer is outside the closed table (IMD,
+// CWC or a state SDMA) are never pushed either.
 //
 // A later version of an alert queues a new push only when it escalates: it
 // raises the severity to Severe or Extreme, or it adds a district. A wording only
@@ -44,6 +45,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/mmcloughlin/geohash"
+
 	"pinalert/internal/areas"
 	"pinalert/internal/service"
 	sqlcgen "pinalert/internal/store/sqlc"
@@ -62,6 +65,77 @@ var recipientCap = service.OfficialPushRecipientsPerAlert
 // candidateFactor is how many candidates are read for each recipient wanted: most
 // accounts with a home area live elsewhere, so the read is wider than the cap.
 const candidateFactor = 4
+
+// candidatePrefixLen is the length of the geohash prefixes the candidate read
+// filters home cells by. A cell of this length is about 39 by 20 km, so a
+// district needs a few dozen and a state a few hundred.
+const candidatePrefixLen = 4
+
+// coverPrefixes returns the geohash prefixes, of candidatePrefixLen, of every
+// cell that meets the box of a district the alert reaches, widened by a little
+// more than one home cell so a home cell on a box edge is never missed. A home
+// cell can only match the alert when one of its points lies in such a
+// district, so its prefix is always in the list; the read stays a superset and
+// the match in Go decides. Sorted, without repeats.
+func coverPrefixes(ix *areas.Index, saved SavedVersion) []string {
+	var boxes [][4]float64
+	switch saved.Placement.Tier {
+	case TierDistrict:
+		for _, c := range saved.Placement.DistrictCodes {
+			if d, ok := ix.ByCode(c); ok {
+				boxes = append(boxes, d.BBox)
+			}
+		}
+	case TierState:
+		for _, d := range ix.Districts() {
+			for _, s := range saved.Placement.StateCodes {
+				if d.StateCode == s {
+					boxes = append(boxes, d.BBox)
+				}
+			}
+		}
+	}
+	const pad = 0.06 // degrees, more than one precision 5 cell
+	seen := map[string]bool{}
+	for _, b := range boxes {
+		minLon, minLat, maxLon, maxLat := b[0]-pad, b[1]-pad, b[2]+pad, b[3]+pad
+		cell := geohash.BoundingBox(geohash.EncodeWithPrecision((minLat+maxLat)/2, (minLon+maxLon)/2, candidatePrefixLen))
+		dLat, dLon := (cell.MaxLat-cell.MinLat)/2, (cell.MaxLng-cell.MinLng)/2
+		for lat := minLat; ; lat += dLat {
+			if lat > maxLat {
+				lat = maxLat
+			}
+			for lon := minLon; ; lon += dLon {
+				if lon > maxLon {
+					lon = maxLon
+				}
+				seen[geohash.EncodeWithPrecision(clampDeg(lat, 90), clampDeg(lon, 180), candidatePrefixLen)] = true
+				if lon == maxLon {
+					break
+				}
+			}
+			if lat == maxLat {
+				break
+			}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for p := range seen {
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func clampDeg(v, limit float64) float64 {
+	if v > limit {
+		return limit
+	}
+	if v < -limit {
+		return -limit
+	}
+	return v
+}
 
 // PushEnqueueHook returns the hook that queues official pushes inside the
 // transaction of each stored alert version. It returns nil for everything that is
@@ -111,7 +185,12 @@ func PushEnqueueHook(ix *areas.Index) VersionHook {
 		}
 		scoped := recipientScope(saved, prev, reason)
 
-		candidates, err := q.OfficialPushCandidates(ctx, int32(recipientCap*candidateFactor))
+		prefixes := coverPrefixes(ix, scoped)
+		if len(prefixes) == 0 {
+			return nil
+		}
+		candidates, err := q.OfficialPushCandidates(ctx, sqlcgen.OfficialPushCandidatesParams{
+			PrefixLen: candidatePrefixLen, Prefixes: prefixes, RowCap: int32(recipientCap * candidateFactor)})
 		if err != nil {
 			return fmt.Errorf("official: reading the push candidates: %w", err)
 		}

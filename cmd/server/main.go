@@ -351,6 +351,9 @@ func main() {
 	officialSvc := official.NewService(pool, queries, official.Config{
 		ContactEmail: contactEmail,
 		BaseURL:      os.Getenv("BASE_URL"),
+		// With push off no worker would ever send or skip official push rows,
+		// so none are queued (IN-S11 of the Phase 5 review).
+		PushOff: !pushOn,
 	})
 
 	// OFFICIAL_REFRESH_TOKEN is the bearer secret of the external cron's refresh

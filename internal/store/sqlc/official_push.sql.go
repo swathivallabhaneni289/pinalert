@@ -525,6 +525,7 @@ LEFT JOIN account_alert_settings s ON s.account_id = a.id
 WHERE a.deleted_at IS NULL
   AND a.home_area_cell IS NOT NULL
   AND COALESCE(s.official_push_on, true)
+  AND left(a.home_area_cell, $1::int) = ANY($2::text[])
   AND EXISTS (
       SELECT 1
       FROM push_subscriptions p
@@ -533,8 +534,14 @@ WHERE a.deleted_at IS NULL
         AND ss.revoked_at IS NULL
   )
 ORDER BY a.id
-LIMIT $1::int
+LIMIT $3::int
 `
+
+type OfficialPushCandidatesParams struct {
+	PrefixLen int32
+	Prefixes  []string
+	RowCap    int32
+}
 
 type OfficialPushCandidatesRow struct {
 	AccountID    int64
@@ -543,11 +550,14 @@ type OfficialPushCandidatesRow struct {
 
 // Who might be told: accounts with a home cell, not deleted, the switch on
 // (COALESCE with true for an account with no settings row) and at least one live
-// device. Ordered by account id and bounded by row_cap; the caller turns each
-// home cell into districts and keeps the accounts whose districts meet the
-// alert's. It selects by cell, never by a coordinate.
-func (q *Queries) OfficialPushCandidates(ctx context.Context, rowCap int32) ([]OfficialPushCandidatesRow, error) {
-	rows, err := q.db.Query(ctx, officialPushCandidates, rowCap)
+// device, whose home cell lies under one of the given geohash prefixes (the
+// caller passes the prefixes that cover the alert's districts, so the row cap
+// applies only after the area filter: WR-S05 of the Phase 5 review). Ordered
+// by account id and bounded by row_cap; the caller turns each home cell into
+// districts and keeps the accounts whose districts meet the alert's. It
+// selects by cell, never by a coordinate.
+func (q *Queries) OfficialPushCandidates(ctx context.Context, arg OfficialPushCandidatesParams) ([]OfficialPushCandidatesRow, error) {
+	rows, err := q.db.Query(ctx, officialPushCandidates, arg.PrefixLen, arg.Prefixes, arg.RowCap)
 	if err != nil {
 		return nil, err
 	}

@@ -94,6 +94,29 @@ func (q *Queries) DeleteOfficialAlertAreas(ctx context.Context, alertID int64) e
 	return err
 }
 
+const endOfficialHazard = `-- name: EndOfficialHazard :exec
+UPDATE official_hazards
+SET is_current = false,
+    last_seen_at = $1::timestamptz
+WHERE event_type = $2::text
+  AND event_id = $3::bigint
+  AND is_current
+`
+
+type EndOfficialHazardParams struct {
+	Now       time.Time
+	EventType string
+	EventID   int64
+}
+
+// Request A marked a stored event not current and request B did not return it:
+// the row leaves the map now (WR-S03 of the Phase 5 review). A row that is not
+// stored is not made.
+func (q *Queries) EndOfficialHazard(ctx context.Context, arg EndOfficialHazardParams) error {
+	_, err := q.db.Exec(ctx, endOfficialHazard, arg.Now, arg.EventType, arg.EventID)
+	return err
+}
+
 const getFeedStatus = `-- name: GetFeedStatus :one
 
 SELECT feed, last_attempt_at, last_success_at, last_error, consecutive_failures,
@@ -218,6 +241,37 @@ func (q *Queries) MarkFeedSuccess(ctx context.Context, arg MarkFeedSuccessParams
 		arg.ItemsSeen,
 		arg.Feed,
 	)
+	return err
+}
+
+const markWithdrawnByStored = `-- name: MarkWithdrawnByStored :exec
+UPDATE official_alerts a
+SET cancelled_at = CASE WHEN EXISTS (
+        SELECT 1 FROM official_alerts n
+        WHERE n.guid <> a.guid AND n.msg_type = 'Cancel'
+          AND a.cap_identifier = ANY(string_to_array(n.references_text, ' ')))
+      THEN COALESCE(a.cancelled_at, $1::timestamptz) ELSE a.cancelled_at END,
+    superseded_at = CASE WHEN EXISTS (
+        SELECT 1 FROM official_alerts n
+        WHERE n.guid <> a.guid AND n.msg_type = 'Update'
+          AND a.cap_identifier = ANY(string_to_array(n.references_text, ' ')))
+      THEN COALESCE(a.superseded_at, $1::timestamptz) ELSE a.superseded_at END
+WHERE a.id = $2::bigint
+`
+
+type MarkWithdrawnByStoredParams struct {
+	Now time.Time
+	ID  int64
+}
+
+// A message stored earlier under another guid may already withdraw this one:
+// the refresher stores the newest first, so a Cancel or an Update can be stored
+// before the alert it names, and the upsert of an alert clears its marks. This
+// sets them again from what is stored, so the in force read, the push queue and
+// the worker all see the same truth (CR-S01 of the Phase 5 review). The first
+// mark is kept.
+func (q *Queries) MarkWithdrawnByStored(ctx context.Context, arg MarkWithdrawnByStoredParams) error {
+	_, err := q.db.Exec(ctx, markWithdrawnByStored, arg.Now, arg.ID)
 	return err
 }
 
@@ -617,8 +671,10 @@ type UpsertOfficialAlertParams struct {
 
 // Stores one version of a series by its guid. A later version replaces the row
 // in place and keeps first_seen_at. A new Alert or Update version clears a
-// cancelled or superseded mark because that version is the series' latest word;
-// a Cancel passes cancelled_at so the row never shows.
+// cancelled or superseded mark because that version is the series' latest word,
+// and saveVersion then sets the marks again from any stored message of another
+// guid that names it (MarkWithdrawnByStored); a Cancel passes cancelled_at so
+// the row never shows.
 func (q *Queries) UpsertOfficialAlert(ctx context.Context, arg UpsertOfficialAlertParams) (OfficialAlert, error) {
 	row := q.db.QueryRow(ctx, upsertOfficialAlert,
 		arg.Guid,

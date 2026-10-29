@@ -722,3 +722,129 @@ func TestVersionHookInTransaction(t *testing.T) {
 		t.Errorf("prev given %v, want [false false true]: the first sighting has none, the new version has one", prevs)
 	}
 }
+
+// TestRefreshWithdrawalStoredFirst pins CR-S01 of the Phase 5 review: a Cancel
+// or an Update under another guid withdraws its target whatever the order the
+// refresher stores them in (it stores the newest first), and a withdrawn target
+// fetched again under its own guid with the same identifier stays withdrawn.
+func TestRefreshWithdrawalStoredFirst(t *testing.T) {
+	const guidCancel = "1792000000000099"
+	const chennaiID = "IN-1792915039196007_43"
+
+	withdrawn := func(t *testing.T, e *officialEnv, wantCancelled, wantSuperseded bool) {
+		t.Helper()
+		tn, _ := areas.Default().StateByName("Tamil Nadu")
+		if got := e.inForce(t, 568, int32(tn.Code)); got[guidChennai].Guid != "" {
+			t.Errorf("the withdrawn Chennai alert is in force: %v", keys(got))
+		}
+		row := e.alert(t, guidChennai)
+		if row.CancelledAt.Valid != wantCancelled || row.SupersededAt.Valid != wantSuperseded {
+			t.Errorf("Chennai cancelled %v superseded %v; want cancelled %t superseded %t",
+				row.CancelledAt, row.SupersededAt, wantCancelled, wantSuperseded)
+		}
+	}
+
+	t.Run("cancel stored before its target in one run", func(t *testing.T) {
+		e := newOfficialEnv(t)
+		e.srv.set([]fakeItem{
+			{guid: guidCancel, pub: pub(30), issuer: "IMD Chennai"},
+			{guid: guidChennai, pub: pub(1), issuer: "IMD Chennai"},
+		}, "")
+		e.srv.setCAP(guidCancel, capFixture(t, "cap_cancel_synthetic.xml"))
+		e.srv.setCAP(guidChennai, capFixture(t, "cap_imd_chennai.xml"))
+		if _, err := e.refresh(t); err != nil {
+			t.Fatalf("refresh: %v", err)
+		}
+		withdrawn(t, e, true, false)
+	})
+
+	t.Run("cancel stored after its target", func(t *testing.T) {
+		e := newOfficialEnv(t)
+		e.srv.set([]fakeItem{{guid: guidChennai, pub: pub(1), issuer: "IMD Chennai"}}, "")
+		e.srv.setCAP(guidChennai, capFixture(t, "cap_imd_chennai.xml"))
+		if _, err := e.refresh(t); err != nil {
+			t.Fatalf("first refresh: %v", err)
+		}
+		e.srv.set([]fakeItem{
+			{guid: guidCancel, pub: pub(30), issuer: "IMD Chennai"},
+			{guid: guidChennai, pub: pub(1), issuer: "IMD Chennai"},
+		}, "")
+		e.srv.setCAP(guidCancel, capFixture(t, "cap_cancel_synthetic.xml"))
+		if _, err := e.refresh(t); err != nil {
+			t.Fatalf("second refresh: %v", err)
+		}
+		withdrawn(t, e, true, false)
+	})
+
+	t.Run("update under a new guid stored a run before its target", func(t *testing.T) {
+		e := newOfficialEnv(t)
+		update := replaceOnce(t, capFixture(t, "cap_maharashtra_update.xml"), "IN-1792859773702029_46", chennaiID)
+		items := []fakeItem{{guid: guidMah, pub: pub(55), issuer: "Maharashtra SDMA"}}
+		flood := capFixture(t, "cap_cwc_flood.xml")
+		for i := 0; i < CAPPerRun; i++ { // fillers between the update and its target
+			g := fmt.Sprintf("17920000000%05d", 100+i)
+			items = append(items, fakeItem{guid: g, pub: pub(50).Add(-time.Duration(i) * time.Second), issuer: "CWC"})
+			e.srv.setCAP(g, flood)
+		}
+		items = append(items, fakeItem{guid: guidChennai, pub: pub(1), issuer: "IMD Chennai"})
+		e.srv.set(items, "")
+		e.srv.setCAP(guidMah, update)
+		e.srv.setCAP(guidChennai, capFixture(t, "cap_imd_chennai.xml"))
+		if _, err := e.refresh(t); err != nil {
+			t.Fatalf("first refresh: %v", err)
+		}
+		if n := e.count(t, `SELECT count(*) FROM official_alerts WHERE guid = $1`, guidChennai); n != 0 {
+			t.Fatalf("the target was stored in the first run; the case needs it in the second")
+		}
+		if _, err := e.refresh(t); err != nil {
+			t.Fatalf("second refresh: %v", err)
+		}
+		withdrawn(t, e, false, true)
+	})
+
+	t.Run("update under a new guid stored after its target", func(t *testing.T) {
+		e := newOfficialEnv(t)
+		e.srv.set([]fakeItem{{guid: guidChennai, pub: pub(1), issuer: "IMD Chennai"}}, "")
+		e.srv.setCAP(guidChennai, capFixture(t, "cap_imd_chennai.xml"))
+		if _, err := e.refresh(t); err != nil {
+			t.Fatalf("first refresh: %v", err)
+		}
+		update := replaceOnce(t, capFixture(t, "cap_maharashtra_update.xml"), "IN-1792859773702029_46", chennaiID)
+		e.srv.set([]fakeItem{
+			{guid: guidMah, pub: pub(55), issuer: "Maharashtra SDMA"},
+			{guid: guidChennai, pub: pub(1), issuer: "IMD Chennai"},
+		}, "")
+		e.srv.setCAP(guidMah, update)
+		if _, err := e.refresh(t); err != nil {
+			t.Fatalf("second refresh: %v", err)
+		}
+		withdrawn(t, e, false, true)
+	})
+
+	t.Run("withdrawn target fetched again under its own guid stays withdrawn", func(t *testing.T) {
+		e := newOfficialEnv(t)
+		e.srv.set([]fakeItem{{guid: guidChennai, pub: pub(1), issuer: "IMD Chennai"}}, "")
+		e.srv.setCAP(guidChennai, capFixture(t, "cap_imd_chennai.xml"))
+		if _, err := e.refresh(t); err != nil {
+			t.Fatalf("first refresh: %v", err)
+		}
+		e.srv.set([]fakeItem{
+			{guid: guidCancel, pub: pub(30), issuer: "IMD Chennai"},
+			{guid: guidChennai, pub: pub(1), issuer: "IMD Chennai"},
+		}, "")
+		e.srv.setCAP(guidCancel, capFixture(t, "cap_cancel_synthetic.xml"))
+		if _, err := e.refresh(t); err != nil {
+			t.Fatalf("cancel refresh: %v", err)
+		}
+		// The same guid with a newer pubDate and the same identifier.
+		e.srv.set([]fakeItem{
+			{guid: guidCancel, pub: pub(30), issuer: "IMD Chennai"},
+			{guid: guidChennai, pub: pub(40), issuer: "IMD Chennai"},
+		}, "")
+		res, err := e.refresh(t)
+		if err != nil || res.Fetched != 1 {
+			t.Fatalf("refetch refresh: %+v, %v; want the target fetched again", res, err)
+		}
+		withdrawn(t, e, true, false)
+	})
+}

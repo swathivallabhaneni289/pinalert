@@ -95,10 +95,13 @@ type OfficialRowResponse struct {
 	Issuer               string `json:"issuer" example:"IMD Chennai"`
 	IssuedAt             string `json:"issued_at" example:"2026-10-29T05:40:00Z"`
 	// ExpiresAt is the end time; for a grouped row, the latest end.
-	ExpiresAt       string                  `json:"expires_at" example:"2026-10-29T14:35:00Z"`
-	ExpiresInferred bool                    `json:"expires_inferred" example:"false"`
-	GroupedCount    int                     `json:"grouped_count" example:"1"`
-	Details         OfficialDetailsResponse `json:"details"`
+	ExpiresAt       string `json:"expires_at" example:"2026-10-29T14:35:00Z"`
+	ExpiresInferred bool   `json:"expires_inferred" example:"false"`
+	GroupedCount    int    `json:"grouped_count" example:"1"`
+	// Ended is true for a GDACS row whose end date has passed: it is listed but
+	// not in force, and count leaves it out.
+	Ended   bool                    `json:"ended" example:"false"`
+	Details OfficialDetailsResponse `json:"details"`
 }
 
 // OfficialDetailsResponse is the disclosure panel of a row. Every part is empty
@@ -218,6 +221,15 @@ func officialErrorClass(err error) string {
 // officialViewToResponse is the one conversion from the view to the wire shape.
 // The Demo (plan 05-19) uses it too, so a sample answer has the real shape.
 // Slices are never nil, so the JSON holds [] and not null.
+// rfc3339OrEmpty is the time in RFC 3339, or empty for the zero time (a GDACS
+// event with no date), so the page draws nothing rather than the year 1.
+func rfc3339OrEmpty(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
 func officialViewToResponse(v official.View) OfficialAlertsResponse {
 	out := OfficialAlertsResponse{
 		State:             string(v.State),
@@ -255,10 +267,11 @@ func officialViewToResponse(v official.View) OfficialAlertsResponse {
 				OriginalLanguageOnly: row.OriginalLanguageOnly,
 				AreaText:             row.AreaText,
 				Issuer:               row.Issuer,
-				IssuedAt:             row.IssuedAt.UTC().Format(time.RFC3339),
-				ExpiresAt:            row.ExpiresAt.UTC().Format(time.RFC3339),
+				IssuedAt:             rfc3339OrEmpty(row.IssuedAt),
+				ExpiresAt:            rfc3339OrEmpty(row.ExpiresAt),
 				ExpiresInferred:      row.ExpiresInferred,
 				GroupedCount:         row.GroupedCount,
+				Ended:                row.Ended,
 				Details: OfficialDetailsResponse{
 					Description:         row.Details.Description,
 					Instruction:         row.Details.Instruction,

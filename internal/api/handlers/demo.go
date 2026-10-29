@@ -127,7 +127,8 @@ func DemoRoutes(cfg DemoConfig) chi.Router {
 	// The page that starts a visit (plan 05-13): GET /demo and /demo/. It sits
 	// inside this router because chi's Mount("/demo") claims the whole prefix,
 	// so a second top level route for it would be shadowed. It is behind the
-	// per IP visit limit, and a router given no template mounts no page.
+	// per IP visit limit, which only a new world spends, and a router given no
+	// template mounts no page.
 	if cfg.Template != nil {
 		visit := cfg.VisitLimit
 		if visit == (DemoLimit{}) {

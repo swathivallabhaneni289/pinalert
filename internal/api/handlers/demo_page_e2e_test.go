@@ -194,6 +194,37 @@ func TestDemoPageRateLimited(t *testing.T) {
 	}
 }
 
+// TestDemoVisitLimitChargesOnlyNewWorlds pins WR-S06 of the Phase 5 review: the
+// per address visit limit is spent only when a page starts a new world. Moving
+// between the three places of a living visit (?v=) is never refused, while a
+// fresh visit, an unknown visit or a malformed one is charged.
+func TestDemoVisitLimitChargesOnlyNewWorlds(t *testing.T) {
+	srv := demoPageServer(t, handlers.DemoLimit{Every: time.Hour, Burst: 1})
+	resp, body := demoPageGet(t, http.DefaultClient, srv.URL+"/demo")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /demo = %d, want 200", resp.StatusCode)
+	}
+	m := demoAPIBaseRe.FindStringSubmatch(body)
+	if m == nil {
+		t.Fatalf("the Demo page names no API base")
+	}
+	visit := m[1][strings.LastIndex(m[1], "/")+1:]
+	for i := 0; i < 40; i++ {
+		for _, place := range []string{"/demo/alerts", "/demo/activity", "/demo"} {
+			resp, _ := demoPageGet(t, http.DefaultClient, srv.URL+place+"?v="+visit)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("move %d to %s of a living visit = %d, want 200", i+1, place, resp.StatusCode)
+			}
+		}
+	}
+	for _, q := range []string{"", "?v=" + strings.Repeat("0", len(visit)), "?v=nonsense"} {
+		resp, _ := demoPageGet(t, http.DefaultClient, srv.URL+"/demo/alerts"+q)
+		if resp.StatusCode != http.StatusTooManyRequests {
+			t.Errorf("GET /demo/alerts%s with the burst spent = %d, want 429: a new world is charged", q, resp.StatusCode)
+		}
+	}
+}
+
 // TestDemoPageRendersWhatItPromises renders the page and pins what a visitor
 // and a screen reader get: the strip first, the pretend position on the shell,
 // the Demo places in both bars, and nothing that asks for an account, a

@@ -605,6 +605,15 @@ func TestVotedReportsByAccountUsesTheAccountIndex(t *testing.T) {
 	if _, err := tx.Exec(ctx, "SET LOCAL enable_seqscan = off"); err != nil {
 		t.Fatalf("SET LOCAL enable_seqscan: %v", err)
 	}
+	// Amended 2026-10-29 by the Phase 5 review fix (WR-S08): with no votes
+	// seeded the planner chose between the two vote indexes by leftover column
+	// statistics, so on a used database it could pick the report leading one.
+	// The competitor is dropped inside this transaction, which is rolled back
+	// (DDL is transactional), so the plan names the account index whenever it
+	// can serve the query, which is what this test proves.
+	if _, err := tx.Exec(ctx, "DROP INDEX idx_votes_report_account_kind_created"); err != nil {
+		t.Fatalf("dropping the competing index inside the test transaction: %v", err)
+	}
 	// EXPLAIN cannot take bind parameters for a generic plan, so the two
 	// arguments are written as literals of the right types.
 	explainSQL := strings.Replace(stmtSQL, "$1", "1", 1)

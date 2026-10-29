@@ -61,7 +61,14 @@ const AnomalyFloor = 10
 const markTimeout = 5 * time.Second
 
 // errAnomaly is the failure for a feed that emptied after a full one.
+// saveTimeout bounds the saves of one run once its CAP fetches are done, so the
+// messages fetched before the run's own deadline are still stored.
+const saveTimeout = 10 * time.Second
+
 var errAnomaly = errors.New("official: the feed returned no items after a full one")
+
+// errRunPanicked is what the callers waiting on a run get when that run panicked.
+var errRunPanicked = errors.New("official: the refresh run failed")
 
 // ErrUnknownFeed is returned for a feed nothing was registered for.
 var ErrUnknownFeed = errors.New("official: feed is not registered")
@@ -93,6 +100,12 @@ type Result struct {
 	ETag         string
 	LastModified string
 	NotModified  bool
+
+	// Partial is a run that left new items for the next run (more than CAPPerRun
+	// were new). What it fetched is stored, but last_success_at does not move:
+	// an unseen item may be in force, so the list must not read as fresh
+	// (WR-S01 of the Phase 5 review).
+	Partial bool
 }
 
 // Fetcher reads one feed. It is handed the stored status for its validators and
@@ -267,10 +280,20 @@ func (r *Refresher) RefreshIfDue(ctx context.Context, feed Feed) (Result, error)
 	r.mu.Unlock()
 
 	defer func() {
+		// A run that panicked hands its waiters an error, never a clean zero
+		// result (IN-S04 of the Phase 5 review); the panic then goes on to the
+		// caller's own recover.
+		p := recover()
+		if p != nil {
+			c.res, c.err = Result{Feed: feed, ErrorClass: "network"}, errRunPanicked
+		}
 		r.mu.Lock()
 		delete(r.inflight, feed)
 		r.mu.Unlock()
 		close(c.done)
+		if p != nil {
+			panic(p)
+		}
 	}()
 	c.res, c.err = r.run(ctx, feed, reg)
 	return c.res, c.err
@@ -310,7 +333,14 @@ func (r *Refresher) run(ctx context.Context, feed Feed, reg registration) (Resul
 		log.Printf("official: feed=%s refresh failed class=%s", feed, class)
 		return res, ferr
 	}
-	if err := r.feeds.success(ctx, feed, now, res); err != nil {
+	if res.Partial {
+		log.Printf("official: feed=%s partial run items=%d fetched=%d stored=%d cancelled=%d",
+			feed, res.ItemsSeen, res.Fetched, res.Stored, res.Cancelled)
+		return res, nil
+	}
+	sctx, scancel := context.WithTimeout(context.WithoutCancel(ctx), markTimeout)
+	defer scancel()
+	if err := r.feeds.success(sctx, feed, now, res); err != nil {
 		res.ErrorClass = "network"
 		return res, fmt.Errorf("official: recording the success: %w", err)
 	}
@@ -357,7 +387,8 @@ func newSachetFetcher(api sachetAPI, ix *areas.Index, store func() alertStore, n
 //
 // The validators are handed back only when the run finished its work. If some
 // items were left over or failed, the old validators are kept, so the next
-// request cannot be answered 304 and the rest is fetched.
+// request cannot be answered 304 and the rest is fetched. A run with items
+// left over is Partial: the refresher then leaves last_success_at alone.
 func (f *sachetFetcher) Fetch(ctx context.Context, st FeedStatus) (Result, error) {
 	list, err := f.api.FetchList(ctx, st.ETag, st.LastModified)
 	if err != nil {
@@ -390,7 +421,13 @@ func (f *sachetFetcher) Fetch(ctx context.Context, st FeedStatus) (Result, error
 	failed := 0
 	var first error
 	if len(need) > 0 {
-		for _, cr := range f.api.FetchCAPs(ctx, need) {
+		caps := f.api.FetchCAPs(ctx, need)
+		// The saves run on their own bounded context: when the run's budget ends
+		// during the fetches, what was fetched is still kept (WR-S02 of the Phase
+		// 5 review), and the next run does not fetch it again.
+		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), saveTimeout)
+		defer cancel()
+		for _, cr := range caps {
 			if cr.Err != nil {
 				failed++
 				if first == nil {
@@ -404,7 +441,7 @@ func (f *sachetFetcher) Fetch(ctx context.Context, st FeedStatus) (Result, error
 				continue
 			}
 			p := Place(cr.Version, f.ix)
-			if err := f.store().save(ctx, cr.Version, p, f.now()); err != nil {
+			if err := f.store().save(sctx, cr.Version, p, f.now()); err != nil {
 				failed++
 				if first == nil {
 					first = err
@@ -424,6 +461,7 @@ func (f *sachetFetcher) Fetch(ctx context.Context, st FeedStatus) (Result, error
 	if leftover || failed > 0 {
 		res.ETag, res.LastModified = st.ETag, st.LastModified
 	}
+	res.Partial = leftover
 	return res, nil
 }
 

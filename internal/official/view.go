@@ -16,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"pinalert/internal/areas"
 	"pinalert/internal/service"
@@ -165,7 +164,11 @@ type Row struct {
 	ExpiresAt            time.Time
 	ExpiresInferred      bool
 	GroupedCount         int
-	Details              Details
+	// Ended is a GDACS row whose end date has passed. It stays listed (D-12)
+	// but is not in force, so Count leaves it out (WR-S04 of the Phase 5
+	// review).
+	Ended   bool
+	Details Details
 }
 
 // Details is the disclosure panel of a row. Every part is empty when the feed
@@ -233,8 +236,15 @@ func BuildView(in ViewInput) View {
 		secs := int64(hazardAge / time.Second)
 		v.HazardLastSuccessAt, v.HazardAgeSeconds = &t, &secs
 	}
-	if state == StateUnavailable || !v.AreaKnown {
+	// GDACS rows go by their own freshness (IN-S05 of the Phase 5 review): while
+	// SACHET is unavailable no alert is listed, but a fresh GDACS row on the
+	// reader's or the home district still is.
+	if !v.AreaKnown || (state == StateUnavailable && hazardState != StateFresh) {
 		return v
+	}
+	alerts := in.Alerts
+	if state == StateUnavailable {
+		alerts = nil
 	}
 
 	homeShown := in.Home != nil && (in.Reader == nil || !subset(in.Home.DistrictCodes, in.Reader.DistrictCodes))
@@ -264,7 +274,7 @@ func BuildView(in ViewInput) View {
 	// Each alert lands in exactly one section, the first that matches.
 	buckets := map[*section][]StoredAlert{}
 	var listed []StoredAlert
-	for _, a := range in.Alerts {
+	for _, a := range alerts {
 		if !a.ExpiresAt.After(in.Now) {
 			continue // an alert is gone by its own expiry in every state
 		}
@@ -310,7 +320,7 @@ func BuildView(in ViewInput) View {
 				target = &homeSec
 			}
 			if target != nil {
-				hazardRows[target] = append(hazardRows[target], hazardEntry(h))
+				hazardRows[target] = append(hazardRows[target], hazardEntry(h, in.Now))
 			}
 		}
 	}
@@ -338,7 +348,11 @@ func BuildView(in ViewInput) View {
 			rows[i] = e.row
 		}
 		v.Groups = append(v.Groups, Group{Kind: sec.kind, Label: sec.label, Rows: rows})
-		v.Count += len(rows)
+		for _, r := range rows {
+			if !r.Ended {
+				v.Count++
+			}
+		}
 	}
 
 	v.DistrictsLine = districtsLine(districtNames(in, homeShown, listed))
@@ -413,7 +427,7 @@ func sortEntries(out []entry) {
 // Severe for the chip colour and the order; Green is neutral and sorts with the
 // unknown ones. The line on the row says what GDACS is: an automatic estimate.
 // Nothing here is a vote, a count or a reliability tag.
-func hazardEntry(h StoredHazard) entry {
+func hazardEntry(h StoredHazard, now time.Time) entry {
 	word := GdacsLevelWord(h.AlertLevel)
 	level, rank := "neutral", severityRank("")
 	switch word {
@@ -439,6 +453,7 @@ func hazardEntry(h StoredHazard) entry {
 			IssuedAt:     h.FromDate,
 			ExpiresAt:    h.ToDate,
 			GroupedCount: 1,
+			Ended:        !h.ToDate.IsZero() && !h.ToDate.After(now),
 			Details: Details{
 				Description: h.SeverityText,
 				Areas:       h.Country,
@@ -702,18 +717,12 @@ func langLabel(raw string) (label, code string) {
 }
 
 // titleName turns the boundary file's upper case state name into the words the
-// page shows: each word capitalised, "and" and "of" kept lower case, "&" kept.
+// page shows: each word capitalised, "and" and "of" kept lower case, "&" read
+// as "and" and a comma as a space, the same words as the lock screen.
 func titleName(s string) string {
-	words := strings.Fields(strings.ToLower(s))
-	for i, w := range words {
-		if i > 0 && (w == "and" || w == "of") {
-			continue
-		}
-		r := []rune(w)
-		r[0] = unicode.ToUpper(r[0])
-		words[i] = string(r)
-	}
-	return strings.Join(words, " ")
+	// One function for the page and the lock screen (IN-S07 of the Phase 5
+	// review), so a state reads the same in both places.
+	return service.OfficialStateWords(s)
 }
 
 func contains(xs []int, x int) bool {

@@ -22,6 +22,8 @@ package handlers
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"html/template"
 	"log"
 	"net"
@@ -57,8 +59,8 @@ const demoFromWelcome = "welcome"
 // demoViewModel is exactly what demo.html.tmpl and demo_strip.html.tmpl read.
 type demoViewModel struct {
 	AssetVersion string
-	// Chrome is the shared bar data. DemoPage is true on it. Since plan 05-17
-	// the shared report form reads the Demo field below instead.
+	// Chrome is the shared bar data. The shared report form reads the Demo
+	// field below (plan 05-17).
 	Chrome Chrome
 	// Demo is true on this page only. The shared report form reads it and
 	// leaves out the Call 112 box and the What is happening picks (plan 05-17,
@@ -120,8 +122,20 @@ func demoVisitFor(store *demo.Store, r *http.Request) (*demo.World, error) {
 			return world, nil
 		}
 	}
+	// Only a new world spends the per address visit limit (WR-S06 of the Phase 5
+	// review): moving between the places of a living visit is never refused.
+	if charge, ok := r.Context().Value(demoVisitChargeKey{}).(func() bool); ok && !charge() {
+		return nil, errDemoTooManyVisits
+	}
 	return store.Create()
 }
+
+// demoVisitChargeKey holds, in a request's context, the function that spends
+// one token of the visit limit for the request's address.
+type demoVisitChargeKey struct{}
+
+// errDemoTooManyVisits is a new world refused by the visit limit.
+var errDemoTooManyVisits = errors.New("handlers: too many new Demo visits from one address")
 
 // newDemoPlaceModel builds the view model shared by the Demo's pages for the
 // place current (one of the Nav constants): the visit's world, the Demo bars
@@ -130,6 +144,11 @@ func demoVisitFor(store *demo.Store, r *http.Request) (*demo.World, error) {
 func newDemoPlaceModel(w http.ResponseWriter, r *http.Request, store *demo.Store, cfg PageConfig, current string, opts ...navOption) (demoViewModel, *demo.World, bool) {
 	world, err := demoVisitFor(store, r)
 	if err != nil {
+		if errors.Is(err, errDemoTooManyVisits) {
+			w.Header().Set("Cache-Control", "no-store")
+			http.Error(w, demoTooManyVisitsMessage, http.StatusTooManyRequests)
+			return demoViewModel{}, nil, false
+		}
 		log.Printf("handlers: Demo page: starting a visit failed: %v", err)
 		w.Header().Set("Cache-Control", "no-store")
 		http.Error(w, demoBusyMessage, http.StatusServiceUnavailable)
@@ -137,7 +156,6 @@ func newDemoPlaceModel(w http.ResponseWriter, r *http.Request, store *demo.Store
 	}
 	from := demoFromWord(r)
 	chrome := cfg.Chrome.withDefaults()
-	chrome.DemoPage = true
 	return demoViewModel{
 		AssetVersion:    cfg.AssetVersion,
 		Chrome:          chrome,
@@ -187,9 +205,10 @@ func DemoPage(tmpl *template.Template, store *demo.Store, cfg PageConfig) http.H
 	}
 }
 
-// demoVisitLimiter limits how often one address may start a visit. It answers
-// 429 as a plain page sentence, because the response is for a page, not the
-// JSON API. The key is the client address the router found, else the peer
+// demoVisitLimiter limits how often one address may start a visit. It charges
+// nothing itself: it hands the page a function that spends one token, and the
+// page calls it only when it starts a new world, then answers 429 as a plain
+// page sentence, because the response is for a page, not the JSON API. The key is the client address the router found, else the peer
 // address, as ratelimit's own middleware reads it.
 func demoVisitLimiter(limit DemoLimit) func(http.Handler) http.Handler {
 	perIP := ratelimit.NewPerIP(limit.Every, limit.Burst)
@@ -203,12 +222,8 @@ func demoVisitLimiter(limit DemoLimit) func(http.Handler) http.Handler {
 					key = r.RemoteAddr
 				}
 			}
-			if !perIP.Allow(key) {
-				w.Header().Set("Cache-Control", "no-store")
-				http.Error(w, demoTooManyVisitsMessage, http.StatusTooManyRequests)
-				return
-			}
-			next.ServeHTTP(w, r)
+			charge := func() bool { return perIP.Allow(key) }
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), demoVisitChargeKey{}, charge)))
 		})
 	}
 }

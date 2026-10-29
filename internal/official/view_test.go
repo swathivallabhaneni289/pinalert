@@ -79,6 +79,15 @@ func groupKinds(v View) []string {
 	return out
 }
 
+// listedRows is the number of rows in every group.
+func listedRows(v View) int {
+	n := 0
+	for _, g := range v.Groups {
+		n += len(g.Rows)
+	}
+	return n
+}
+
 func rowIDs(g Group) []int64 {
 	var out []int64
 	for _, r := range g.Rows {
@@ -660,8 +669,13 @@ func TestBuildViewRowFacts(t *testing.T) {
 
 func TestTitleName(t *testing.T) {
 	cases := map[string]string{
-		"ANDHRA PRADESH":                   "Andhra Pradesh",
-		"JAMMU & KASHMIR":                  "Jammu & Kashmir",
+		"ANDHRA PRADESH": "Andhra Pradesh",
+		// Amended 2026-10-29 by the Phase 5 review fix (IN-S07): the page now
+		// uses the lock screen's state words, so "&" reads "and" (the case is
+		// kept, its words changed), and the boundary name of state code 38 with
+		// its commas reads as the lock screen says it.
+		"JAMMU & KASHMIR":                  "Jammu and Kashmir",
+		"DADRA,NAGAR HAVELI,DAMAN & DIU":   "Dadra Nagar Haveli Daman and Diu",
 		"DADRA NAGAR HAVELI DAMAN AND DIU": "Dadra Nagar Haveli Daman and Diu",
 		"":                                 "",
 	}
@@ -769,8 +783,14 @@ func TestBuildViewHazardRows(t *testing.T) {
 	if got := rowIDs(v.Groups[1]); fmt.Sprint(got) != "[2]" {
 		t.Errorf("home rows = %v, want the Orange cyclone", got)
 	}
-	if v.Count != 3 {
-		t.Errorf("Count = %d, want 3 (the two elsewhere are not listed)", v.Count)
+	// Amended 2026-10-29 by the Phase 5 review fix (WR-S04): the old case read
+	// Count for the rows listed; the test hazards ended an hour ago, so they are
+	// still listed but no longer counted as in force.
+	if n := listedRows(v); n != 3 {
+		t.Errorf("%d rows listed, want 3 (the two elsewhere are not listed)", n)
+	}
+	if v.Count != 0 {
+		t.Errorf("Count = %d, want 0: every listed hazard ended an hour ago", v.Count)
 	}
 
 	red := v.Groups[0].Rows[0]
@@ -859,6 +879,69 @@ func TestBuildViewHazardRows(t *testing.T) {
 	})
 }
 
+// TestBuildViewEndedHazardListedNotCounted pins WR-S04 of the Phase 5 review: a
+// GDACS hazard in the reader's district whose end date has passed is still
+// listed (D-12), marked ended, and left out of the in force count.
+func TestBuildViewEndedHazardListedNotCounted(t *testing.T) {
+	in := ViewInput{
+		Now:          viewNow,
+		Status:       viewStatus(4 * time.Minute),
+		HazardStatus: hazardStatus(5 * time.Minute),
+		Reader:       readerArea(),
+		Hazards: []StoredHazard{
+			testHazard(1, func(h *StoredHazard) { h.ToDate = viewNow.Add(-30 * time.Hour) }),
+			testHazard(2, func(h *StoredHazard) { h.ToDate = viewNow.Add(6 * time.Hour) }),
+			testHazard(3, func(h *StoredHazard) { h.ToDate = time.Time{} }),
+		},
+	}
+	v := BuildView(in)
+	ended := map[int64]bool{}
+	listed := 0
+	for _, g := range v.Groups {
+		for _, r := range g.Rows {
+			listed++
+			ended[r.ID] = r.Ended
+		}
+	}
+	if listed != 3 {
+		t.Fatalf("%d rows listed, want all three hazards", listed)
+	}
+	if !ended[1] || ended[2] || ended[3] {
+		t.Errorf("ended marks = %v, want only the hazard that ended 30 hours ago", ended)
+	}
+	if v.Count != 2 {
+		t.Errorf("Count = %d, want 2: the ended hazard is not in force", v.Count)
+	}
+}
+
+// TestBuildViewHazardsByTheirOwnFreshness pins IN-S05 of the Phase 5 review: a
+// fresh GDACS row in the reader's district is listed while SACHET is
+// unavailable, and no SACHET alert is listed then.
+func TestBuildViewHazardsByTheirOwnFreshness(t *testing.T) {
+	in := ViewInput{
+		Now:          viewNow,
+		Status:       FeedStatus{Feed: FeedSachet},
+		HazardStatus: hazardStatus(5 * time.Minute),
+		Reader:       readerArea(),
+		Alerts:       []StoredAlert{testAlert(9, withSeverity("Severe"))},
+		Hazards:      []StoredHazard{testHazard(1, func(h *StoredHazard) { h.ToDate = viewNow.Add(time.Hour) })},
+	}
+	v := BuildView(in)
+	if v.State != StateUnavailable {
+		t.Fatalf("state %q, want unavailable", v.State)
+	}
+	if len(v.Groups) != 1 || fmt.Sprint(rowIDs(v.Groups[0])) != "[1]" || v.Groups[0].Rows[0].Source != sourceGdacs {
+		t.Fatalf("groups = %+v, want only the GDACS row", v.Groups)
+	}
+	if v.Banner != nil {
+		t.Errorf("banner %+v while SACHET is unavailable", *v.Banner)
+	}
+	in.HazardStatus = FeedStatus{Feed: FeedGdacs}
+	if v := BuildView(in); len(v.Groups) != 0 {
+		t.Errorf("groups = %+v with both feeds unavailable, want none", v.Groups)
+	}
+}
+
 // TestHazardsNeverRaiseBanner: a GDACS event is an automatic estimate, so
 // however serious its level it is never the Nearby banner and never counts as
 // one of the "more" rows (D-12, T-05-111).
@@ -871,8 +954,11 @@ func TestHazardsNeverRaiseBanner(t *testing.T) {
 		Hazards:      []StoredHazard{testHazard(1, nil), testHazard(2, func(h *StoredHazard) { h.AlertLevel = "Orange" })},
 	}
 	v := BuildView(in)
-	if v.Count != 2 {
-		t.Fatalf("Count = %d, want the two hazard rows listed", v.Count)
+	// Amended 2026-10-29 by the Phase 5 review fix (WR-S04): the rows listed
+	// are counted from the groups, because hazards that ended (these ended an
+	// hour ago) are listed but not in Count.
+	if n := listedRows(v); n != 2 {
+		t.Fatalf("%d rows listed, want the two hazard rows", n)
 	}
 	if v.Banner != nil {
 		t.Fatalf("banner = %+v, want none for GDACS rows alone", *v.Banner)

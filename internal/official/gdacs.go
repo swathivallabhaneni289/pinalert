@@ -291,6 +291,26 @@ func filterGdacsA(hs []Hazard) []Hazard {
 	return out
 }
 
+// endedGdacsA lists the events request A marks not current, never a drought, that
+// the kept list does not hold.
+func endedGdacsA(a, kept []Hazard) []Hazard {
+	type key struct {
+		t  string
+		id int64
+	}
+	in := make(map[key]bool, len(kept))
+	for _, h := range kept {
+		in[key{h.EventType, h.EventID}] = true
+	}
+	var out []Hazard
+	for _, h := range a {
+		if h.EventType != "DR" && !h.IsCurrent && !in[key{h.EventType, h.EventID}] {
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
 // filterGdacsB keeps what request B is for: points inside the South Asia box,
 // never a drought. Whether an event is current is stored as it is, so a row
 // that stopped being current is updated and leaves the map.
@@ -443,6 +463,11 @@ func (c *GdacsClient) searchSafely(ctx context.Context, req SearchRequest) (hs [
 type GdacsResult struct {
 	Hazards []Hazard
 	Seen    int
+	// Ended are the events request A returned marked not current and that are
+	// not in Hazards. A row stored for one is marked not current, so it leaves
+	// the map also when request B does not return it (WR-S03 of the Phase 5
+	// review). Nothing new is stored for them.
+	Ended []Hazard
 }
 
 // FetchHazards runs request A and request B at the given time, at the same time
@@ -494,9 +519,11 @@ func (c *GdacsClient) FetchHazards(ctx context.Context, now time.Time) (GdacsRes
 	if firstErr != nil {
 		return GdacsResult{}, firstErr
 	}
+	merged := mergeHazards(filterGdacsA(a), filterGdacsB(b))
 	return GdacsResult{
-		Hazards: mergeHazards(filterGdacsA(a), filterGdacsB(b)),
+		Hazards: merged,
 		Seen:    len(a) + len(b),
+		Ended:   endedGdacsA(a, merged),
 	}, nil
 }
 
@@ -510,6 +537,7 @@ type gdacsAPI interface {
 // hazardStore is what the fetcher needs of the hazards table.
 type hazardStore interface {
 	upsert(ctx context.Context, h Hazard, now time.Time) error
+	end(ctx context.Context, h Hazard, now time.Time) error
 }
 
 // gdacsFetcher is the Fetcher of the gdacs feed. It never goes through the
@@ -544,6 +572,11 @@ func (f *gdacsFetcher) Fetch(ctx context.Context, _ FeedStatus) (Result, error) 
 		}
 		res.Stored++
 	}
+	for _, h := range got.Ended {
+		if err := store.end(ctx, h, now); err != nil {
+			return res, &fetchError{class: "network", msg: "could not store a hazard", cause: err, feed: "gdacs"}
+		}
+	}
 	return res, nil
 }
 
@@ -572,6 +605,12 @@ func (s pgHazards) upsert(ctx context.Context, h Hazard, now time.Time) error {
 		p.EpisodeID = &ep
 	}
 	return s.q.UpsertOfficialHazard(ctx, p)
+}
+
+// end marks a stored row of the event not current. A row that is not stored
+// stays not stored.
+func (s pgHazards) end(ctx context.Context, h Hazard, now time.Time) error {
+	return s.q.EndOfficialHazard(ctx, sqlcgen.EndOfficialHazardParams{EventType: h.EventType, EventID: h.EventID, Now: now})
 }
 
 // optionalTimestamptz is NULL for the zero time.
