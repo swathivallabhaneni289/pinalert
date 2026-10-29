@@ -964,7 +964,7 @@ Plans:
 
 - [ ] TBD (promote with /gsd-review-backlog when ready)
 
-### Phase 999.8: Long dashes in the generated API reference (BACKLOG)
+### Phase 999.8: Long dashes in the generated API reference (DONE as quick task 261030-5my, 2026-10-30)
 
 **Goal:** [Captured for future planning] `docs/docs.go`, `docs/swagger.json` and `docs/swagger.yaml` carry long dashes copied from handler comments, and `/swagger` is public. Rewrite the source comments in plain punctuation, run `make swag`, and extend the standing dash test (`web/design_rules_contract_test.go`) to scan the generated docs. Found by the Phase 2 verification review on 2026-10-07 (finding F6). Small, one quick task.
 **Requirements:** TBD
