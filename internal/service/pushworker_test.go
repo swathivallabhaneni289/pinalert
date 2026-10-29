@@ -94,6 +94,12 @@ type pwQuerier struct {
 	count       int64
 	countParams []sqlcgen.CountAccountPushesInWindowParams
 
+	// commentGone makes CommentPushStillHolds answer false: no clear comment the
+	// row could be about is left (review IN-S05). False by default, so every
+	// other case sends as before. commentParams holds every read.
+	commentGone   bool
+	commentParams []sqlcgen.CommentPushStillHoldsParams
+
 	// sentAbout is the answer of AccountPushSentAboutReport: whether an earlier
 	// push about the report was already sent to the account.
 	sentAbout   bool
@@ -239,6 +245,14 @@ func (q *pwQuerier) AccountPushSentAboutReport(_ context.Context, a sqlcgen.Acco
 	q.rec("AccountPushSentAboutReport")
 	q.aboutParams = append(q.aboutParams, a)
 	return q.sentAbout, nil
+}
+
+func (q *pwQuerier) CommentPushStillHolds(_ context.Context, a sqlcgen.CommentPushStillHoldsParams) (bool, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.rec("CommentPushStillHolds")
+	q.commentParams = append(q.commentParams, a)
+	return !q.commentGone, nil
 }
 
 func (q *pwQuerier) VoteLogForReport(_ context.Context, reportID int64) ([]sqlcgen.VoteLogForReportRow, error) {
@@ -666,6 +680,15 @@ func TestWorkerSkipsWhenNoLongerEligible(t *testing.T) {
 				r.report(func(row *sqlcgen.PushReportFactsRow) { row.ExpiresAt = pushFactsNow.Add(-time.Second) })
 			}},
 		{name: "changed, update row pruned", kind: "changed", event: "none", severity: "low", wantVis: VisibilityProvisional, want: "not_eligible"},
+		// 2026-10-29 (review IN-S05): a comment note goes out only while a clear
+		// comment it could be about is still there. One removed or deleted after
+		// the row was queued, with no other unread one, sends nothing to a phone.
+		lowLive("comment_on_yours, comment still shown", "changed", "comment_on_yours", "sent"),
+		{name: "comment_on_yours, comment removed or deleted since", kind: "changed", event: "comment_on_yours", severity: "low", votes: pwConfirm(2), wantVis: VisibilityLive, want: "not_eligible",
+			mutate: func(r *pwRig) { r.q.commentGone = true }},
+		lowLive("reply_to_yours, reply still shown", "changed", "reply_to_yours", "sent"),
+		{name: "reply_to_yours, reply removed or deleted since", kind: "changed", event: "reply_to_yours", severity: "low", votes: pwConfirm(2), wantVis: VisibilityLive, want: "not_eligible",
+			mutate: func(r *pwRig) { r.q.commentGone = true }},
 		{name: "changed, update row of another kind", kind: "changed", event: "reliable_nearby", severity: "low", wantVis: VisibilityProvisional, want: "not_eligible"},
 		{name: "changed, the Changes switch is off now", kind: "changed", event: "fading", severity: "low", votes: pwConfirm(2), wantVis: VisibilityLive, want: "not_eligible",
 			mutate: off(func(h *sqlcgen.PushAccountHomeRow) { h.ChangesPushOn = false })},

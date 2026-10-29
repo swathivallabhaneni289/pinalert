@@ -587,6 +587,41 @@ SELECT EXISTS (
       AND state = 'sent'
 )::boolean;
 
+-- name: CommentPushStillHolds :one
+-- Review IN-S05 (2026-10-29): whether a queued comment note still has a comment
+-- to be about, read at send time. The bell row stores no comment id, and a
+-- second comment while the first is unread writes no new row, so the question
+-- is whether any comment the note could stand for is still there: on the
+-- report, clear, not deleted, not written by the recipient, top level for
+-- comment_on_yours or answering one of the recipient's comments for
+-- reply_to_yours, and seen by the server (written, or cleared by its check)
+-- after the recipient last read a note of this kind on this report. A comment
+-- removed by a moderator or deleted by its author after the note was queued,
+-- with no other unread one, answers false, and the worker skips the row. The
+-- bell row is left as it is. The rule errs toward sending nothing: a comment
+-- written before such a read and cleared only by a moderator's Keep after it
+-- reads false.
+SELECT EXISTS (
+    SELECT 1
+    FROM comments c
+    LEFT JOIN comments t ON t.id = c.reply_to_id
+    WHERE c.report_id = sqlc.arg(report_id)::bigint
+      AND c.deleted_at IS NULL
+      AND c.moderation_state = 'clear'
+      AND c.account_id <> sqlc.arg(recipient_account_id)::bigint
+      AND (CASE WHEN sqlc.arg(kind)::text = 'reply_to_yours'
+                THEN t.account_id IS NOT DISTINCT FROM sqlc.arg(recipient_account_id)::bigint
+                ELSE c.reply_to_id IS NULL END)
+      AND GREATEST(c.created_at, COALESCE(c.checked_at, c.created_at)) > COALESCE((
+          SELECT max(u.read_at)
+          FROM updates u
+          WHERE u.account_id = sqlc.arg(recipient_account_id)::bigint
+            AND u.report_id = sqlc.arg(report_id)::bigint
+            AND u.kind = sqlc.arg(kind)::text
+            AND u.read_at IS NOT NULL
+      ), '-infinity'::timestamptz)
+)::boolean;
+
 -- name: SkipStalePushes :execrows
 -- On wake, queued rows whose own life or whose report's life is over become
 -- skipped with reason stale instead of flushing a backlog. A row a worker holds
