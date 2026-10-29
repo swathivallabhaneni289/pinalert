@@ -182,8 +182,11 @@
   background: color-mix(in srgb, var(--color-bg) 65%, transparent);
 }
 
-/* The red error line needs the solid surface for its contrast: on the glass it
-   measures about 2 to 1, on the solid surface 4.87 light and 5.46 dark. An empty
+/* The error line keeps a solid surface backing, so a message never sits on the
+   moving Earth. It is painted in --color-text (".login-card p" in auth.css wins
+   over ".auth-error"), which on the solid surface is 15.20 to 1 light and 16.15
+   dark. Corrected 2026-10-29 by the Phase 5 review fix (WR-T04): this said the
+   line was red at 4.87 and 5.46, a pair the cascade never paints. An empty
    line takes no room and gets no backing. */
 .login-gate.has-globe .auth-error:not(:empty) {
   background: var(--color-surface);
