@@ -54,7 +54,8 @@ WHERE id = sqlc.arg(id);
 
 -- name: GetAccountProfile :one
 -- The caller's own profile rows and onboarding state.
-SELECT display_name, home_area_name, home_area_cell, terms_version, first_run_done_at
+SELECT display_name, home_area_name, home_area_cell, terms_version, first_run_done_at,
+       username, username_screen, username_changed_at
 FROM accounts
 WHERE id = sqlc.arg(id);
 
@@ -103,10 +104,16 @@ DELETE FROM account_alert_settings WHERE account_id = sqlc.arg(account_id);
 -- and accounts_home_area_pair checks hold) and deleted_at is stamped. The
 -- deleted_at IS NULL guard makes a second call change nothing. Nothing here
 -- touches votes, reports or sessions.account_id (Option A, owner confirmed
--- 2026-10-18).
+-- 2026-10-18). Phase 7.1: the password hash is cleared and the username is freed
+-- at once, so another account can take it; Phase 8 renders a deleted account's
+-- comments without a name.
 UPDATE accounts
 SET email             = sqlc.arg(scrubbed_email),
     display_name      = NULL,
+    password_hash     = NULL,
+    username          = NULL,
+    username_screen   = NULL,
+    username_changed_at = NULL,
     home_area_name    = NULL,
     home_area_cell    = NULL,
     terms_agreed_at   = NULL,
@@ -114,4 +121,56 @@ SET email             = sqlc.arg(scrubbed_email),
     first_run_done_at = NULL,
     deleted_at        = sqlc.arg(now)
 WHERE id = sqlc.arg(id)
+  AND deleted_at IS NULL;
+
+-- name: GetAccountForSignIn :one
+-- Phase 7.1: the password sign in's one read of an account by its normalised
+-- address. A deleted account yields no row (its address was scrubbed anyway).
+-- password_hash is NULL for an account that has not set a password yet.
+SELECT id, password_hash, (display_name IS NOT NULL)::bool AS has_name
+FROM accounts
+WHERE email = sqlc.arg(email) AND deleted_at IS NULL;
+
+-- name: SetAccountPassword :execrows
+-- Stores an argon2id PHC string, never a password: after a confirmed sign up
+-- code, a confirmed reset code, and the one time fill in of an older account.
+-- 0 rows means the account is deleted.
+UPDATE accounts
+SET password_hash = sqlc.arg(password_hash)::text
+WHERE id = sqlc.arg(id) AND deleted_at IS NULL;
+
+-- name: SetAccountUsername :execrows
+-- The first set is free, and every later change starts the 7 day wait: the
+-- stored username_changed_at moves only when the name really changes, and a
+-- change is allowed only when no change has been made yet or the last one is at
+-- or before wait_cutoff. Setting the same name again is always allowed. 0 rows
+-- means too soon (or the account is deleted); a taken name surfaces as SQLSTATE
+-- 23505 from accounts_username_unique.
+UPDATE accounts
+SET username = sqlc.arg(username)::text,
+    username_screen = sqlc.arg(username_screen)::text,
+    username_changed_at = CASE
+        WHEN username IS NULL OR username = sqlc.arg(username)::text THEN username_changed_at
+        ELSE sqlc.arg(now)::timestamptz
+    END
+WHERE id = sqlc.arg(id)
+  AND deleted_at IS NULL
+  AND (username IS NULL
+       OR username = sqlc.arg(username)::text
+       OR username_changed_at IS NULL
+       OR username_changed_at <= sqlc.arg(wait_cutoff)::timestamptz);
+
+-- name: GetAccountIDByUsername :one
+-- The id of a not deleted account holding this canonical username, for the
+-- @username box and the uniqueness message.
+SELECT id FROM accounts WHERE username = sqlc.arg(username)::text AND deleted_at IS NULL;
+
+-- name: UsernamesByAccountIDs :many
+-- The batched read Phase 8 comments and Phase 9 profiles consume. Only accounts
+-- that have a username and are not deleted come back; callers show a name only
+-- when username_screen is clear.
+SELECT id, username, username_screen
+FROM accounts
+WHERE id = ANY(sqlc.arg(ids)::bigint[])
+  AND username IS NOT NULL
   AND deleted_at IS NULL;

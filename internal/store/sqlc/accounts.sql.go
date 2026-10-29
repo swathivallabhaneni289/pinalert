@@ -138,6 +138,28 @@ func (q *Queries) GetAccountByEmail(ctx context.Context, email string) (GetAccou
 	return i, err
 }
 
+const getAccountForSignIn = `-- name: GetAccountForSignIn :one
+SELECT id, password_hash, (display_name IS NOT NULL)::bool AS has_name
+FROM accounts
+WHERE email = $1 AND deleted_at IS NULL
+`
+
+type GetAccountForSignInRow struct {
+	ID           int64
+	PasswordHash *string
+	HasName      bool
+}
+
+// Phase 7.1: the password sign in's one read of an account by its normalised
+// address. A deleted account yields no row (its address was scrubbed anyway).
+// password_hash is NULL for an account that has not set a password yet.
+func (q *Queries) GetAccountForSignIn(ctx context.Context, email string) (GetAccountForSignInRow, error) {
+	row := q.db.QueryRow(ctx, getAccountForSignIn, email)
+	var i GetAccountForSignInRow
+	err := row.Scan(&i.ID, &i.PasswordHash, &i.HasName)
+	return i, err
+}
+
 const getAccountHomeCell = `-- name: GetAccountHomeCell :one
 SELECT home_area_cell
 FROM accounts
@@ -154,18 +176,35 @@ func (q *Queries) GetAccountHomeCell(ctx context.Context, id int64) (*string, er
 	return home_area_cell, err
 }
 
+const getAccountIDByUsername = `-- name: GetAccountIDByUsername :one
+SELECT id FROM accounts WHERE username = $1::text AND deleted_at IS NULL
+`
+
+// The id of a not deleted account holding this canonical username, for the
+// @username box and the uniqueness message.
+func (q *Queries) GetAccountIDByUsername(ctx context.Context, username string) (int64, error) {
+	row := q.db.QueryRow(ctx, getAccountIDByUsername, username)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getAccountProfile = `-- name: GetAccountProfile :one
-SELECT display_name, home_area_name, home_area_cell, terms_version, first_run_done_at
+SELECT display_name, home_area_name, home_area_cell, terms_version, first_run_done_at,
+       username, username_screen, username_changed_at
 FROM accounts
 WHERE id = $1
 `
 
 type GetAccountProfileRow struct {
-	DisplayName    *string
-	HomeAreaName   *string
-	HomeAreaCell   *string
-	TermsVersion   *string
-	FirstRunDoneAt pgtype.Timestamptz
+	DisplayName       *string
+	HomeAreaName      *string
+	HomeAreaCell      *string
+	TermsVersion      *string
+	FirstRunDoneAt    pgtype.Timestamptz
+	Username          *string
+	UsernameScreen    *string
+	UsernameChangedAt pgtype.Timestamptz
 }
 
 // The caller's own profile rows and onboarding state.
@@ -178,6 +217,9 @@ func (q *Queries) GetAccountProfile(ctx context.Context, id int64) (GetAccountPr
 		&i.HomeAreaCell,
 		&i.TermsVersion,
 		&i.FirstRunDoneAt,
+		&i.Username,
+		&i.UsernameScreen,
+		&i.UsernameChangedAt,
 	)
 	return i, err
 }
@@ -215,6 +257,10 @@ const scrubDeletedAccount = `-- name: ScrubDeletedAccount :execrows
 UPDATE accounts
 SET email             = $1,
     display_name      = NULL,
+    password_hash     = NULL,
+    username          = NULL,
+    username_screen   = NULL,
+    username_changed_at = NULL,
     home_area_name    = NULL,
     home_area_cell    = NULL,
     terms_agreed_at   = NULL,
@@ -239,9 +285,77 @@ type ScrubDeletedAccountParams struct {
 // and accounts_home_area_pair checks hold) and deleted_at is stamped. The
 // deleted_at IS NULL guard makes a second call change nothing. Nothing here
 // touches votes, reports or sessions.account_id (Option A, owner confirmed
-// 2026-10-18).
+// 2026-10-18). Phase 7.1: the password hash is cleared and the username is freed
+// at once, so another account can take it; Phase 8 renders a deleted account's
+// comments without a name.
 func (q *Queries) ScrubDeletedAccount(ctx context.Context, arg ScrubDeletedAccountParams) (int64, error) {
 	result, err := q.db.Exec(ctx, scrubDeletedAccount, arg.ScrubbedEmail, arg.Now, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setAccountPassword = `-- name: SetAccountPassword :execrows
+UPDATE accounts
+SET password_hash = $1::text
+WHERE id = $2 AND deleted_at IS NULL
+`
+
+type SetAccountPasswordParams struct {
+	PasswordHash string
+	ID           int64
+}
+
+// Stores an argon2id PHC string, never a password: after a confirmed sign up
+// code, a confirmed reset code, and the one time fill in of an older account.
+// 0 rows means the account is deleted.
+func (q *Queries) SetAccountPassword(ctx context.Context, arg SetAccountPasswordParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setAccountPassword, arg.PasswordHash, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setAccountUsername = `-- name: SetAccountUsername :execrows
+UPDATE accounts
+SET username = $1::text,
+    username_screen = $2::text,
+    username_changed_at = CASE
+        WHEN username IS NULL OR username = $1::text THEN username_changed_at
+        ELSE $3::timestamptz
+    END
+WHERE id = $4
+  AND deleted_at IS NULL
+  AND (username IS NULL
+       OR username = $1::text
+       OR username_changed_at IS NULL
+       OR username_changed_at <= $5::timestamptz)
+`
+
+type SetAccountUsernameParams struct {
+	Username       string
+	UsernameScreen string
+	Now            time.Time
+	ID             int64
+	WaitCutoff     time.Time
+}
+
+// The first set is free, and every later change starts the 7 day wait: the
+// stored username_changed_at moves only when the name really changes, and a
+// change is allowed only when no change has been made yet or the last one is at
+// or before wait_cutoff. Setting the same name again is always allowed. 0 rows
+// means too soon (or the account is deleted); a taken name surfaces as SQLSTATE
+// 23505 from accounts_username_unique.
+func (q *Queries) SetAccountUsername(ctx context.Context, arg SetAccountUsernameParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setAccountUsername,
+		arg.Username,
+		arg.UsernameScreen,
+		arg.Now,
+		arg.ID,
+		arg.WaitCutoff,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -281,4 +395,41 @@ func (q *Queries) UpdateAccountProfile(ctx context.Context, arg UpdateAccountPro
 		arg.ID,
 	)
 	return err
+}
+
+const usernamesByAccountIDs = `-- name: UsernamesByAccountIDs :many
+SELECT id, username, username_screen
+FROM accounts
+WHERE id = ANY($1::bigint[])
+  AND username IS NOT NULL
+  AND deleted_at IS NULL
+`
+
+type UsernamesByAccountIDsRow struct {
+	ID             int64
+	Username       *string
+	UsernameScreen *string
+}
+
+// The batched read Phase 8 comments and Phase 9 profiles consume. Only accounts
+// that have a username and are not deleted come back; callers show a name only
+// when username_screen is clear.
+func (q *Queries) UsernamesByAccountIDs(ctx context.Context, ids []int64) ([]UsernamesByAccountIDsRow, error) {
+	rows, err := q.db.Query(ctx, usernamesByAccountIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []UsernamesByAccountIDsRow
+	for rows.Next() {
+		var i UsernamesByAccountIDsRow
+		if err := rows.Scan(&i.ID, &i.Username, &i.UsernameScreen); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
