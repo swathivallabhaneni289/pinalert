@@ -27,9 +27,12 @@
 // device fix, else nothing, and the server then uses the home area. Latitude and
 // longitude go together or not at all.
 //
-// One request on load and one on each Try again press (T-05-50). The minutes of
-// the status line move once a minute from the server's age plus the time that
-// passed here, with no new request and no live region.
+// One request on load and one on each Try again press (T-05-50), and, since the
+// Phase 5 review fix CR-B01, one more when the answer reaches the 30 minute
+// fresh limit, every five minutes while it is stale or unavailable, when a shown
+// row ends, and when the tab is shown again more than a minute after the last
+// request. Between those, the minutes of the status line move once a minute
+// from the server's age plus the time that passed here, with no live region.
 //
 // The renderer is source agnostic: it reads its API base and its position from
 // the page, so the Demo (window.PinalertApiBase, data-fixed-lat and
@@ -38,6 +41,13 @@
   'use strict';
 
   var STATUS_TICK_MS = 60000;
+  // The server's fresh limit (internal/official FreshWindow), in seconds: a fresh
+  // answer this old is asked about again (Phase 5 review fix CR-B01).
+  var FRESH_LIMIT_SECONDS = 30 * 60;
+  // A stale or unavailable answer is asked about again this often.
+  var RECHECK_NOT_FRESH_MS = 5 * 60000;
+  // Showing the tab again asks again when the last request is this old.
+  var SHOWN_AGAIN_MS = 60000;
   var NEARBY_CENTRE_KEY = 'pinalert.nearbyCentre';
   var DEFAULT_BASE = '/api';
 
@@ -86,6 +96,7 @@
   var renderedAt = 0; // Date.now() when it was drawn
   var serverNowAtRender = 0; // the server clock when it was drawn, in ms
   var requestOut = false;
+  var lastLoadAt = 0; // Date.now() when the last request was sent
   var detailCount = 0;
 
   // ---- Times --------------------------------------------------------------
@@ -663,6 +674,7 @@
       return;
     }
     requestOut = true;
+    lastLoadAt = Date.now();
     retryEl.disabled = true;
     showLoading();
     var point = areaSource();
@@ -690,12 +702,80 @@
     });
   }
 
-  retryEl.addEventListener('click', load);
-  setInterval(function () {
-    if (current) {
-      renderStatus(current, Date.now() - renderedAt);
+  // ---- Asking again (Phase 5 review fix CR-B01) ---------------------------
+  //
+  // An answer is only good while it is fresh (UI-SPEC 1b, T-34-17): the page
+  // never keeps "No official alerts in force for your area" or "In force now" up
+  // over an answer older than the server's 30 minute fresh limit. So the minute
+  // tick asks again when a fresh answer reaches that limit, or when a row it
+  // shows has passed its Until time since it was drawn; a stale or unavailable
+  // answer is asked about again every few minutes, so it can recover or move on.
+  // load() hides every block first, so no claim waits for the new answer.
+  // Showing the tab again, or a page restored from the back and forward cache,
+  // asks again when the last request is more than a minute old.
+
+  function rowEndedSinceDrawn(view, elapsedMs) {
+    var now = serverNowAtRender + Math.max(0, elapsedMs);
+    for (var g = 0; g < view.groups.length; g += 1) {
+      var rows = view.groups[g] && view.groups[g].rows;
+      if (!Array.isArray(rows)) {
+        continue;
+      }
+      for (var r = 0; r < rows.length; r += 1) {
+        var end = rows[r] ? Date.parse(rows[r].expires_at) : NaN;
+        if (isFinite(end) && end > serverNowAtRender && end <= now) {
+          return true;
+        }
+      }
     }
-  }, STATUS_TICK_MS);
+    return false;
+  }
+
+  function answerTooOld(view, elapsedMs) {
+    if (view.state !== 'fresh') {
+      return elapsedMs >= RECHECK_NOT_FRESH_MS;
+    }
+    var age = ageOf(view, elapsedMs);
+    if (age === null) {
+      age = Math.max(0, elapsedMs) / 1000;
+    }
+    return age >= FRESH_LIMIT_SECONDS || rowEndedSinceDrawn(view, elapsedMs);
+  }
+
+  function tick() {
+    if (!current) {
+      return;
+    }
+    var elapsed = Date.now() - renderedAt;
+    if (answerTooOld(current, elapsed)) {
+      load();
+      return;
+    }
+    renderStatus(current, elapsed);
+  }
+
+  function askIfOld() {
+    if (Date.now() - lastLoadAt >= SHOWN_AGAIN_MS) {
+      load();
+    }
+  }
+
+  retryEl.addEventListener('click', load);
+  setInterval(tick, STATUS_TICK_MS);
+  if (typeof document.addEventListener === 'function') {
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') {
+        askIfOld();
+      }
+    });
+  }
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('pageshow', function (event) {
+      if (event && event.persisted === true) {
+        askIfOld();
+      }
+    });
+  }
 
   window.PinalertOfficialAlerts = {
     render: render,

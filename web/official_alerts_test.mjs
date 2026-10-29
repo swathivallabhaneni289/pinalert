@@ -144,7 +144,11 @@ function buildPage({ withMarkup = true, account = '7', fixedLat, fixedLon, dataA
     byId: {},
     createElement(tag) { return new FakeEl(doc, tag); },
     getElementById(id) { return doc.byId[id] || null; },
-    addEventListener() {},
+    // Amended 2026-10-29 by the Phase 5 review fix (CR-B01): the document keeps its
+    // listeners and a visibility state, so a case can bring the tab back.
+    listeners: {},
+    visibilityState: 'visible',
+    addEventListener(type, fn) { (doc.listeners[type] = doc.listeners[type] || []).push(fn); },
     querySelector() { return null; }
   };
   const make = (tag, id, parent) => {
@@ -199,9 +203,9 @@ function loadPage(options = {}) {
     for (;;) {
       const due = [...intervals.entries()].filter(([, t]) => t.next <= end).sort((a, b) => a[1].next - b[1].next)[0];
       if (!due) { break; }
-      const [, timer] = due;
+      const [id, timer] = due;
       now = timer.next;
-      timer.next += timer.every;
+      if (timer.once) { intervals.delete(id); } else { timer.next += timer.every; }
       timer.fn();
     }
     now = end;
@@ -229,7 +233,11 @@ function loadPage(options = {}) {
     },
     setInterval(fn, every) { const id = nextId++; intervals.set(id, { fn, every, next: now + every }); return id; },
     clearInterval(id) { intervals.delete(id); },
-    setTimeout(fn) { fn(); return 0; }
+    setTimeout(fn) { fn(); return 0; },
+    // Amended 2026-10-29 by the Phase 5 review fix (CR-B01): the window keeps
+    // its listeners, so a case can restore the page (pageshow).
+    windowListeners: {},
+    addEventListener(type, fn) { (sandbox.windowListeners[type] = sandbox.windowListeners[type] || []).push(fn); }
   };
   if (options.position !== undefined) { sandbox.PinalertPosition = { read() { return options.position; } }; }
   if (options.apiBase !== undefined) { sandbox.PinalertApiBase = options.apiBase; }
@@ -516,9 +524,33 @@ test('the minutes move once a minute with no new request', async () => {
 
 test('the stale sentence keeps its age in step too', async () => {
   const page = await open({}, withRows(staleAt()));
-  page.advance(60 * 60000);
+  // Amended 2026-10-29 by the Phase 5 review fix (CR-B01): a stale answer is now
+  // asked about again every five minutes, so the hour passes with the server
+  // answering each new request with the same stale feed and its own age, as the
+  // real route does. The words at the end of the hour are unchanged.
+  for (let minute = 1; minute <= 60; minute++) {
+    page.advance(60000);
+    await flush();
+    const open = page.requests.filter((r) => !r.done);
+    for (const req of open) {
+      req.done = true;
+      answer(req, 200, withRows({ ...staleAt(), age_seconds: 7200 + minute * 60 }));
+    }
+    await flush();
+  }
+  assert.ok(page.requests.length > 1, 'the stale feed was asked about again');
   assert.equal(el(page, 'official-notice-text').textContent, 'We could not check for alerts since 2:05 pm (3 hours ago).');
   assert.equal(status(page), 'Last checked 3 hours ago');
+});
+
+test('the stale sentence keeps its age in step between two requests', async () => {
+  // Added 2026-10-29 by the Phase 5 review fix (CR-B01): the minute tick still
+  // moves the stale age with no request while the answer is under five minutes old.
+  const page = await open({}, withRows({ state: 'stale', age_seconds: 2000, last_success_at: '2026-10-29T10:00:40Z' }));
+  assert.equal(status(page), 'Last checked 33 minutes ago');
+  page.advance(4 * 60000);
+  assert.equal(status(page), 'Last checked 37 minutes ago');
+  assert.equal(page.requests.length, 1);
 });
 
 test('relative words', () => {
@@ -905,4 +937,99 @@ test('hazard line: the Official alerts page carries the line and the Demo page d
   assert.ok(real.indexOf('id="official-status"') < real.indexOf('id="official-hazard-status"'), 'under the status line');
   assert.ok(real.includes('class="official-status official-status--hazards"'));
   assert.ok(!demo.includes('official-hazard-status'), 'the Demo never draws a GDACS freshness notice');
+});
+
+// ---- The answer never outlives the fresh limit (Phase 5 review fix CR-B01) ----
+// Added 2026-10-29. The page asks the server again once its answer is older
+// than the 30 minute fresh limit, when the tab is shown again, and when a row
+// it shows has ended; the claim never stays up over an answer that is no
+// longer fresh.
+
+const hasClaim = (page) => /no official alerts in force for your area/i.test(visibleText(page.doc.body));
+const hasInForce = (page) => /in force now/i.test(visibleText(page.doc.body));
+const showTab = (page, state = 'visible') => {
+  page.doc.visibilityState = state;
+  (page.doc.listeners.visibilitychange || []).forEach((h) => h({ type: 'visibilitychange' }));
+};
+
+test('CR-B01: a fresh and empty answer is asked again once it reaches the fresh limit', async () => {
+  const page = await open({}, view());
+  assert.ok(hasClaim(page));
+  page.advance(25 * 60000); // age 240 s + 25 min = 1740 s, still fresh
+  await flush();
+  assert.equal(page.requests.length, 1, 'no new request while the answer is fresh');
+  assert.ok(hasClaim(page));
+  page.advance(60000); // age 1800 s: the fresh limit
+  await flush();
+  assert.equal(page.requests.length, 2, 'a second request once the answer reaches 30 minutes');
+  assert.equal(hasClaim(page), false, 'the claim is not kept up while the new answer is out');
+  answer(page.requests[1], 200, view({ age_seconds: 30 }));
+  await flush();
+  assert.ok(hasClaim(page), 'the new fresh answer may say it again');
+});
+
+test('CR-B01: a fresh answer with rows drops In force now at the fresh limit and asks again', async () => {
+  const page = await open({}, withRows());
+  assert.ok(hasInForce(page));
+  for (let i = 0; i < 27; i++) { page.advance(60000); }
+  await flush();
+  assert.equal(page.requests.length, 2);
+  assert.equal(hasInForce(page), false, 'In force now is not kept over an answer past the fresh limit');
+});
+
+test('CR-B01: a stale answer is asked again, at most once every five minutes', async () => {
+  const page = await open({}, view(staleAt()));
+  page.advance(4 * 60000);
+  await flush();
+  assert.equal(page.requests.length, 1, 'no request a minute for a stale feed');
+  page.advance(60000);
+  await flush();
+  assert.equal(page.requests.length, 2, 'asked again after five minutes');
+  answer(page.requests[1], 200, view({ state: 'unavailable', age_seconds: 7500, last_success_at: '2026-10-29T08:35:00Z' }));
+  await flush();
+  assert.ok(shown(page, 'official-unavailable'), 'a stale feed can move on to unavailable');
+});
+
+test('CR-B01: showing the tab again asks again when the answer is older than a minute', async () => {
+  const page = await open({}, view());
+  showTab(page, 'hidden');
+  page.advance(30000);
+  showTab(page);
+  await flush();
+  assert.equal(page.requests.length, 1, 'an answer under a minute old is kept');
+  page.advance(40000);
+  showTab(page, 'hidden');
+  showTab(page);
+  await flush();
+  assert.equal(page.requests.length, 2, 'the tab shown again asks again');
+  assert.equal(hasClaim(page), false);
+});
+
+test('CR-B01: a page restored from the back and forward cache asks again', async () => {
+  const page = await open({}, view());
+  page.advance(5 * 60000);
+  (page.sandbox.windowListeners.pageshow || []).forEach((h) => h({ type: 'pageshow', persisted: false }));
+  await flush();
+  assert.equal(page.requests.length, 1, 'a normal page show is the first load, nothing more');
+  (page.sandbox.windowListeners.pageshow || []).forEach((h) => h({ type: 'pageshow', persisted: true }));
+  await flush();
+  assert.equal(page.requests.length, 2, 'a restored page asks again');
+});
+
+test('CR-B01: a shown row that ends asks again', async () => {
+  // The row ends at 4:20 pm local, sixteen minutes after the clock.
+  const page = await open({}, withRows({ groups: [group('reader', 'Where you are', [row({ expires_at: '2026-10-29T10:50:00Z' })])] }));
+  page.advance(15 * 60000);
+  await flush();
+  assert.equal(page.requests.length, 1);
+  page.advance(2 * 60000);
+  await flush();
+  assert.equal(page.requests.length, 2, 'a row past its Until time is asked about again');
+});
+
+test('CR-B01: a row that had ended before the answer does not ask every minute', async () => {
+  const page = await open({}, withRows({ groups: [group('reader', 'Where you are', [row({ expires_at: '2026-10-29T10:00:00Z' })])] }));
+  for (let i = 0; i < 5; i++) { page.advance(60000); }
+  await flush();
+  assert.equal(page.requests.length, 1);
 });
