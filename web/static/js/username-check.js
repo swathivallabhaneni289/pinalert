@@ -28,7 +28,9 @@
 //
 // What it does while a person types:
 //   - capitals become lowercase, a typed leading @ is dropped (the page draws its
-//     own @ beside the input), and spaces round the value are removed;
+//     own @ beside the input), and spaces round the value are removed; the caret
+//     stays where the person was typing, and a paste is folded before the
+//     field's own cut at its maxlength;
 //   - the local rule shows at once and asks nothing: 3 to 20 letters, numbers,
 //     dots or underscores, at least one letter, no full stop at the start or the
 //     end, no two in a row (the server is the authority; this only saves a trip);
@@ -257,15 +259,72 @@
       });
     }
 
+    // caretOf is where the caret is while the person is in the input, or null
+    // (not focused, or a browser that does not say).
+    function caretOf() {
+      var doc = input.ownerDocument;
+      if (!doc || doc.activeElement !== input || typeof input.selectionStart !== 'number' ||
+          typeof input.setSelectionRange !== 'function') {
+        return null;
+      }
+      return input.selectionStart;
+    }
+
+    function placeCaret(at) {
+      try {
+        input.setSelectionRange(at, at);
+      } catch (err) {
+        // The caret stays where the browser put it.
+      }
+    }
+
+    // onPaste folds what is pasted before the field's own cut at maxlength, so a
+    // pasted "@ravi.kumar_12345678" keeps every letter of the name. The pasted
+    // text loses its own spaces round it and its leading @, goes where the caret
+    // is, and the whole value is folded, cut and judged (review fix IN-B04).
+    function onPaste(e) {
+      var data = e && e.clipboardData;
+      var pasted = data && typeof data.getData === 'function' ? data.getData('text') : '';
+      if (!pasted) {
+        return;
+      }
+      e.preventDefault();
+      pasted = String(pasted).replace(/^\s+|\s+$/g, '').replace(/^@+/, '');
+      var value = String(input.value === null || input.value === undefined ? '' : input.value);
+      var start = typeof input.selectionStart === 'number' ? input.selectionStart : value.length;
+      var end = typeof input.selectionEnd === 'number' ? input.selectionEnd : start;
+      var head = value.slice(0, start) + pasted;
+      var max = typeof input.getAttribute === 'function' ? parseInt(input.getAttribute('maxlength'), 10) : NaN;
+      var next = fold(head + value.slice(end));
+      if (max > 0) {
+        next = next.slice(0, max);
+      }
+      input.value = next;
+      var caret = Math.min(fold(head).length, next.length);
+      if (typeof input.setSelectionRange === 'function') {
+        placeCaret(caret);
+      }
+      judge();
+    }
+
     // judge looks at the value in the input: folds it, shows the local rule, or
     // shows Checking and starts the pause before the request.
     function judge() {
       seq += 1;
       retries = 0;
       cancelPending();
-      var folded = fold(input.value);
-      if (input.value !== folded) {
+      var raw = String(input.value === null || input.value === undefined ? '' : input.value);
+      var folded = fold(raw);
+      if (raw !== folded) {
+        // Writing the value puts the caret at the end, so a capital typed in the
+        // middle would send it there; it goes back where it was, less what the
+        // fold dropped in front of it (review fix IN-B04).
+        var caret = caretOf();
         input.value = folded;
+        if (caret !== null) {
+          var dropped = raw.length - raw.replace(/^\s+/, '').replace(/^@+/, '').length;
+          placeCaret(Math.max(0, Math.min(folded.length, caret - dropped)));
+        }
       }
       if (folded === '') {
         show('rule', RULE_MESSAGE);
@@ -312,6 +371,7 @@
     };
 
     input.addEventListener('input', judge);
+    input.addEventListener('paste', onPaste);
     // A press anywhere in the box, the @ included, puts the cursor in the input.
     var box = input.parentNode;
     if (box && typeof box.addEventListener === 'function' && (' ' + String(box.className) + ' ').indexOf(' username-field ') !== -1) {

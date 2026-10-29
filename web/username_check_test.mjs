@@ -372,6 +372,94 @@ test('a value already in the field when the script attaches is checked without a
   assert.equal(timers[0].ms, 300);
 });
 
+// Phase 7.1 review fix (browser), IN-B04: folding while typing keeps the caret
+// where the person was typing, and a paste is folded before the field's own cut
+// at 20, so a pasted "@name" keeps every letter of the name.
+class CaretInput extends FakeInput {
+  constructor(doc) {
+    super();
+    this.ownerDocument = doc;
+    this.selectionStart = 0;
+    this.selectionEnd = 0;
+    this.attrs.maxlength = '20';
+  }
+  setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; }
+  focus() { this.ownerDocument.activeElement = this; }
+  typeAt(text, caret) {
+    this.value = text;
+    this.selectionStart = caret;
+    this.selectionEnd = caret;
+    (this.handlers.input || []).forEach((h) => h({ type: 'input', target: this }));
+  }
+  paste(text) {
+    const event = {
+      type: 'paste',
+      prevented: false,
+      preventDefault() { this.prevented = true; },
+      clipboardData: { getData: (kind) => (kind === 'text' || kind === 'text/plain' ? text : '') }
+    };
+    (this.handlers.paste || []).forEach((h) => h(event));
+    return event;
+  }
+}
+
+function caretSetup() {
+  const sandbox = { console };
+  sandbox.window = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(source, sandbox, { filename: 'username-check.js' });
+  const doc = { activeElement: null };
+  const input = new CaretInput(doc);
+  const line = new FakeLine();
+  const requests = [];
+  const control = sandbox.PinalertUsernameCheck.attach(input, line, {
+    setTimer() { return 1; },
+    clearTimer() {},
+    fetchFn(target) { requests.push(String(target)); return new Promise(() => {}); }
+  });
+  input.focus();
+  return { input, line, control, requests };
+}
+
+test('IN-B04: a capital typed in the middle keeps the caret there; a dropped @ moves it back one', () => {
+  const page = caretSetup();
+  page.input.typeAt('raVi', 3);
+  assert.equal(page.input.value, 'ravi');
+  assert.equal(page.input.selectionStart, 3);
+  assert.equal(page.input.selectionEnd, 3);
+
+  page.input.typeAt('@ravi', 5);
+  assert.equal(page.input.value, 'ravi');
+  assert.equal(page.input.selectionStart, 4);
+
+  page.input.typeAt(' Ra', 1);
+  assert.equal(page.input.value, 'ra');
+  assert.equal(page.input.selectionStart, 0);
+});
+
+test('IN-B04: a pasted "@name" of 21 characters keeps all 19 letters of the name', () => {
+  const page = caretSetup();
+  const event = page.input.paste('@Ravi.Kumar_12345678');
+  assert.equal(event.prevented, true, 'the browser does not cut the paste first');
+  assert.equal(page.input.value, 'ravi.kumar_12345678');
+  assert.equal(page.input.selectionStart, 19);
+  assert.equal(page.control.state(), 'checking', 'the pasted name is judged');
+
+  const long = caretSetup();
+  long.input.paste('abcdefghijklmnopqrstuvwxyz');
+  assert.equal(long.input.value, 'abcdefghijklmnopqrst', 'cut to 20 after folding');
+
+  const inside = caretSetup();
+  inside.input.typeAt('ravi', 2);
+  inside.input.paste('@XY');
+  assert.equal(inside.input.value, 'raxyvi', 'pasted where the caret is; the @ inside a name is not a leading @');
+  assert.equal(inside.input.selectionStart, 4);
+
+  const empty = caretSetup();
+  const nothing = empty.input.paste('');
+  assert.equal(nothing.prevented, false, 'an empty paste is left to the browser');
+});
+
 // Phase 7.1 review fix (browser), WR-B03: a check refused by the per account
 // allowance (429) is asked again by itself after the wait the server names, and
 // a check WebKit leaves unsettled ends as failed after 10 s, so neither leaves
