@@ -10,6 +10,127 @@ import (
 	"time"
 )
 
+const activeFollowsAmong = `-- name: ActiveFollowsAmong :many
+SELECT followee_id
+FROM account_follows
+WHERE follower_id = $1::bigint
+  AND followee_id = ANY($2::bigint[])
+  AND ended_at IS NULL
+`
+
+type ActiveFollowsAmongParams struct {
+	FollowerID  int64
+	FolloweeIds []int64
+}
+
+// Which of these people the follower still follows (active rows only, D-21).
+// The bell reads it once per list to decide whether an old follow note may
+// still name its person (plan 09-22). It does not look at the Notify me flag:
+// a follow that is still on stays readable after the bell is switched off.
+func (q *Queries) ActiveFollowsAmong(ctx context.Context, arg ActiveFollowsAmongParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, activeFollowsAmong, arg.FollowerID, arg.FolloweeIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var followee_id int64
+		if err := rows.Scan(&followee_id); err != nil {
+			return nil, err
+		}
+		items = append(items, followee_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const followedLiveCandidates = `-- name: FollowedLiveCandidates :many
+SELECT r.id, r.category, r.severity, r.description, r.latitude, r.longitude, r.geohash,
+       r.shelter_capacity_status, r.shelter_headcount, r.created_at, r.expires_at,
+       r.area_name, s.account_id::bigint AS reporter_account_id
+FROM reports r
+JOIN sessions s ON s.session_id = r.session_id
+WHERE s.account_id = ANY($1::bigint[])
+  AND r.expires_at > $2::timestamptz
+  AND r.created_at > $3::timestamptz
+ORDER BY r.created_at DESC, r.id DESC
+LIMIT $4::int
+`
+
+type FollowedLiveCandidatesParams struct {
+	AccountIds []int64
+	Now        time.Time
+	Since      time.Time
+	RowLimit   int32
+}
+
+type FollowedLiveCandidatesRow struct {
+	ID                    int64
+	Category              string
+	Severity              string
+	Description           string
+	Latitude              float64
+	Longitude             float64
+	Geohash               string
+	ShelterCapacityStatus *string
+	ShelterHeadcount      *int32
+	CreatedAt             time.Time
+	ExpiresAt             time.Time
+	AreaName              *string
+	ReporterAccountID     int64
+}
+
+// The candidates behind the follow note (plan 09-22, D-09): the reports filed
+// from any session of the given accounts that have not expired at now and were
+// created after since, newest first, at most row_limit. The columns are those
+// of ProfileReportCandidates plus the reporter's account id. since is the
+// earliest Notify me time of the people asked about; the service keeps a report
+// only when it is newer than its own reporter's time, and decides in Go,
+// through classify, whether it is listable, so there is no moderation, vote or
+// view predicate here. now is a parameter, never the database clock, so the
+// service's one instant is the one that judges expiry.
+func (q *Queries) FollowedLiveCandidates(ctx context.Context, arg FollowedLiveCandidatesParams) ([]FollowedLiveCandidatesRow, error) {
+	rows, err := q.db.Query(ctx, followedLiveCandidates,
+		arg.AccountIds,
+		arg.Now,
+		arg.Since,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FollowedLiveCandidatesRow
+	for rows.Next() {
+		var i FollowedLiveCandidatesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Category,
+			&i.Severity,
+			&i.Description,
+			&i.Latitude,
+			&i.Longitude,
+			&i.Geohash,
+			&i.ShelterCapacityStatus,
+			&i.ShelterHeadcount,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.AreaName,
+			&i.ReporterAccountID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const profileReportCandidates = `-- name: ProfileReportCandidates :many
 SELECT r.id, r.category, r.severity, r.description, r.latitude, r.longitude, r.geohash,
        r.shelter_capacity_status, r.shelter_headcount, r.created_at, r.expires_at,

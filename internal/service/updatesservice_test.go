@@ -180,6 +180,30 @@ func (f *fakeUpdatesQuerier) MutedPeopleIDs(_ context.Context, _ int64) ([]int64
 	return nil, nil
 }
 
+// Amended 2026-10-29 by Phase 9 plan 22 (D-09): the fake gained the five reads of
+// the follow note. Each answers nothing and records nothing, so no existing call
+// order assertion changes; the tests of the follow note use followFake
+// (updatesfollow_test.go), which overrides them.
+func (f *fakeUpdatesQuerier) NotifyFollowsFor(_ context.Context, _ sqlcgen.NotifyFollowsForParams) ([]sqlcgen.NotifyFollowsForRow, error) {
+	return nil, nil
+}
+
+func (f *fakeUpdatesQuerier) FolloweeStanding(_ context.Context, _ []int64) ([]sqlcgen.FolloweeStandingRow, error) {
+	return nil, nil
+}
+
+func (f *fakeUpdatesQuerier) InsertFollowedPostedAlert(_ context.Context, _ sqlcgen.InsertFollowedPostedAlertParams) (int64, error) {
+	return 0, pgx.ErrNoRows
+}
+
+func (f *fakeUpdatesQuerier) PublicProfilePathsForViewer(_ context.Context, _ sqlcgen.PublicProfilePathsForViewerParams) ([]sqlcgen.PublicProfilePathsForViewerRow, error) {
+	return nil, nil
+}
+
+func (f *fakeUpdatesQuerier) ActiveFollowsAmong(_ context.Context, _ sqlcgen.ActiveFollowsAmongParams) ([]int64, error) {
+	return nil, nil
+}
+
 // newTestUpdatesService builds a service over q with the clock pinned.
 func newTestUpdatesService(q UpdatesQuerier) *UpdatesService {
 	return NewUpdatesService(q, nil, WithUpdatesClock(func() time.Time { return updatesNow }))

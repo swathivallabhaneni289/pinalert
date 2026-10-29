@@ -39,7 +39,8 @@ import (
 //     own, not one the reader follows or muted, not one by a person the reader
 //     muted (person_mutes, read once per refresh through MutedPeopleIDs, plan
 //     09-18, D-12), and it was posted after the
-//     switch went on.
+//     switch went on, and it is not one the follow note step wrote a note for
+//     in this same Refresh (followNoted, plan 09-22).
 //  4. Read the reporter accounts of the survivors once. For each, oldest report
 //     first: skip it when this reader already got ReliableAlertsPerReporterPerHour
 //     alert from that reporter in the last hour, otherwise write it. A reporter
@@ -62,7 +63,7 @@ import (
 // this rule reaches push (ROADMAP 3.2 scope note 2). The per reporter cap and
 // the Not confirmed yet wording soften it for the in app bell only; since the
 // 2026-10-18 amendment this also covers non critical reports at posting.
-func (s *UpdatesService) refreshReliableAlerts(ctx context.Context, accountID int64, now time.Time) error {
+func (s *UpdatesService) refreshReliableAlerts(ctx context.Context, accountID int64, now time.Time, followNoted map[int64]struct{}) error {
 	if s.reports == nil {
 		return nil
 	}
@@ -142,6 +143,14 @@ func (s *UpdatesService) refreshReliableAlerts(ctx context.Context, accountID in
 			continue
 		}
 		if v.CreatedAt.Before(enabledAt) {
+			continue
+		}
+		// Follow wins the one first alert slot (plan 09-22, D-09, review W3): skip
+		// exactly the reports the follow note step wrote in this same Refresh. A
+		// report whose follow note was not written, for example over the hourly
+		// ceiling, is not skipped, so the reader can still hear about it here. A
+		// race that writes both is stopped by the shared unique index.
+		if _, noted := followNoted[v.ID]; noted {
 			continue
 		}
 		candidates = append(candidates, v)
