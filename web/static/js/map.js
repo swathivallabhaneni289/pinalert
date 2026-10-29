@@ -1290,6 +1290,9 @@ window.PinalertMap = (function () {
     card.privacy.hidden = !approximate;
 
     PinalertTrust.updateTrustCard(card.trust, report.trust);
+    // The server's profile path for this report, drawn as the last line of the
+    // card and removed when a later read no longer sends it (plan 09-09, D-04).
+    PinalertTrust.setProfileLink(card.trust, report.reporter_profile_path);
     PinalertVotes.updateVoteBlock(card.votes, report);
     if (card.mute && window.PinalertMute) {
       PinalertMute.updateMuteControl(card.mute, report);

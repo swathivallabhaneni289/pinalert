@@ -107,6 +107,9 @@
       body.appendChild(PinalertTrust.createStateLine('report-row__stateline', tag, trustBlock));
       body.appendChild(trustBlock.el);
       PinalertTrust.updateTrustBlock(trustBlock, readRowTrust(row));
+      // The reporter's profile path, when the server wrote one on the card: the
+      // last line of the explanation panel (plan 09-09, D-04).
+      PinalertTrust.setProfileLink(trustBlock, row.dataset.reporterProfilePath);
       trustBlocks[row.dataset.reportId] = trustBlock;
     } else if (body) {
       // A held or removed row has no trust block. The state label goes in front

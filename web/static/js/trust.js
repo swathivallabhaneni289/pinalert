@@ -42,6 +42,14 @@
   ];
   var REPORTER_TAGS = ['reliable', 'mixed', 'unreliable', 'new', 'none'];
 
+  // The profile row of plan 09-09: the one shape of path setProfileLink draws,
+  // /u/{username}. A username is lowercase letters, digits, underscore and dot
+  // and starts with a letter or a digit; the length limit is the server's rule
+  // and this file keeps no number of its own. The words are the one copy this
+  // module owns, with no number or date in them.
+  var PROFILE_PATH = /^\/u\/[a-z\d][a-z\d_.][a-z\d_.]+$/;
+  var PROFILE_LINK_WORDS = 'See this reporter';
+
   // The kinds of fact row in the server's order, which is also the order of
   // the slots the list builds, and the tones a row can carry (A89).
   var FACT_KINDS = ['status', 'confirmations', 'disputes', 'currency', 'reporter'];
@@ -802,6 +810,50 @@
     return true;
   }
 
+  // setProfileLink draws or removes the profile row, the last line of a block's
+  // explanation panel or of the popup card (plan 09-09, D-04, UI-SPEC 7d). It
+  // is never on the face of the block. An empty or missing path removes the row,
+  // and a path that is not of the shape PROFILE_PATH draws nothing. Text goes
+  // through setText, and the row is a link the stylesheet draws.
+  function setProfileLink(target, path) {
+    if (!target) {
+      return;
+    }
+    var host = target.panel || target.el;
+    if (!host) {
+      return;
+    }
+    if (target.profileLink) {
+      target.profileLink.remove();
+      target.profileLink = null;
+    }
+    if (typeof path !== 'string' || !PROFILE_PATH.test(path)) {
+      return;
+    }
+    var link = document.createElement('a');
+    link.className = 'trust-panel__profile';
+    link.setAttribute('href', path);
+
+    var words = document.createElement('span');
+    words.className = 'trust-panel__profile-words';
+    Pinalert.setText(words, PROFILE_LINK_WORDS);
+
+    // The username follows the visible words for the accessible name only.
+    var name = document.createElement('span');
+    name.className = 'visually-hidden';
+    Pinalert.setText(name, ' ' + path.replace(/^\/u\//, ''));
+
+    var chevron = document.createElement('span');
+    chevron.className = 'trust-panel__profile-chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+
+    link.appendChild(words);
+    link.appendChild(name);
+    link.appendChild(chevron);
+    host.appendChild(link);
+    target.profileLink = link;
+  }
+
   // The one capture phase key listener for the whole page (A23).
   document.addEventListener('keydown', onDocumentEscape, true);
 
@@ -815,6 +867,7 @@
     updateTrustLine: updateTrustLine,
     updateTrustBlock: updateTrustBlock,
     updateTrustCard: updateTrustCard,
+    setProfileLink: setProfileLink,
     fadeStage: fadeStage,
     focusToggle: focusToggle
   };
