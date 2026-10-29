@@ -43,6 +43,10 @@ func settingsSectionRegion(t *testing.T, page, titleID string) string {
 // (Following, Followers, Muted reports, Blocked people). The Muted reports row
 // checks are unchanged, and no row carries a second line. The order of the rows
 // is pinned by TestPeopleAndReportsRowOrder.
+//
+// Amended 2026-10-29 by Phase 9 plan 20 (D-12, UI-SPEC Defaults 7): a fifth
+// button row, Muted people, sits after Muted reports. Every other assertion is
+// unchanged.
 func TestPeopleAndReportsSection(t *testing.T) {
 	page := p421ReadTemplate(t, "settings.html.tmpl")
 	region := settingsSectionRegion(t, page, "settings-people-title")
@@ -58,8 +62,8 @@ func TestPeopleAndReportsSection(t *testing.T) {
 			t.Errorf("the People and reports section lacks %q", want)
 		}
 	}
-	if got := strings.Count(region, `class="place-row"`); got != 4 {
-		t.Errorf("the People and reports section has %d button rows, want exactly 4 (Following, Followers, Muted reports, Blocked people)", got)
+	if got := strings.Count(region, `class="place-row"`); got != 5 {
+		t.Errorf("the People and reports section has %d button rows, want exactly 5 (Following, Followers, Muted reports, Muted people, Blocked people)", got)
 	}
 	// No second line under any row: a simple option carries no hint text.
 	if strings.Contains(region, "place-row__sub") {
@@ -72,8 +76,15 @@ func TestPeopleAndReportsSection(t *testing.T) {
 // row (a label around a native checkbox with role switch, the whole row the
 // label, no second line), Following, Followers, Muted reports and Blocked people.
 // Following, Followers and Blocked people are button rows with a count and a
-// chevron that open a dialog; the inline error sits under the box. Muted people
-// is a later plan and is not drawn, and no switch for posts from people you follow exists here (D-11).
+// chevron that open a dialog; the inline error sits under the box. No switch for
+// posts from people you follow exists here (D-11).
+//
+// Amended 2026-10-29 by Phase 9 plan 20 (D-12, UI-SPEC Defaults 7): the order
+// becomes Let others follow me, Following, Followers, Muted reports, Muted
+// people, Blocked people. Muted people is a button row with a count and a
+// chevron that opens the dialog, so five chevrons are drawn, and the words
+// "Muted people" are no longer banned (only "Someone I follow" is). Every other
+// assertion is unchanged.
 func TestPeopleAndReportsRowOrder(t *testing.T) {
 	page := p421ReadTemplate(t, "settings.html.tmpl")
 	region := settingsSectionRegion(t, page, "settings-people-title")
@@ -90,6 +101,9 @@ func TestPeopleAndReportsRowOrder(t *testing.T) {
 		`id="settings-muted-row"`,
 		`<span class="place-row__label">Muted reports</span>`,
 		`id="settings-muted-value">{{.MutedCount}}</span>`,
+		`id="settings-muted-people-row"`,
+		`<span class="place-row__label">Muted people</span>`,
+		`id="settings-muted-people-value">{{.MutedPeopleCount}}</span>`,
 		`id="settings-blocked-row"`,
 		`<span class="place-row__label">Blocked people</span>`,
 		`id="settings-blocked-value">{{.BlockedCount}}</span>`,
@@ -104,16 +118,21 @@ func TestPeopleAndReportsRowOrder(t *testing.T) {
 	if strings.Contains(switchRow, "place-row__sub") || strings.Contains(switchRow, "app-icon--chevron-right") {
 		t.Errorf("the Let others follow me row carries a second line or a chevron")
 	}
-	for _, id := range []string{"settings-following-row", "settings-followers-row", "settings-blocked-row"} {
+	for _, id := range []string{"settings-following-row", "settings-followers-row", "settings-muted-people-row", "settings-blocked-row"} {
 		row := regexp.MustCompile(`<button type="button" class="place-row" id="` + id + `" aria-haspopup="dialog"[^>]*>`).FindString(region)
 		if row == "" {
 			t.Errorf("%s is not a button row that opens a dialog", id)
 		}
 	}
-	if got := strings.Count(region, "app-icon--chevron-right"); got != 4 {
-		t.Errorf("the People and reports section draws %d chevrons, want 4 (Following, Followers, Muted reports, Blocked people)", got)
+	if got := strings.Count(region, "app-icon--chevron-right"); got != 5 {
+		t.Errorf("the People and reports section draws %d chevrons, want 5 (Following, Followers, Muted reports, Muted people, Blocked people)", got)
 	}
-	for _, banned := range []string{"Muted people", "Someone I follow"} {
+	// The Muted people row has no second line (no hint text under a simple option).
+	mutedRow := region[strings.Index(region, `id="settings-muted-people-row"`):strings.Index(region, `id="settings-blocked-row"`)]
+	if strings.Contains(mutedRow, "place-row__sub") {
+		t.Errorf("the Muted people row carries a second line")
+	}
+	for _, banned := range []string{"Someone I follow"} {
 		if strings.Contains(region, banned) {
 			t.Errorf("the People and reports section holds %q", banned)
 		}

@@ -78,6 +78,10 @@ type settingsViewModel struct {
 	FollowersCount int
 	BlockedCount   int
 	MyUsername     string
+	// MutedPeopleCount is how many people the caller muted (Phase 9 plan 20, D-12),
+	// for the Muted people row. It can exceed the list by the people whose new
+	// username is still pending, as the Blocked people count does.
+	MutedPeopleCount int
 }
 
 // SettingsPage handles GET /settings: the one Settings page (Phase 3.4, D-25,
@@ -125,10 +129,15 @@ func SettingsPage(tmpl *template.Template, accounts *service.AccountService, mut
 		// count: a switch drawn off when it is on would hide that others can follow.
 		var own service.OwnProfileState
 		var counts service.PeopleCounts
+		mutedPeopleCount := 0
 		if people != nil {
 			own, err = people.MyProfileState(r.Context(), acc.ID)
 			if err == nil {
 				counts, err = people.Counts(r.Context(), acc.ID)
+			}
+			if err == nil {
+				// Phase 9 plan 20 (D-12): the Muted people count, read the same way.
+				mutedPeopleCount, err = people.MutedPeopleCount(r.Context(), acc.ID)
 			}
 			if err != nil {
 				log.Printf("handlers: SettingsPage: %v", err)
@@ -149,16 +158,17 @@ func SettingsPage(tmpl *template.Template, accounts *service.AccountService, mut
 
 		chrome := cfg.Chrome.withDefaults()
 		vm := settingsViewModel{
-			AlertsOn:       alerts.ReliableAlertsOn,
-			AlertRadiusKm:  alerts.AlertRadiusKm,
-			HasHomeArea:    alerts.HasHomeArea,
-			AlertRadii:     service.AlertRadii,
-			MutedCount:     mutedCount,
-			ProfilePublic:  own.ProfilePublic,
-			MyUsername:     own.Username,
-			FollowingCount: counts.Following,
-			FollowersCount: counts.Followers,
-			BlockedCount:   counts.Blocked,
+			AlertsOn:         alerts.ReliableAlertsOn,
+			AlertRadiusKm:    alerts.AlertRadiusKm,
+			HasHomeArea:      alerts.HasHomeArea,
+			AlertRadii:       service.AlertRadii,
+			MutedCount:       mutedCount,
+			ProfilePublic:    own.ProfilePublic,
+			MyUsername:       own.Username,
+			FollowingCount:   counts.Following,
+			FollowersCount:   counts.Followers,
+			BlockedCount:     counts.Blocked,
+			MutedPeopleCount: mutedPeopleCount,
 			// Plan 14 draws these; see the field comments. Booleans and the public
 			// key only.
 			CriticalPushOn: alerts.CriticalPushOn,

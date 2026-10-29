@@ -211,6 +211,14 @@
           <span class="place-row__value" id="settings-muted-value">{{.MutedCount}}</span>
           <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
         </button>
+        {{/* Phase 9 plan 20 (D-12, UI-SPEC 7a row 5): Muted people, right after Muted reports and before Blocked people. It opens the shared list window with kind muted, where each row names the person and has an Unmute button. */}}
+        <button type="button" class="place-row" id="settings-muted-people-row" aria-haspopup="dialog" data-kind="muted">
+          <span class="place-row__text">
+            <span class="place-row__label">Muted people</span>
+          </span>
+          <span class="place-row__value" id="settings-muted-people-value">{{.MutedPeopleCount}}</span>
+          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+        </button>
         <button type="button" class="place-row" id="settings-blocked-row" aria-haspopup="dialog" data-kind="blocked">
           <span class="place-row__text">
             <span class="place-row__label">Blocked people</span>

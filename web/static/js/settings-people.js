@@ -14,9 +14,12 @@
 //     off saves. With nobody following it turns off at once. The box closes only
 //     through its two buttons and Escape (which is Cancel), never by a tap on
 //     the dim page.
-//   - The Following, Followers and Blocked people rows open the shared list
-//     window (people-list.js) with own true. After the list changed something
-//     the row's count is read again from the server.
+//   - The Following, Followers, Muted people and Blocked people rows open the
+//     shared list window (people-list.js) with own true. After the list changed
+//     something the row's count is read again from the server, or, for Muted
+//     people (plan 20, D-12), taken down by one for the one Unmute that was done
+//     (the count can exceed the list by the people whose new username is pending,
+//     so reading the list length would lose them).
 //
 // A separate file from settings.js and settings-alerts.js on purpose, so both
 // stay as built. It is self contained: it needs only the ids settings.html.tmpl
@@ -25,7 +28,8 @@
 //
 // SECURITY (T-09-46): textContent only, no markup sink of any kind. The only
 // addresses it sends to are /api/me/visibility, /api/me/blocked and
-// /api/people/ plus the encoded username the server wrote into the page.
+// /api/people/ plus the encoded username the server wrote into the page. The
+// Muted people list is read and changed by people-list.js, not here.
 window.PinalertSettingsPeople = (function () {
   'use strict';
 
@@ -39,6 +43,10 @@ window.PinalertSettingsPeople = (function () {
   var followingValue = document.getElementById('settings-following-value');
   var followersValue = document.getElementById('settings-followers-value');
   var blockedValue = document.getElementById('settings-blocked-value');
+  // The Muted people row (plan 20). It is optional here so a page drawn without
+  // it still gets the other rows.
+  var mutedPeopleRow = document.getElementById('settings-muted-people-row');
+  var mutedPeopleValue = document.getElementById('settings-muted-people-value');
   var offGo = document.getElementById('settings-profile-off-go');
   var offCancel = document.getElementById('settings-profile-off-cancel');
   var offTitle = document.getElementById('settings-profile-off-title');
@@ -274,6 +282,15 @@ window.PinalertSettingsPeople = (function () {
     function get(url) {
       return request(url, { method: 'GET', credentials: 'same-origin', headers: { Accept: 'application/json' } });
     }
+    if (kind === 'muted') {
+      // One Unmute was done in the window. Take the shown count down by one and
+      // never below zero.
+      var shown = parseInt(mutedPeopleValue ? mutedPeopleValue.textContent : '0', 10);
+      if (mutedPeopleValue) {
+        setText(mutedPeopleValue, isNaN(shown) || shown < 1 ? 0 : shown - 1);
+      }
+      return Promise.resolve();
+    }
     if (kind === 'blocked') {
       return get(BLOCKED_URL).then(function (answer) {
         if (answer.ok && answer.body && Array.isArray(answer.body.entries)) {
@@ -306,12 +323,13 @@ window.PinalertSettingsPeople = (function () {
     if (!lists || typeof lists.open !== 'function') {
       return;
     }
-    if (kind !== 'blocked' && username === '') {
+    var mine = kind === 'blocked' || kind === 'muted';
+    if (!mine && username === '') {
       return;
     }
     lists.open({
       kind: kind,
-      username: kind === 'blocked' ? '' : username,
+      username: mine ? '' : username,
       own: true,
       opener: opener,
       onChange: function () { refreshCounts(kind); }
@@ -320,6 +338,9 @@ window.PinalertSettingsPeople = (function () {
 
   followingRow.addEventListener('click', function () { openList('following', followingRow); });
   followersRow.addEventListener('click', function () { openList('followers', followersRow); });
+  if (mutedPeopleRow) {
+    mutedPeopleRow.addEventListener('click', function () { openList('muted', mutedPeopleRow); });
+  }
   blockedRow.addEventListener('click', function () { openList('blocked', blockedRow); });
 
   return {

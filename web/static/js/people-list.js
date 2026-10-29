@@ -1,9 +1,11 @@
 // people-list.js - window.PinalertPeopleList: the one list window of Followers,
-// Following and Blocked people (Phase 9 plan 11, D-03, UI-SPEC Surface 4).
+// Following, Muted people and Blocked people (Phase 9 plan 11, D-03, UI-SPEC
+// Surface 4; the muted kind is plan 20, D-12).
 //
 // open({kind, username, own, opener, onChange}) opens the window for one list:
-//   kind     'followers', 'following' or 'blocked';
-//   username the profile whose list it is (empty for 'blocked', which is yours);
+//   kind     'followers', 'following', 'muted' or 'blocked';
+//   username the profile whose list it is (empty for 'muted' and 'blocked', which
+//            are yours);
 //   own      true on your own profile;
 //   opener   the control that opened it, which gets focus back when it closes;
 //   onChange a function called after the list changed the profile, for example
@@ -16,7 +18,8 @@
 //
 // The window is closed only by its X and Escape (Escape closes the confirm box
 // first when it is open). The page behind it is inert while it is open. Blocked
-// rows carry an outlined Unblock button and no link.
+// and Muted rows carry an outlined Unblock or Unmute button and no link, and
+// always show the username (a muted person may have gone private since).
 //
 // SECURITY (T-09-41, T-09-42): every word reaches the page through textContent,
 // every node comes from createElement, and an address is built only from a
@@ -27,15 +30,25 @@ window.PinalertPeopleList = (function () {
   var REQUEST_TIMEOUT_MS = 10000;
   var PEOPLE_URL = '/api/people/';
   var BLOCKED_URL = '/api/me/blocked';
+  var MUTED_URL = '/api/me/muted-people';
   var REMOVE_ALL_URL = '/api/me/followers/remove-all';
 
   var TITLES = {
     followers: 'Followers',
     following: 'Following',
+    muted: 'Muted people',
     blocked: 'Blocked people'
   };
   var MESSAGE_OFFLINE = 'You\'re offline, so this wasn\'t saved. Try again when you have a signal.';
   var UNBLOCK_FAILED = 'Couldn\'t unblock. Try again.';
+  var UNMUTE_FAILED = 'Couldn\'t unmute. Try again.';
+  // The two lists whose rows are plain (no link) and end in an outlined button
+  // that undoes the action at once (UI-SPEC 4b). Both share one row and one
+  // focus routine.
+  var UNDO = {
+    blocked: { path: '/unblock', button: 'Unblock', done: ' is unblocked.', failed: UNBLOCK_FAILED },
+    muted: { path: '/unmute', button: 'Unmute', done: ' is unmuted.', failed: UNMUTE_FAILED }
+  };
   var REMOVE_ALL_FAILED = 'Couldn\'t remove followers. Try again.';
 
   var els = null;
@@ -82,6 +95,9 @@ window.PinalertPeopleList = (function () {
       return own
         ? { title: 'You are not following anyone', line: 'People you follow show here.' }
         : { title: 'Not following anyone', line: subject + ' does not follow anyone yet.' };
+    }
+    if (kind === 'muted') {
+      return { title: 'No muted people', line: 'People you mute show here, with a way to unmute them.' };
     }
     return { title: 'No blocked people', line: 'People you block show here, with a way to unblock them.' };
   }
@@ -176,9 +192,14 @@ window.PinalertPeopleList = (function () {
   }
 
   function listUrl(after) {
-    var base = kind === 'blocked'
-      ? BLOCKED_URL
-      : PEOPLE_URL + encodeURIComponent(subject) + '/' + kind;
+    var base;
+    if (kind === 'blocked') {
+      base = BLOCKED_URL;
+    } else if (kind === 'muted') {
+      base = MUTED_URL;
+    } else {
+      base = PEOPLE_URL + encodeURIComponent(subject) + '/' + kind;
+    }
     return after ? base + '?after=' + encodeURIComponent(after) : base;
   }
 
@@ -252,8 +273,10 @@ window.PinalertPeopleList = (function () {
     return li;
   }
 
-  // blockedRow has no link: the username and an outlined Unblock button.
-  function blockedRow(name) {
+  // undoRow has no link: the username and an outlined Unblock or Unmute button,
+  // the word following the list it is drawn in.
+  function undoRow(name) {
+    var undo = UNDO[kind];
     var li = document.createElement('li');
     li.className = 'people-row people-row--plain';
     li.setAttribute('data-username', name);
@@ -262,8 +285,8 @@ window.PinalertPeopleList = (function () {
     var button = document.createElement('button');
     button.type = 'button';
     button.className = 'btn people-row__action';
-    setText(button, 'Unblock');
-    button.addEventListener('click', function () { unblock(name, li, button); });
+    setText(button, undo.button);
+    button.addEventListener('click', function () { undoOne(undo, name, li, button); });
     li.appendChild(button);
     return li;
   }
@@ -274,7 +297,7 @@ window.PinalertPeopleList = (function () {
       if (name === '') {
         continue;
       }
-      els.rows.appendChild(kind === 'blocked' ? blockedRow(name) : namedRow(name));
+      els.rows.appendChild(UNDO[kind] ? undoRow(name) : namedRow(name));
     }
   }
 
@@ -366,9 +389,12 @@ window.PinalertPeopleList = (function () {
     }
   }
 
-  // ---- Unblock --------------------------------------------------------------------
+  // ---- Unblock and Unmute ---------------------------------------------------------
 
-  function unblock(name, li, button) {
+  // undoOne sends the undo of one row (unblock or unmute, no confirmation),
+  // removes the row, says the status line and moves focus to the next row's
+  // button, or to the empty heading when the list is now empty.
+  function undoOne(undo, name, li, button) {
     if (busy) {
       return Promise.resolve(false);
     }
@@ -386,16 +412,16 @@ window.PinalertPeopleList = (function () {
       showActionError(MESSAGE_OFFLINE);
       return Promise.resolve(false);
     }
-    return post(PEOPLE_URL + encodeURIComponent(name) + '/unblock').then(function (answer) {
+    return post(PEOPLE_URL + encodeURIComponent(name) + undo.path).then(function (answer) {
       if (!answer.ok) {
         settle();
-        showActionError(UNBLOCK_FAILED);
+        showActionError(undo.failed);
         return false;
       }
       busy = false;
       var after = li.nextElementSibling || li.nextSibling;
       els.rows.removeChild(li);
-      say(name + ' is unblocked.');
+      say(name + undo.done);
       if (els.rows.firstChild === null) {
         showEmpty(true);
       } else {
@@ -414,7 +440,7 @@ window.PinalertPeopleList = (function () {
       return true;
     }, function () {
       settle();
-      showActionError(UNBLOCK_FAILED);
+      showActionError(undo.failed);
       return false;
     });
   }
@@ -525,7 +551,7 @@ window.PinalertPeopleList = (function () {
     }
     kind = options.kind;
     subject = typeof options.username === 'string' ? options.username : '';
-    own = options.own === true || kind === 'blocked';
+    own = options.own === true || kind === 'blocked' || kind === 'muted';
     opener = options.opener || null;
     onChange = typeof options.onChange === 'function' ? options.onChange : null;
     next = '';
@@ -533,7 +559,7 @@ window.PinalertPeopleList = (function () {
     open_ = true;
 
     setText(els.title, TITLES[kind]);
-    if (kind !== 'blocked' && !own && subject !== '') {
+    if (!UNDO[kind] && !own && subject !== '') {
       setText(els.subtitle, subject);
       els.subtitle.hidden = false;
     } else {
