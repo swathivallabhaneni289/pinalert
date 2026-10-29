@@ -61,6 +61,20 @@ type RateLimits struct {
 	// IPBackstopShare is the network backstop for the share family, a bucket of
 	// its own so share taps can never starve report posting (WR-S02).
 	IPBackstopShare BucketLimit
+	// Comment is the allowance for posting a comment or a reply, keyed per
+	// account (Phase 8 plan 12, D-13, A-P8-4). Every attempt spends and nothing
+	// is refunded, because every attempt may cost one screener call (the
+	// AdmitReport precedent).
+	Comment BucketLimit
+	// Like is the allowance for liking, unliking and deleting a comment, keyed
+	// per account. They are cheap toggles, so it mirrors Vote with a little
+	// more room.
+	Like BucketLimit
+	// IPBackstopComment and IPBackstopLike are the network backstops of the two
+	// comment families, buckets of their own so comment taps can never starve
+	// report posting (WR-S02).
+	IPBackstopComment BucketLimit
+	IPBackstopLike    BucketLimit
 }
 
 // RateLimitResponse is the one 429 body of every Phase 4 limiter. The
@@ -85,9 +99,19 @@ const (
 	ipBackstopFlagBucket   = "ip_backstop_flag"
 	ipBackstopShareBucket  = "ip_backstop_share"
 
+	ipBackstopCommentBucket = "ip_backstop_comment"
+	ipBackstopLikeBucket    = "ip_backstop_like"
+
 	// The share bucket (Phase 8 plan 03). The name goes to the block log only.
 	shareBucketName = "share"
 	shareRateField  = "rate_share"
+
+	// The comment and like buckets (Phase 8 plan 12). The names go to the block
+	// log only.
+	commentBucketName = "comment"
+	commentRateField  = "rate_comment"
+	likeBucketName    = "like"
+	likeRateField     = "rate_like"
 
 	voteRateField       = "rate_vote"
 	voteChangeRateField = "rate_vote_change"
@@ -118,11 +142,16 @@ type RateGate struct {
 	ipBackstopFlag   *ratelimit.PerKey
 	share            *ratelimit.PerKey
 	ipBackstopShare  *ratelimit.PerKey
-	reportSerious    *ratelimit.PerKey
-	reportOther      *ratelimit.PerKey
-	submitAttempt    *ratelimit.PerKey
-	backstopOn       bool
-	chrome           Chrome
+	comment          *ratelimit.PerKey
+	like             *ratelimit.PerKey
+
+	ipBackstopComment *ratelimit.PerKey
+	ipBackstopLike    *ratelimit.PerKey
+	reportSerious     *ratelimit.PerKey
+	reportOther       *ratelimit.PerKey
+	submitAttempt     *ratelimit.PerKey
+	backstopOn        bool
+	chrome            Chrome
 }
 
 // bucketConfig turns one limit into a PerKey config. It sets no idle window, so
@@ -146,11 +175,16 @@ func NewRateGate(limits RateLimits, clock func() time.Time, clientIPHeader strin
 		ipBackstopFlag:   ratelimit.NewPerKey(bucketConfig(limits.IPBackstopFlag, clock)),
 		share:            ratelimit.NewPerKey(bucketConfig(limits.Share, clock)),
 		ipBackstopShare:  ratelimit.NewPerKey(bucketConfig(limits.IPBackstopShare, clock)),
-		reportSerious:    ratelimit.NewPerKey(bucketConfig(limits.ReportSerious, clock)),
-		reportOther:      ratelimit.NewPerKey(bucketConfig(limits.ReportOther, clock)),
-		submitAttempt:    ratelimit.NewPerKey(bucketConfig(limits.SubmitAttempt, clock)),
-		backstopOn:       strings.TrimSpace(clientIPHeader) != "",
-		chrome:           chrome,
+		comment:          ratelimit.NewPerKey(bucketConfig(limits.Comment, clock)),
+		like:             ratelimit.NewPerKey(bucketConfig(limits.Like, clock)),
+
+		ipBackstopComment: ratelimit.NewPerKey(bucketConfig(limits.IPBackstopComment, clock)),
+		ipBackstopLike:    ratelimit.NewPerKey(bucketConfig(limits.IPBackstopLike, clock)),
+		reportSerious:     ratelimit.NewPerKey(bucketConfig(limits.ReportSerious, clock)),
+		reportOther:       ratelimit.NewPerKey(bucketConfig(limits.ReportOther, clock)),
+		submitAttempt:     ratelimit.NewPerKey(bucketConfig(limits.SubmitAttempt, clock)),
+		backstopOn:        strings.TrimSpace(clientIPHeader) != "",
+		chrome:            chrome,
 	}
 }
 
@@ -387,6 +421,67 @@ func (g *RateGate) ShareMiddleware() func(http.Handler) http.Handler {
 			if d := g.share.Reserve(accountKey(acc.ID)); !d.OK {
 				logBlock(shareBucketName, acc.ID, d.RetryAfter)
 				writeRateLimited(w, shareRateField, service.ShareLimitMessage(d.RetryAfter), d.RetryAfter, false, "")
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// CommentMiddleware throttles posting a comment or a reply (D-13, A-P8-4). The
+// order is the network backstop, then the per account comment bucket keyed
+// acct:<id>. Every admitted attempt costs one token and nothing is refunded,
+// like the report buckets: each attempt may cost a screener call, so a refused
+// or rejected post pays too.
+func (g *RateGate) CommentMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			acc, ok := account.FromContext(r.Context())
+			if !ok {
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+
+			if d := g.reserveIPBackstop(r, g.ipBackstopComment); !d.OK {
+				logBlock(ipBackstopCommentBucket, acc.ID, d.RetryAfter)
+				writeRateLimited(w, commentRateField, service.NetworkLimitMessage(false, d.RetryAfter), d.RetryAfter, false, "")
+				return
+			}
+
+			if d := g.comment.Reserve(accountKey(acc.ID)); !d.OK {
+				logBlock(commentBucketName, acc.ID, d.RetryAfter)
+				writeRateLimited(w, commentRateField, service.CommentLimitMessage(d.RetryAfter), d.RetryAfter, false, "")
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// LikeMiddleware throttles liking, unliking and deleting a comment (D-13,
+// A-P8-4). The order is the network backstop, then the per account like bucket
+// keyed acct:<id>. Every admitted attempt costs one token and nothing is
+// refunded, like the vote bucket.
+func (g *RateGate) LikeMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			acc, ok := account.FromContext(r.Context())
+			if !ok {
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+
+			if d := g.reserveIPBackstop(r, g.ipBackstopLike); !d.OK {
+				logBlock(ipBackstopLikeBucket, acc.ID, d.RetryAfter)
+				writeRateLimited(w, likeRateField, service.NetworkLimitMessage(false, d.RetryAfter), d.RetryAfter, false, "")
+				return
+			}
+
+			if d := g.like.Reserve(accountKey(acc.ID)); !d.OK {
+				logBlock(likeBucketName, acc.ID, d.RetryAfter)
+				writeRateLimited(w, likeRateField, service.LikeLimitMessage(d.RetryAfter), d.RetryAfter, false, "")
 				return
 			}
 

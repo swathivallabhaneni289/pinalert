@@ -134,3 +134,30 @@ func TestShareLimitMessage(t *testing.T) {
 		}
 	}
 }
+
+// TestCommentLimitMessages pins the comment and like wait sentences (Phase 8
+// plan 12, D-13): the exact words for one minute and for twenty seconds, one
+// wait phrase each, and no dash.
+func TestCommentLimitMessages(t *testing.T) {
+	cases := []struct {
+		name string
+		fn   func(time.Duration) string
+		wait time.Duration
+		want string
+	}{
+		{"comment minute", service.CommentLimitMessage, time.Minute, "You're commenting very quickly. You can comment again in 1 minute. Your words are still here."},
+		{"comment seconds", service.CommentLimitMessage, 20 * time.Second, "You're commenting very quickly. You can comment again in 20 seconds. Your words are still here."},
+		{"like minute", service.LikeLimitMessage, time.Minute, "You're reacting very quickly. You can try again in 1 minute."},
+		{"like seconds", service.LikeLimitMessage, 20 * time.Second, "You're reacting very quickly. You can try again in 20 seconds."},
+	}
+	for _, tc := range cases {
+		got := tc.fn(tc.wait)
+		if got != tc.want {
+			t.Errorf("%s = %q, want %q", tc.name, got, tc.want)
+		}
+		assertServerCopy(t, got)
+		if strings.ContainsRune(got, rune(0x2013)) || strings.ContainsRune(got, rune(0x2014)) {
+			t.Errorf("message %q holds a dash", got)
+		}
+	}
+}

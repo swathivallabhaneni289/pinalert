@@ -72,6 +72,10 @@ func (c *p20Clock) Advance(d time.Duration) {
 // Amended 2026-10-29 by Phase 8 plan 03 (D-13, A-P8-4): it also opens the Share
 // bucket and its network backstop, so a test that does not exercise sharing is
 // never refused by them. Every other assertion is unchanged.
+//
+// Amended 2026-10-29 by Phase 8 plan 12 (D-13, A-P8-4): it also opens the
+// Comment and Like buckets and their network backstops, for the same reason.
+// Every other assertion is unchanged.
 func p20Tweak(clk *p20Clock, mutate func(d *api.Deps)) func(d *api.Deps, q *sqlcgen.Queries) {
 	return func(d *api.Deps, q *sqlcgen.Queries) {
 		d.RateLimits = api.RateLimits{
@@ -86,6 +90,11 @@ func p20Tweak(clk *p20Clock, mutate func(d *api.Deps)) func(d *api.Deps, q *sqlc
 			IPBackstopFlag:   p20Open,
 			Share:            p20Open,
 			IPBackstopShare:  p20Open,
+
+			Comment:           p20Open,
+			Like:              p20Open,
+			IPBackstopComment: p20Open,
+			IPBackstopLike:    p20Open,
 		}
 		d.LimiterClock = clk.Now
 		if mutate != nil {
