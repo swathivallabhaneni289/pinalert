@@ -264,3 +264,34 @@ test('plan 36: with a storage that throws, startMode asks every time (today beha
   assert.equal(await modeOf(load(throwing, '7', permissionsOf('prompt'))), 'ask');
   assert.equal(await modeOf(load(throwing, '7', permissionsOf('prompt'))), 'ask');
 });
+
+// Phase 7.1 review fix (browser), WR-B05: askingThisLoad tells installed-ask.js
+// whether the browser's own location question is shown on this page load. It is
+// null until the first startMode has decided, true only for 'ask' with a question
+// the browser will show (not when location is already refused), and the first
+// decision of the load is the one kept.
+test('WR-B05: askingThisLoad is null before startMode, then says whether the question is asked', async () => {
+  const first = load(memoryStorage(), '7', permissionsOf('prompt'));
+  assert.equal(first.askingThisLoad(), null);
+  assert.equal(await modeOf(first), 'ask');
+  assert.equal(first.askingThisLoad(), true);
+  // A later startMode on the same load (it now reads the marker) keeps the answer.
+  assert.equal(await modeOf(first), 'reuse');
+  assert.equal(first.askingThisLoad(), true);
+
+  const unknown = load(memoryStorage(), '7');
+  await modeOf(unknown);
+  assert.equal(unknown.askingThisLoad(), true, 'no Permissions API: the question is asked');
+
+  const again = load(memoryStorage({ [ASKED]: '1' }), '7', permissionsOf('prompt'));
+  await modeOf(again);
+  assert.equal(again.askingThisLoad(), false, 'asked on an earlier load');
+
+  const granted = load(memoryStorage(), '7', permissionsOf('granted'));
+  await modeOf(granted);
+  assert.equal(granted.askingThisLoad(), false, 'read silently');
+
+  const denied = load(memoryStorage(), '7', permissionsOf('denied'));
+  assert.equal(await modeOf(denied), 'ask');
+  assert.equal(denied.askingThisLoad(), false, 'a refused location shows no question');
+});
