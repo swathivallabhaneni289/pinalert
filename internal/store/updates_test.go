@@ -835,3 +835,88 @@ func TestUpdatesForAccountUsesIndex(t *testing.T) {
 		t.Errorf("plan does not use idx_updates_account_created:\n%s", plan.String())
 	}
 }
+
+// TestFirstAlertIndexSharedByBothKinds proves the one first alert index covers
+// the Reliable reporter alert and the follow note (D-09, Pitfall 5, T-09-74,
+// T-09-75): for one account and report the second insert writes nothing, in
+// either order, and the ON CONFLICT predicate of both statements matches the
+// index (a mismatch would be a run time error, not pgx.ErrNoRows).
+func TestFirstAlertIndexSharedByBothKinds(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+
+	testutil.SeedReporterAccount(t, pool, "first-alert-x@example.com", "sess-first-x")
+	followNoteFirst := testutil.SeedReporterAccount(t, pool, "first-alert-a@example.com")
+	reliableFirst := testutil.SeedReporterAccount(t, pool, "first-alert-b@example.com")
+	other := testutil.SeedReporterAccount(t, pool, "first-alert-c@example.com")
+	report := updReport(t, pool, "sess-first-x", updNow.Add(5*time.Hour))
+
+	reliable := func(account int64) error {
+		_, err := q.InsertReliableAlert(ctx, sqlcgen.InsertReliableAlertParams{
+			AccountID: account, ReportID: report, Now: updNow, HourEdge: updNow.Add(-time.Hour), Ceiling: updCeiling,
+			State: "provisional",
+		})
+		return err
+	}
+	followed := func(account int64) error {
+		_, err := q.InsertFollowedPostedAlert(ctx, sqlcgen.InsertFollowedPostedAlertParams{
+			AccountID: account, ReportID: report, Now: updNow, HourEdge: updNow.Add(-time.Hour), Ceiling: updCeiling,
+			State: "provisional",
+		})
+		return err
+	}
+	rows := func(account int64) int {
+		return updCount(t, pool, `SELECT count(*) FROM updates WHERE account_id = $1 AND report_id = $2`, account, report)
+	}
+
+	// The follow note first: the Reliable alert for the same pair is a no op.
+	if err := followed(followNoteFirst); err != nil {
+		t.Fatalf("first follow note: %v", err)
+	}
+	if err := reliable(followNoteFirst); !errors.Is(err, pgx.ErrNoRows) {
+		t.Errorf("Reliable alert after the follow note: want pgx.ErrNoRows, got %v", err)
+	}
+	if err := followed(followNoteFirst); !errors.Is(err, pgx.ErrNoRows) {
+		t.Errorf("a second follow note: want pgx.ErrNoRows, got %v", err)
+	}
+	if n := rows(followNoteFirst); n != 1 {
+		t.Errorf("%d rows after follow note then Reliable alert, want 1", n)
+	}
+	if n := updCount(t, pool, `SELECT count(*) FROM updates WHERE account_id = $1 AND kind = 'followed_posted'`, followNoteFirst); n != 1 {
+		t.Errorf("the surviving row should be the follow note, got %d of them", n)
+	}
+
+	// The Reliable alert first: the follow note for the same pair is a no op.
+	if err := reliable(reliableFirst); err != nil {
+		t.Fatalf("first Reliable alert: %v", err)
+	}
+	if err := followed(reliableFirst); !errors.Is(err, pgx.ErrNoRows) {
+		t.Errorf("follow note after the Reliable alert: want pgx.ErrNoRows, got %v", err)
+	}
+	if n := rows(reliableFirst); n != 1 {
+		t.Errorf("%d rows after Reliable alert then follow note, want 1", n)
+	}
+	if n := updCount(t, pool, `SELECT count(*) FROM updates WHERE account_id = $1 AND kind = 'reliable_nearby'`, reliableFirst); n != 1 {
+		t.Errorf("the surviving row should be the Reliable alert, got %d of them", n)
+	}
+
+	// Another account still gets its own note, and the note seeds the cursor.
+	if err := followed(other); err != nil {
+		t.Fatalf("follow note for another account: %v", err)
+	}
+	state, _, _, _, found := cursorOf(t, pool, other, report)
+	if !found || state != "provisional" {
+		t.Errorf("follow note cursor: found %v, state %q, want a provisional cursor", found, state)
+	}
+
+	// The note counts toward the hourly ceiling like the Reliable alert.
+	full := testutil.SeedReporterAccount(t, pool, "first-alert-full@example.com")
+	filler := updReport(t, pool, "sess-first-x", updNow.Add(5*time.Hour))
+	for i := 0; i < updCeiling; i++ {
+		updRow(t, pool, full, filler, "hidden", updNow.Add(-time.Duration(i+1)*time.Minute))
+	}
+	if err := followed(full); !errors.Is(err, pgx.ErrNoRows) {
+		t.Errorf("follow note over the ceiling: want pgx.ErrNoRows, got %v", err)
+	}
+}

@@ -350,6 +350,61 @@ func (q *Queries) InsertBaselineCursor(ctx context.Context, arg InsertBaselineCu
 	return err
 }
 
+const insertFollowedPostedAlert = `-- name: InsertFollowedPostedAlert :one
+WITH ins AS (
+    INSERT INTO updates (account_id, report_id, kind, created_at)
+    SELECT $1::bigint, $2::bigint, 'followed_posted', $3::timestamptz
+    WHERE (
+        SELECT COUNT(*)
+        FROM updates u
+        WHERE u.account_id = $1::bigint
+          AND u.kind NOT IN ('more', 'comment_on_yours', 'reply_to_yours')
+          AND u.created_at > $4::timestamptz
+    ) < $5::bigint
+    ON CONFLICT (account_id, report_id) WHERE kind IN ('reliable_nearby', 'followed_posted') DO NOTHING
+    RETURNING id, account_id, report_id
+), seed AS (
+    INSERT INTO update_cursors (account_id, report_id, last_state, adopted_at, last_update_at)
+    SELECT i.account_id, i.report_id, $6::text, $3::timestamptz, $3::timestamptz
+    FROM ins i
+    ON CONFLICT (account_id, report_id) DO NOTHING
+)
+SELECT id FROM ins
+`
+
+type InsertFollowedPostedAlertParams struct {
+	AccountID int64
+	ReportID  int64
+	Now       time.Time
+	HourEdge  time.Time
+	Ceiling   int64
+	State     string
+}
+
+// The follow note (PROF-03, D-09): a person you follow with Notify me on posted
+// a report. It is the sibling of InsertReliableAlert with the same arguments,
+// the same hourly ceiling and the same cursor seed, and kind followed_posted.
+// The one first alert index uq_updates_first_alert covers both kinds, so a
+// person who already got the Reliable reporter alert for this report gets no
+// second note, and the reverse (D-09, Pitfall 5). The ON CONFLICT predicate is
+// the index predicate word for word; a mismatch fails at run time, which the
+// database test TestFirstAlertIndexSharedByBothKinds exercises. The caller
+// asks MayNotifyAboutReport(UpdateFollowedPosted, ...) first and writes only for
+// a Live or Provisional report.
+func (q *Queries) InsertFollowedPostedAlert(ctx context.Context, arg InsertFollowedPostedAlertParams) (int64, error) {
+	row := q.db.QueryRow(ctx, insertFollowedPostedAlert,
+		arg.AccountID,
+		arg.ReportID,
+		arg.Now,
+		arg.HourEdge,
+		arg.Ceiling,
+		arg.State,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const insertReliableAlert = `-- name: InsertReliableAlert :one
 WITH ins AS (
     INSERT INTO updates (account_id, report_id, kind, created_at)
@@ -361,7 +416,7 @@ WITH ins AS (
           AND u.kind NOT IN ('more', 'comment_on_yours', 'reply_to_yours')
           AND u.created_at > $4::timestamptz
     ) < $5::bigint
-    ON CONFLICT (account_id, report_id) WHERE kind = 'reliable_nearby' DO NOTHING
+    ON CONFLICT (account_id, report_id) WHERE kind IN ('reliable_nearby', 'followed_posted') DO NOTHING
     RETURNING id, account_id, report_id
 ), seed AS (
     INSERT INTO update_cursors (account_id, report_id, last_state, adopted_at, last_update_at)
@@ -382,7 +437,8 @@ type InsertReliableAlertParams struct {
 }
 
 // A trusted reporter alert (NOTIF-05, D-26), once per account per report: the
-// partial unique index uq_updates_reliable_once turns a repeat into a no-op.
+// partial unique index uq_updates_first_alert (shared with the follow note kind
+// of InsertFollowedPostedAlert, D-09) turns a repeat into a no-op.
 // Written only while the account is under the hourly ceiling; over it nothing is
 // written and the next poll tries again while the report is still unexpired.
 //
