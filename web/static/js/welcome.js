@@ -280,6 +280,12 @@
       if (all[i].disabled || !isShown(all[i])) {
         continue;
       }
+      // Since the page moves Tab focus itself (WR-B05), nothing the browser's
+      // own Tab would skip may be a stop: a hidden input, or a control taken out
+      // of the order with tabindex -1.
+      if (all[i].type === 'hidden' || all[i].getAttribute('tabindex') === '-1') {
+        continue;
+      }
       if (!panel && sideNode !== null && sideNode.contains(all[i])) {
         continue;
       }

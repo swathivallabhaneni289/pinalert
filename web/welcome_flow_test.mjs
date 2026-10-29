@@ -1669,3 +1669,25 @@ test('WR-B05: on a phone step 1 Tab and Shift+Tab reach Try the demo every time'
   assert.equal(fire(phone.root, 'keydown', { key: 'Tab', shiftKey: true }).prevented, true);
   assert.ok(phone.doc.activeElement === link, 'Shift+Tab from Continue lands on Try the demo');
 });
+
+test('WR-B05: a hidden input or a control with tabindex -1 is never a Tab stop', () => {
+  // Added 2026-10-29 by the Phase 5 review fix (WR-B05): the page moves Tab focus
+  // itself, so it must skip what the browser's own Tab skips.
+  const page = load();
+  click(page, 'welcome-continue-1');
+  click(page, 'welcome-disagree');
+  const box = byId(page, 'welcome-disagree-message');
+  const reread = byId(page, 'welcome-reread');
+  const logout = byId(page, 'welcome-logout');
+  const hidden = new logout.constructor(page.doc, 'input');
+  hidden.type = 'hidden';
+  box.children.splice(box.children.indexOf(logout), 0, hidden);
+  hidden.parentNode = box;
+  const skipped = new logout.constructor(page.doc, 'button');
+  skipped.setAttribute('tabindex', '-1');
+  box.children.splice(box.children.indexOf(logout), 0, skipped);
+  skipped.parentNode = box;
+  reread.focus();
+  assert.equal(fire(page.root, 'keydown', { key: 'Tab' }).prevented, true);
+  assert.ok(page.doc.activeElement === logout, 'Tab from Read again passes over the hidden input and the tabindex -1 button to Log out');
+});
