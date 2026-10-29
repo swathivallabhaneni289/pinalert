@@ -81,7 +81,7 @@ District placement uses the codes SACHET messages carry (`LGD District Code`), j
 
 Mandals and tehsils are not placed. The commonest alert in the feed names no mandals at all ("6 Mandals") and has no codes, so a mandal gazetteer would have nothing to match. A polygon tier is not built; no message seen carried a shape inline.
 
-Accuracy limit: the file is simplified at about 0.01 degree (roughly 1.1 km). A point within about a kilometre of a district edge can land in the neighbour. That is acceptable at district scale and is said here instead of hidden. District names are shown as the boundary file spells them ("Ntr district").
+Accuracy limit: the file is simplified at about 0.01 degree (roughly 1.1 km). A point within about a kilometre of a district edge can land in the neighbour. That is acceptable at district scale and is said here instead of hidden. District names are shown as the boundary file spells them, except for a small display table in internal/areas/names.go that fixes a few that read badly (the file's "Ntr" is shown as "NTR", a misspelt "Visakhapatanam" as "Visakhapatnam", and Delhi's bare compass words as "North Delhi" and so on).
 
 How the reader's area is known: the browser sends the point Nearby is using as `lat` and `lon` on the request. The server uses it for that one answer and neither stores nor logs it. The home area is a stored 5 character geohash cell (about 4.9 km square) with no district and no coordinates. The server tests the cell's centre and its four corners and matches if any of the five points lies in an alert's district. That leans toward telling a person who may be covered, never away.
 
