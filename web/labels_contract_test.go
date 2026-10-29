@@ -408,6 +408,14 @@ func TestReadOnlyLabelsRoundedControlsNot(t *testing.T) {
 		if r.File == "static/css/report-page.css" && (r.Head == ".report-timeline__dot::before" || r.Head == ".report-timeline__bar--dot") {
 			continue
 		}
+		// Amended 2026-10-29 by Phase 8 plan 04 (UI-SPEC Surface 6b, Radii: 50
+		// percent is for discs): the 8px severity dot beside the severity word on
+		// the public status page is a drawing, not a control. It is aria-hidden,
+		// cannot be pressed, and the word beside it carries the meaning. public.css
+		// is exempted for exactly this head and nothing else.
+		if r.File == "static/css/public.css" && r.Head == ".public-dot:not([hidden])" {
+			continue
+		}
 		exempt := false
 		for _, name := range exemptControls {
 			if strings.Contains(r.Head, name) {

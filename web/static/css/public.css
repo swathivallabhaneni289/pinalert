@@ -1,0 +1,227 @@
+/*
+ * The public status page a shared link opens (Phase 8 plan 04; D-05, D-06;
+ * UI-SPEC Surface 6a to 6c).
+ *
+ * A small server rendered document for one report, with no script and no app
+ * bars. The phone is one column with 16px of padding; from 900px it is the
+ * legal pages' split (R6, no centred column): a 260px column holding the h1 and
+ * the status word, and a box column holding the detail box, the button and the
+ * legal line, with a 32px gap. The top row is the wordmark, 60px high.
+ *
+ * Tokens only, no custom property of its own. The page follows the device's
+ * light or dark setting through main.css's own tokens, with no toggle. Muted
+ * text sits only on --color-bg, no text uses opacity, and no radius reaches half
+ * a control's height. Every rule that sets display carries :not([hidden]).
+ */
+
+.public-page {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+/* ---- Top row --------------------------------------------------------------- */
+
+.public-top:not([hidden]) {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: var(--app-topbar-height);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.public-wordmark {
+  font-size: var(--font-size-heading);
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+/* ---- Body (phone first: one column) ---------------------------------------- */
+
+.public-body:not([hidden]) {
+  display: block;
+  padding: var(--space-md);
+}
+
+.public-head:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+
+.public-title {
+  margin: 0;
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+/* The status word is neutral for every state: it carries a word, never a hue. */
+.public-chip:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: var(--space-lg);
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+}
+
+.public-main:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  margin-top: var(--space-md);
+}
+
+/* The rate limited page keeps its sentence above the button. */
+.public-line {
+  margin: 0 0 var(--space-md);
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* ---- The detail box -------------------------------------------------------- */
+
+.public-box {
+  box-sizing: border-box;
+  margin: 0 0 var(--space-md);
+  padding: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-bg);
+}
+
+.public-box__lead {
+  margin: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+/* Rows are a description list: a hairline above each row except the first. */
+.public-rows {
+  margin: var(--space-12) 0 0;
+  padding: 0;
+}
+
+.public-row {
+  padding: var(--space-12) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.public-row:last-child {
+  padding-bottom: 0;
+}
+
+.public-row dt {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+}
+
+.public-row dd {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  font-weight: var(--font-weight-regular);
+}
+
+/* The severity dot is the page's one accent, always followed by its word. */
+.public-dot:not([hidden]) {
+  display: inline-block;
+  width: var(--space-sm);
+  height: var(--space-sm);
+  margin-right: var(--space-sm);
+  border-radius: 50%;
+  background-color: var(--severity-current);
+  vertical-align: middle;
+}
+
+/* ---- Buttons and the footer ------------------------------------------------- */
+
+.public-page .btn {
+  box-sizing: border-box;
+  min-height: var(--touch-target-min);
+  text-decoration: none;
+}
+
+/* Sign in to see more: the filled button, full width and 48px high on the phone. */
+.public-page .public-signin {
+  min-height: var(--space-2xl);
+}
+
+.public-legal {
+  margin: var(--space-lg) 0 0;
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+}
+
+.public-links:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+/* ---- Laptop ---------------------------------------------------------------- */
+
+@media (min-width: 900px) {
+  .public-top:not([hidden]) {
+    padding: var(--space-sm) var(--space-lg);
+  }
+
+  .public-body:not([hidden]) {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: var(--space-xl);
+    align-items: start;
+    padding: var(--space-lg);
+  }
+
+  .public-main:not([hidden]) {
+    margin-top: 0;
+    align-items: flex-start;
+  }
+
+  .public-box {
+    align-self: stretch;
+  }
+
+  .public-row:not([hidden]) {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    align-items: baseline;
+  }
+
+  .public-page .public-signin {
+    min-width: 220px;
+    min-height: var(--touch-target-min);
+  }
+}
+
+@media (forced-colors: active) {
+  .public-chip,
+  .public-box {
+    border: 1px solid CanvasText;
+  }
+}

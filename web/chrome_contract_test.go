@@ -70,6 +70,10 @@ func TestDisclaimerBarOnEveryFullPage(t *testing.T) {
 		// drawn outside Nearby.
 		"templates/demo_alerts.html.tmpl":   "demo+top",
 		"templates/demo_activity.html.tmpl": "demo+top",
+		// Amended 2026-10-29 by Phase 8 plan 04 (D-05, UI-SPEC Surface 6): the
+		// public status page of a shared link is a page of its own with no bar,
+		// no strip and no top wrapper (a wordmark row only).
+		"templates/share_status.html.tmpl": "none",
 	}
 
 	wrapped := func(call string) *regexp.Regexp {
