@@ -544,6 +544,9 @@ func main() {
 		// Keep and Remove lock the check row first inside one transaction,
 		// the order the moderation worker takes (WR-S01).
 		ModerationTx: service.PgxModerationTx(pool),
+		// Keep and Remove of a comment write the change, the flag dismissal and
+		// the audit row in one transaction (Phase 8 plan 13).
+		CommentModerationTx: service.PgxCommentModerationTx(pool),
 		// Delete my account scrubs, deletes and revokes in one transaction.
 		AccountTx: service.PgxAccountTx(pool),
 		Page: handlers.PageConfig{
