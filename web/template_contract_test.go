@@ -140,6 +140,12 @@ func TestVendorMapScriptsLoadInDependencyOrder(t *testing.T) {
 		"/static/js/app.js",
 		"/static/js/votes.js",
 		"/static/js/visibility.js",
+		// Amended 2026-10-29 by Phase 8 plan 05 (D-01, D-17): report-page.js is
+		// one more app module under the same vendor-layer-first rule, listed in
+		// its actual template position (after trust.js, before map.js, which
+		// builds the page). TestReportPageIsLinkedInOrder pins its order against
+		// votes.js, trust.js and map.js, and report-page.css after trust.css.
+		"/static/js/report-page.js",
 		"/static/js/map.js",
 		"/static/js/modal.js",
 		"/static/js/feed.js",

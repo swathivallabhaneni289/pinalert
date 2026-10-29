@@ -210,6 +210,13 @@ window.PinalertMap = (function () {
     popup.options.pane = phone ? 'detailPane' : 'popupPane';
     popup.options.autoPan = !reducedMotion && !phone;
     arrangeCard(card, phone);
+    // The report page (the history, Share and the comments mount) shows on the
+    // phone's detail sheet only. The laptop bubble stays as built until the
+    // laptop host plan (Phase 8 D-18), so its page stays hidden and fetches
+    // nothing there.
+    if (card && card.page) {
+      card.page.setHosted(phone);
+    }
   }
 
   // arrangeCard puts the fade line and the actions (Confirm and Dispute, Mark
@@ -242,17 +249,29 @@ window.PinalertMap = (function () {
     } else {
       body.insertBefore(trust, fade);
     }
+    // The report page node is the last child of the body (Phase 8 plan 05,
+    // research Pitfall 5b). On a phone Stop updates and Flag are put in front
+    // of it, never after it, so they stay above the history and the comments
+    // however often the card is placed again, a resize across 900px included.
+    var pageEl = card.page && card.page.el && card.page.el.parentNode === body ? card.page.el : null;
+    function place(node) {
+      if (lastParent === body && pageEl) {
+        body.insertBefore(node, pageEl);
+      } else {
+        lastParent.appendChild(node);
+      }
+    }
     if (mute) {
-      lastParent.appendChild(mute.el);
+      place(mute.el);
       if (mute.error) {
-        lastParent.appendChild(mute.error);
+        place(mute.error);
       }
     }
     // Flag goes last: under the trust details on a phone (owner, 2026-10-21:
     // "the flag the report thing can go down"), and as the last child of the
     // actions block on a laptop.
     if (flag) {
-      lastParent.appendChild(flag);
+      place(flag);
     }
   }
 
@@ -896,6 +915,15 @@ window.PinalertMap = (function () {
     // owned by votes.js.
     actions.appendChild(block.note);
     actions.appendChild(block.error);
+    // The report page (Phase 8 plan 05): the Share button joins the actions
+    // group right after the vote block, and the history and the comments mount
+    // are one node appended last in the body. A failed report-page.js load
+    // leaves the card without the page rather than stopping the map after its
+    // first pin (WR-W04). The Demo has no history route, so it gets no page.
+    var page = window.PinalertReportPage && !window.PinalertDemoPage ? PinalertReportPage.create(report) : null;
+    if (page) {
+      actions.appendChild(page.share);
+    }
     // The Mute control (Phase 3.2, D-11) comes first, then the Flag control, so
     // the two are rows with Mute just above Flag (plan 04-30; arrangeCard puts
     // both at the bottom of the report on a phone). It is hidden for
@@ -923,6 +951,9 @@ window.PinalertMap = (function () {
     body.appendChild(trust.el);
     body.appendChild(fade);
     body.appendChild(actions);
+    if (page) {
+      body.appendChild(page.el);
+    }
     el.appendChild(body);
 
     var card = {
@@ -942,6 +973,7 @@ window.PinalertMap = (function () {
       mute: muteControl,
       actions: actions,
       flag: flagControl,
+      page: page,
       approximate: false,
       observer: null,
       frame: 0
@@ -1018,6 +1050,12 @@ window.PinalertMap = (function () {
     if (card.flag && window.PinalertFlag) {
       PinalertFlag.updateFlagControl(card.flag, report);
     }
+    // Last, so the page reads the same report the rest of the card now shows.
+    // It writes into its own nodes and never rebuilds, moves focus or touches
+    // the comments mount point.
+    if (card.page) {
+      card.page.update(report);
+    }
   }
 
   // observePopupCard repositions an open popup when its card changes height,
@@ -1090,6 +1128,11 @@ window.PinalertMap = (function () {
     var id = reportIdForPopup(popup);
     popupOpener = { id: id, kind: listOpenerId !== null && listOpenerId === id ? 'list' : 'marker' };
     listOpenerId = null;
+    // The report page starts its history read. It touches no focus, address or
+    // history entry.
+    if (id !== null && cards[id] && cards[id].page) {
+      cards[id].page.open();
+    }
 
     container.setAttribute('role', 'dialog');
     container.setAttribute('aria-modal', 'false');
@@ -1296,6 +1339,11 @@ window.PinalertMap = (function () {
     var popup = evt.popup;
     var el = popup.getElement();
     var id = reportIdForPopup(popup);
+    // The report page stops its history polling. It touches no focus, address
+    // or history entry.
+    if (id !== null && cards[id] && cards[id].page) {
+      cards[id].page.close();
+    }
     var pressedClose = closePressHadFocus;
     var hadFocus = popupFocusInside || pressedClose;
     var opener = popupOpener;
@@ -1752,6 +1800,9 @@ window.PinalertMap = (function () {
           }
           if (cards[id].observer) {
             cards[id].observer.disconnect();
+          }
+          if (cards[id].page) {
+            cards[id].page.close();
           }
           delete cards[id];
         }

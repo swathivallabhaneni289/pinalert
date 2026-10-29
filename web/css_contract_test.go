@@ -782,13 +782,23 @@ var nonCategoryIcons = map[string]bool{
 	// TestLoginCardLockIcon proves the file and the rule line up, so the
 	// exemption cannot hide an orphan. Amended 2026-10-29 by Phase 7.1 plan 11.
 	"static/icons/lock.svg": true,
+	// Amended 2026-10-29 by Phase 8 plan 05 (UI-SPEC Design System): share-2,
+	// the Lucide glyph before the word on the report page's Share button, drawn
+	// by a literal url("/static/icons/share-2.svg") mask rule in
+	// report-page.css, same exemption reasoning as search.svg. share.svg (the
+	// install guide's iOS glyph) stays as it is. TestNewIconsAreRegisteredAndUsed
+	// checks it through laterIcons, so the exemption cannot hide an orphan.
+	"static/icons/share-2.svg": true,
 }
 
 // laterIcons lists the glyphs added after Phase 3.4 (plan 04-30: bell-off).
 // TestNewIconsAreRegisteredAndUsed holds them to the same rules as the ten
 // Phase 3.4 glyphs: registered, the licence line, a plain stroke glyph, and
 // drawn by a literal mask url in some stylesheet.
-var laterIcons = []string{"bell-off.svg"}
+//
+// Amended 2026-10-29 by Phase 8 plan 05 (D-04): share-2.svg joins the list,
+// masked by report-page.css for the Share button. No other assertion changed.
+var laterIcons = []string{"bell-off.svg", "share-2.svg"}
 
 // phase34Icons lists the ten Phase 3.4 glyph files, all exempted through
 // nonCategoryIcons above.
