@@ -174,6 +174,19 @@ type Deps struct {
 	// from its constants block. The network buckets are used only when
 	// ClientIPHeader is set.
 	AuthLimits AuthLimits
+	// PublicBaseURL is the public address that roots every share link and the
+	// public page's og:url (Phase 8 plan 03). It is never taken from the request,
+	// so a crafted Host header cannot poison a forwarded link. cmd/server/main.go
+	// sets it from BASE_URL and refuses to start outside ENV=development unless
+	// it is an https address. Empty, which every Deps{} literal gives, means
+	// handlers.DefaultPublicBaseURL, for development and tests only.
+	PublicBaseURL string
+	// Shares makes share links and reads their public status (Phase 8 plan 03).
+	// Left nil, which every Deps{} literal gives, NewRouter builds one from the
+	// sessions store and the report service with no area namer, so a title has
+	// no area. cmd/server/main.go sets it with the one geocode client as the
+	// namer.
+	Shares *service.ShareService
 }
 
 // requestLogger returns the access log middleware. It replaces chi's
@@ -588,6 +601,17 @@ func NewRouter(deps Deps) *chi.Mux {
 	// no Deps field. Its Focus gate is the report service, so without one every
 	// read is an error and the route is never reached by a real request.
 	timeline := service.NewTimelineService(deps.Sessions, deps.Reports)
+	// The share service and the configured base of every share link (Phase 8
+	// plan 03). A nil Shares builds one with no area namer; an empty base
+	// becomes the development default. The base comes from configuration only.
+	shares := deps.Shares
+	if shares == nil {
+		shares = service.NewShareService(deps.Sessions, deps.Reports)
+	}
+	shareBase := deps.PublicBaseURL
+	if shareBase == "" {
+		shareBase = handlers.DefaultPublicBaseURL
+	}
 	// Same for the account service behind the /api/me routes (plan 03.4-01).
 	// Its name and home area edits go through the report service's text screener,
 	// like a flag note does (Phase 7.1, plan 06); without a report service they
@@ -810,6 +834,13 @@ func NewRouter(deps Deps) *chi.Mux {
 		// route and flat like the vote routes. No rate gate: it is a read polled
 		// at the feed's 30 second cadence.
 		r.Get("/api/reports/{id}/timeline", handlers.ReportTimeline(timeline))
+		// POST /api/reports/{id}/share (Phase 8 plan 03, COORD-08, D-04): makes
+		// or returns the report's share link. Gated so a token and an area
+		// lookup are never made by someone without an account. The share bucket
+		// and the network backstop run in ShareMiddleware, scoped to this one
+		// route with r.With. The absolute address comes from the configured
+		// base, never from the request.
+		r.With(rateGate.ShareMiddleware()).Post("/api/reports/{id}/share", handlers.ShareReport(shares, shareBase))
 		// The five Phase 3.2 routes (plan 07). Flat literal paths like the
 		// others, gated because they act only for the account the gate
 		// resolved. The bell polls every 30 seconds from its own script, so
