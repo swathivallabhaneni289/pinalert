@@ -260,6 +260,23 @@ func RetiredLink() http.HandlerFunc {
 	}
 }
 
+// LoginFormFallback handles POST /login (Phase 7.1 review WR-T04). The card's
+// panels are real POST forms to /login (D-10), so a person on a slow phone who
+// taps a button before auth.js has loaded posts the form here. The answer is a
+// fixed 303 to /login with no-store, where the page comes back with the script
+// loaded. The body carries a plaintext password, so it is never read, parsed or
+// logged, and nothing from the request goes into the answer.
+//
+// Deliberately carries no swag annotation: the route sits outside the /api base
+// path and is an HTML redirect, not a JSON operation.
+func LoginFormFallback() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Location", "/login")
+		w.WriteHeader(http.StatusSeeOther)
+	}
+}
+
 // profileTemplateName is the file executed by Profile's ExecuteTemplate call.
 const profileTemplateName = "profile.html.tmpl"
 
