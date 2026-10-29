@@ -111,7 +111,7 @@ function load(options = {}) {
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox, { filename: 'settings-people.js' });
-  return { ...page, requests, opens, api: sandbox.PinalertSettingsPeople };
+  return { ...page, requests, opens, navigator: sandbox.navigator, api: sandbox.PinalertSettingsPeople };
 }
 
 const flush = async () => { for (let i = 0; i < 8; i++) { await new Promise((r) => setImmediate(r)); } };
@@ -209,17 +209,62 @@ test('offline sends nothing and shows the built offline line', async () => {
     'You\'re offline, so this wasn\'t saved. Try again when you have a signal.');
 });
 
-test('turning it off with no followers saves at once, with no box', async () => {
+// 2026-10-30 (09-REVIEW IN-B01): a call that fails because the signal dropped
+// while it was out shows the offline line, not the generic one.
+test('a call lost when the signal drops shows the offline line', async () => {
+  const page = load({ on: false });
+  flip(page);
+  await flush();
+  page.navigator.onLine = false;
+  page.requests[0].reject(new Error('network'));
+  await flush();
+  assert.equal(el(page, 'settings-profile-switch').checked, false);
+  assert.equal(el(page, 'settings-people-error').textContent,
+    'You\'re offline, so this wasn\'t saved. Try again when you have a signal.');
+});
+
+// 2026-10-30 (09-REVIEW IN-B04): when the page shows no followers, the count is
+// read once more before the switch goes off, because someone may have followed
+// since the page was drawn. This test used to expect the save to be the first
+// and only request.
+test('turning it off with no followers saves with no box once the count is read as zero', async () => {
   const page = load({ on: true, followers: 0 });
   flip(page);
   await flush();
   assert.equal(page.box.open, false);
   assert.equal(page.requests.length, 1);
-  assert.equal(page.requests[0].init.body, '{"profile_public":false}');
-  answer(page.requests[0], 200, { profile_public: false });
+  assert.match(page.requests[0].url, /\/api\/people\/asha_k$/);
+  answer(page.requests[0], 200, { followers_count: 0, following_count: 2 });
   await flush();
+  assert.equal(page.requests.length, 2);
+  assert.equal(page.requests[1].init.body, '{"profile_public":false}');
+  answer(page.requests[1], 200, { profile_public: false });
+  await flush();
+  assert.equal(page.box.open, false);
   assert.equal(el(page, 'settings-profile-switch').checked, false);
   assert.equal(el(page, 'notice-live').textContent, 'Your profile is off.');
+});
+
+test('a follower who arrived since the page was drawn makes the switch ask first', async () => {
+  const page = load({ on: true, followers: 0 });
+  flip(page);
+  await flush();
+  answer(page.requests[0], 200, { followers_count: 2, following_count: 2 });
+  await flush();
+  assert.equal(page.requests.length, 1, 'no save was sent');
+  assert.equal(page.box.open, true);
+  assert.equal(el(page, 'settings-profile-switch').checked, true);
+  assert.equal(el(page, 'settings-followers-value').textContent, '2');
+});
+
+test('a failed count read keeps the shown zero and saves', async () => {
+  const page = load({ on: true, followers: 0 });
+  flip(page);
+  await flush();
+  page.requests[0].reject(new Error('network'));
+  await flush();
+  assert.equal(page.requests.length, 2);
+  assert.equal(page.requests[1].init.body, '{"profile_public":false}');
 });
 
 test('turning it off while someone follows asks first and sends nothing', async () => {
@@ -308,13 +353,20 @@ test('after a list changed, the counts are read again from the server', async ()
   assert.equal(el(page, 'settings-followers-value').textContent, '0');
   assert.equal(el(page, 'settings-following-value').textContent, '2');
 
+  // 2026-10-30 (09-REVIEW WR-B04): Blocked people goes down by one per Unblock
+  // and is not read from the list, which leaves out a name still being checked
+  // and stops at a cap. The list answer here is deliberately shorter than the
+  // count, and must not change it.
   fire(el(page, 'settings-blocked-row'), 'click');
   page.opens[1].onChange();
   await flush();
-  assert.match(page.requests[1].url, /\/api\/me\/blocked$/);
-  answer(page.requests[1], 200, { entries: [{ username: 'x_y' }] });
-  await flush();
+  assert.equal(page.requests.length, 1, 'no second read is sent');
   assert.equal(el(page, 'settings-blocked-value').textContent, '1');
+  page.opens[1].onChange();
+  page.opens[1].onChange();
+  await flush();
+  assert.equal(el(page, 'settings-blocked-value').textContent, '0', 'never below zero');
+  assert.equal(page.requests.length, 1);
 });
 
 test('a person with no username opens only the Blocked people list', () => {

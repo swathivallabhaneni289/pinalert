@@ -180,3 +180,35 @@ test('the module uses no markup sink', () => {
     assert.equal(src.includes(sink), false, sink);
   }
 });
+
+// 2026-10-30 (09-REVIEW WR-B01): a username may start with an underscore.
+test('a username that starts with an underscore gets its row', () => {
+  const trust = load();
+  const block = trust.createTrustBlock();
+  trust.setProfileLink(block, '/u/_ravi');
+  assert.equal(rows(block.panel).length, 1);
+  assert.equal(last(block.panel).getAttribute('href'), '/u/_ravi');
+  assert.equal(last(block.panel).textContent, 'See this reporter _ravi');
+  // A leading dot is still refused.
+  const other = trust.createTrustBlock();
+  trust.setProfileLink(other, '/u/.ravi');
+  assert.equal(rows(other.panel).length, 0);
+});
+
+// 2026-10-30 (09-REVIEW WR-B02): the same path again keeps the same node, so a
+// poll does not drop the focus of a reader who has Tabbed to the link.
+test('the same path again keeps the same node', () => {
+  const trust = load();
+  const block = trust.createTrustBlock();
+  trust.setProfileLink(block, '/u/ravi.k');
+  const first = last(block.panel);
+  trust.setProfileLink(block, '/u/ravi.k');
+  assert.equal(rows(block.panel).length, 1);
+  assert.equal(last(block.panel), first);
+  assert.equal(block.profileLink, first);
+  // A node taken out of the panel is drawn again.
+  block.panel.removeChild(first);
+  trust.setProfileLink(block, '/u/ravi.k');
+  assert.equal(rows(block.panel).length, 1);
+  assert.notEqual(last(block.panel), first);
+});

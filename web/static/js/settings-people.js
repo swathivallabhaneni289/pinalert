@@ -56,7 +56,6 @@ window.PinalertSettingsPeople = (function () {
   }
 
   var VISIBILITY_URL = '/api/me/visibility';
-  var BLOCKED_URL = '/api/me/blocked';
   var PEOPLE_URL = '/api/people/';
   var REQUEST_TIMEOUT_MS = 10000;
 
@@ -201,7 +200,7 @@ window.PinalertSettingsPeople = (function () {
       }
       return true;
     }, function () {
-      return fail(MESSAGE_FAILED);
+      return fail(offline() ? MESSAGE_OFFLINE : MESSAGE_FAILED);
     });
   }
 
@@ -234,8 +233,33 @@ window.PinalertSettingsPeople = (function () {
     }
   }
 
+  // followerCountNow is the number of followers to decide on before turning the
+  // profile off. A shown number above zero is enough to ask. When zero is shown,
+  // the page may be old, so the count is read once more; a failed read keeps the
+  // shown number (09-REVIEW IN-B04).
+  function followerCountNow() {
+    var shown = followerCount();
+    if (shown > 0 || username === '' || offline()) {
+      return Promise.resolve(shown);
+    }
+    return request(PEOPLE_URL + encodeURIComponent(username), {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' }
+    }).then(function (answer) {
+      if (answer.ok && answer.body && typeof answer.body.followers_count === 'number') {
+        return answer.body.followers_count;
+      }
+      return shown;
+    }, function () {
+      return shown;
+    });
+  }
+
+  var checking = false;
+
   sw.addEventListener('change', function () {
-    if (saving) {
+    if (saving || checking) {
       sw.checked = saved;
       return;
     }
@@ -245,7 +269,22 @@ window.PinalertSettingsPeople = (function () {
       ask();
       return;
     }
-    save(sw.checked === true);
+    if (sw.checked !== true) {
+      checking = true;
+      followerCountNow().then(function (count) {
+        checking = false;
+        if (count > 0) {
+          // Keep it on while the box asks; Cancel leaves it as it is.
+          setText(followersValue, count);
+          sw.checked = true;
+          ask();
+          return;
+        }
+        save(false);
+      });
+      return;
+    }
+    save(true);
   });
 
   offCancel.addEventListener('click', function () {
@@ -282,21 +321,17 @@ window.PinalertSettingsPeople = (function () {
     function get(url) {
       return request(url, { method: 'GET', credentials: 'same-origin', headers: { Accept: 'application/json' } });
     }
-    if (kind === 'muted') {
-      // One Unmute was done in the window. Take the shown count down by one and
-      // never below zero.
-      var shown = parseInt(mutedPeopleValue ? mutedPeopleValue.textContent : '0', 10);
-      if (mutedPeopleValue) {
-        setText(mutedPeopleValue, isNaN(shown) || shown < 1 ? 0 : shown - 1);
+    if (kind === 'muted' || kind === 'blocked') {
+      // One Unmute or Unblock was done in the window. Take the shown count down
+      // by one and never below zero. The list is not read for this: it leaves
+      // out a person whose name is still being checked and stops at a cap, so
+      // its length is not the count (09-REVIEW WR-B04).
+      var target = kind === 'muted' ? mutedPeopleValue : blockedValue;
+      var shown = parseInt(target ? target.textContent : '0', 10);
+      if (target) {
+        setText(target, isNaN(shown) || shown < 1 ? 0 : shown - 1);
       }
       return Promise.resolve();
-    }
-    if (kind === 'blocked') {
-      return get(BLOCKED_URL).then(function (answer) {
-        if (answer.ok && answer.body && Array.isArray(answer.body.entries)) {
-          setText(blockedValue, answer.body.entries.length);
-        }
-      }, function () {});
     }
     if (username === '') {
       return Promise.resolve();

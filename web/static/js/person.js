@@ -237,7 +237,13 @@ window.PinalertPerson = (function () {
       username: username,
       current: yours,
       legend: 'Your rating',
-      onStatus: say,
+      // A saved or removed rating can change the total, the tag and even the
+      // follow (a rating that drops the reporter below Reliable ends it), so the
+      // page is drawn again from the server's profile (09-REVIEW WR-B03).
+      onStatus: function (line) {
+        say(line);
+        refresh();
+      },
       onError: function (line) {
         if (line === '') {
           hideError();
@@ -283,6 +289,100 @@ window.PinalertPerson = (function () {
     mountRating(yours);
   }
 
+  // ---- The stars and the tag (09-REVIEW WR-B03) ---------------------------------
+
+  function makeSpan(className, text) {
+    var span = document.createElement('span');
+    span.className = className;
+    setText(span, text);
+    return span;
+  }
+
+  // drawPart shows or takes out one of the two parts of the stars total from the
+  // string the server sent: an empty string takes it out.
+  function drawPart(group, id, text, before) {
+    var part = byId(id);
+    if (typeof text !== 'string') {
+      return part;
+    }
+    if (text === '') {
+      if (part && part.parentNode) {
+        part.parentNode.removeChild(part);
+      }
+      return null;
+    }
+    if (!part) {
+      part = makeSpan('person-stars__part', text);
+      part.id = id;
+      if (before) {
+        group.insertBefore(part, before);
+      } else {
+        group.appendChild(part);
+      }
+      return part;
+    }
+    setText(part, text);
+    return part;
+  }
+
+  // drawStars follows the server's total after a rating: it redraws the number
+  // and the label, adds or takes out the two parts, and builds the group when
+  // the number turns up for the first time or takes it out when it goes. The
+  // browser computes no number; it writes the strings that came back.
+  function drawStars(profile) {
+    if (typeof profile.stars_number !== 'string') {
+      return;
+    }
+    var group = byId('person-stars');
+    if (profile.stars_number === '') {
+      if (group && group.parentNode) {
+        group.parentNode.removeChild(group);
+      }
+      return;
+    }
+    if (!group) {
+      var tag = byId('person-tag');
+      var tagGroup = tag ? tag.parentNode : null;
+      if (!tagGroup || !tagGroup.parentNode) {
+        return;
+      }
+      group = document.createElement('div');
+      group.id = 'person-stars';
+      group.className = 'person-stars';
+      group.setAttribute('role', 'group');
+      var icon = makeSpan('person-stars__icon', '');
+      icon.setAttribute('aria-hidden', 'true');
+      var total = makeSpan('person-stars__total', '');
+      total.appendChild(makeSpan('person-stars__number', ''));
+      if (typeof document.createTextNode === 'function') {
+        total.appendChild(document.createTextNode(' '));
+      }
+      total.appendChild(makeSpan('person-stars__word', 'stars'));
+      group.appendChild(icon);
+      group.appendChild(total);
+      tagGroup.parentNode.insertBefore(group, tagGroup);
+    }
+    if (typeof profile.stars_label === 'string' && profile.stars_label !== '') {
+      group.setAttribute('aria-label', profile.stars_label);
+    }
+    var number = typeof group.querySelector === 'function'
+      ? group.querySelector('.person-stars__number') : null;
+    setText(number, profile.stars_number);
+    var ratings = byId('person-stars-from-ratings');
+    drawPart(group, 'person-stars-from-reports', profile.stars_from_reports, ratings);
+    drawPart(group, 'person-stars-from-ratings', profile.stars_from_ratings, null);
+  }
+
+  // drawTag writes the tag word and its sentence from the server's strings.
+  function drawTag(profile) {
+    if (typeof profile.tag_word === 'string') {
+      setText(byId('person-tag'), profile.tag_word);
+    }
+    if (typeof profile.tag_sentence === 'string') {
+      setText(byId('person-tag-sentence'), profile.tag_sentence);
+    }
+  }
+
   function draw(profile) {
     if (!profile || typeof profile !== 'object') {
       return;
@@ -291,6 +391,8 @@ window.PinalertPerson = (function () {
       showBlocked();
       return;
     }
+    drawStars(profile);
+    drawTag(profile);
     syncRating(profile.may_rate, profile.your_rating);
     drawCount(els.followersCount, els.followersWord, els.followersButton,
       profile.followers_count, profile.followers_word, profile.followers_text);
@@ -420,8 +522,22 @@ window.PinalertPerson = (function () {
     return post(action).then(function (answer) {
       if (!answer.ok) {
         var line = refusal(answer, action);
-        if (action === 'follow' && answer.status === 409 && els.follow) {
-          els.follow.hidden = true;
+        if (action === 'follow' && answer.status === 409) {
+          // The server decides whether Follow still applies (can_follow): it
+          // stays after the follow cap, and goes when the person cannot be
+          // followed right now. Focus stays on the control used, or goes to More
+          // when that control is gone (09-REVIEW WR-B05).
+          return refresh().then(function (drawn) {
+            var out = fail(line);
+            if (drawn) {
+              if (els.follow && els.follow.hidden === false) {
+                els.follow.focus();
+              } else if (els.more) {
+                els.more.focus();
+              }
+            }
+            return out;
+          });
         }
         return fail(line);
       }
@@ -482,7 +598,19 @@ window.PinalertPerson = (function () {
     }
     return postJSON('notify', { on: want }).then(function (answer) {
       if (!answer.ok) {
-        return fail(refusal(answer, 'notify'));
+        var line = refusal(answer, 'notify');
+        if (answer.status === 409) {
+          // The follow may have ended since the page was drawn: draw it again,
+          // so a bell that no longer applies is taken away (WR-B03).
+          return refresh().then(function () {
+            var out = fail(line);
+            if (els.bell.hidden === true && els.more) {
+              els.more.focus();
+            }
+            return out;
+          });
+        }
+        return fail(line);
       }
       var saved = answer.body && typeof answer.body.notify === 'boolean' ? answer.body.notify : want;
       els.bell.setAttribute('aria-pressed', saved ? 'true' : 'false');

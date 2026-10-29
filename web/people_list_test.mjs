@@ -139,7 +139,7 @@ function load({ route }) {
   };
   const navigator = { onLine: true };
   vm.runInNewContext(source, { document, window, fetch, navigator, Promise, encodeURIComponent });
-  return { api: window.PinalertPeopleList, els, calls, sinks, state, confirm, pageBody };
+  return { api: window.PinalertPeopleList, els, calls, sinks, state, confirm, pageBody, navigator };
 }
 
 const opener = () => {
@@ -212,6 +212,56 @@ test('Show more sends the cursor and appends the next page', async () => {
   assert.equal(rowsOf(h)[1].children[0].getAttribute('href'), '/u/two_b');
   assert.equal(more.hidden, true, 'the last page has no Show more');
   assert.equal(h.els['people-list-others'].textContent, 'and 2 others');
+});
+
+// 2026-10-30 (09-REVIEW WR-B06): Show more stays on the page, disabled and busy,
+// while the next page loads, and focus goes to the first new row.
+test('Show more is kept busy while loading and focus goes to the first new row', async () => {
+  const pages = [
+    { entries: [{ username: 'one_a' }], others_count: 0, others_text: '', next: 'c1' },
+    { entries: [{ username: 'two_b' }, { username: 'three_c' }], others_count: 0, others_text: '', next: '' }
+  ];
+  let release = null;
+  const h = load({
+    route: (method, address) => (address.includes('after=')
+      ? new Promise((resolve) => { release = () => resolve({ status: 200, body: pages[1] }); })
+      : { status: 200, body: pages[0] })
+  });
+  h.api.open({ kind: 'followers', username: 'asha_k', own: false, opener: opener() });
+  await flush();
+  const more = h.els['people-list-more'];
+  more.fire('click');
+  assert.equal(more.hidden, false, 'the pressed button is not taken away');
+  assert.equal(more.disabled, true);
+  assert.equal(more.getAttribute('aria-busy'), 'true');
+  more.fire('click');
+  await flush();
+  assert.equal(h.calls.length, 2, 'a second tap while loading sends nothing');
+  release();
+  await flush();
+  assert.equal(more.disabled, false);
+  assert.equal(more.getAttribute('aria-busy'), null);
+  assert.equal(rowsOf(h).length, 3);
+  const firstNew = rowsOf(h)[1].children[0];
+  assert.equal(firstNew.focused, 1, 'focus lands on the first new row');
+  assert.equal(h.state.active, firstNew);
+});
+
+test('a failed Show more leaves focus on the button', async () => {
+  const first = { entries: [{ username: 'one_a' }], others_count: 0, others_text: '', next: 'c1' };
+  const h = load({
+    route: (method, address) => (address.includes('after=') ? { status: 500, body: {} } : { status: 200, body: first })
+  });
+  h.api.open({ kind: 'followers', username: 'asha_k', own: false, opener: opener() });
+  await flush();
+  const more = h.els['people-list-more'];
+  more.fire('click');
+  await flush();
+  assert.equal(more.hidden, false);
+  assert.equal(more.disabled, false);
+  assert.equal(more.focused, 1);
+  assert.equal(h.state.active, more);
+  assert.equal(h.els['people-list-action-error'].hidden, false);
 });
 
 test('empty states use the words of the kind and the owner', async () => {
@@ -296,6 +346,53 @@ test('a refused Unblock keeps the row and shows the sentence', async () => {
   assert.equal(rowsOf(h).length, 1);
   assert.equal(h.els['people-list-action-error'].hidden, false);
   assert.equal(h.els['people-list-action-error'].textContent, 'Couldn\'t unblock. Try again.');
+});
+
+// 2026-10-30 (09-REVIEW IN-B01): the server's 429 or 409 sentence and the
+// offline line are shown here as on the profile page.
+test('a 429 on Unblock shows the server sentence and a dropped signal shows the offline line', async () => {
+  const wait = 'You are doing that too fast. Try again in a minute.';
+  const a = load({
+    route: (method) => (method === 'GET'
+      ? { status: 200, body: { entries: [{ username: 'first_x' }] } }
+      : { status: 429, body: { error: { field: 'people', message: wait } } })
+  });
+  a.api.open({ kind: 'blocked', opener: opener() });
+  await flush();
+  rowsOf(a)[0].querySelector('button').fire('click');
+  await flush();
+  assert.equal(a.els['people-list-action-error'].textContent, wait);
+  assert.equal(rowsOf(a).length, 1);
+
+  let h = null;
+  h = load({
+    route: (method) => {
+      if (method === 'GET') { return { status: 200, body: { entries: [{ username: 'first_x' }] } }; }
+      h.navigator.onLine = false;
+      return Promise.reject(new Error('network down'));
+    }
+  });
+  h.api.open({ kind: 'blocked', opener: opener() });
+  await flush();
+  rowsOf(h)[0].querySelector('button').fire('click');
+  await flush();
+  assert.equal(h.els['people-list-action-error'].textContent,
+    'You\'re offline, so this wasn\'t saved. Try again when you have a signal.');
+});
+
+test('a 429 on Remove all shows the server sentence inside the box', async () => {
+  const wait = 'You are doing that too fast. Try again in a minute.';
+  const h = load({
+    route: (method) => (method === 'GET'
+      ? { status: 200, body: LIST }
+      : { status: 429, body: { error: { field: 'people', message: wait } } })
+  });
+  h.api.open({ kind: 'followers', username: 'asha_k', own: true, opener: opener() });
+  await flush();
+  h.els['people-list-remove-all'].fire('click');
+  h.els['people-list-confirm-go'].fire('click');
+  await flush();
+  assert.equal(h.els['people-list-confirm-error'].textContent, wait);
 });
 
 test('Remove all followers asks first, Cancel sends nothing, confirm posts once and shows the empty state', async () => {

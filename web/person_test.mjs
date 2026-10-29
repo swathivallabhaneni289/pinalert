@@ -41,7 +41,7 @@ const starsSource = fs.readFileSync(path.join(here, 'static', 'js', 'stars.js'),
 // rating: null draws no rating box (the server said the reader may not rate);
 // {yours: n} draws the box with data-your-rating, as the server does when it
 // says may_rate. withStars: false leaves stars.js out of the sandbox.
-function load({ route, online = true, dialogSupport = true, followsYou = true, rating = null, withStars = true } = {}) {
+function load({ route, online = true, dialogSupport = true, followsYou = true, rating = null, withStars = true, starsGroup = false } = {}) {
   const sinks = [];
   const state = { active: null };
   const calls = [];
@@ -71,6 +71,20 @@ function load({ route, online = true, dialogSupport = true, followsYou = true, r
       },
       removeChild(node) { this.children = this.children.filter((c) => c !== node); node.parentNode = null; return node; },
       contains(node) { return node === this || this.children.includes(node) || (this.kids || []).includes(node); },
+      // 2026-10-30 (09-REVIEW WR-B03): the stars and tag redraw looks nodes up
+      // by class and id inside the header body.
+      querySelector(selector) {
+        const cls = selector.slice(1);
+        const walk = (n) => {
+          for (const c of n.children || []) {
+            if (String(c.className || '').split(' ').includes(cls)) { return c; }
+            const d = walk(c);
+            if (d) { return d; }
+          }
+          return null;
+        };
+        return walk(this);
+      },
       querySelectorAll() { return this.kids || []; },
       focus() { this.focused += 1; state.active = this; },
       fire(type, e = {}) { this.listeners.filter((l) => l.type === type).forEach((l) => l.fn(e)); },
@@ -97,6 +111,31 @@ function load({ route, online = true, dialogSupport = true, followsYou = true, r
     const box = add('person-rating', { attrs: { 'data-your-rating': String(rating.yours) } });
     header.insertBefore(box, actionError);
   }
+  // The stars group and the tag group sit in a body of their own (not in the
+  // header), as the page draws them. A group built by the script is found by
+  // id through the body, so a removed one is gone.
+  const body = fakeEl('header-body');
+  const tagGroup = fakeEl('tag-group');
+  body.appendChild(tagGroup);
+  tagGroup.appendChild(add('person-tag', { textContent: 'Reliable reporter' }));
+  tagGroup.appendChild(add('person-tag-sentence', { textContent: 'old sentence' }));
+  if (starsGroup) {
+    const group = fakeEl('stars-group', { className: 'person-stars' });
+    group.id = 'person-stars';
+    group.setAttribute('aria-label', '4.0 stars');
+    const total = fakeEl('total', { className: 'person-stars__total' });
+    total.appendChild(fakeEl('number', { className: 'person-stars__number', textContent: '4.0' }));
+    group.appendChild(total);
+    body.insertBefore(group, tagGroup);
+  }
+  const findById = (node, id) => {
+    for (const c of node.children || []) {
+      if (c.id === id) { return c; }
+      const d = findById(c, id);
+      if (d) { return d; }
+    }
+    return null;
+  };
   add('person-follow', { textContent: 'Follow' });
   add('person-unfollow', { textContent: 'Following', hidden: true });
   const more = add('person-more');
@@ -131,8 +170,9 @@ function load({ route, online = true, dialogSupport = true, followsYou = true, r
   const reloads = [];
   const document = {
     readyState: 'complete',
-    getElementById: (id) => els[id] || null,
+    getElementById: (id) => els[id] || findById(body, id),
     createElement: (tag) => fakeEl(tag),
+    createTextNode: (text) => ({ nodeType: 3, textContent: text }),
     addEventListener(type, fn, capture) { docListeners.push({ type, fn, capture }); },
     removeEventListener(type, fn) {
       const at = docListeners.findIndex((l) => l.type === type && l.fn === fn);
@@ -316,15 +356,35 @@ test('Block asks with its two texts, then the blocked box gets focus', async () 
   assert.equal(m.els['person-more'].focused, 0, 'focus does not go back to a hidden More');
 });
 
-test('a 409 shows the server sentence and removes Follow', async () => {
+// 2026-10-30 (09-REVIEW WR-B05): a 409 draws the profile again and the server's
+// can_follow decides whether Follow stays. This pin used to answer every call
+// with a 409 and expect Follow hidden at once.
+const refuseFollow = (message, profile) => (method) => (method === 'POST'
+  ? { status: 409, body: { error: { field: 'follow', message } } }
+  : { status: 200, body: profile });
+
+test('a 409 shows the server sentence and removes Follow when the person cannot be followed', async () => {
   const m = load({
-    route: () => ({ status: 409, body: { error: { field: 'follow', message: 'You can\'t follow this person right now.' } } })
+    route: refuseFollow('You can\'t follow this person right now.', { ...PROFILE_NOT_FOLLOWING, can_follow: false })
   });
   m.click('person-follow');
   await flush();
   assert.equal(m.els['person-action-error'].hidden, false);
   assert.equal(m.els['person-action-error'].textContent, 'You can\'t follow this person right now.');
   assert.equal(m.els['person-follow'].hidden, true);
+  assert.equal(m.els['person-follow'].disabled, false);
+  assert.equal(m.els['person-more'].focused, 1, 'focus goes to More, not to the page');
+});
+
+test('a 409 at the follow cap keeps Follow and its focus', async () => {
+  const m = load({
+    route: refuseFollow('You can follow up to 200 people.', PROFILE_NOT_FOLLOWING)
+  });
+  m.click('person-follow');
+  await flush();
+  assert.equal(m.els['person-action-error'].textContent, 'You can follow up to 200 people.');
+  assert.equal(m.els['person-follow'].hidden, false, 'Follow stays for the next try');
+  assert.equal(m.els['person-follow'].focused, 1, 'focus stays on the control used');
   assert.equal(m.els['person-follow'].disabled, false);
 });
 
@@ -457,7 +517,8 @@ test('a tap saves, says so in the live line and clears the error line', async ()
   const parts = ratingParts(m);
   parts.stars[4].fire('click', { target: parts.stars[4] });
   await flush();
-  assert.deepEqual(m.calls.map((c) => c.method + ' ' + c.address), ['POST /api/people/asha_k/rating']);
+  // 2026-10-30 (09-REVIEW WR-B03): a saved rating asks for the profile again.
+  assert.deepEqual(m.calls.map((c) => c.method + ' ' + c.address), ['POST /api/people/asha_k/rating', 'GET /api/people/asha_k']);
   assert.equal(m.calls[0].init.body, '{"stars":5}');
   assert.equal(m.els['notice-live'].textContent, 'You rated asha_k 5 stars.');
   assert.equal(m.els['person-action-error'].hidden, true);
@@ -544,6 +605,62 @@ test('the rating control adds no markup sink and uses only the rating addresses'
   await flush();
   assert.deepEqual(m.sinks, []);
   for (const call of m.calls) {
-    assert.match(call.address, /^\/api\/people\/asha_k\/rating(\/clear)?$/);
+    // 2026-10-30 (09-REVIEW WR-B03): the profile read after a rating is allowed.
+    assert.match(call.address, /^\/api\/people\/asha_k(\/rating(\/clear)?)?$/);
   }
+});
+
+// ---- 2026-10-30 (09-REVIEW WR-B03): a rating redraws the stars, the tag and the follow
+
+const AFTER_RATING = {
+  followers_count: 11, followers_word: 'Followers', followers_text: '11 Followers',
+  following_count: 3, following_word: 'Following', following_text: '3 Following',
+  can_follow: true, following: false, follows_you: false, blocked_by_you: false, notify: false,
+  stars_number: '2.8', stars_label: '2.8 stars',
+  stars_from_reports: '3.6 from reports', stars_from_ratings: '1.0 from ratings by 6 people',
+  tag_word: 'Mixed record', tag_sentence: '4 of their last 9 reports were confirmed.'
+};
+
+test('a saved rating redraws the stars, the tag and the follow from the server', async () => {
+  const m = load({ route: RATE_ROUTE(AFTER_RATING), rating: { yours: 0 }, starsGroup: true });
+  m.els['person-unfollow'].hidden = false;
+  m.els['person-follow'].hidden = true;
+  const parts = ratingParts(m);
+  parts.stars[0].fire('click', {});
+  await flush();
+  const group = m.els['person-tag'].parentNode.parentNode.children.find((c) => c.id === 'person-stars');
+  assert.ok(group, 'the stars group is still drawn');
+  assert.equal(group.getAttribute('aria-label'), '2.8 stars');
+  assert.equal(group.querySelector('.person-stars__number').textContent, '2.8');
+  assert.equal(m.els['person-tag'].textContent, 'Mixed record');
+  assert.equal(m.els['person-tag-sentence'].textContent, '4 of their last 9 reports were confirmed.');
+  const names = group.children.map((c) => c.id);
+  assert.deepEqual(names.filter((n) => String(n).startsWith('person-')), ['person-stars-from-reports', 'person-stars-from-ratings']);
+  assert.equal(group.children.find((c) => c.id === 'person-stars-from-ratings').textContent, '1.0 from ratings by 6 people');
+  assert.equal(m.els['person-unfollow'].hidden, true, 'the ended follow is taken away');
+  assert.equal(m.els['person-follow'].hidden, false);
+  assert.deepEqual(m.sinks, []);
+});
+
+test('the stars group goes when the server sends no number and is built when one arrives', async () => {
+  const none = { ...AFTER_RATING, stars_number: '', stars_label: '', stars_from_reports: '', stars_from_ratings: '' };
+  const m = load({ route: RATE_ROUTE(none), rating: { yours: 0 }, starsGroup: true });
+  const parts = ratingParts(m);
+  parts.stars[0].fire('click', {});
+  await flush();
+  const wrap = m.els['person-tag'].parentNode.parentNode;
+  assert.equal(wrap.children.some((c) => c.id === 'person-stars'), false);
+
+  const back = load({ route: RATE_ROUTE(AFTER_RATING), rating: { yours: 0 } });
+  const p2 = ratingParts(back);
+  p2.stars[0].fire('click', {});
+  await flush();
+  const wrap2 = back.els['person-tag'].parentNode.parentNode;
+  const built = wrap2.children.find((c) => c.id === 'person-stars');
+  assert.ok(built, 'built from the server strings');
+  assert.equal(wrap2.children.indexOf(built), wrap2.children.indexOf(back.els['person-tag'].parentNode) - 1);
+  assert.equal(built.getAttribute('role'), 'group');
+  assert.equal(built.getAttribute('aria-label'), '2.8 stars');
+  assert.equal(built.querySelector('.person-stars__number').textContent, '2.8');
+  assert.deepEqual(back.sinks, []);
 });

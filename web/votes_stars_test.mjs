@@ -390,6 +390,25 @@ test(NAME + 'a 404 from the rating route removes the box quietly', async () => {
   assert.equal(boxesIn(m.doc.body).length, 0);
 });
 
+// 2026-10-30 (09-REVIEW IN-B05): a 404 while a star has focus must not leave
+// focus on a star that is no longer on the page; it goes to Undo as Skip does.
+test(NAME + 'a 404 with focus on a star hands focus to Undo, not to a removed star', async () => {
+  const m = load({ prompt: PROMPT });
+  m.answers.people = { status: 404, body: { error: { field: 'person', message: 'Profile not found.' } } };
+  const card = buildCard(m);
+  await resolve(card);
+  const undo = card.block.takeBack && card.block.takeBack.undoBtn;
+  assert.ok(undo, 'the card has an Undo');
+  undo.hidden = false; // the refetch is faked here, so show it as the card would
+  const star = boxesIn(m.doc.body)[0].querySelectorAll('.stars-control__star')[2];
+  star.focus();
+  fire(star);
+  await settle();
+  assert.equal(boxesIn(m.doc.body).length, 0);
+  assert.notEqual(m.doc.activeElement, star, 'focus is not left on the removed star');
+  assert.equal(m.doc.activeElement, undo);
+});
+
 test(NAME + 'the Undo in the card removes the box', async () => {
   const m = load({ prompt: PROMPT });
   const card = buildCard(m);

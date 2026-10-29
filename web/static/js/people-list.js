@@ -191,6 +191,26 @@ window.PinalertPeopleList = (function () {
     });
   }
 
+  // refusalLine is the line for a failed answer: the server's own sentence for
+  // a 409 or a 429 when it sent one, the built line otherwise (09-REVIEW IN-B01).
+  function refusalLine(answer, fallback) {
+    var error = answer && answer.body && answer.body.error;
+    if ((answer.status === 409 || answer.status === 429) && error &&
+        typeof error.message === 'string' && error.message !== '') {
+      return error.message;
+    }
+    return fallback;
+  }
+
+  // rejectionLine is the line for a call that did not get an answer: the
+  // offline line when the signal is gone, the built line otherwise.
+  function rejectionLine(fallback) {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return MESSAGE_OFFLINE;
+    }
+    return fallback;
+  }
+
   function listUrl(after) {
     var base;
     if (kind === 'blocked') {
@@ -291,13 +311,22 @@ window.PinalertPeopleList = (function () {
     return li;
   }
 
+  // firstNewRow is the first row the last appendRows drew, or null when it drew
+  // none. Show more puts focus on it (09-REVIEW WR-B06).
+  var firstNewRow = null;
+
   function appendRows(entries) {
+    firstNewRow = null;
     for (var i = 0; i < entries.length; i++) {
       var name = entries[i] && typeof entries[i].username === 'string' ? entries[i].username : '';
       if (name === '') {
         continue;
       }
-      els.rows.appendChild(UNDO[kind] ? undoRow(name) : namedRow(name));
+      var row = UNDO[kind] ? undoRow(name) : namedRow(name);
+      if (firstNewRow === null) {
+        firstNewRow = row;
+      }
+      els.rows.appendChild(row);
     }
   }
 
@@ -415,7 +444,7 @@ window.PinalertPeopleList = (function () {
     return post(PEOPLE_URL + encodeURIComponent(name) + undo.path).then(function (answer) {
       if (!answer.ok) {
         settle();
-        showActionError(undo.failed);
+        showActionError(refusalLine(answer, undo.failed));
         return false;
       }
       busy = false;
@@ -440,7 +469,7 @@ window.PinalertPeopleList = (function () {
       return true;
     }, function () {
       settle();
-      showActionError(undo.failed);
+      showActionError(rejectionLine(undo.failed));
       return false;
     });
   }
@@ -503,7 +532,7 @@ window.PinalertPeopleList = (function () {
     }
     return post(REMOVE_ALL_URL).then(function (answer) {
       if (!answer.ok) {
-        return fail(REMOVE_ALL_FAILED);
+        return fail(refusalLine(answer, REMOVE_ALL_FAILED));
       }
       settle();
       closeConfirm();
@@ -516,7 +545,7 @@ window.PinalertPeopleList = (function () {
       }
       return true;
     }, function () {
-      return fail(REMOVE_ALL_FAILED);
+      return fail(rejectionLine(REMOVE_ALL_FAILED));
     });
   }
 
@@ -655,9 +684,37 @@ window.PinalertPeopleList = (function () {
     on(els.close, 'click', function () { closeWindow(true); });
     on(win, 'keydown', onWindowKeydown);
     on(els.retry, 'click', function () { load(''); });
+    // Show more stays on the page, disabled and busy, while the next page loads,
+    // so focus is never dropped. It then goes to the first new row, or back to
+    // the button when there is none (09-REVIEW WR-B06).
     on(els.more, 'click', function () {
-      els.more.hidden = true;
-      load(next);
+      if (els.more.disabled) {
+        return;
+      }
+      els.more.disabled = true;
+      els.more.setAttribute('aria-busy', 'true');
+      firstNewRow = null;
+      load(next).then(function (ok) {
+        els.more.disabled = false;
+        els.more.removeAttribute('aria-busy');
+        if (!open_) {
+          return;
+        }
+        var target = null;
+        if (ok && firstNewRow !== null && typeof firstNewRow.querySelector === 'function') {
+          target = firstNewRow.querySelector(UNDO[kind] ? 'button' : 'a');
+        }
+        if (target) {
+          target.focus();
+        } else if (els.more.hidden === false) {
+          els.more.focus();
+        } else if (els.rows.hidden === false) {
+          var links = els.rows.querySelectorAll(UNDO[kind] ? 'button' : 'a');
+          if (links.length > 0) {
+            links[links.length - 1].focus();
+          }
+        }
+      });
     });
     on(els.removeAll, 'click', askRemoveAll);
     on(els.confirmGo, 'click', function () { runRemoveAll(); });
