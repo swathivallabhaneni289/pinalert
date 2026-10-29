@@ -148,7 +148,15 @@ func TestPushKindSettingsRoute(t *testing.T) {
 	if r := p12pkRead(t, pool, emailA); !r.critical || !r.reliable || !r.changes {
 		t.Fatalf("stored before clearing = %+v, want Critical, Reliable and Changes on", r)
 	}
-	meWant(t, "clear home area", meSend(t, a, http.MethodPatch, profile, `{"home_area":null}`), http.StatusOK)
+	// Amended 2026-10-29 by Phase 7.1 plan 06 (D-15): the route now refuses to
+	// clear the home area (400, nothing changes). The "no home area, Reliable
+	// off" state is then set directly in the database, as it is for an account
+	// from before step 4 was required; the assertions below are unchanged.
+	meWant(t, "clear home area", meSend(t, a, http.MethodPatch, profile, `{"home_area":null}`), http.StatusBadRequest)
+	if r := p12pkRead(t, pool, emailA); !r.critical || !r.reliable || !r.changes {
+		t.Fatalf("a refused clear changed the switches: %+v", r)
+	}
+	meRemoveHomeArea(t, pool, emailA)
 	if r := p12pkRead(t, pool, emailA); !r.critical || r.reliable || !r.changes {
 		t.Errorf("stored after clearing the area = %+v, want Critical kept on, Reliable off, Changes kept on", r)
 	}

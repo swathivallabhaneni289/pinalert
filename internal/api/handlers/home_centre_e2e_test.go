@@ -33,7 +33,7 @@ func homeCentreAttr(t *testing.T, body, name string) float64 {
 }
 
 func TestPagesStartAtTheStoredHomeAreaCentreEndToEnd(t *testing.T) {
-	srv, mailer, _ := newE2EServerWith(t, func(d *api.Deps, _ *sqlcgen.Queries) {
+	srv, mailer, pool := newE2EServerWith(t, func(d *api.Deps, _ *sqlcgen.Queries) {
 		d.Page = handlers.PageConfig{FallbackLat: 12.9716, FallbackLon: 77.5946, DefaultRadiusKm: 10}
 	})
 	client := newJarClient(t)
@@ -88,9 +88,12 @@ func TestPagesStartAtTheStoredHomeAreaCentreEndToEnd(t *testing.T) {
 		}
 	}
 
-	// Clearing the home area puts the configured centre back.
+	// Amended 2026-10-29 by Phase 7.1 plan 06 (D-15): clearing through the route
+	// is now refused; the no home area state is set directly in the database,
+	// and the configured centre comes back as before.
 	resp = meSend(t, client, http.MethodPatch, srv.URL+"/api/me/profile", `{"home_area":null}`)
-	meWant(t, "PATCH clear home area", resp, http.StatusOK)
+	meWant(t, "PATCH clear home area", resp, http.StatusBadRequest)
+	meRemoveHomeArea(t, pool, "home-centre-e2e@example.com")
 	_, body := welcomeGet(t, client, srv.URL, "/?centre=1")
 	if got := homeCentreAttr(t, body, "data-fallback-lat"); got != 12.9716 {
 		t.Errorf("after clearing the home area data-fallback-lat = %v, want 12.9716", got)

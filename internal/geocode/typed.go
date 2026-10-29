@@ -246,12 +246,30 @@ func looksLikeStreetAddress(first string) bool {
 	if strings.IndexFunc(first, unicode.IsDigit) >= 0 {
 		return true
 	}
-	for _, word := range strings.Fields(normalizeSpelling(first)) {
+	return hasStreetWord(first)
+}
+
+// hasStreetWord says a part holds one of the street words (road, street, lane,
+// marg, gali and the rest of streetWords). The word list lives only here.
+func hasStreetWord(part string) bool {
+	for _, word := range strings.Fields(normalizeSpelling(part)) {
 		if streetWords[word] {
 			return true
 		}
 	}
 	return false
+}
+
+// IsNumberedStreetAddress says a part is a street address with a number: it
+// holds both a digit (the digit rule of looksLikeStreetAddress) and a street
+// word, as in "12th Main Road" or "Banjara Hills Road No 12". A street word
+// alone is not enough, because the kind=area search itself offers localities
+// named after roads (MG Road, Station Road, Park Street, Grant Road), and a
+// digit alone is not enough either (Sector 62, 5th Block). The home area save
+// rule of the account service uses it on the first part of a home area name
+// (Phase 7.1, SC4, "a town or area, never a street").
+func IsNumberedStreetAddress(part string) bool {
+	return strings.IndexFunc(part, unicode.IsDigit) >= 0 && hasStreetWord(part)
 }
 
 // leadingNameMatches says name is a close spelling of first, or starts with

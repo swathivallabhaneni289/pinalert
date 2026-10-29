@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"pinalert/internal/service"
+	"pinalert/internal/testutil"
 )
 
 // meSend sends one request with a JSON body and returns the response.
@@ -75,6 +76,21 @@ func meRead(t *testing.T, pool *pgxpool.Pool, email string) meRow {
 		t.Fatalf("reading the profile of %s: %v", email, err)
 	}
 	return r
+}
+
+// meRemoveHomeArea puts the account into the "no home area" state directly in
+// the database, the way an account from before step 4 was required is, and
+// switches its Reliable reporter alert off as the old clear did. Added
+// 2026-10-29 by Phase 7.1 plan 06 (D-15): PATCH /api/me/profile no longer clears
+// the home area, so tests that only need the state use this instead. The
+// account is found by its address.
+func meRemoveHomeArea(t *testing.T, pool *pgxpool.Pool, email string) {
+	t.Helper()
+	testutil.MustExec(t, pool,
+		`UPDATE account_alert_settings SET reliable_alerts_on = false, enabled_at = NULL
+		 WHERE account_id = (SELECT id FROM accounts WHERE email = $1)`, email)
+	testutil.MustExec(t, pool,
+		`UPDATE accounts SET home_area_name = NULL, home_area_cell = NULL WHERE email = $1`, email)
 }
 
 func TestMeConsent(t *testing.T) {
@@ -163,22 +179,26 @@ func TestMeProfile(t *testing.T) {
 	resp = meSend(t, client, http.MethodPatch, url, `{"home_area":{"name":"X","lat":95,"lon":77.5}}`)
 	meWant(t, "latitude out of range", resp, http.StatusBadRequest)
 
-	// null removes the home area and keeps the name.
+	// Amended 2026-10-29 by Phase 7.1 plan 06 (D-15, D-06): null used to remove
+	// the home area and an empty name used to clear the name. Both are now
+	// refused with 400 and a plain sentence, and what is stored stays.
 	resp = meSend(t, client, http.MethodPatch, url, `{"home_area":null}`)
-	body = meWant(t, "clear home area", resp, http.StatusOK)
-	if !strings.Contains(body, `"home_area_name":null`) || !strings.Contains(body, `"display_name":"Asha"`) {
-		t.Fatalf("clear answer = %s", body)
+	body = meWant(t, "clear home area", resp, http.StatusBadRequest)
+	if field, message := p13alErrorField(t, body); field != "home_area" || message != "Choose a home area." {
+		t.Fatalf("clear home area answer = %s, want field home_area and Choose a home area.", body)
 	}
 	r = meRead(t, pool, "profile@example.com")
-	if r.homeName != nil || r.homeCell != nil {
-		t.Fatalf("name and cell must clear together: %+v", r)
+	if r.homeName == nil || r.homeCell == nil {
+		t.Fatalf("a refused clear must keep the home area: %+v", r)
 	}
 
-	// An empty name clears the name.
 	resp = meSend(t, client, http.MethodPatch, url, `{"display_name":""}`)
-	body = meWant(t, "clear name", resp, http.StatusOK)
-	if !strings.Contains(body, `"display_name":null`) {
-		t.Fatalf("clear name answer = %s", body)
+	body = meWant(t, "clear name", resp, http.StatusBadRequest)
+	if field, message := p13alErrorField(t, body); field != "display_name" || message != "Your name can't be empty." {
+		t.Fatalf("clear name answer = %s, want field display_name and Your name can't be empty.", body)
+	}
+	if r = meRead(t, pool, "profile@example.com"); r.name == nil || *r.name != "Asha" {
+		t.Fatalf("a refused empty name must keep the name: %+v", r)
 	}
 
 	// The other account was never touched.

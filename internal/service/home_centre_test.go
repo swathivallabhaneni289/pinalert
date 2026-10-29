@@ -106,10 +106,17 @@ func TestHomeAreaCentreRoundTrip(t *testing.T) {
 		t.Fatalf("the centre must not be the picked point")
 	}
 
-	if _, err := svc.UpdateProfile(ctx, id, service.ProfileUpdate{HomeArea: service.HomeAreaChange{Action: service.HomeAreaClear}}); err != nil {
-		t.Fatalf("clearing: %v", err)
+	// Amended 2026-10-29 by Phase 7.1 plan 06 (D-15): clearing through
+	// UpdateProfile is now refused and keeps the centre; the "no home area"
+	// state is then set directly in the database, as it is for an account from
+	// before step 4 was required.
+	_, err = svc.UpdateProfile(ctx, id, service.ProfileUpdate{HomeArea: service.HomeAreaChange{Action: service.HomeAreaClear}})
+	wantMessage(t, err, "home_area", service.HomeAreaRequiredMessage)
+	if _, _, ok, err := svc.HomeAreaCentre(ctx, id); !ok || err != nil {
+		t.Fatalf("after a refused clear: ok = %v, err = %v, want the centre kept", ok, err)
 	}
+	testutil.MustExec(t, pool, `UPDATE accounts SET home_area_name = NULL, home_area_cell = NULL WHERE id = $1`, id)
 	if _, _, ok, err := svc.HomeAreaCentre(ctx, id); ok || err != nil {
-		t.Fatalf("after clearing: ok = %v, err = %v, want no home area", ok, err)
+		t.Fatalf("with no home area: ok = %v, err = %v, want no home area", ok, err)
 	}
 }
