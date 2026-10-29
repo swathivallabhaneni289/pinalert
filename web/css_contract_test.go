@@ -789,6 +789,12 @@ var nonCategoryIcons = map[string]bool{
 	// install guide's iOS glyph) stays as it is. TestNewIconsAreRegisteredAndUsed
 	// checks it through laterIcons, so the exemption cannot hide an orphan.
 	"static/icons/share-2.svg": true,
+	// Amended 2026-10-29 by Phase 8 plan 06 (UI-SPEC Design System): link, the
+	// Lucide glyph before the words of the Copy link button of the Share window,
+	// drawn by a literal url("/static/icons/link.svg") mask rule in share.css,
+	// same exemption reasoning as search.svg. TestNewIconsAreRegisteredAndUsed
+	// checks it through laterIcons, so the exemption cannot hide an orphan.
+	"static/icons/link.svg": true,
 }
 
 // laterIcons lists the glyphs added after Phase 3.4 (plan 04-30: bell-off).
@@ -798,7 +804,10 @@ var nonCategoryIcons = map[string]bool{
 //
 // Amended 2026-10-29 by Phase 8 plan 05 (D-04): share-2.svg joins the list,
 // masked by report-page.css for the Share button. No other assertion changed.
-var laterIcons = []string{"bell-off.svg", "share-2.svg"}
+//
+// Amended 2026-10-29 by Phase 8 plan 06 (COORD-08): link.svg joins the list,
+// masked by share.css for the Copy link button. No other assertion changed.
+var laterIcons = []string{"bell-off.svg", "share-2.svg", "link.svg"}
 
 // phase34Icons lists the ten Phase 3.4 glyph files, all exempted through
 // nonCategoryIcons above.
