@@ -8,7 +8,67 @@ package sqlcgen
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const claimAuthEmailSend = `-- name: ClaimAuthEmailSend :one
+INSERT INTO email_cooldowns (email, last_requested_at, window_started_at, window_sends)
+VALUES ($1, $2::timestamptz, $2::timestamptz, 1)
+ON CONFLICT (email) DO UPDATE
+SET last_requested_at = EXCLUDED.last_requested_at,
+    window_started_at = CASE
+        WHEN email_cooldowns.window_started_at IS NULL
+          OR email_cooldowns.window_started_at <= $3::timestamptz
+            THEN EXCLUDED.last_requested_at
+        ELSE email_cooldowns.window_started_at
+    END,
+    window_sends = CASE
+        WHEN email_cooldowns.window_started_at IS NULL
+          OR email_cooldowns.window_started_at <= $3::timestamptz
+            THEN 1
+        ELSE email_cooldowns.window_sends + 1
+    END
+WHERE email_cooldowns.last_requested_at <= $4::timestamptz
+  AND (email_cooldowns.window_started_at IS NULL
+       OR email_cooldowns.window_started_at <= $3::timestamptz
+       OR email_cooldowns.window_sends < $5::int)
+RETURNING last_requested_at, window_sends
+`
+
+type ClaimAuthEmailSendParams struct {
+	Email          string
+	Now            time.Time
+	WindowCutoff   time.Time
+	CooldownCutoff time.Time
+	MaxSends       int32
+}
+
+type ClaimAuthEmailSendRow struct {
+	LastRequestedAt time.Time
+	WindowSends     int32
+}
+
+// Phase 7.1 (UI-SPEC hand off note 9): one atomic claim for both the 45 second
+// cooldown and the hourly count of every auth email kind sent to one address
+// (sign up code, reset code, the account exists note, the no account note), so
+// the cap reveals nothing about which addresses have a password. The guard
+// lives on the DO UPDATE as in ClaimEmailCooldown: a refused claim writes
+// nothing and cannot extend the window that refused it, and surfaces as
+// pgx.ErrNoRows. The hourly window starts at the first send and restarts at 1
+// once it is older than window_cutoff.
+func (q *Queries) ClaimAuthEmailSend(ctx context.Context, arg ClaimAuthEmailSendParams) (ClaimAuthEmailSendRow, error) {
+	row := q.db.QueryRow(ctx, claimAuthEmailSend,
+		arg.Email,
+		arg.Now,
+		arg.WindowCutoff,
+		arg.CooldownCutoff,
+		arg.MaxSends,
+	)
+	var i ClaimAuthEmailSendRow
+	err := row.Scan(&i.LastRequestedAt, &i.WindowSends)
+	return i, err
+}
 
 const claimEmailCooldown = `-- name: ClaimEmailCooldown :one
 INSERT INTO email_cooldowns (email, last_requested_at)
@@ -39,4 +99,26 @@ func (q *Queries) ClaimEmailCooldown(ctx context.Context, arg ClaimEmailCooldown
 	var last_requested_at time.Time
 	err := row.Scan(&last_requested_at)
 	return last_requested_at, err
+}
+
+const getAuthEmailSendWindow = `-- name: GetAuthEmailSendWindow :one
+SELECT last_requested_at, window_started_at, window_sends
+FROM email_cooldowns
+WHERE email = $1
+`
+
+type GetAuthEmailSendWindowRow struct {
+	LastRequestedAt time.Time
+	WindowStartedAt pgtype.Timestamptz
+	WindowSends     int32
+}
+
+// Read only after a refused ClaimAuthEmailSend, to choose between the minute
+// sentence (still inside the cooldown) and the hour sentence (the hourly count
+// is spent).
+func (q *Queries) GetAuthEmailSendWindow(ctx context.Context, email string) (GetAuthEmailSendWindowRow, error) {
+	row := q.db.QueryRow(ctx, getAuthEmailSendWindow, email)
+	var i GetAuthEmailSendWindowRow
+	err := row.Scan(&i.LastRequestedAt, &i.WindowStartedAt, &i.WindowSends)
+	return i, err
 }

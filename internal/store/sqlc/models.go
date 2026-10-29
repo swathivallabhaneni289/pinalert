@@ -11,16 +11,20 @@ import (
 )
 
 type Account struct {
-	ID             int64
-	Email          string
-	CreatedAt      time.Time
-	TermsAgreedAt  pgtype.Timestamptz
-	TermsVersion   *string
-	FirstRunDoneAt pgtype.Timestamptz
-	DisplayName    *string
-	HomeAreaName   *string
-	HomeAreaCell   *string
-	DeletedAt      pgtype.Timestamptz
+	ID                int64
+	Email             string
+	CreatedAt         time.Time
+	TermsAgreedAt     pgtype.Timestamptz
+	TermsVersion      *string
+	FirstRunDoneAt    pgtype.Timestamptz
+	DisplayName       *string
+	HomeAreaName      *string
+	HomeAreaCell      *string
+	DeletedAt         pgtype.Timestamptz
+	PasswordHash      *string
+	Username          *string
+	UsernameScreen    *string
+	UsernameChangedAt pgtype.Timestamptz
 }
 
 type AccountAlertSetting struct {
@@ -35,9 +39,33 @@ type AccountAlertSetting struct {
 	OfficialPushOn   bool
 }
 
+type AuthCode struct {
+	ID           int64
+	SessionID    string
+	Purpose      string
+	Delivery     string
+	Email        string
+	CodeHash     string
+	PasswordHash *string
+	Attempts     int32
+	CreatedAt    time.Time
+	ExpiresAt    time.Time
+	UsedAt       pgtype.Timestamptz
+}
+
+type AuthThrottle struct {
+	Scope         string
+	KeyHash       string
+	Failures      int32
+	LastFailureAt time.Time
+	LockedUntil   pgtype.Timestamptz
+}
+
 type EmailCooldown struct {
 	Email           string
 	LastRequestedAt time.Time
+	WindowStartedAt pgtype.Timestamptz
+	WindowSends     int32
 }
 
 type MagicLinkToken struct {

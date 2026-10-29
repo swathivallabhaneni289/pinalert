@@ -7,6 +7,7 @@ package sqlcgen
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -48,7 +49,11 @@ func (q *Queries) BindSessionAccount(ctx context.Context, arg BindSessionAccount
 }
 
 const getAccountBySessionID = `-- name: GetAccountBySessionID :one
-SELECT accounts.id, accounts.email, accounts.terms_version, accounts.first_run_done_at
+SELECT accounts.id, accounts.email, accounts.terms_version, accounts.first_run_done_at,
+       (accounts.password_hash IS NOT NULL)::bool AS has_password,
+       (accounts.username IS NOT NULL)::bool AS has_username,
+       (accounts.display_name IS NOT NULL)::bool AS has_name,
+       (accounts.home_area_name IS NOT NULL)::bool AS has_home_area
 FROM sessions
 JOIN accounts ON sessions.account_id = accounts.id
 WHERE sessions.session_id = $1
@@ -60,6 +65,10 @@ type GetAccountBySessionIDRow struct {
 	Email          string
 	TermsVersion   *string
 	FirstRunDoneAt pgtype.Timestamptz
+	HasPassword    bool
+	HasUsername    bool
+	HasName        bool
+	HasHomeArea    bool
 }
 
 // A session with a NULL account_id yields no row (pgx.ErrNoRows), which
@@ -69,6 +78,11 @@ type GetAccountBySessionIDRow struct {
 // and requireModerator both read this one query, so one filter covers both
 // gates. Neither filter touches sessions.account_id, so authorship joins are
 // unchanged.
+// Phase 7.1 adds four presence fields so the gate judges the account without a
+// second read. has_password (W1): the gate treats a session of an account with
+// no password as signed out, so a session the old binary made after the
+// migration still has to go through the typed code. has_username, has_name and
+// has_home_area say whether the three required profile steps are done.
 func (q *Queries) GetAccountBySessionID(ctx context.Context, sessionID string) (GetAccountBySessionIDRow, error) {
 	row := q.db.QueryRow(ctx, getAccountBySessionID, sessionID)
 	var i GetAccountBySessionIDRow
@@ -77,6 +91,10 @@ func (q *Queries) GetAccountBySessionID(ctx context.Context, sessionID string) (
 		&i.Email,
 		&i.TermsVersion,
 		&i.FirstRunDoneAt,
+		&i.HasPassword,
+		&i.HasUsername,
+		&i.HasName,
+		&i.HasHomeArea,
 	)
 	return i, err
 }
@@ -103,7 +121,9 @@ type GetSessionBindingRow struct {
 // shows the account the row is bound to. No row means the session is not
 // stored yet; a NULL account_id means it is stored but unbound. The sign in
 // path reads this before it consumes the link, to decide whether to bind this
-// session id or draw a fresh one.
+// session id or draw a fresh one. Phase 7.1: the password sign in (plan 05)
+// reads it to clean the push subscriptions of a replaced session, so it
+// outlives the link flow.
 func (q *Queries) GetSessionBinding(ctx context.Context, sessionID string) (GetSessionBindingRow, error) {
 	row := q.db.QueryRow(ctx, getSessionBinding, sessionID)
 	var i GetSessionBindingRow
@@ -138,6 +158,51 @@ func (q *Queries) RevokeAccountSessions(ctx context.Context, arg RevokeAccountSe
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const revokeSession = `-- name: RevokeSession :execrows
+UPDATE sessions
+SET revoked_at = $1::timestamptz
+WHERE session_id = $2
+  AND revoked_at IS NULL
+`
+
+type RevokeSessionParams struct {
+	Now       time.Time
+	SessionID string
+}
+
+// When a browser bound to one account signs in as another, its old session is
+// revoked (W8), never unbound, so authorship joins stay. It never clears
+// sessions.account_id and changes nothing on a session already revoked.
+func (q *Queries) RevokeSession(ctx context.Context, arg RevokeSessionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeSession, arg.Now, arg.SessionID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const sessionEndedByPasswordSwitch = `-- name: SessionEndedByPasswordSwitch :one
+SELECT EXISTS (
+    SELECT 1
+    FROM sessions s
+    JOIN accounts a ON a.id = s.account_id
+    WHERE s.session_id = $1
+      AND a.password_hash IS NULL
+      AND a.deleted_at IS NULL
+)::bool AS ended
+`
+
+// UI-SPEC Surface 6 route 2: true when this session is bound to a not deleted
+// account that has no password yet, whether or not the session is revoked (the
+// migration revoked the old ones; a session made after it is refused by the
+// gate all the same, W1). It tells a browser only about its own ended session.
+func (q *Queries) SessionEndedByPasswordSwitch(ctx context.Context, sessionID string) (bool, error) {
+	row := q.db.QueryRow(ctx, sessionEndedByPasswordSwitch, sessionID)
+	var ended bool
+	err := row.Scan(&ended)
+	return ended, err
 }
 
 const upsertSession = `-- name: UpsertSession :exec
