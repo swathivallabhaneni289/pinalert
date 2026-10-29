@@ -63,6 +63,40 @@ func TestShareTokenNeverInAccessLog(t *testing.T) {
 	}
 }
 
+// TestFaviconSetsNoCookie proves the server half of review WR-T02 (2026-10-29):
+// a browser that opens the public page with no cookie may still ask for
+// /favicon.ico, and that request answers a plain 404 with no Set-Cookie header
+// and no new sessions row, so a reader with no account never gets a Pinalert
+// cookie from a shared link.
+func TestFaviconSetsNoCookie(t *testing.T) {
+	srv, pool, _ := newGateTestServer(t)
+	ctx := context.Background()
+	count := func() int {
+		t.Helper()
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM sessions`).Scan(&n); err != nil {
+			t.Fatalf("counting sessions: %v", err)
+		}
+		return n
+	}
+	before := count()
+	resp, err := http.Get(srv.URL + "/favicon.ico")
+	if err != nil {
+		t.Fatalf("GET /favicon.ico: %v", err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("GET /favicon.ico = %d, want 404", resp.StatusCode)
+	}
+	if got := resp.Header.Values("Set-Cookie"); len(got) != 0 {
+		t.Errorf("GET /favicon.ico set a cookie: %v", got)
+	}
+	if after := count(); after != before {
+		t.Errorf("GET /favicon.ico moved the sessions count from %d to %d, want no change", before, after)
+	}
+}
+
 // shareLogWriter serialises writes to a shared buffer, so the test can read it
 // while the server goroutines log.
 type shareLogWriter struct {
