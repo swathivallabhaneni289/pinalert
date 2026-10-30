@@ -328,8 +328,13 @@ func TestFadingOncePerExpiry(t *testing.T) {
 	if _, err := q.MarkFadingAndInsertUpdate(ctx, fadingArg(a, r, e2, updNow.Add(3*time.Hour+30*time.Minute))); err != nil {
 		t.Errorf("changed expiry after the gap: %v", err)
 	}
-	if n := updCount(t, pool, `SELECT count(*) FROM updates WHERE account_id = $1 AND kind = 'fading'`, a); n != 2 {
-		t.Errorf("%d fading rows, want 2", n)
+	// Amended 2026-10-30 (quick task 261030-64q, review WR-03): a changed expiry
+	// still arms the event again, but the second event refreshes the one fading
+	// row in place instead of writing another, so the bell does not pile up (the
+	// phone note is pinned in TestFadingRefreshedInPlaceNoSecondPush). This pin
+	// said 2 rows before.
+	if n := updCount(t, pool, `SELECT count(*) FROM updates WHERE account_id = $1 AND kind = 'fading'`, a); n != 1 {
+		t.Errorf("%d fading rows, want 1", n)
 	}
 }
 

@@ -76,6 +76,9 @@ type viewSnap struct {
 	ViewerMuted          bool
 	ConfirmedByPeople    bool
 	KeptByReliableFilter bool
+	// ConfirmExtends was added 2026-10-30 (quick task 261030-64q, review WR-02):
+	// with LifetimeSeconds it lets this test see an extension.
+	ConfirmExtends bool
 }
 
 func snapView(v service.ReportView) (viewSnap, float64) {
@@ -105,6 +108,7 @@ func snapView(v service.ReportView) (viewSnap, float64) {
 		ViewerMuted:          v.ViewerMuted,
 		ConfirmedByPeople:    v.ConfirmedByPeople,
 		KeptByReliableFilter: v.KeptByReliableFilter,
+		ConfirmExtends:       v.ConfirmExtends,
 	}, dist
 }
 
@@ -160,8 +164,12 @@ func (r runner) observe(t *testing.T, res *stepResult, readers []actor) {
 	}
 }
 
+// postFunc posts the scenario's report on one side and returns its id. A nil
+// postFunc means the plain SubmitChecked post of a fresh report.
+type postFunc func(t *testing.T, r runner, reporter actor) int64
+
 // scenario runs the script on one side. reporter, a, b, c are the four people.
-func scenario(t *testing.T, r runner, reporter, a, b, c actor) []stepResult {
+func scenario(t *testing.T, r runner, reporter, a, b, c actor, post postFunc) []stepResult {
 	t.Helper()
 	ctx := context.Background()
 	readers := []actor{reporter, a}
@@ -181,15 +189,20 @@ func scenario(t *testing.T, r runner, reporter, a, b, c actor) []stepResult {
 	}
 
 	// 1. The reporter posts a medium flood report.
-	posted, err := r.reports.SubmitChecked(ctx, reporter.session, reporter.account, service.SubmitInput{
-		Category: service.CategoryFlood, Severity: service.SeverityMedium,
-		Description: "Water is knee deep across the lane near the market",
-		Latitude:    reporter.lat, Longitude: reporter.lon,
-	})
-	if err != nil {
-		t.Fatalf("%s: SubmitChecked: %v", r.label, err)
+	var id int64
+	if post != nil {
+		id = post(t, r, reporter)
+	} else {
+		posted, err := r.reports.SubmitChecked(ctx, reporter.session, reporter.account, service.SubmitInput{
+			Category: service.CategoryFlood, Severity: service.SeverityMedium,
+			Description: "Water is knee deep across the lane near the market",
+			Latitude:    reporter.lat, Longitude: reporter.lon,
+		})
+		if err != nil {
+			t.Fatalf("%s: SubmitChecked: %v", r.label, err)
+		}
+		id = posted.Report.ID
 	}
-	id := posted.Report.ID
 	record("post", nil, nil)
 
 	content := func(who actor, v service.VoteValue) (service.CastVoteResult, error) {
@@ -233,7 +246,28 @@ func eastOf(lat, lon, km float64) float64 {
 	return lon + km/(111.195*math.Cos(lat*math.Pi/180))
 }
 
-func TestDemoParityWithSQL(t *testing.T) {
+func TestDemoParityWithSQL(t *testing.T) { runDemoParity(t, false) }
+
+// agedLead is how long before the scenario the aged report was posted, and
+// agedLife the fade time it was given: posted 7 hours ago with the normal 8
+// hour life, it fades in 1 hour.
+const (
+	agedLead = 7 * time.Hour
+	agedLife = 8 * time.Hour
+)
+
+// TestDemoParityExtensionWithSQL is TestDemoParityWithSQL on an aged report, so
+// a confirmation from a new spot really moves the fade time (backlog 999.12,
+// review WR-02, 2026-10-30). On a fresh report an extension adds only the
+// milliseconds between the post and the vote, which LifetimeSeconds rounds
+// away, so the first test cannot tell an extension from none. Here the first
+// confirm moves the fade time from 1 hour to 8 hours ahead, a lifetime of
+// about 15 hours, in the SQL and in the twin alike, and ConfirmExtends is
+// compared too. Both runs stamp votes from their own clock, so the answers
+// agree to the second and no further.
+func TestDemoParityExtensionWithSQL(t *testing.T) { runDemoParity(t, true) }
+
+func runDemoParity(t *testing.T, aged bool) {
 	pool := testutil.NewTestDB(t)
 
 	// Positions: the reporter at the base point, A 300 m north, B 600 m east,
@@ -268,11 +302,25 @@ func TestDemoParityWithSQL(t *testing.T) {
 		reports: service.NewReportService(sqlcgen.New(pool)),
 		votes:   service.NewVotingService(sqlcgen.New(pool)),
 	}
+	var dbPost, worldPost postFunc
+	if aged {
+		dbPost = func(t *testing.T, r runner, reporter actor) int64 {
+			t.Helper()
+			now := time.Now()
+			return testutil.InsertStoredReport(t, pool, testutil.StoredReport{
+				SessionID: reporter.session, Category: "flood", Severity: "medium",
+				Description: "Water is knee deep across the lane near the market",
+				Latitude:    reporter.lat, Longitude: reporter.lon,
+				CreatedAt: now.Add(-agedLead), ExpiresAt: now.Add(agedLife - agedLead),
+			})
+		}
+	}
 	dbRes := scenario(t, dbRun,
 		dbActor("reporter", "parity-reporter@example.test", reporterAt),
 		dbActor("A", "parity-a@example.test", aAt),
 		dbActor("B", "parity-b@example.test", bAt),
 		dbActor("C", "parity-c@example.test", cAt),
+		dbPost,
 	)
 
 	// The world run: synthetic ids, the real services over the twin.
@@ -281,11 +329,30 @@ func TestDemoParityWithSQL(t *testing.T) {
 		return actor{name: name, lat: p[0], lon: p[1], account: acct, session: w.SessionFor(acct)}
 	}
 	worldRun := runner{label: "world", reports: w.Reports, votes: w.Votes}
+	if aged {
+		// The world posts through the real SubmitChecked with its clock moved
+		// into the past, as seeding does, then puts the clock back.
+		worldPost = func(t *testing.T, r runner, reporter actor) int64 {
+			t.Helper()
+			w.SetClockOffset(-agedLead)
+			defer w.SetClockOffset(0)
+			posted, err := r.reports.SubmitChecked(context.Background(), reporter.session, reporter.account, service.SubmitInput{
+				Category: service.CategoryFlood, Severity: service.SeverityMedium,
+				Description: "Water is knee deep across the lane near the market",
+				Latitude:    reporter.lat, Longitude: reporter.lon,
+			})
+			if err != nil {
+				t.Fatalf("%s: SubmitChecked: %v", r.label, err)
+			}
+			return posted.Report.ID
+		}
+	}
 	worldRes := scenario(t, worldRun,
 		worldActor("reporter", VisitorAccountID, reporterAt),
 		worldActor("A", NeighbourAccountBase, aAt),
 		worldActor("B", NeighbourAccountBase+1, bAt),
 		worldActor("C", NeighbourAccountBase+2, cAt),
+		worldPost,
 	)
 
 	if len(dbRes) != len(worldRes) {
@@ -338,6 +405,17 @@ func TestDemoParityWithSQL(t *testing.T) {
 		bConfirms := stepByLabel(r, "B confirms")
 		if bConfirms == nil || bConfirms.cast == nil || bConfirms.cast.Trust.ConfirmedPlaces != 2 {
 			t.Errorf("after B confirms, confirmed places = %+v, want 2", bConfirms)
+		}
+		// The extension itself (review WR-02): after A's confirm the report of the
+		// aged run fades 8 hours after the vote, a lifetime of 15 hours, where a
+		// run with no extension would still read 8 hours.
+		aConfirms := stepByLabel(r, "A confirms")
+		if aged {
+			wantLife := int64((agedLead + agedLife) / time.Second)
+			if aConfirms == nil || len(aConfirms.views["reporter"]) != 1 ||
+				math.Abs(float64(aConfirms.views["reporter"][0].LifetimeSeconds-wantLife)) > 2 {
+				t.Errorf("after A confirms on the aged report, lifetime = %+v, want about %d seconds", aConfirms, wantLife)
+			}
 		}
 		resolved := stepByLabel(r, "reporter resolves")
 		if resolved == nil || len(resolved.views["reporter"]) != 0 {

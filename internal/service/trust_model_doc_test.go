@@ -198,6 +198,18 @@ var p20MustCite = []string{
 	"TestConfirmExtensionUnderConcurrentVotes",
 	"TestExtendedExpiryOneColumnEveryReader",
 	"TestCastVoteTrustMatchesFeedAfterExtension",
+	// Amended 2026-10-30 by the review fixes of quick task 261030-64q (IN-06,
+	// WR-02, WR-03): the rest of the tests the same section cites, so a rename
+	// of any of them makes this test notice.
+	"TestExtendedExpiryRule",
+	"TestConfirmExtendsFlag",
+	"TestCastVoteExtendsOnlyOnConfirm",
+	"TestMemQuerierExtendsLikeSQL",
+	"TestCurrencyWindowKeepsNormalLifetime",
+	"TestFeedAndFocusCarryConfirmExtends",
+	"TestDemoParityExtensionWithSQL",
+	"TestFadingRefreshedInPlaceNoSecondPush",
+	"TestConfirmWhileResolvedUsesUpSpotAndPerson",
 }
 
 // p20NoSpoofClaims are phrases the document must never contain. A spoofed
@@ -507,6 +519,20 @@ func TestTrustModelDocMatchesCode(t *testing.T) {
 		}
 		if len(notCited) > 0 {
 			t.Errorf("document does not name these tests: %s", strings.Join(notCited, ", "))
+		}
+	})
+
+	// Review IN-01 of quick task 261030-64q (2026-10-30): the browser's time fade
+	// divides by the whole extended life, so an extended report goes stale with
+	// more time left in absolute terms. The document states the effect.
+	t.Run("extended fade look stated", func(t *testing.T) {
+		for _, want := range []string{
+			"the aging look starts with 12 hours left and the stale look with 6 hours left",
+			"goes stale only in its last 3 hours",
+		} {
+			if !strings.Contains(doc, want) {
+				t.Errorf("document does not state the effect of an extension on the time fade: missing %q", want)
+			}
 		}
 	})
 
