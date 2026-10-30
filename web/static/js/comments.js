@@ -989,6 +989,11 @@ window.PinalertComments = (function () {
     }
 
     function sendBlock(rec, name) {
+      // Its own busy guard, so a second press that reaches it by any path
+      // while a block is out sends nothing (review IN-01).
+      if (rec.blockBusy) {
+        return;
+      }
       if (navigator.onLine === false) {
         showActionError(rec, OFFLINE_ACTION);
         focusBlockOrHeading(rec);

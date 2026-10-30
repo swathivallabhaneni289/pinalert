@@ -2001,3 +2001,20 @@ test('WR-04: a reply read already out when the block lands is ignored', async ()
   assert.equal(page.items().length, 1);
   assert.deepEqual(threadIds(li), [], 'no reply by the blocked person came back');
 });
+
+// Review IN-01 (2026-10-30): sendBlock has its own busy guard. The box here
+// fires its close event later, as a browser may, so a second fast press of its
+// Block button reaches sendBlock while the first request is out.
+test('IN-01: a second Block press while sending sends nothing more', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  const b = boxes.block;
+  const later = [];
+  b.box.close = () => { if (b.box.open) { b.box.open = false; later.push(() => b.box.fire('close')); } };
+  const page = await start(env, [cm(1)]);
+  blockButton(page.items()[0]).fire('click');
+  b.yes.fire('click');
+  b.yes.fire('click');
+  later.forEach((fn) => fn());
+  assert.equal(blockPosts(env).length, 1, 'one request');
+});
