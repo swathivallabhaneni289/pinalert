@@ -73,12 +73,31 @@ func TestCommentBlockAuthorRoute(t *testing.T) {
 		// must answer like any other block and so reveal nothing.
 		p20Status(t, "cat blocks reporter", e.act(t, e.cat, reporterComment.ID, "block-author"), http.StatusNoContent)
 		p20Status(t, "reporter blocks cat", e.act(t, e.reporter, catComment.ID, "block-author"), http.StatusNoContent)
+		// Review IN-03 (2026-10-30): the 204 wrote the reporter's own row.
+		if !u78HasBlock(t, e, e.accountID(t, p812ReporterEmail), e.accountID(t, p812CatEmail)) {
+			t.Error("no reporter to cat block row after the 204")
+		}
 	})
 
 	t.Run("a malformed id is a 400 on field id", func(t *testing.T) {
+		before := u78Blocks(t, e)
 		resp := p812Send(t, e.ben, http.MethodPost, e.srv.URL+"/api/comments/abc/block-author", "")
 		p20WantError(t, "malformed id", resp, http.StatusBadRequest, "id", "Comment id must be a number.")
+		if got := u78Blocks(t, e); got != before {
+			t.Errorf("block rows went from %d to %d on a 400", before, got)
+		}
 	})
+}
+
+// u78HasBlock says whether the block row from blocker to blocked exists.
+func u78HasBlock(t *testing.T, e *p812Env, blocker, blocked int64) bool {
+	t.Helper()
+	var n int
+	if err := e.pool.QueryRow(context.Background(),
+		`SELECT count(*) FROM person_blocks WHERE blocker_id = $1 AND blocked_id = $2`, blocker, blocked).Scan(&n); err != nil {
+		t.Fatalf("reading a block: %v", err)
+	}
+	return n == 1
 }
 
 // listString flattens a decoded JSON object to text for a contains check.
@@ -174,6 +193,18 @@ func TestCommentBlockAuthorUniformNotFound(t *testing.T) {
 	if got := u78Blocks(t, e); got != before {
 		t.Errorf("block rows went from %d to %d across the refusals", before, got)
 	}
+
+	// Review IN-03 (2026-10-30): the positive control. A clear comment on a
+	// report seeded the same way as the refused ones answers 204, so the 404s
+	// above come from the rules and not from a seed nobody could see.
+	t.Run("a clear comment on a seeded live report answers 204", func(t *testing.T) {
+		live := u78Report(t, e, "flood", "clear", time.Hour, time.Hour)
+		c := seed(live, annID, "clear")
+		p20Status(t, "ben blocks ann from the seeded report", e.act(t, e.ben, c, "block-author"), http.StatusNoContent)
+		if !u78HasBlock(t, e, e.accountID(t, p812BenEmail), annID) {
+			t.Error("no ben to ann block row after the 204")
+		}
+	})
 }
 
 func TestCommentBlockAuthorRateLimit(t *testing.T) {
