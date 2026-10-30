@@ -238,6 +238,7 @@
 .leaflet-container .report-page .comments .comment__reply:not([hidden]),
 .leaflet-container .report-page .comments .comment__delete:not([hidden]),
 .leaflet-container .report-page .comments .comment__flag:not([hidden]),
+.leaflet-container .report-page .comments .comment__block:not([hidden]),
 .leaflet-container .report-page .comments .comment-thread__toggle:not([hidden]),
 .leaflet-container .report-page .comments .composer__cancel:not([hidden]) {
   display: inline-flex;
@@ -261,6 +262,7 @@
 .leaflet-container .report-page .comments .comment__reply:not([hidden]):hover,
 .leaflet-container .report-page .comments .comment__delete:not([hidden]):hover,
 .leaflet-container .report-page .comments .comment__flag:not([hidden]):hover,
+.leaflet-container .report-page .comments .comment__block:not([hidden]):hover,
 .leaflet-container .report-page .comments .comment-thread__toggle:not([hidden]):hover,
 .leaflet-container .report-page .comments .composer__cancel:not([hidden]):hover {
   color: var(--color-text);

@@ -238,6 +238,8 @@
 
   {{/* Phase 8 plan 17 (D-14, owner rule on confirm boxes): the comment-delete-confirm box, the Log out box's own look and behaviour (auth.css logout-confirm), from comment_delete_confirm.html.tmpl. comments.js opens it and its Delete button is the only thing that sends a delete. A direct child of body so no hidden ancestor takes its box away. */}}
   {{template "comment_delete_confirm"}}
+  {{/* Quick 261030-u78 (WR-E04, owner rule on confirm boxes): the comment-block-confirm box, the same .logout-confirm look, from comment_block_confirm.html.tmpl. comments.js fills and opens it and its Block button is the only thing that sends a block. A direct child of body so no hidden ancestor takes its box away. */}}
+  {{template "comment_block_confirm"}}
 
   {{template "app_bottombar" .}}
 

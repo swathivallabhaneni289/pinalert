@@ -112,6 +112,17 @@ func phoneExpandTemplate(t *testing.T, name string) string {
 				}
 				body, _, _ := strings.Cut(rest, "{{end}}")
 				return body
+			// Amended 2026-10-30 by quick 261030-u78 (WR-E04): the Block box is
+			// its own defined block in comment_block_confirm.html.tmpl, expanded
+			// the same way as the Delete box above.
+			case "comment_block_confirm":
+				whole := p13ReadTemplate(t, "comment_block_confirm.html.tmpl")
+				_, rest, ok := strings.Cut(whole, `{{define "comment_block_confirm"}}`)
+				if !ok {
+					t.Fatalf("comment_block_confirm.html.tmpl defines no comment_block_confirm")
+				}
+				body, _, _ := strings.Cut(rest, "{{end}}")
+				return body
 			case "account_header.html.tmpl":
 				whole := p13ReadTemplate(t, "account_header.html.tmpl")
 				_, root, ok := strings.Cut(whole, "{{end}}")
