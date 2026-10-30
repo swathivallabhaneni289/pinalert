@@ -4358,6 +4358,11 @@
                     "type": "boolean",
                     "example": true
                 },
+                "confirm_extends": {
+                    "description": "True while a confirmation from someone at a new spot would still move expires_at later. The map popup then ends its fade line with unless confirmed again. False for a finished report and once the report has reached the longest life it can have.",
+                    "type": "boolean",
+                    "example": true
+                },
                 "confirmed_by_people": {
                     "description": "ConfirmedByPeople is the server authored Show Confirmed membership: true only\nfor an active report that people at different nearby spots have confirmed\n(and whose disputes are not a majority). It is not the same as visibility\nlive: a Critical report is shown at once but is confirmed only once people\nconfirm it. The client renders it and never recomputes it (TRUST-02). Always\npresent.",
                     "type": "boolean",

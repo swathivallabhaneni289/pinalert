@@ -1006,7 +1006,7 @@ Plans:
 
 - [ ] TBD (promote with /gsd-review-backlog when ready)
 
-### Phase 999.12: A fresh confirmation keeps a report alive longer (DECIDED 2026-10-18, build after Phase 3.2)
+### Phase 999.12: A fresh confirmation keeps a report alive longer (DONE as quick task 261030-64q, 2026-10-30)
 
 **Goal:** [Captured for future planning] A report fades at the `expires_at` it was given when it was created, and confirming it again does not move that time, so the popup says only "Fades in 7 hrs." The picture the owner chose said "unless confirmed again", which is not true today. Decide whether a confirmation from a new spot should extend a report's life, by how much, and under what cap so a crowd cannot keep a false report alive, or whether the line stays as it is. This changes the trust model (`docs/TRUST-MODEL.md`) and the expiry sweep, so it needs the owner's decision before it is planned. Raised by the plan 03-31 build on 2026-10-13.
 

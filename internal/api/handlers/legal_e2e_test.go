@@ -290,13 +290,15 @@ func TestLegalPagesRender(t *testing.T) {
 	// D-18, D-24a: the Disclaimer's expiry sentence names the places that exist.
 	for _, want := range []string{
 		"Most reports last",
-		"Confirmations don't make them last longer. When the time is up, a report is marked Expired and leaves the Nearby list. Ended reports stay under My activity, Ended nearby, for 7 days.",
+		// Amended 2026-10-30 by quick task 261030-64q (backlog 999.12): a
+		// confirmation from a new spot starts the time again, up to the cap.
+		"A confirmation from someone at a new spot starts that time again, but no report lasts more than 24 hours after it was posted, or 48 hours for a critical report. Disputes never make a report last longer. When the time is up, a report is marked Expired and leaves the Nearby list. Ended reports stay under My activity, Ended nearby, for 7 days.",
 	} {
 		if !strings.Contains(ptext, want) {
 			t.Errorf("page text lacks %q", want)
 		}
 	}
-	for _, gone := range []string{"leaves the Active list", "stay visible for a while under Past"} {
+	for _, gone := range []string{"leaves the Active list", "stay visible for a while under Past", "Confirmations don't make them last longer"} {
 		if strings.Contains(ptext, gone) {
 			t.Errorf("page text still holds the outdated %q", gone)
 		}

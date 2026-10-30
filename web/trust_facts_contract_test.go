@@ -215,6 +215,8 @@ func TestPopupBuildsTheCardAndTheFadeLine(t *testing.T) {
 	p13Ordered(t, update, "map.js updatePopupCard distance",
 		"Pinalert.distanceText(report)", "card.metaLine")
 
+	// The promise words live in app.js formatFade only (backlog 999.12), so the
+	// popup is the same on phone and laptop.
 	p13MustNotContain(t, "map.js", mapJS, "collapsePanelsIn", "confirmed again", "createTrustBlock(")
 }
 
@@ -229,8 +231,11 @@ func TestSharedDistanceAndFadeFormatters(t *testing.T) {
 
 	fade := jsFunctionBody(t, app, "formatFade(report)")
 	p13MustContain(t, "formatFade", fade,
-		"report.expires_at", "nowMs()", "Math.ceil(", "Math.floor(", "'Fades in '", "' min.'", "' hr.'", "' hrs.'")
-	p13MustNotContain(t, "formatFade", fade, "confirmed again", "unless", "Date.now(")
+		"report.expires_at", "nowMs()", "Math.ceil(", "Math.floor(", "'Fades in '", "' min'", "' hr'", "' hrs'",
+		"' unless confirmed again.'", "report.confirm_extends === true")
+	// Amended 2026-10-30 by quick task 261030-64q (backlog 999.12): the promise
+	// words now live in this one function and are chosen by the server's flag.
+	p13MustNotContain(t, "formatFade", fade, "Date.now(")
 
 	around := jsFunctionBody(t, app, "feedIsAroundReader()")
 	p13MustContain(t, "feedIsAroundReader", around, "state.center.own === true")

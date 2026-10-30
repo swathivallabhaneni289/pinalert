@@ -98,6 +98,10 @@ type ReportView struct {
 	// and like: true for an active or disputed report, false for a resolved, faded
 	// or withheld one (CommentsOpen in comments.go). The page never decides it (D-15).
 	CommentsOpen bool
+	// ConfirmExtends is the server's word on whether a confirmation from a new
+	// spot would still move this report's fade time (ConfirmExtends in expiry.go).
+	// Display only, and never read by Resolve (backlog 999.12).
+	ConfirmExtends bool
 	// ReporterProfilePath is "/u/" plus the reporter's username, set only when the
 	// reporter is opted in, has a clear username, is not deleted, is not the
 	// reader and has not blocked the reader, and only on a live view (Active or

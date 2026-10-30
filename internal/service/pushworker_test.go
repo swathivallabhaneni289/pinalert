@@ -598,6 +598,13 @@ func TestWorkerSkipsWhenNoLongerEligible(t *testing.T) {
 	off := func(mut func(*sqlcgen.PushAccountHomeRow)) func(r *pwRig) {
 		return func(r *pwRig) { mut(&r.q.home) }
 	}
+	fadesSoon := func(r *pwRig) {
+		r.report(func(row *sqlcgen.PushReportFactsRow) { row.ExpiresAt = pushFactsNow.Add(30 * time.Minute) })
+	}
+	withFades := func(c tc, mut func(r *pwRig)) tc {
+		c.mutate = mut
+		return c
+	}
 
 	cases := []tc{
 		// Critical.
@@ -670,7 +677,12 @@ func TestWorkerSkipsWhenNoLongerEligible(t *testing.T) {
 		// 2026-10-25 (review S-01, D-07): a fading note follows MayNotifyAboutReport
 		// like every non Reliable kind, so it needs a Live report. A Provisional
 		// report's fading row stays in the bell and is skipped for the phone.
-		lowLive("fading, live", "changed", "fading", "sent"),
+		// Amended 2026-10-30 by quick task 261030-64q (backlog 999.12): a fading
+		// note is also sent only while the report still fades within the hour, so
+		// the "sent" case now has facts that fade in 30 minutes, and a report
+		// someone confirmed again since (facts 5 hours out) is skipped.
+		withFades(lowLive("fading, live", "changed", "fading", "sent"), fadesSoon),
+		lowLive("fading, confirmed again since", "changed", "fading", "not_eligible"),
 		{name: "fading, still active but provisional", kind: "changed", event: "fading", severity: "low", wantVis: VisibilityProvisional, want: "not_eligible"},
 		{name: "fading, hidden since", kind: "changed", event: "fading", severity: "low", votes: pwDispute(3), wantVis: VisibilityHidden, want: "not_eligible"},
 		{name: "fading, retracted since", kind: "changed", event: "fading", severity: "low", votes: pwReporterResolved(), wantVis: VisibilityRetracted, want: "not_eligible"},
@@ -1175,6 +1187,10 @@ func TestWorkerCapPerAccountHour(t *testing.T) {
 				if kind != "critical" {
 					row.Severity = "low"
 					row.Happening = nil
+					// Amended 2026-10-30 by quick task 261030-64q (backlog 999.12): a
+					// fading note is sent only while the report still fades within
+					// the hour, so the fixture's report fades in 30 minutes.
+					row.ExpiresAt = pushFactsNow.Add(30 * time.Minute)
 				}
 			})
 			if err := r.sweep(); err != nil {
@@ -1203,6 +1219,10 @@ func TestWorkerCapPerAccountHour(t *testing.T) {
 				if kind != "critical" {
 					row.Severity = "low"
 					row.Happening = nil
+					// Amended 2026-10-30 by quick task 261030-64q (backlog 999.12): a
+					// fading note is sent only while the report still fades within
+					// the hour, so the fixture's report fades in 30 minutes.
+					row.ExpiresAt = pushFactsNow.Add(30 * time.Minute)
 				}
 			})
 			if err := r.sweep(); err != nil {
@@ -1291,6 +1311,9 @@ func TestWorkerAppleFirstPushOnly(t *testing.T) {
 		r.report(func(row *sqlcgen.PushReportFactsRow) {
 			row.Severity = "low"
 			row.Happening = nil
+			// Amended 2026-10-30 by quick task 261030-64q (backlog 999.12): the
+			// fading note is sent only while the report fades within the hour.
+			row.ExpiresAt = pushFactsNow.Add(30 * time.Minute)
 		})
 		r.q.sentAbout = sentAbout
 		r.q.subs = devices

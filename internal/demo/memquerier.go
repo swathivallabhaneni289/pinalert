@@ -488,11 +488,20 @@ func (m *memQuerier) ReporterHistoryReports(_ context.Context, arg sqlcgen.Repor
 func (m *memQuerier) InsertVote(_ context.Context, arg sqlcgen.InsertVoteParams) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.find(arg.ReportID); !ok {
-		return errors.New("demo: vote on a report that does not exist")
+	_, err := m.appendVote(arg, stamp(m.now()))
+	return err
+}
+
+// appendVote is the append InsertVote and InsertVoteExtending share: it refuses
+// a vote on a missing report and a full world, then appends the row stamped
+// with at and a rising id. The caller holds the lock.
+func (m *memQuerier) appendVote(arg sqlcgen.InsertVoteParams, at time.Time) (memReport, error) {
+	r, ok := m.find(arg.ReportID)
+	if !ok {
+		return memReport{}, errors.New("demo: vote on a report that does not exist")
 	}
 	if len(m.votes) >= MaxVotesPerWorld {
-		return ErrWorldFull
+		return memReport{}, ErrWorldFull
 	}
 	m.lastVote++
 	m.votes = append(m.votes, memVote{
@@ -502,9 +511,64 @@ func (m *memQuerier) InsertVote(_ context.Context, arg sqlcgen.InsertVoteParams)
 		kind:      arg.Kind,
 		value:     arg.Value,
 		cell:      arg.GeohashCell,
-		createdAt: stamp(m.now()),
+		createdAt: at,
 	})
-	return nil
+	return r, nil
+}
+
+// InsertVoteExtending mirrors extend.sql InsertVoteExtending (backlog 999.12):
+// it appends the vote stamped from the world clock and, when arg.Extend is true
+// and the vote is a confirmation from a new spot by a new person, moves the
+// report's fade time with service.ExtendedExpiry using the lifetime and cap the
+// call carries. A spot is new when no earlier row of the same kind and value on
+// the report, from an account other than the reporter, has the same cell, and a
+// person is new when no such row is theirs. Go decides Extend (and that a
+// finished report is never extended), exactly as for the SQL. It returns the
+// stored fade time afterwards.
+func (m *memQuerier) InsertVoteExtending(_ context.Context, arg sqlcgen.InsertVoteExtendingParams) (time.Time, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	at := stamp(m.now())
+	isNew := true
+	if r, ok := m.find(arg.ReportID); ok {
+		reporter := m.reporterOf(r)
+		for _, v := range m.votes {
+			if v.reportID != arg.ReportID || v.kind != arg.Kind || v.value != arg.Value {
+				continue
+			}
+			if reporter != nil && v.accountID == *reporter {
+				continue
+			}
+			if v.cell == arg.GeohashCell || v.accountID == arg.AccountID {
+				isNew = false
+				break
+			}
+		}
+	}
+
+	r, err := m.appendVote(sqlcgen.InsertVoteParams{
+		ReportID:    arg.ReportID,
+		AccountID:   arg.AccountID,
+		Kind:        arg.Kind,
+		Value:       arg.Value,
+		GeohashCell: arg.GeohashCell,
+	}, at)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if arg.Extend && isNew {
+		for i := range m.reports {
+			if m.reports[i].id == r.id {
+				m.reports[i].p.ExpiresAt = service.ExtendedExpiry(
+					r.p.CreatedAt, r.p.ExpiresAt, at,
+					time.Duration(arg.LifeSeconds)*time.Second,
+					time.Duration(arg.CapSeconds)*time.Second)
+				return m.reports[i].p.ExpiresAt, nil
+			}
+		}
+	}
+	return r.p.ExpiresAt, nil
 }
 
 // newestPerReportAccountKind is DISTINCT ON (report_id, account_id, kind) with

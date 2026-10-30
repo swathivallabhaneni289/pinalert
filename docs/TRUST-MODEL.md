@@ -80,7 +80,7 @@ The take back: Phase 3.1 added a fifth value, `unresolve`, for a person who tapp
 
 `TestCastVoteTakeBack` pins the refusals, the limit and the poster's budget.
 
-Order of checks inside `CastVote`: input validation, report lookup, the block on content votes for your own report, expiry (an expired report is refused as expired even from far away), the refusal of a vote that carries no coordinates (excused for the reporter's own resolve and reopen and for the take back), distance, for a take back the standing resolve check, then for a take back or the poster's own reopen the undo limit check (all before any write), then the write.
+Order of checks inside `CastVote`: input validation, report lookup, the block on content votes for your own report, expiry (an expired report is refused as expired even from far away), the refusal of a vote that carries no coordinates (excused for the reporter's own resolve and reopen and for the take back), distance, for a take back the standing resolve check, then for a take back or the poster's own reopen the undo limit check (all before any write), then for a content confirm one read of the current votes that decides whether the report is still live enough to extend, then the write. The write appends the vote and, for a confirmation from a new spot on a live report, moves the fade time in the same statement.
 
 A refused vote returns the service error `ErrVoterTooFar`, which the API answers with HTTP 403, field `location` and the sentence "Too far to vote. You need to be within 1 km of this report." The sentence is the same for all four vote values the rule covers, and the response never contains the computed distance.
 
@@ -130,9 +130,9 @@ Every report carries a second signal beside the counters: is this report still c
 
 ### Window
 
-The window is the report's lifetime divided by `CurrencyWindowDivisor` (4). That is 2 hours for an 8 hour report and 6 hours for a 24 hour report (D-05). The window itself is exact. The window length sent to the browser is rounded to the nearest whole minute.
+The window is the report's normal lifetime, `ExpiryDuration` for its severity, divided by `CurrencyWindowDivisor` (4). That is 2 hours for an 8 hour report and 6 hours for a 24 hour report (D-05). A confirmation from a new spot can push the fade time past the normal lifetime (see "A confirmation from a new spot keeps a report alive"), and an extension never widens the window: the lifetime it divides is capped at `ExpiryDuration`. A report seeded with a shorter life keeps its own shorter window. The window itself is exact. The window length sent to the browser is rounded to the nearest whole minute.
 
-`ExpiryDuration` depends on severity only. A low severity rescue needed report therefore lives 8 hours and gets a 2 hour window, even though the critical bypass treats it as critical elsewhere.
+`ExpiryDuration` depends on severity only. A low severity rescue needed report therefore lives 8 hours (before any confirmation from a new spot) and gets a 2 hour window, even though the critical bypass treats it as critical elsewhere.
 
 The places that count come from the same row filter as the confirmed counter: the reporter is excluded, each account has one current row, and only content confirms count. Resolve and reopen votes never refresh the signal.
 
@@ -230,7 +230,7 @@ The roadmap asks for a fast decaying "is this still current" confidence score (T
 
 - It is an integer from 0 to 100 per report, from a documented formula over real vote times, recomputed on every read and never stored.
 - The word is cut from the integer, so the two cannot disagree.
-- It decays one point per started 1/25 of a window and reaches 0 over the report's lifetime. That is the fast decaying half. The reporter half is slow.
+- It decays one point per started 1/25 of a window and reaches 0 over the report's normal lifetime. That is the fast decaying half. The reporter half is slow.
 - It is null below 2 places, and Phase 6 treats null as unknown.
 - The feed row shows only the word. The popup shows the score as the score line of the still current row, "Score {SCORE} out of 100." (D-09, A50, A92).
 
@@ -239,6 +239,38 @@ The roadmap asks for a fast decaying "is this still current" confidence score (T
 One account re-tapping Confirm moves only its own place's time, so it cannot refresh the signal without a second, genuinely different place (D-05). Faking Up to date costs 2 verified accounts and 2 claimed locations, the same as forging Live. A spoofed location defeats it exactly as it defeats the place rule. See "Honest limits" below.
 
 The tests that pin this section are `TestCurrencyScoreBoundaries`, `TestCurrencyNotYetCorroborated`, `TestCurrencyRetapCannotRefresh`, `TestCurrencyDisputes`, `TestCurrencyWindowFollowsLifetime`, `TestCurrencyMonotone`, `TestFadeStageMapping` and `TestTrustCopyCurrencyIsPlainText`, rerun with `go test ./internal/service/ -run 'TestCurrencyScoreBoundaries|TestCurrencyNotYetCorroborated|TestCurrencyRetapCannotRefresh|TestCurrencyDisputes|TestCurrencyWindowFollowsLifetime|TestCurrencyMonotone|TestFadeStageMapping|TestTrustCopyCurrencyIsPlainText' -count=1`.
+
+## A confirmation from a new spot keeps a report alive
+
+A report fades at the time it was given when it was posted, unless someone at a new spot confirms it (backlog 999.12, decided by the owner on 2026-10-18). This is what makes the product words "reports auto-fade unless re-confirmed" true. The rule is one pure function, `ExtendedExpiry` in `internal/service/expiry.go`, and one SQL statement, `InsertVoteExtending` in `internal/store/queries/extend.sql`, that applies it in the same statement that writes the vote.
+
+The rule, in seven parts:
+
+1. Only a content confirm can extend. A dispute never extends. A resolve, a reopen, Mark resolved and a take back are resolution votes and never extend.
+2. A new spot means the voter's precision 7 cell has no earlier confirm on this report in the whole append only vote log, from any account other than the reporter. The log is the reference, not the standing votes, so a confirm, dispute, confirm toggle can never extend twice from one cell. The reporter's own rows never use up a spot, so a stranger standing where the reporter once confirmed still counts as a new voice.
+3. One person extends at most once: the voter must have no earlier confirm on this report. This keeps the promise made under "Honest limits" that walking around cannot add places, and it is true for the fade time too. Each account holds one current vote in the count of "confirmed by N nearby", and it now moves the fade time at most once as well.
+4. The new fade time is the confirmation's own time (the database clock, the same instant the vote row is stamped with) plus `ExpiryDuration` of the report's severity (`defaultExpiry` 8 hours, `criticalExpiry` 24 hours). It is never earlier than the current fade time, and never later than `ExpiryCap` after posting (`defaultExpiryCap` 24 hours, `criticalExpiryCap` 48 hours). Severity alone decides the numbers, the same as `ExpiryDuration` always has.
+5. A report that has already faded is never revived.
+6. Nothing ever shortens a fade time. Switching a confirm to a dispute is the only way to take a confirmation back, and it leaves the fade time as it is.
+7. A report that is finished in any way, a resolved one included, is never extended. A finished report has no life left to extend, and extending it would delay the reliability judging, which waits for expiry. `CastVote` decides this in Go: before the write, a content confirm reads the current votes once, runs `Resolve`, and passes Extend false unless the report is live. The SQL holds no visibility rule, so Go stays the one visibility authority. A resolved report stays resolved and shows its closed line, and Mark resolved still ends a report at once.
+
+Why the cap exists. Without a cap, a group of accounts at different spots could keep a false report alive for ever by confirming it in turn. With the cap, the most any group can buy is 24 hours from posting, or 48 hours for a Critical report. The price is the same as for raising the count: verified accounts and claimed locations (see "Honest limits"). The cap bounds the damage and does not remove the price.
+
+A dispute never extends, and taking a confirmation back never shortens. A dispute is a reason to doubt a report, so it must never be a way to keep one alive. A take back must not shorten the life, or one person could cut a report short by confirming and then switching.
+
+Written with the vote, atomically. The vote and the move of the fade time are one statement, so they commit together or not at all. The only row the statement updates is the report's, under the lock any update takes, and `GREATEST` lets the fade time only move later, so concurrent confirmations never lose an extension. `TestConfirmExtensionUnderConcurrentVotes` fires eight confirmations from eight spots at once and checks the result is the latest vote time plus the lifetime. The vote answer is built from the fade time the write returned, never the one read before it, so the answer equals the feed (`TestCastVoteTrustMatchesFeedAfterExtension`). The votes table stays append only with no conflict clause.
+
+The accepted races. Two confirms from one new spot in flight at the same instant can both count as new, because neither sees the other. The result is the later of their two times plus the lifetime, so the overshoot is at most the gap between them and never passes the cap. A resolve that lands between the pre write read and the write can still let that one confirm extend. The report stays resolved either way.
+
+What moves with the one column. Every reader reads the one stored `expires_at`, so nothing else needed a rule of its own. The feed's read time expiry, the Past tab and Ended nearby, reliability judging (which waits for the new time before it counts the report), the phone alert sweep and its stale skip, the report page history, profiles and the lived for text all treat an extended report as live until its new time and as finished after it. No migration is needed. `TestExtendedExpiryOneColumnEveryReader` checks these readers on a real database against one extended report.
+
+The still current window stays the normal lifetime over 4 (`ExpiryDuration` of the severity divided by `CurrencyWindowDivisor`: 2 hours, or 6 for Critical), so an extension never widens it and never loosens Up to date. `TestCurrencyWindowKeepsNormalLifetime` pins it. The browser's time fade measures the last quarter of the whole life, from posting to the current fade time, so a report confirmed again looks fresh again.
+
+Fading notes. A confirmation from a new spot on a report about to fade cancels that fade, so no fading note follows it. That is intended. The bell may write one more fades in about an hour row for the new fade time when it comes, and a phone note is sent only while the report still fades within the hour: a queued note about a report someone confirmed again since is skipped at send time. See "Phone alerts".
+
+The popup's promise. The map popup's fade line ends with "unless confirmed again" only while the server's `confirm_extends` is true. `ConfirmExtends` in `internal/service/expiry.go` computes it from the report's own times and visibility: true while the report is live and before its cap, false for a finished report and once the report has reached the longest life it can have. It is display only and `Resolve` never reads it. It names no voter, account, cell or count.
+
+The tests that pin this section are `TestExtendedExpiryRule`, `TestConfirmExtendsFlag`, `TestCastVoteExtendsOnlyOnConfirm`, `TestConfirmFromNewSpotExtendsExpiry`, `TestConfirmExtensionUnderConcurrentVotes`, `TestMemQuerierExtendsLikeSQL`, `TestExtendedExpiryOneColumnEveryReader`, `TestCastVoteTrustMatchesFeedAfterExtension`, `TestCurrencyWindowKeepsNormalLifetime` and `TestFeedAndFocusCarryConfirmExtends`. The Demo world applies the same rule through its in memory copy of the vote query, and `TestDemoParityWithSQL` checks it against the SQL.
 
 ## Reporter reliability
 
@@ -487,6 +519,8 @@ The server decides every vote. The browser only helps the voter get a fresh loca
 
 The hint is advisory. A forced vote is still refused by the server.
 
+The popup's fade line follows the same rule. It says "Fades in 7 hrs unless confirmed again." only while the feed's `confirm_extends` is true, and "Fades in 7 hrs." otherwise. The browser holds no lifetime, cap or rule of its own, and the server's word is the whole decision (`TestFeedAndFocusCarryConfirmExtends`).
+
 ## Show menu: Confirmed
 
 The Show menu on the Nearby list has a Confirmed choice. Which reports are in it is decided by the server and sent as the field `confirmed_by_people` on every report in the feed. The browser reads that field and shows it. It never counts confirmations and it is never sent a threshold.
@@ -555,7 +589,7 @@ A sixth note, the confirmed update, is not a kind of its own to the person. It r
 
 What near means. Within the distance the person chose in Settings, 1, 2, 5 or 10 km, 5 km until they choose, measured from the middle of the stored home area cell, as for the Reliable alert. The picked point is never stored and the report's exact position is never sent to the phone.
 
-The gate. A Critical or Reliable note is decided twice, once when it is queued and again just before it is sent, and both times from the report read fresh through `loadPushFacts`, which asks `Resolve` with the stored text check state set, exactly as the feed does. The predicate is `MayNotifyAboutReport`, called with `UpdateCriticalNearby` for a Critical note, `UpdateReliableNearby` for a Reliable one and `UpdateFading` for the fades in about an hour change note. A change note is different: the dispatcher queues it with no such check, and `eventStillHolds` decides it only at send time, against what the note announces. A fades in about an hour note reaches the phone only while the report is Live, and the same note about a Provisional report stays in the bell. The now confirmed note needs `ConfirmedByPeople`, which is stricter than Live. The now disputed note is sent only while the resolver gives Hidden and the was marked resolved note only while it gives Retracted, because they announce a report leaving the feed and are never about a Live report. The now disputed note is also sent only for a report people nearby had confirmed before. `reportWasConfirmed` works that out at send time from the report's own vote history, replayed through `Resolve` and `ConfirmedByPeople`, so push holds no second confirmation rule. A report nobody confirmed that is then disputed stays in the bell only, because the owner wants phone notifications few and never piled up (2026-10-28). `TestReportWasConfirmed` pins the replay and `TestWorkerHiddenNeedsEarlierConfirmation` proves both cases on a real database. `TestWorkerSkipsWhenNoLongerEligible` pins each of these. At send time the worker also reads again the person's switches, the mute, the home area and the distance, and for a change note that the event still holds. So a report that was hidden, removed, retracted or has expired in between is skipped, and nothing is ever sent as a "sorry" about a note already shown. The author never gets a note about their own report, a report the person muted gives none, and a report with no reporter account on record is never pushed, because the per reporter caps below cannot count it.
+The gate. A Critical or Reliable note is decided twice, once when it is queued and again just before it is sent, and both times from the report read fresh through `loadPushFacts`, which asks `Resolve` with the stored text check state set, exactly as the feed does. The predicate is `MayNotifyAboutReport`, called with `UpdateCriticalNearby` for a Critical note, `UpdateReliableNearby` for a Reliable one and `UpdateFading` for the fades in about an hour change note. A change note is different: the dispatcher queues it with no such check, and `eventStillHolds` decides it only at send time, against what the note announces. A fades in about an hour note reaches the phone only while the report is Live and still fades within the hour, and the same note about a Provisional report stays in the bell. A report that someone at a new spot confirmed again since the note was queued no longer fades within the hour, so the note is skipped at send time (`eventStillHolds`), and the bell may show a fresh fading row for the new fade time. The now confirmed note needs `ConfirmedByPeople`, which is stricter than Live. The now disputed note is sent only while the resolver gives Hidden and the was marked resolved note only while it gives Retracted, because they announce a report leaving the feed and are never about a Live report. The now disputed note is also sent only for a report people nearby had confirmed before. `reportWasConfirmed` works that out at send time from the report's own vote history, replayed through `Resolve` and `ConfirmedByPeople`, so push holds no second confirmation rule. A report nobody confirmed that is then disputed stays in the bell only, because the owner wants phone notifications few and never piled up (2026-10-28). `TestReportWasConfirmed` pins the replay and `TestWorkerHiddenNeedsEarlierConfirmation` proves both cases on a real database. `TestWorkerSkipsWhenNoLongerEligible` pins each of these. At send time the worker also reads again the person's switches, the mute, the home area and the distance, and for a change note that the event still holds. So a report that was hidden, removed, retracted or has expired in between is skipped, and nothing is ever sent as a "sorry" about a note already shown. The author never gets a note about their own report, a report the person muted gives none, and a report with no reporter account on record is never pushed, because the per reporter caps below cannot count it.
 
 A Critical report that most nearby people dispute. Disputes cannot hide a Critical report, so it stays Live and in the feed. Its phone note follows the feed: it is sent while the report is fresh, it still reads Not confirmed yet, and it never gets the confirmed update, because `ConfirmedByPeople` is false while the dispute majority stands. Push code has no dispute rule of its own and reads none (review note N3). `TestPushDispatchResolver` shows the resolver is the only judge.
 
@@ -757,6 +791,7 @@ What this does not do. The tag is farmable at the price "Honest limits" gives, a
 | deliberately chosen, documented geohash precision | Precision 7, with the reasoning in "What counts as a place" | `voterGeohashPrecision` | `TestGeohashPrecisionWitnesses` |
 | not the raw number of votes | Distinct places, so repeat votes and a crowd in one place count once | `BuildVoteTally` | `TestTrustCountsDistinctPlacesNotVotes` |
 | two distinct trust signals side by side | The still current word and the reporter tag, both shown at once on every report without opening anything: beside the state label on rows and the Activity page (A75), and as the state word and the last row of the popup card (A91, A92) | `BuildTrust`, `createStateLine` | `TestFeedSignalsMatchCastVoteSignals`, `TestTrustBlockMountedOnBothSurfaces`, `TestTrustStateLineMarkup` |
+| reports auto-fade unless re-confirmed | A confirmation from a new spot pushes the fade time back, up to a cap, in the same statement as the vote | `ExtendedExpiry`, `InsertVoteExtending` | `TestConfirmFromNewSpotExtendsExpiry` |
 | fast decaying still current confidence score | `currency.score` | `buildCurrency` | `TestCurrencyScoreBoundaries` |
 | slow decaying source reliable score | `reporter.score` | `ScoreReliability` | `TestReliabilityTable`, `TestReliabilityDecayAndWindow` |
 
@@ -816,6 +851,10 @@ The visible form of "confirmed by N nearby" is the counter `N confirmed`, with t
 | `ProfileReportsWindow` | `internal/service/profilereports.go` | 30 days |
 | `ProfileReportsCap` | `internal/service/profilereports.go` | 100 |
 | `FollowFanoutCap` | `internal/service/pushdispatch.go` | 500 |
+| `defaultExpiry` | `internal/service/report.go` | 8 hours |
+| `criticalExpiry` | `internal/service/report.go` | 24 hours |
+| `defaultExpiryCap` | `internal/service/report.go` | 24 hours |
+| `criticalExpiryCap` | `internal/service/report.go` | 48 hours |
 
 When you change one of these, change the table in the same commit. The test fails with the row name when they differ.
 
@@ -824,6 +863,8 @@ Generated code: run `make sqlc` after editing a `.sql` query and `make swag` aft
 Databases: tests that need Postgres run against a database created for the run and dropped after it, never the one a dev server uses, because `testutil.NewTestDB` truncates every table.
 
 Upgrading: an existing database needs `make migrate` once after this phase merges, to add `idx_reports_session_expires` from migration 00005. Votes cast before the 1 km rule keep counting. See "Votes cast before the 1 km rule".
+
+Upgrading for backlog 999.12 (a confirmation from a new spot keeps a report alive): no migration is needed. The fade time is the existing `reports.expires_at` column, and the new statement `InsertVoteExtending` only needs `make sqlc` output committed.
 
 Upgrading for Phase 9: an existing database needs `make migrate` once for migrations 00020 (profile switch, follows, blocks), 00021 (tapped ratings and the rater removal columns), 00022 (person mutes), 00023 (the Notify me flag and the follow note kind) and 00024 (the follow kind in the phone outbox). Run the migration first, then start the new server. Nothing signs anyone out, and every profile starts off.
 
@@ -835,6 +876,7 @@ The rating bucket constants `rateBurst` (10) and `rateEvery` (30 seconds) live i
 - Several people standing in one cell count as one place, so N is a lower bound on people, not a headcount.
 - Each account holds one current vote per report and kind (the latest vote wins in `CurrentVotesForReports`), so walking around cannot add places.
 - The real cost of adding a place is one more verified email account plus a claimed location for it.
+- A group of accounts at different spots can keep a false report alive up to its cap and never past it: 24 hours after posting, or 48 for a Critical report. Each account extends at most once, from a spot nobody confirmed from before, and a dispute never extends. Two confirms from one new spot in flight at the same instant can both count as new, and a resolve that lands between the pre write read and the write can still let that one confirm extend (the report stays resolved either way). Both overshoots are bounded by the cap. See "A confirmation from a new spot keeps a report alive".
 - Client coordinates cannot be verified. A spoofed location defeats both the cell rule and the 1 km rule.
 - The server does not read GPS accuracy and does not look for mock locations. The browser reads accuracy only to decide whether a fix may be cached.
 - Phone GPS error of tens of metres can put an honest voter standing near the 1 km line on the wrong side of it. Accuracy is not sent with a vote. The browser asks for a high accuracy fix. If that times out or no position is available it asks once more at the default accuracy, and only a refusal of permission ends the request at once. If both attempts fail the vote is still turned away with the location sentence, because no substitute position is ever used. A fix whose reported accuracy is worse than 300 m (`VOTER_LOCATION_MAX_CACHE_ACCURACY_M`) is used for that one vote but never cached, so it cannot be reused for later votes.
@@ -862,7 +904,7 @@ The rating bucket constants `rateBurst` (10) and `rateEvery` (30 seconds) live i
 - Burst and brigading detection, including a cap on how much one confirmer pair can add to a reporter's record (TRUSTX-03), and confirmer accuracy scoring (TRUSTX-01).
 - Vote rate limiting (Phase 4).
 - Email alias normalisation and disposable email blocking.
-- Re-confirmation extending a report's expiry.
+- A dispute extending a report, and any report living past its cap. A confirmation from a new spot does extend a report, up to the cap (see "A confirmation from a new spot keeps a report alive").
 - Letting a comment or a like count toward any trust number (Phase 8 built comments and likes and keeps them out of every number, see "Comments and likes").
 - Demoting stale non critical reports to Provisional, or dropping them before they expire.
 - Phone notifications beyond the kinds "Phone alerts" lists, such as a note when a count crosses a threshold or when a confirmed report goes quiet. Marked resolved and is now disputed reach only the person who posted or voted on the report, and only with Changes on. The Notify me bell was built by Phase 9, one person at a time, and has no general switch in Settings.

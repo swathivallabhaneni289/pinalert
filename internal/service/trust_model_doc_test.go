@@ -42,6 +42,8 @@ var p20Headings = []string{
 	"## Votes cast before the 1 km rule",
 	"## The two counters",
 	"## Still current signal",
+	// Amended 2026-10-30 by quick task 261030-64q (backlog 999.12).
+	"## A confirmation from a new spot keeps a report alive",
 	"## Reporter reliability",
 	"## One trust object on every surface",
 	"## Browser hints, server decisions",
@@ -91,6 +93,12 @@ var p20ConstFiles = map[string]string{
 	"ProfileReportsWindow":   "internal/service/profilereports.go",
 	"ProfileReportsCap":      "internal/service/profilereports.go",
 	"FollowFanoutCap":        "internal/service/pushdispatch.go",
+	// Amended 2026-10-30 by quick task 261030-64q (backlog 999.12): the two
+	// lifetimes and the two caps of a report.
+	"defaultExpiry":     "internal/service/report.go",
+	"criticalExpiry":    "internal/service/report.go",
+	"defaultExpiryCap":  "internal/service/report.go",
+	"criticalExpiryCap": "internal/service/report.go",
 }
 
 // p20Identifiers lists names the document must show in backticks and that
@@ -122,6 +130,10 @@ var p20Identifiers = []struct{ name, file string }{
 	{"LoadReporterSignals", "internal/service/reportersignals.go"},
 	{"endFollowsOf", "internal/service/followend.go"},
 	{"endFollowPair", "internal/service/followend.go"},
+	// Amended 2026-10-30 by quick task 261030-64q (backlog 999.12).
+	{"ExtendedExpiry", "internal/service/expiry.go"},
+	{"ConfirmExtends", "internal/service/expiry.go"},
+	{"ExpiryCap", "internal/service/report.go"},
 }
 
 // p20MustCite is the set of tests the document has to name.
@@ -180,6 +192,12 @@ var p20MustCite = []string{
 	"TestMuteNeverHidesReports",
 	"TestFollowCleanupOnEveryEndPath",
 	"TestFollowPushOrderCriticalFollowReliable",
+	// Amended 2026-10-30 by quick task 261030-64q (backlog 999.12): the tests
+	// the new section on re-confirmation cites.
+	"TestConfirmFromNewSpotExtendsExpiry",
+	"TestConfirmExtensionUnderConcurrentVotes",
+	"TestExtendedExpiryOneColumnEveryReader",
+	"TestCastVoteTrustMatchesFeedAfterExtension",
 }
 
 // p20NoSpoofClaims are phrases the document must never contain. A spoofed
@@ -298,6 +316,11 @@ func p20Constants(t *testing.T) map[string]string {
 		"ProfileReportsWindow":   p20Days(t, ProfileReportsWindow),
 		"ProfileReportsCap":      fmt.Sprint(ProfileReportsCap),
 		"FollowFanoutCap":        fmt.Sprint(FollowFanoutCap),
+		// Amended 2026-10-30 by quick task 261030-64q (see p20ConstFiles).
+		"defaultExpiry":     p20Hours(t, defaultExpiry),
+		"criticalExpiry":    p20Hours(t, criticalExpiry),
+		"defaultExpiryCap":  p20Hours(t, defaultExpiryCap),
+		"criticalExpiryCap": p20Hours(t, criticalExpiryCap),
 	}
 }
 

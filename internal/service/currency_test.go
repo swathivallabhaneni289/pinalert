@@ -770,3 +770,39 @@ func TestFadeStageMapping(t *testing.T) {
 		})
 	})
 }
+
+// TestCurrencyWindowKeepsNormalLifetime pins backlog 999.12: a confirmation from
+// a new spot pushes expires_at back, but the still current window stays the
+// normal lifetime over 4, so an extension never widens it and never loosens
+// Up to date. A seeded shorter life keeps its own window.
+func TestCurrencyWindowKeepsNormalLifetime(t *testing.T) {
+	now := p08At(3, 0)
+	cases := []struct {
+		name   string
+		meta   ReportMeta
+		life   time.Duration
+		window int
+	}{
+		{"a medium report extended to 20 hours", p08Medium, 20 * time.Hour, 120},
+		{"a critical report extended to 40 hours", p08Critical, 40 * time.Hour, 360},
+		{"a medium report with a seeded 3 hour life", p08Medium, 3 * time.Hour, 45},
+		{"a medium report at its normal 8 hours", p08Medium, p08Life8, 120},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sig := buildCurrency(p08Input(p08Worked, nil, tc.meta, VisibilityLive, tc.life, now))
+			if sig.WindowMinutes != tc.window {
+				t.Fatalf("WindowMinutes = %d, want %d", sig.WindowMinutes, tc.window)
+			}
+		})
+	}
+
+	t.Run("two places 2 hours old score the same on a 20 hour report as on an 8 hour one", func(t *testing.T) {
+		places := []placeVote{p08Place("a", p08At(1, 0)), p08Place("b", p08At(1, 0))}
+		short := p08Score(t, buildCurrency(p08Input(places, nil, p08Medium, VisibilityLive, p08Life8, now)))
+		long := p08Score(t, buildCurrency(p08Input(places, nil, p08Medium, VisibilityLive, 20*time.Hour, now)))
+		if short != 75 || long != 75 {
+			t.Fatalf("scores on 8 and 20 hour reports = %d and %d, want 75 and 75", short, long)
+		}
+	})
+}

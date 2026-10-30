@@ -264,7 +264,11 @@ const gpsDeniedMessage = "Voting needs your location, so nearby confirmations ca
 // types must. ReporterHistoryReports is the bounded history read that lets the
 // vote response carry the reporter signal the feed carries.
 type VotingQuerier interface {
-	InsertVote(ctx context.Context, arg sqlcgen.InsertVoteParams) error
+	// InsertVoteExtending appends the vote and, when arg.Extend is true and the
+	// vote is a confirmation from a new spot by a new person, moves the report's
+	// fade time later in the same statement (backlog 999.12, extend.sql). It
+	// returns the report's fade time as it stands after the write.
+	InsertVoteExtending(ctx context.Context, arg sqlcgen.InsertVoteExtendingParams) (time.Time, error)
 	CurrentVotesForReports(ctx context.Context, reportIDs []int64) ([]sqlcgen.CurrentVotesForReportsRow, error)
 	ReportVoteContext(ctx context.Context, reportID int64) (sqlcgen.ReportVoteContextRow, error)
 	ReporterHistoryReports(ctx context.Context, arg sqlcgen.ReporterHistoryReportsParams) ([]sqlcgen.ReporterHistoryReportsRow, error)
@@ -376,6 +380,11 @@ type CastVoteResult struct {
 	Visibility Visibility
 	Reason     ResolveReason
 	Trust      Trust
+
+	// ExpiresAt is the report's fade time after this vote, as the write returned
+	// it (backlog 999.12). Server side only: the vote response JSON does not
+	// carry it.
+	ExpiresAt time.Time
 
 	// UndosLeft is how many take backs the caller has left on this report
 	// after this vote (D-22). It is nil for a content vote, which has no
@@ -493,9 +502,17 @@ func (s *VotingService) ratePromptFor(ctx context.Context, raterID int64, report
 //     populate), append the vote, read the current votes back AFTER the
 //     insert so the response carries the POST-vote state (D-04), then build
 //     the tally and resolve, then build the trust object from the same rows
-//     (D-21). The reporter's bounded history is read once, after every
-//     refusal and before the insert, and its report ids join the same read
-//     back (D-10, D-21). CastVote contains NO branch of its own for the
+//     (D-21). The write appends the vote and, for a content confirm, applies
+//     the backlog 999.12 rule in the same statement (InsertVoteExtending): a
+//     confirmation from a new spot by a new person pushes the fade time back,
+//     up to the cap. Before that write a content confirm reads the current
+//     votes once and runs Resolve, and a report that is resolved or has faded is
+//     passed Extend false, so a finished report is never extended and the SQL
+//     holds no visibility rule (amendment A1). The response is built from the
+//     fade time the write returned, never the one read in step 2, so the vote
+//     answer and the feed agree. The reporter's bounded history is read once,
+//     after every refusal and before the insert, and its report ids join the
+//     same read back (D-10, D-21). CastVote contains NO branch of its own for the
 //     reporter's instant resolve or instant reopen: both arrive as flags on
 //     the tally BuildVoteTally builds and are adjudicated by isRetracted()
 //     inside Resolve. A reporter reopening their own Retracted report
@@ -506,9 +523,11 @@ func (s *VotingService) ratePromptFor(ctx context.Context, raterID int64, report
 //
 // CastVote calls Resolve rather than deciding visibility itself, so the
 // vote-cast response and 02-04's feed read give byte-identical answers
-// for the same data (TRUST-02 / T-02-04). No transaction, row lock or
-// conflict clause appears anywhere in this sequence because 02-02's
-// append-only schema has no contended row to serialise (T-02-02).
+// for the same data (TRUST-02 / T-02-04). The vote and any move of the fade
+// time are one statement and commit together. The only row it updates is the
+// report's, under the lock any update takes, and GREATEST lets the fade time
+// only move later, so concurrent confirmations never lose an extension. The
+// votes table stays append only with no conflict clause (T-02-02).
 func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVoteResult, error) {
 	// 1. Validate.
 	if !in.Kind.Valid() {
@@ -657,14 +676,38 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 		}
 	}
 
-	// Append the vote.
-	if err := s.q.InsertVote(ctx, sqlcgen.InsertVoteParams{
-		ReportID:    in.ReportID,
-		AccountID:   in.AccountID,
-		Kind:        string(in.Kind),
-		Value:       string(in.Value),
-		GeohashCell: cell,
-	}); err != nil {
+	// Decide in Go whether this vote may move the fade time (backlog 999.12,
+	// amendment A1). Only a content confirm can, and only while the report is
+	// still live: the pre write read below is tallied and run through Resolve, and
+	// a Retracted report, or one that has faded, is passed Extend false. Go stays
+	// the one visibility authority (T-02-04), so the SQL holds no visibility rule.
+	// The accepted race is a resolve landing between this read and the write: that
+	// one confirm can still extend, and the report stays resolved either way.
+	extend := false
+	if in.Kind == VoteKindContent && in.Value == VoteConfirm {
+		before, err := s.q.CurrentVotesForReports(ctx, []int64{in.ReportID})
+		if err != nil {
+			return CastVoteResult{}, err
+		}
+		visBefore, _ := Resolve(meta, BuildVoteTally(before, in.ReportID, rc.ReporterAccountID), now)
+		extend = mayExtend(visBefore, rc.ExpiresAt, now)
+	}
+
+	// Append the vote. For a content confirm that passed the check above the
+	// same statement applies the 999.12 rule (extend.sql) and returns the fade
+	// time as it stands afterwards.
+	expiresAt, err := s.q.InsertVoteExtending(ctx, sqlcgen.InsertVoteExtendingParams{
+		ReportID:          in.ReportID,
+		AccountID:         in.AccountID,
+		Kind:              string(in.Kind),
+		Value:             string(in.Value),
+		GeohashCell:       cell,
+		CapSeconds:        int64(ExpiryCap(meta.Severity) / time.Second),
+		LifeSeconds:       int64(ExpiryDuration(meta.Severity) / time.Second),
+		Extend:            extend,
+		ReporterAccountID: rc.ReporterAccountID,
+	})
+	if err != nil {
 		return CastVoteResult{}, err
 	}
 
@@ -696,7 +739,7 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 		Meta:              meta,
 		Visibility:        vis,
 		CreatedAt:         rc.CreatedAt,
-		ExpiresAt:         rc.ExpiresAt,
+		ExpiresAt:         expiresAt,
 		Now:               now,
 		Reporter:          reporterSignalRef(signals, rc.ReporterAccountID),
 	})
@@ -707,5 +750,5 @@ func (s *VotingService) CastVote(ctx context.Context, in CastVoteInput) (CastVot
 	if in.Kind == VoteKindResolution && in.Value == VoteResolve {
 		ratePrompt = s.ratePromptFor(ctx, in.AccountID, rc.ReporterAccountID, in.ReportID)
 	}
-	return CastVoteResult{Visibility: vis, Reason: reason, Trust: trust, UndosLeft: undosLeft, RatePrompt: ratePrompt}, nil
+	return CastVoteResult{Visibility: vis, Reason: reason, Trust: trust, ExpiresAt: expiresAt, UndosLeft: undosLeft, RatePrompt: ratePrompt}, nil
 }
