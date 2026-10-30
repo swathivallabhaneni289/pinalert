@@ -293,6 +293,11 @@ window.PinalertComments = (function () {
     // being written (review fix round 3, SK2-01).
     var pendingTails = [];
     var loadSeq = 0;
+    // Counts the times the list was cleared. A Show more, a Show more replies
+    // or a tail read that left before a clear is ignored when it lands, so a
+    // reset after a Block never gets an older page written back into it
+    // (review WR-04). loadSeq is not used for this because every poll bumps it.
+    var listGen = 0;
     var inflight = null;
     var pollTimer = null;
     var posting = false;
@@ -1015,15 +1020,20 @@ window.PinalertComments = (function () {
     }
 
     // afterBlock: one calm toast says who is blocked, focus goes to the
-    // heading and the list is read again at once, so the blocked person's words
-    // become the existing placeholder or leave the list. The server decides
-    // what is shown; nothing is removed here by guess.
+    // heading and the list is read again at once from the first page, as the
+    // Retry button and a first open do, so the blocked person's words become
+    // the existing placeholder or leave the list. Every page and thread read
+    // so far is dropped, and a read already out is ignored when it lands
+    // (review WR-04), so no loaded page keeps their words; Show more brings the
+    // rest back. A failed reload shows the error line with Retry. The server
+    // decides what is shown; nothing is removed here by guess.
     function afterBlock(rec, name) {
       writeActions(rec);
       if (window.Pinalert && typeof window.Pinalert.showToast === 'function') {
         window.Pinalert.showToast(name + ' is blocked.', null, TOAST_MS);
       }
       heading.focus({ preventScroll: true });
+      mode = 'none';
       load();
     }
 
@@ -1179,9 +1189,10 @@ window.PinalertComments = (function () {
       }
       var after = t.headLast;
       var sentStamp = answerStamp;
+      var gen = listGen;
       var call = request('GET', threadPath(rec.id, after));
       call.promise.then(function (res) {
-        if (nodes[rec.id] !== rec || t.headLast !== after || t.busy) {
+        if (gen !== listGen || nodes[rec.id] !== rec || t.headLast !== after || t.busy) {
           return;
         }
         if (!res.ok || !res.body || !Array.isArray(res.body.comments)) {
@@ -1288,6 +1299,12 @@ window.PinalertComments = (function () {
       // A cleared list starts again from the first page.
       loadedMore = false;
       lastPageAfter = 0;
+      // Reads already out belong to the old list and are ignored when they
+      // land, so Show more is free to be pressed again at once (review WR-04).
+      listGen += 1;
+      pendingTails = [];
+      moreBusy = false;
+      moreButton.removeAttribute('aria-disabled');
       while (list.firstChild) {
         list.removeChild(list.firstChild);
       }
@@ -1538,8 +1555,14 @@ window.PinalertComments = (function () {
       moreButton.setAttribute('aria-disabled', 'true');
       var after = nextAfter;
       var sentStamp = answerStamp;
+      var gen = listGen;
       var call = request('GET', listPath(after));
       call.promise.then(function (res) {
+        // A page asked for before the list was cleared is ignored; the clear
+        // already gave Show more back (review WR-04).
+        if (gen !== listGen) {
+          return;
+        }
         moreBusy = false;
         moreButton.removeAttribute('aria-disabled');
         if (!res.ok || !res.body || !Array.isArray(res.body.comments)) {
@@ -1549,6 +1572,9 @@ window.PinalertComments = (function () {
         lastPageAfter = after;
         renderTail(res.body, after, sentStamp);
       }).catch(function () {
+        if (gen !== listGen) {
+          return;
+        }
         moreBusy = false;
         moreButton.removeAttribute('aria-disabled');
         moreError.hidden = false;
@@ -1570,11 +1596,14 @@ window.PinalertComments = (function () {
       t.more.setAttribute('aria-disabled', 'true');
       var after = t.coveredTo;
       var sentStamp = answerStamp;
+      var gen = listGen;
       var call = request('GET', threadPath(rec.id, after));
       call.promise.then(function (res) {
         t.busy = false;
         t.more.removeAttribute('aria-disabled');
-        if (nodes[rec.id] !== rec) {
+        // A thread read that left before the list was cleared is ignored
+        // (review WR-04); its thread node is no longer on the page.
+        if (gen !== listGen || nodes[rec.id] !== rec) {
           return;
         }
         if (!res.ok || !res.body || !Array.isArray(res.body.comments)) {
@@ -1599,7 +1628,7 @@ window.PinalertComments = (function () {
       }).catch(function () {
         t.busy = false;
         t.more.removeAttribute('aria-disabled');
-        if (nodes[rec.id] === rec) {
+        if (gen === listGen && nodes[rec.id] === rec) {
           t.moreError.hidden = false;
         }
       });

@@ -1895,3 +1895,109 @@ test('WR-03: an offline Block on a comment that left the list focuses the headin
   assert.equal(blockPosts(env).length, 0);
   assert.equal(env.doc.activeElement, heading(page));
 });
+
+// ---- Review WR-04 (2026-10-30): after a block no loaded page keeps their words ----
+
+// blockOn presses Block on li, says yes and answers the block with 204.
+async function blockOn(env, boxes, li) {
+  blockButton(li).fire('click');
+  boxes.block.yes.fire('click');
+  const sent = lastFetch(env);
+  assert.ok(/block-author$/.test(sent.address));
+  sent.reply(204, null);
+  await flush();
+}
+
+test('WR-04: a block on a middle page reads the list again from the first page', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  recordToasts(env);
+  const page = await start(env, roots(1, 50), { more: true, next_after: 50, comment_count: 110 });
+  const more = find(page.view.el, 'comments__more');
+  more.fire('click');
+  lastFetch(env).reply(200, body(roots(51, 100).map((c) => (c.id === 60 ? cm(60, { author: 'meena.r', words: 'c60' }) : c)), { more: true, next_after: 100, comment_count: 110 }));
+  await flush();
+  more.fire('click');
+  lastFetch(env).reply(200, body(roots(101, 110), { more: false, next_after: 0, comment_count: 110 }));
+  await flush();
+  assert.equal(page.items().length, 110);
+  await blockOn(env, boxes, page.items()[59]);
+  const reload = lastFetch(env);
+  assert.equal(reload.opts.method, 'GET');
+  assert.ok(reload.address.endsWith('/comments'), 'the first page, it asked ' + reload.address);
+  const sentBefore = env.fetches.length;
+  reload.reply(200, body(roots(1, 50), { more: true, next_after: 50, comment_count: 109 }));
+  await flush();
+  assert.equal(env.fetches.length, sentBefore, 'no later page is read again by itself');
+  const ids = shownIds(page);
+  assert.equal(ids.length, 50, 'only the first page is on the list');
+  assert.equal(ids.includes('c60'), false, 'the blocked words are gone');
+  assert.equal(more.hidden, false, 'Show more is back for the rest');
+  more.fire('click');
+  assert.ok(lastFetch(env).address.endsWith('?after=50'), 'Show more starts again after the first page');
+});
+
+test('WR-04: a Show more answer already out when the block lands is ignored', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  recordToasts(env);
+  const page = await start(env, roots(1, 50), { more: true, next_after: 50, comment_count: 70 });
+  const more = find(page.view.el, 'comments__more');
+  more.fire('click');
+  const stale = lastFetch(env);
+  assert.ok(stale.address.endsWith('?after=50'));
+  await blockOn(env, boxes, page.items()[0]);
+  const reload = lastFetch(env);
+  assert.equal(reload.opts.method, 'GET');
+  stale.reply(200, body(roots(51, 70), { more: false, next_after: 0, comment_count: 70 }));
+  await flush();
+  reload.reply(200, body(roots(2, 50), { more: true, next_after: 50, comment_count: 69 }));
+  await flush();
+  const ids = shownIds(page);
+  assert.equal(ids.length, 49, 'the stale page was not written');
+  assert.equal(ids.includes('c51'), false);
+  assert.equal(more.hidden, false);
+  assert.equal(more.hasAttribute('aria-disabled'), false, 'Show more can be pressed again');
+  more.fire('click');
+  assert.ok(lastFetch(env).address.endsWith('?after=50'));
+});
+
+test('WR-04: a failed Show more already out when the block lands says nothing', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  recordToasts(env);
+  const page = await start(env, roots(1, 50), { more: true, next_after: 50, comment_count: 70 });
+  find(page.view.el, 'comments__more').fire('click');
+  const stale = lastFetch(env);
+  await blockOn(env, boxes, page.items()[0]);
+  const reload = lastFetch(env);
+  reload.reply(200, body(roots(2, 50), { more: true, next_after: 50, comment_count: 69 }));
+  await flush();
+  stale.fail(new Error('network'));
+  await flush();
+  assert.equal(find(page.view.el, 'comments__more-error').hidden, true, 'no error for a read the block made stale');
+});
+
+test('WR-04: a reply read already out when the block lands is ignored', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  recordToasts(env);
+  const page = await start(env, [
+    cm(1, { author: 'meena.r', words: 'root', replies: replyRange(2, 101), reply_count: 102 }),
+    cm(300, { author: 'ravi.k', words: 'ravi root' })
+  ]);
+  const [threadLi, raviLi] = page.items();
+  find(threadLi, 'comment-thread__toggle').fire('click');
+  find(threadLi, 'comment-thread__more').fire('click');
+  const stale = lastFetch(env);
+  assert.ok(stale.address.includes('replies_of=1'));
+  await blockOn(env, boxes, raviLi);
+  const reload = lastFetch(env);
+  reload.reply(200, body([cm(1, { author: 'meena.r', words: 'root', replies: [], reply_count: 0 })]));
+  await flush();
+  stale.reply(200, body([cm(1, { author: 'meena.r', reply_count: 102, replies: [cm(102, { words: 'reply 102' })] })], { more: false, next_after: 102 }));
+  await flush();
+  const [li] = page.items();
+  assert.equal(page.items().length, 1);
+  assert.deepEqual(threadIds(li), [], 'no reply by the blocked person came back');
+});
