@@ -116,6 +116,11 @@ func TestCommentBlockAuthorUniformNotFound(t *testing.T) {
 	rescue := u78Report(t, e, string(service.CategoryRescueNeeded), "clear", 2*time.Hour, -time.Hour)
 	gone := testutil.SeedPerson(t, e.pool, "u78-route-gone@example.com", "gone_u78", true)
 	testutil.MustExec(t, e.pool, `UPDATE accounts SET deleted_at = now() WHERE id = $1`, gone)
+	// Review CR-01 (2026-10-30): a commenter shown as New member, whose username
+	// is pending or missing, gets no Block and the same 404.
+	pending := testutil.SeedReporterAccount(t, e.pool, "u78-route-pending@example.com")
+	testutil.SeedUsername(t, e.pool, pending, "pending_u78", service.UsernameScreenPending)
+	nameless := testutil.SeedReporterAccount(t, e.pool, "u78-route-nameless@example.com")
 
 	seed := func(report, account int64, state string) int64 {
 		return testutil.SeedComment(t, e.pool, testutil.CommentSeed{ReportID: report, AccountID: account, State: state})
@@ -133,6 +138,8 @@ func TestCommentBlockAuthorUniformNotFound(t *testing.T) {
 		{"a comment on a report that ended before the history window", seed(ended, annID, "clear")},
 		{"a comment on a finished Rescue report", seed(rescue, annID, "clear")},
 		{"a comment by a deleted account", seed(e.report, gone, "clear")},
+		{"a comment by someone whose username is still pending", seed(e.report, pending, "clear")},
+		{"a comment by someone with no username", seed(e.report, nameless, "clear")},
 	}
 
 	likeStatus, likeBody, likeHeader := p907Do(t, e.ben, http.MethodPost, e.commentURL(annDeleted.ID, "like"), "")

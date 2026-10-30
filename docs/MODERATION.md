@@ -231,21 +231,20 @@ comment. Anyone signed in with a username may write one. The rules (D-12 to D-15
 - A comment's author is shown only by a username whose screen word is clear. A name that could not
   be judged reads New member. A deleted account reads Deleted account, and deleting an account
   blanks its comments and removes the likes and flags it gave (`TestDeleteAccountComments`).
-- Every comment by someone else has a Block button beside Flag. `POST /api/comments/{id}/block-author`
-  blocks the commenter whether or not their profile is public, and also when they blocked you, so
-  the answer reveals neither. It is the same block as from a profile: the block row is written
+- Every comment by someone else has a Block button beside Flag, but Block is offered only where the
+  name is shown: a New member comment (a username that is pending or missing) has none.
+  `POST /api/comments/{id}/block-author` blocks the commenter whether or not their profile is
+  public, and also when they blocked you, so the answer reveals neither. Because the name is clear,
+  every block made from a comment is listed in Settings, Blocked people and can be taken back there,
+  and a block cannot tell you whether a person whose name is not shown follows you. It is the same
+  block as from a profile: the block row is written
   first, the follows end both ways with reason blocked, the queued follow notes of the pair are
   deleted, comment and Reliable reporter notes about that person stop at send time, and their
   comments are hidden from you. It answers 204, also when you already blocked them. Your own
   comment, an unknown one, one you cannot see (deleted, removed, held, on a report that is not
-  available, or on a finished Rescue report) and one by a deleted account all answer the same 404,
-  the same bytes as a comment that is no longer available. Like Flag it stays available after the
-  comments close. It spends the people action bucket in the Limits table below. One accepted
-  residual: a block on a commenter whose username is still pending shows in Settings, Blocked
-  people only once the name clears, because an unscreened name is never listed (D-16). A pending
-  name is checked again first on every read, so it normally clears when the checker answers; a
-  name that never clears leaves the block in place and unlisted, which only hides that person's
-  comments from you.
+  available, or on a finished Rescue report), one by a deleted account and one by a New member all
+  answer the same 404, the same bytes as a comment that is no longer available. Like Flag it stays
+  available after the comments close. It spends the people action bucket in the Limits table below.
 - Comment limits are per account and are in the Limits table below. A comment post is never
   given back, because each one may be a provider call. A refused 429 says how long to wait and
   that the words are still in the box.

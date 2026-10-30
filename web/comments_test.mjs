@@ -1624,8 +1624,8 @@ function blockPosts(env) { return posts(env).filter((f) => /block-author$/.test(
 
 test('Block sits right after Flag with its own name', async () => {
   const env = load();
-  const page = await start(env, [cm(1), cm(2, { author: '', author_kind: 'new_member' })]);
-  const [named, unnamed] = page.items();
+  const page = await start(env, [cm(1)]);
+  const [named] = page.items();
   const block = blockButton(named);
   assert.ok(block, 'a Block button exists');
   assert.equal(block.tagName, 'BUTTON');
@@ -1635,8 +1635,6 @@ test('Block sits right after Flag with its own name', async () => {
   assert.equal(block.hidden, false);
   const meta = find(named, 'comment__meta');
   assert.equal(meta.children[meta.children.indexOf(flagButton(named)) + 1], block, 'the next element after Flag');
-  assert.equal(blockButton(unnamed).hidden, false);
-  assert.equal(blockButton(unnamed).getAttribute('aria-label'), 'Block this person');
 });
 
 test('Block is hidden where it does not belong', async () => {
@@ -1695,24 +1693,41 @@ test('Block asks first in the box and only its Block button sends', async () => 
   assert.equal(blockPosts(env).length, 1, 'and sends nothing more');
 });
 
-test('Block box for a name not shown', async () => {
+// Review CR-01 (2026-10-30): Block is offered only where the name is shown, so
+// a New member comment has no Block, not even after a poll, and a press on the
+// hidden button opens nothing.
+test('no Block on a New member comment', async () => {
   const env = load();
   const boxes = addBoxes(env);
-  const page = await start(env, [cm(1, { author: '', author_kind: 'new_member' })]);
+  const page = await start(env, [cm(1, { author: 'New member', author_kind: 'new_member' }), cm(2, { author: '', author_kind: 'new_member' })]);
+  page.items().forEach((li, i) => assert.equal(blockButton(li).hidden, true, 'comment ' + (i + 1)));
+  assert.equal(flagButton(page.items()[0]).hidden, false, 'Flag stays');
+  env.advance(30000);
+  lastFetch(env).reply(200, body([cm(1, { author: 'New member', author_kind: 'new_member' })]));
+  await flush();
+  assert.equal(blockButton(page.items()[0]).hidden, true, 'still hidden after a poll');
   blockButton(page.items()[0]).fire('click');
-  assert.equal(boxes.block.title.textContent, 'Block this person?');
-  assert.deepEqual(boxes.block.text.children.map((p) => p.textContent), [
-    'You will not see their comments. They are not told.',
-    'They show in Settings, Blocked people, once their username is checked. You can unblock them there.'
-  ]);
+  assert.equal(boxes.block.box.open, false, 'no box opens');
+  assert.equal(blockPosts(env).length, 0, 'nothing is sent');
+});
+
+test('a name that clears brings Block back at the next poll', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { author: 'New member', author_kind: 'new_member' })]);
+  assert.equal(blockButton(page.items()[0]).hidden, true);
+  env.advance(30000);
+  lastFetch(env).reply(200, body([cm(1)]));
+  await flush();
+  assert.equal(blockButton(page.items()[0]).hidden, false);
+  assert.equal(blockButton(page.items()[0]).getAttribute('aria-label'), 'Block ravi.k');
 });
 
 test('Block success: one toast, the list reloaded, focus on the heading', async () => {
   const env = load();
   const boxes = addBoxes(env);
   const toasts = recordToasts(env);
-  const page = await start(env, [cm(1), cm(2, { author: '', author_kind: 'new_member' })]);
-  const [named, unnamed] = page.items();
+  const page = await start(env, [cm(1), cm(2, { author: 'meena.r' })]);
+  const [named] = page.items();
   blockButton(named).fire('click');
   boxes.block.yes.fire('click');
   assert.equal(blockButton(named).getAttribute('aria-disabled'), 'true', 'busy while it runs');
@@ -1723,14 +1738,12 @@ test('Block success: one toast, the list reloaded, focus on the heading', async 
   assert.equal(env.fetches.length, before + 1, 'the list is asked again at once');
   assert.equal(lastFetch(env).opts.method, 'GET');
   assert.equal(env.doc.activeElement, find(page.view.el, 'comments__heading'));
-  lastFetch(env).reply(200, body([cm(2, { author: '', author_kind: 'new_member' })]));
+  lastFetch(env).reply(200, body([cm(2, { author: 'meena.r' })]));
   await flush();
   assert.equal(page.items().length, 1, 'the blocked person left the list');
-  blockButton(unnamed).fire('click');
-  boxes.block.yes.fire('click');
-  lastFetch(env).reply(204, null);
-  await flush();
-  assert.equal(toasts[1], 'This person is blocked.');
+  assert.equal(wordsOf(page.items()[0]).textContent, 'The road is open');
+  assert.equal(blockButton(page.items()[0]).getAttribute('aria-label'), 'Block meena.r');
+  assert.equal(toasts.length, 1, 'one toast');
 });
 
 test('Block failures show the calm line and change nothing', async () => {

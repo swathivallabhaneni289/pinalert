@@ -1,8 +1,9 @@
 // people_comment_block_test.go proves BlockCommentAuthor (quick 261030-u78,
-// WR-E04, D-12): a reader can block the author of any comment they can see,
-// private or pending commenters included, through the same block tail the
-// profile Block uses, and every refusal is one ErrCommentGone that writes
-// nothing and reveals nothing. The tests run on a real database and skip
+// WR-E04, D-12): a reader can block the author of any comment they can see
+// whose name is shown, private commenters included, through the same block
+// tail the profile Block uses, and every refusal, a commenter whose name is not
+// shown among them (review CR-01), is one ErrCommentGone that writes nothing
+// and reveals nothing. The tests run on a real database and skip
 // without DATABASE_URL.
 //
 // Every person here is made up and uses example.com.
@@ -147,18 +148,6 @@ func TestBlockCommentAuthorBlocksAnyCommenter(t *testing.T) {
 		}
 	})
 
-	t.Run("a commenter whose username is still pending", func(t *testing.T) {
-		pending := testutil.SeedReporterAccount(t, r.pool, "u78-pending@example.com")
-		testutil.SeedUsername(t, r.pool, pending, "pending.one", service.UsernameScreenPending)
-		c := testutil.SeedComment(t, r.pool, testutil.CommentSeed{ReportID: report, AccountID: pending})
-		if err := r.people.BlockCommentAuthor(ctx, viewer, c); err != nil {
-			t.Fatalf("BlockCommentAuthor: %v", err)
-		}
-		if !r.hasBlock(viewer, pending) {
-			t.Error("no block row for a pending username")
-		}
-	})
-
 	t.Run("a commenter who blocked the viewer answers like any other", func(t *testing.T) {
 		blocker := testutil.SeedPerson(t, r.pool, "u78-blocker@example.com", "blocker.one", true)
 		testutil.SeedBlock(t, r.pool, blocker, viewer)
@@ -249,6 +238,17 @@ func TestBlockCommentAuthorUniformRefusal(t *testing.T) {
 		}},
 		{"a comment by a deleted account", func() int64 {
 			return testutil.SeedComment(t, r.pool, testutil.CommentSeed{ReportID: live, AccountID: deletedAccount})
+		}},
+		// Review CR-01 (2026-10-30): Block is offered only where the name is
+		// shown, so an author whose username is not clear is refused too.
+		{"a comment by someone whose username is still pending", func() int64 {
+			pending := testutil.SeedReporterAccount(t, r.pool, "u78-pending@example.com")
+			testutil.SeedUsername(t, r.pool, pending, "pending.one", service.UsernameScreenPending)
+			return testutil.SeedComment(t, r.pool, testutil.CommentSeed{ReportID: live, AccountID: pending})
+		}},
+		{"a comment by someone with no username", func() int64 {
+			nameless := testutil.SeedReporterAccount(t, r.pool, "u78-nameless@example.com")
+			return testutil.SeedComment(t, r.pool, testutil.CommentSeed{ReportID: live, AccountID: nameless})
 		}},
 	}
 	for _, tc := range cases {

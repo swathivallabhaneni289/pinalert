@@ -18,7 +18,8 @@
 // box) and Flag (everyone else's, through the Flag dialog's comment mode) to
 // the meta line after the Reply button. A deleted or removed placeholder has
 // none of them. Quick 261030-u78 (WR-E04, D-12) adds Block right after Flag on
-// every comment by someone else: a real button that asks first in its own
+// every comment by someone else whose name is shown (never on a New member
+// comment, review CR-01): a real button that asks first in its own
 // confirm box and only then sends POST /api/comments/{id}/block-author, after
 // which the list is read again at once so the blocked person's words go.
 //
@@ -92,13 +93,11 @@ window.PinalertComments = (function () {
   var DELETE_CANCEL_ID = 'comment-delete-cancel';
   var DELETE_YES_ID = 'comment-delete-yes';
   // Quick 261030-u78 (WR-E04): Block beside Flag, its box and its words.
+  // Block is offered only where the name is shown (review CR-01, 2026-10-30),
+  // so there are no words for a person whose name is not shown.
   var BLOCK_LABEL = 'Block';
-  var BLOCK_UNNAMED = 'Block this person';
-  var BLOCK_TITLE_UNNAMED = 'Block this person?';
   var BLOCK_LINE_SEEN = 'You will not see their comments. They are not told.';
   var BLOCK_LINE_SETTINGS = 'You can unblock them in Settings, Blocked people.';
-  var BLOCK_LINE_SETTINGS_PENDING = 'They show in Settings, Blocked people, once their username is checked. You can unblock them there.';
-  var BLOCKED_UNNAMED = 'This person is blocked.';
   var BLOCK_BOX_ID = 'comment-block-confirm';
   var BLOCK_TITLE_ID = 'comment-block-title';
   var BLOCK_TEXT_ID = 'comment-block-text';
@@ -517,7 +516,7 @@ window.PinalertComments = (function () {
       // comment. A real button, never a link.
       var block = element('button', 'comment__block');
       block.setAttribute('type', 'button');
-      block.setAttribute('aria-label', BLOCK_UNNAMED);
+      block.setAttribute('aria-label', BLOCK_LABEL);
       Pinalert.setText(block, BLOCK_LABEL);
       block.hidden = true;
       var held = element('span', 'comment__held');
@@ -729,11 +728,12 @@ window.PinalertComments = (function () {
         writeClass(rec.flag, 'comment__flag');
       }
       // Block follows Flag's rule, never the commentsOpen one (a safety
-      // action), and is also absent on a Deleted account comment, whose blocks
-      // the server would refuse (quick 261030-u78).
+      // action), and shows only where the author's name is shown (review
+      // CR-01, 2026-10-30): never on a New member or a Deleted account
+      // comment, whose blocks the server refuses (quick 261030-u78).
       var named = blockName(data);
-      rec.block.hidden = mine || held || data.is_own === true || data.author_kind === 'deleted_account';
-      rec.block.setAttribute('aria-label', named === '' ? BLOCK_UNNAMED : BLOCK_LABEL + ' ' + named);
+      rec.block.hidden = mine || held || data.is_own === true || named === '';
+      rec.block.setAttribute('aria-label', named === '' ? BLOCK_LABEL : BLOCK_LABEL + ' ' + named);
       if (rec.blockBusy) {
         rec.block.setAttribute('aria-disabled', 'true');
       } else {
@@ -918,17 +918,20 @@ window.PinalertComments = (function () {
     }
 
     // onBlock asks first, in the app's confirm box; only its Block button sends
-    // anything (quick 261030-u78, WR-E04). A name that is not shown gets the
-    // line that says the person is listed in Settings once the username is
-    // checked, because Blocked people never lists an unchecked name.
+    // anything (quick 261030-u78, WR-E04). It runs only for a name that is
+    // shown (review CR-01), so every block it makes is listed in Settings,
+    // Blocked people and can be taken back there.
     function onBlock(rec) {
       if (rec.blockBusy || rec.block.hidden || rec.data.deleted || rec.data.removed || rec.data.hidden) {
         return;
       }
-      clearActionError(rec);
       var name = blockName(rec.data);
-      var title = name === '' ? BLOCK_TITLE_UNNAMED : BLOCK_LABEL + ' ' + name + '?';
-      var lines = [BLOCK_LINE_SEEN, name === '' ? BLOCK_LINE_SETTINGS_PENDING : BLOCK_LINE_SETTINGS];
+      if (name === '') {
+        return;
+      }
+      clearActionError(rec);
+      var title = BLOCK_LABEL + ' ' + name + '?';
+      var lines = [BLOCK_LINE_SEEN, BLOCK_LINE_SETTINGS];
       var asked = { opener: rec.block, answered: false, run: function () {
         sendBlock(rec, name);
       } };
@@ -971,7 +974,7 @@ window.PinalertComments = (function () {
     function afterBlock(rec, name) {
       writeActions(rec);
       if (window.Pinalert && typeof window.Pinalert.showToast === 'function') {
-        window.Pinalert.showToast(name === '' ? BLOCKED_UNNAMED : name + ' is blocked.', null, TOAST_MS);
+        window.Pinalert.showToast(name + ' is blocked.', null, TOAST_MS);
       }
       heading.focus({ preventScroll: true });
       load();

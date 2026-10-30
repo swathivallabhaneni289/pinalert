@@ -2282,9 +2282,9 @@ paths:
         follow between you ends and neither can follow the other. You stop seeing their comments.
         They are not told. Blocking someone already blocked answers 204 again. Your own comment, an
         unknown comment, one that is deleted, removed, held back, on a report that is not available,
-        or by a deleted account all answer the same 404. Send no body or an empty object. It is
-        limited together with the other people actions, and a blocked call gets 429 with a
-        Retry-After header.
+        by a deleted account, or by someone shown as New member all answer the same 404. Send no
+        body or an empty object. It is limited together with the other people actions, and a
+        blocked call gets 429 with a Retry-After header.
         Requires a session verified by email; an unverified caller receives 401.
       parameters:
       - description: Comment id
