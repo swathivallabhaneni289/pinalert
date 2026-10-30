@@ -1038,6 +1038,11 @@ window.PinalertComments = (function () {
         window.Pinalert.showToast(name + ' is blocked.', null, TOAST_MS);
       }
       heading.focus({ preventScroll: true });
+      // The reset below drops the list at once, so no removeRoot will clear a
+      // reply aimed at the blocked person; it goes here, with its mention.
+      if (replyTarget && replyTarget.shown === name) {
+        clearReplyTarget(false);
+      }
       mode = 'none';
       load();
     }

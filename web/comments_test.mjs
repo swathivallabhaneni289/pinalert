@@ -1908,6 +1908,39 @@ async function blockOn(env, boxes, li) {
   await flush();
 }
 
+// The reset drops the list at once, so the reply target is checked here and
+// not by a later removeRoot: a reply to the blocked person is dropped with its
+// mention, and a reply to anyone else stays.
+test('WR-04: a reply to the blocked person is dropped from the box', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  recordToasts(env);
+  const page = await start(env, [cm(1), cm(2, { author: 'meena.r' })]);
+  const [ravi] = page.items();
+  replyButton(ravi).fire('click');
+  assert.equal(page.input.value, '@ravi.k ');
+  await blockOn(env, boxes, ravi);
+  assert.equal(page.replying.hidden, true, 'no Replying to the blocked person');
+  assert.equal(page.input.value, '', 'the mention went with the target');
+  lastFetch(env).reply(200, body([cm(2, { author: 'meena.r' })]));
+  await flush();
+  assert.equal(page.replying.hidden, true);
+});
+
+test('WR-04: a reply to someone else survives a block', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  recordToasts(env);
+  const page = await start(env, [cm(1), cm(2, { author: 'meena.r' })]);
+  const [ravi, meena] = page.items();
+  replyButton(meena).fire('click');
+  await blockOn(env, boxes, ravi);
+  lastFetch(env).reply(200, body([cm(2, { author: 'meena.r' })]));
+  await flush();
+  assert.equal(page.replying.hidden, false, 'the reply to meena.r stays');
+  assert.equal(page.input.value, '@meena.r ');
+});
+
 test('WR-04: a block on a middle page reads the list again from the first page', async () => {
   const env = load();
   const boxes = addBoxes(env);
