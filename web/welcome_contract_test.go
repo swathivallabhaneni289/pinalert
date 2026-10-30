@@ -904,7 +904,7 @@ func TestWelcomeStep4Required(t *testing.T) {
 		`id="welcome-error-4"`, `id="welcome-continue-4"`)
 	p13MustNotContain(t, "step 4", step4, ">Your name<", "Used to send you alerts about this area.")
 	p13MustContain(t, "step 4", step4,
-		`placeholder="For example: ravi.k"`, `value="{{.Username}}"`,
+		`placeholder="ravi.k"`, `value="{{.Username}}"`,
 		`placeholder="For example: Ravi Kumar"`, `maxlength="60"`, `autocomplete="name"`,
 		`id="welcome-name-help"`, `aria-describedby="welcome-name-help"`)
 
