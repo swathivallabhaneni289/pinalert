@@ -37,7 +37,7 @@ html {
    every page without the strip. */
 .notice-strip {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-sm);
   box-sizing: border-box;
   min-height: var(--space-2xl);
@@ -79,28 +79,20 @@ html {
 }
 
 /* A standalone link, so it has the 44px touch floor (UI-SPEC Spacing, code
-   review part 3 IN-02). The floor is the link's own box, drawn from the top of
-   the strip down, with the words kept where they were by the top padding. The
-   negative block margins give back the strip's own 8px padding above and the
-   rest of the floor below the text line, so the margin box is still one text
-   line: the strip keeps its height and the words keep their place. */
+   review part 3 IN-02). Plan 42 (owner, 2026-10-21: no underlined text) made
+   it an outlined button on the dark strip, in the strip's own outline colour.
+   Owner, 2026-10-30: the button looked off, its words sat at the top of a
+   taller box and the box ran to the window edge. It is now an ordinary
+   button: the words are centred in the box, the box is centred in the strip
+   with the strip's own padding around it, and it keeps the strip's 16px end
+   inset. The strip grows to fit it. */
 .notice-strip__link {
   display: inline-flex;
   flex: none;
-  align-items: flex-start;
+  align-items: center;
   box-sizing: border-box;
   min-height: var(--touch-target-min);
-  /* Plan 42 (owner, 2026-10-21: no underlined text): an outlined button on
-     the dark strip, in the strip's own outline colour. The box sits 2px lower
-     (2px from the top of the strip, centred in it) and the top padding loses
-     those 2px and the hairline, so the words stay at the strip's 8px. The
-     bottom margin gives the 2px back, so the margin box is still one text
-     line. The end margin gives back the side padding and the hairlines, so
-     the margin box keeps its old width: the strip text never wraps sooner. */
-  padding-top: calc(var(--space-sm) - 3px);
-  margin-block: calc(-1 * var(--space-sm) + 2px) calc(var(--font-size-label) * var(--line-height-label) + var(--space-sm) - var(--touch-target-min) - 2px);
-  padding-inline: var(--space-xs);
-  margin-inline-end: calc(-2 * (var(--space-xs) + 1px));
+  padding-inline: var(--space-sm);
   border: 1px solid var(--color-notice-outline);
   border-radius: 8px;
   color: var(--color-notice-text);

@@ -264,18 +264,31 @@ func TestDisclaimerBarStylesheet(t *testing.T) {
 	// strip (2px from its top) with the words kept at 8px, and the end margin
 	// gives back the side padding and hairlines, so the margin box keeps its
 	// old width and the strip text never wraps sooner.
+	//
+	// Amended 2026-10-30 (owner: the button looked off, the words sat at the
+	// top of a taller box that ran to the window edge): the words are centred
+	// in the box, the box is centred in the strip with the strip's padding
+	// around it and the strip's 16px end inset, so the negative margins and
+	// the top padding are gone and the strip grows to fit. The outline, the
+	// colour, the radius and the 44px floor are unchanged.
 	want(".notice-strip__link", map[string]string{
-		"font-weight":       "var(--font-weight-semibold)",
-		"white-space":       "nowrap",
-		"text-decoration":   "none",
-		"color":             "var(--color-notice-text)",
-		"padding-top":       "calc(var(--space-sm) - 3px)",
-		"margin-block":      "calc(-1 * var(--space-sm) + 2px) calc(var(--font-size-label) * var(--line-height-label) + var(--space-sm) - var(--touch-target-min) - 2px)",
-		"padding-inline":    "var(--space-xs)",
-		"margin-inline-end": "calc(-2 * (var(--space-xs) + 1px))",
-		"border":            "1px solid var(--color-notice-outline)",
-		"border-radius":     "8px",
+		"font-weight":     "var(--font-weight-semibold)",
+		"white-space":     "nowrap",
+		"text-decoration": "none",
+		"color":           "var(--color-notice-text)",
+		"align-items":     "center",
+		"min-height":      "var(--touch-target-min)",
+		"padding-inline":  "var(--space-sm)",
+		"border":          "1px solid var(--color-notice-outline)",
+		"border-radius":   "8px",
 	})
+	if link, ok := ruleBySelector(rules, ".notice-strip__link"); ok {
+		for _, gone := range []string{"padding-top", "margin-block", "margin-inline-end"} {
+			if _, set := declsOf(link.declBody)[gone]; set {
+				t.Errorf(".notice-strip__link still sets %s; the button sits inside the strip's own padding now", gone)
+			}
+		}
+	}
 	want(".notice-strip__icon", map[string]string{
 		"width":            "20px",
 		"height":           "20px",
