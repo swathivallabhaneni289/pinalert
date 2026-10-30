@@ -430,6 +430,8 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 		{"/comments/{id}/unlike", "post", []string{"200", "401", "404", "429"}, true},
 		{"/comments/{id}/delete", "post", []string{"200", "401", "403", "404", "429"}, true},
 		{"/comments/{id}/flag", "post", []string{"201", "401", "404", "409", "422", "429"}, true},
+		// Quick 261030-u78 (WR-E04): Block beside Flag.
+		{"/comments/{id}/block-author", "post", []string{"204", "400", "401", "404", "429"}, true},
 	} {
 		ops, ok := spec.Paths[rt.path]
 		if !ok {

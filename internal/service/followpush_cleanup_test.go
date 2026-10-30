@@ -94,6 +94,14 @@ func (s *cleanupScene) people(at time.Time) *PeopleService {
 	return NewPeopleService(s.r.q, WithPeopleClock(func() time.Time { return at }), WithPeopleSignals(NewRatingService(s.r.q)))
 }
 
+// peopleWithComments is people plus the comment source BlockCommentAuthor needs,
+// its report check running on the scene clock (quick 261030-u78).
+func (s *cleanupScene) peopleWithComments(at time.Time) *PeopleService {
+	comments := NewCommentService(s.r.q, WithCommentClock(func() time.Time { return at }))
+	return NewPeopleService(s.r.q, WithPeopleClock(func() time.Time { return at }),
+		WithPeopleSignals(NewRatingService(s.r.q)), WithPeopleCommentAuthors(comments))
+}
+
 // TestFollowEndsOnSwitchOff (V13): the person switches the profile off. The
 // follows end with profile_off, the queued follow notes of every follower are
 // gone, and the worker sends nothing, although the notes were really queued by
@@ -235,6 +243,20 @@ func TestFollowCleanupOnBlockMuteBellOff(t *testing.T) {
 		}},
 		{"the person blocks the follower", func(t *testing.T, s *cleanupScene) {
 			if err := s.people(s.r.cur).Block(ctx, s.person, s.names[0]); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		// Amended 2026-10-30 by quick 261030-u78: the two comment paths run through
+		// the same block tail and must end up with the same cleanup.
+		{"the follower blocks the person from a comment", func(t *testing.T, s *cleanupScene) {
+			c := testutil.SeedComment(t, s.r.pool, testutil.CommentSeed{ReportID: s.report, AccountID: s.person})
+			if err := s.peopleWithComments(s.r.cur).BlockCommentAuthor(ctx, s.followers[0], c); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"the person blocks the follower from a comment", func(t *testing.T, s *cleanupScene) {
+			c := testutil.SeedComment(t, s.r.pool, testutil.CommentSeed{ReportID: s.report, AccountID: s.followers[0]})
+			if err := s.peopleWithComments(s.r.cur).BlockCommentAuthor(ctx, s.person, c); err != nil {
 				t.Fatal(err)
 			}
 		}},

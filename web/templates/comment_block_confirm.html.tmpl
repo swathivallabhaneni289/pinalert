@@ -1,0 +1,26 @@
+{{/*
+  comment_block_confirm: the box that asks "Block {username}?" before the author
+  of a comment is blocked (quick 261030-u78, WR-E04, owner rule on confirm
+  boxes, 2026-10-22: a confirm box reads like a normal system alert). It is the
+  Log out box exactly, like the Delete box: the .logout-confirm classes of
+  auth.css and no alert styling of its own. comments.js fills the title and the
+  two lines through textContent, opens it, puts focus on the title with no
+  button outlined, and only its two buttons close it. Its Block button is the
+  only thing that sends a block. index.html.tmpl includes it as a direct child
+  of the body, so no hidden ancestor takes its box away. It lives in its own
+  file because index.html.tmpl keeps no button whose whole text is the single
+  word Cancel (TestReportFormPartialKeepsMainFormOrder, P4-A23, which is about
+  the report form); the word is the built word of every .logout-confirm box.
+*/}}
+{{define "comment_block_confirm"}}
+  <dialog id="comment-block-confirm" class="logout-confirm" aria-labelledby="comment-block-title" aria-describedby="comment-block-text">
+    <div class="logout-confirm__body">
+      <h2 class="logout-confirm__title" id="comment-block-title" tabindex="-1"></h2>
+      <div class="logout-confirm__text" id="comment-block-text"></div>
+      <div class="logout-confirm__actions">
+        <button type="button" class="btn" id="comment-block-cancel">Cancel</button>
+        <button type="button" class="btn btn--destructive" id="comment-block-yes">Block</button>
+      </div>
+    </div>
+  </dialog>
+{{end}}

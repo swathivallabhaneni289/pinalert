@@ -17,7 +17,10 @@
 // from the server's answer), Delete (the author's, behind the app's confirm
 // box) and Flag (everyone else's, through the Flag dialog's comment mode) to
 // the meta line after the Reply button. A deleted or removed placeholder has
-// none of them.
+// none of them. Quick 261030-u78 (WR-E04, D-12) adds Block right after Flag on
+// every comment by someone else: a real button that asks first in its own
+// confirm box and only then sends POST /api/comments/{id}/block-author, after
+// which the list is read again at once so the blocked person's words go.
 //
 // The list is built once and refreshed in place: a node map by comment id
 // means a poll, a post or a vote updates or inserts nodes and never rebuilds
@@ -88,6 +91,21 @@ window.PinalertComments = (function () {
   var DELETE_TITLE_ID = 'comment-delete-title';
   var DELETE_CANCEL_ID = 'comment-delete-cancel';
   var DELETE_YES_ID = 'comment-delete-yes';
+  // Quick 261030-u78 (WR-E04): Block beside Flag, its box and its words.
+  var BLOCK_LABEL = 'Block';
+  var BLOCK_UNNAMED = 'Block this person';
+  var BLOCK_TITLE_UNNAMED = 'Block this person?';
+  var BLOCK_LINE_SEEN = 'You will not see their comments. They are not told.';
+  var BLOCK_LINE_SETTINGS = 'You can unblock them in Settings, Blocked people.';
+  var BLOCK_LINE_SETTINGS_PENDING = 'They show in Settings, Blocked people, once their username is checked. You can unblock them there.';
+  var BLOCKED_UNNAMED = 'This person is blocked.';
+  var BLOCK_BOX_ID = 'comment-block-confirm';
+  var BLOCK_TITLE_ID = 'comment-block-title';
+  var BLOCK_TEXT_ID = 'comment-block-text';
+  var BLOCK_CANCEL_ID = 'comment-block-cancel';
+  var BLOCK_YES_ID = 'comment-block-yes';
+  var STATUS_NO_CONTENT = 204;
+  var TOAST_MS = 4000;
 
   var seqId = 0;
 
@@ -149,6 +167,65 @@ window.PinalertComments = (function () {
     box.showModal();
     // The question takes the first focus and no button looks chosen, as the
     // Log out box does (owner, 2026-10-22).
+    if (typeof title.focus === 'function') {
+      title.focus();
+    }
+    return true;
+  }
+
+  // The Block box is one dialog in the page (index.html.tmpl) like the Delete
+  // box, wired once; the section that asked is the one in pendingBlock (quick
+  // 261030-u78, WR-E04). The title and its lines are written for each ask
+  // through textContent, one p per line, as person.js does for its own box.
+  var pendingBlock = null;
+  var boundBlockBox = null;
+
+  function onBlockBoxClose() {
+    var asked = pendingBlock;
+    pendingBlock = null;
+    if (asked && !asked.answered && asked.opener && typeof asked.opener.focus === 'function') {
+      asked.opener.focus();
+    }
+  }
+
+  // openBlockBox returns false when the page has no box (the browser's own
+  // confirm then asks, with the box's own title).
+  function openBlockBox(asked, titleWords, lines) {
+    var box = document.getElementById(BLOCK_BOX_ID);
+    var title = document.getElementById(BLOCK_TITLE_ID);
+    var text = document.getElementById(BLOCK_TEXT_ID);
+    var cancelButton = document.getElementById(BLOCK_CANCEL_ID);
+    var yesButton = document.getElementById(BLOCK_YES_ID);
+    if (!box || !title || !text || !cancelButton || !yesButton || typeof box.showModal !== 'function') {
+      return false;
+    }
+    if (boundBlockBox !== box) {
+      boundBlockBox = box;
+      cancelButton.addEventListener('click', function () {
+        box.close();
+      });
+      yesButton.addEventListener('click', function () {
+        var chosen = pendingBlock;
+        if (chosen) {
+          chosen.answered = true;
+        }
+        box.close();
+        if (chosen) {
+          chosen.run();
+        }
+      });
+      box.addEventListener('close', onBlockBoxClose);
+    }
+    pendingBlock = asked;
+    title.textContent = titleWords;
+    text.textContent = '';
+    for (var i = 0; i < lines.length; i += 1) {
+      var line = document.createElement('p');
+      line.textContent = lines[i];
+      text.appendChild(line);
+    }
+    box.showModal();
+    // The question takes the first focus and no button looks chosen.
     if (typeof title.focus === 'function') {
       title.focus();
     }
@@ -436,6 +513,13 @@ window.PinalertComments = (function () {
       flag.setAttribute('aria-label', FLAG_NAME);
       Pinalert.setText(flag, FLAG_LABEL);
       flag.hidden = true;
+      // Block (quick 261030-u78, WR-E04): right after Flag on everyone else's
+      // comment. A real button, never a link.
+      var block = element('button', 'comment__block');
+      block.setAttribute('type', 'button');
+      block.setAttribute('aria-label', BLOCK_UNNAMED);
+      Pinalert.setText(block, BLOCK_LABEL);
+      block.hidden = true;
       var held = element('span', 'comment__held');
       Pinalert.setText(held, HELD_LINE);
       held.hidden = true;
@@ -445,6 +529,7 @@ window.PinalertComments = (function () {
       meta.appendChild(likes);
       meta.appendChild(del);
       meta.appendChild(flag);
+      meta.appendChild(block);
       meta.appendChild(held);
       var actionError = element('div', 'inline-error comment__error');
       actionError.setAttribute('role', 'alert');
@@ -463,9 +548,9 @@ window.PinalertComments = (function () {
         id: String(data.id), isReply: isReply, rootId: String(rootId), data: data, li: li, disc: disc, discKey: '',
         head: head, author: author, tag: tag, timeHead: timeHead, words: words, gone: gone, meta: meta,
         timeMeta: timeMeta, reply: reply, held: held, wordsKey: null,
-        like: like, likeCount: likeCount, likes: likes, likesCount: likesCount, del: del, flag: flag,
+        like: like, likeCount: likeCount, likes: likes, likesCount: likesCount, del: del, flag: flag, block: block,
         error: actionError, errorText: actionErrorText,
-        likeBusy: false, deleteBusy: false, flagSent: false,
+        likeBusy: false, deleteBusy: false, flagSent: false, blockBusy: false,
         thread: null
       };
       reply.addEventListener('click', function (evt) {
@@ -483,6 +568,10 @@ window.PinalertComments = (function () {
       flag.addEventListener('click', function (evt) {
         evt.stopPropagation();
         onFlag(rec);
+      });
+      block.addEventListener('click', function (evt) {
+        evt.stopPropagation();
+        onBlock(rec);
       });
       if (!isReply) {
         buildThread(rec);
@@ -574,8 +663,9 @@ window.PinalertComments = (function () {
       if (placeholder) {
         writeText(rec.gone, data.removed === true ? REMOVED_LINE
           : data.hidden === true ? HIDDEN_LINE : DELETED_LINE);
-        // A placeholder carries no Like, no count, no Delete and no Flag, and
-        // a poll never adds them back (review W4).
+        // A placeholder carries no Like, no count, no Delete, no Flag and no
+        // Block, and a poll never adds them back (review W4).
+        rec.block.hidden = true;
         rec.error.hidden = true;
         return;
       }
@@ -638,6 +728,22 @@ window.PinalertComments = (function () {
         writeText(rec.flag, FLAG_LABEL);
         writeClass(rec.flag, 'comment__flag');
       }
+      // Block follows Flag's rule, never the commentsOpen one (a safety
+      // action), and is also absent on a Deleted account comment, whose blocks
+      // the server would refuse (quick 261030-u78).
+      var named = blockName(data);
+      rec.block.hidden = mine || held || data.is_own === true || data.author_kind === 'deleted_account';
+      rec.block.setAttribute('aria-label', named === '' ? BLOCK_UNNAMED : BLOCK_LABEL + ' ' + named);
+      if (rec.blockBusy) {
+        rec.block.setAttribute('aria-disabled', 'true');
+      } else {
+        rec.block.removeAttribute('aria-disabled');
+      }
+    }
+
+    // blockName is the username the server sent, or '' for a name not shown.
+    function blockName(data) {
+      return data.author_kind === KIND_USER && data.author ? String(data.author) : '';
     }
 
     function showActionError(rec, words) {
@@ -809,6 +915,66 @@ window.PinalertComments = (function () {
           writeActions(rec);
         }
       });
+    }
+
+    // onBlock asks first, in the app's confirm box; only its Block button sends
+    // anything (quick 261030-u78, WR-E04). A name that is not shown gets the
+    // line that says the person is listed in Settings once the username is
+    // checked, because Blocked people never lists an unchecked name.
+    function onBlock(rec) {
+      if (rec.blockBusy || rec.block.hidden || rec.data.deleted || rec.data.removed || rec.data.hidden) {
+        return;
+      }
+      clearActionError(rec);
+      var name = blockName(rec.data);
+      var title = name === '' ? BLOCK_TITLE_UNNAMED : BLOCK_LABEL + ' ' + name + '?';
+      var lines = [BLOCK_LINE_SEEN, name === '' ? BLOCK_LINE_SETTINGS_PENDING : BLOCK_LINE_SETTINGS];
+      var asked = { opener: rec.block, answered: false, run: function () {
+        sendBlock(rec, name);
+      } };
+      if (!openBlockBox(asked, title, lines)) {
+        if (typeof window.confirm === 'function' && window.confirm(title)) {
+          sendBlock(rec, name);
+        }
+      }
+    }
+
+    function sendBlock(rec, name) {
+      if (navigator.onLine === false) {
+        showActionError(rec, OFFLINE_ACTION);
+        rec.block.focus();
+        return;
+      }
+      rec.blockBusy = true;
+      writeActions(rec);
+      request('POST', commentPath(rec, 'block-author')).promise.then(function (res) {
+        rec.blockBusy = false;
+        if (res.status === STATUS_NO_CONTENT) {
+          afterBlock(rec, name);
+          return;
+        }
+        writeActions(rec);
+        rec.block.focus();
+        actionFailed(rec, res);
+      }).catch(function () {
+        rec.blockBusy = false;
+        writeActions(rec);
+        rec.block.focus();
+        showActionError(rec, navigator.onLine === false ? OFFLINE_ACTION : ACTION_ERROR);
+      });
+    }
+
+    // afterBlock: one calm toast says who is blocked, focus goes to the
+    // heading and the list is read again at once, so the blocked person's words
+    // become the existing placeholder or leave the list. The server decides
+    // what is shown; nothing is removed here by guess.
+    function afterBlock(rec, name) {
+      writeActions(rec);
+      if (window.Pinalert && typeof window.Pinalert.showToast === 'function') {
+        window.Pinalert.showToast(name === '' ? BLOCKED_UNNAMED : name + ' is blocked.', null, TOAST_MS);
+      }
+      heading.focus({ preventScroll: true });
+      load();
     }
 
     function writeThread(rec) {

@@ -40,6 +40,8 @@ func TestAccessGateBlocksPeopleRoutes(t *testing.T) {
 		// Plan 09-23 (D-08): the Notify me route is gated too.
 		{http.MethodPost, "/api/people/asha_k/notify"},
 		{http.MethodPatch, "/api/me/visibility"},
+		// Quick 261030-u78 (WR-E04): Block beside Flag on a comment is gated too.
+		{http.MethodPost, "/api/comments/1/block-author"},
 	}
 	// Plan 09-08: the two HTML routes are gated like every page, so an
 	// anonymous caller is sent to /login and never sees a profile.

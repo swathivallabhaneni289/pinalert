@@ -274,3 +274,85 @@ func TestDeleteBoxReusesLogoutConfirm(t *testing.T) {
 		t.Error("index.html.tmpl holds the Delete box itself; it lives in comment_delete_confirm.html.tmpl (TestReportFormPartialKeepsMainFormOrder keeps no bare Cancel button in the index)")
 	}
 }
+
+// TestBlockBoxReusesLogoutConfirm (quick 261030-u78, WR-E04, owner rule on
+// confirm boxes, 2026-10-22): the Block box beside Flag is the Log out box's own
+// markup, like the Delete box, with no autofocus, and index.html.tmpl includes
+// its partial and does not hold the dialog.
+func TestBlockBoxReusesLogoutConfirm(t *testing.T) {
+	box := p13ReadTemplate(t, "comment_block_confirm.html.tmpl")
+	index := p13ReadTemplate(t, "index.html.tmpl")
+	p13MustContain(t, "the Block box", box,
+		`<dialog id="comment-block-confirm" class="logout-confirm" aria-labelledby="comment-block-title" aria-describedby="comment-block-text"`,
+		`class="logout-confirm__body"`,
+		`class="logout-confirm__title" id="comment-block-title" tabindex="-1"`,
+		`class="logout-confirm__text" id="comment-block-text"`,
+		`class="logout-confirm__actions"`,
+		`class="btn" id="comment-block-cancel">Cancel<`,
+		`class="btn btn--destructive" id="comment-block-yes">Block<`)
+	allowed := map[string]bool{
+		"logout-confirm": true, "logout-confirm__body": true, "logout-confirm__title": true,
+		"logout-confirm__text": true, "logout-confirm__actions": true, "btn": true, "btn--destructive": true,
+	}
+	markup := box
+	if _, rest, ok := strings.Cut(box, `{{define "comment_block_confirm"}}`); ok {
+		markup = rest
+	}
+	if strings.Contains(markup, "autofocus") {
+		t.Error("the Block box carries autofocus; the title takes focus from the script and no button looks chosen")
+	}
+	for _, chunk := range strings.Split(markup, `class="`)[1:] {
+		classes, _, _ := strings.Cut(chunk, `"`)
+		for _, name := range strings.Fields(classes) {
+			if !allowed[name] {
+				t.Errorf("the Block box uses the class %q; it reuses .logout-confirm and adds no alert styling of its own", name)
+			}
+		}
+	}
+	if !strings.Contains(index, `{{template "comment_block_confirm"}}`) {
+		t.Error("index.html.tmpl does not include the Block box")
+	}
+	if strings.Contains(index, "<dialog id=\"comment-block-confirm\"") {
+		t.Error("index.html.tmpl holds the Block box itself; it lives in comment_block_confirm.html.tmpl")
+	}
+}
+
+// TestCommentBlockIsAButton (quick 261030-u78, WR-E04, owner 2026-10-21: an
+// action is a real button, never an underlined link): comments.js builds the
+// Block control as a button and never as an anchor, names the route and holds
+// the box words, and both style sheets list .comment__block in the rules that
+// list .comment__flag, so it has Flag's look.
+func TestCommentBlockIsAButton(t *testing.T) {
+	js := stripJSComments(p16ReadStatic(t, "static/js/comments.js"))
+	for _, want := range []string{
+		"block-author", "'Block'", "'Block this person'",
+		"You will not see their comments. They are not told.",
+		"You can unblock them in Settings, Blocked people.",
+		"They show in Settings, Blocked people, once their username is checked. You can unblock them there.",
+		"element('button', 'comment__block')",
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("comments.js (comments stripped) lacks %q", want)
+		}
+	}
+	if strings.Contains(js, "element('a', 'comment__block')") || strings.Contains(js, `createElement('a')`) {
+		t.Error("comments.js builds the Block control as a link; it is a button")
+	}
+	for _, file := range []string{"static/css/comments.css", "static/css/phone.css"} {
+		shared := 0
+		for _, r := range commentRules(t, file) {
+			heads := strings.Join(p16HeadParts(r.Head), "\n")
+			// The Flagged state (.comment__flag--sent) is its own rule and has no
+			// Block counterpart; only the base Flag rules are shared.
+			if strings.Contains(heads, ".comment__flag:not([hidden])") {
+				if !strings.Contains(heads, ".comment__block") {
+					t.Errorf("%s: the rule %q lists .comment__flag but not .comment__block", file, r.Head)
+				}
+				shared++
+			}
+		}
+		if shared == 0 {
+			t.Errorf("%s has no rule listing .comment__flag; the walk may have stopped matching", file)
+		}
+	}
+}

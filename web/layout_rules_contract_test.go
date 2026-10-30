@@ -366,6 +366,10 @@ var touchControls = []string{
 	// high and wide through --touch-target-min in comments.css. No other entry
 	// changed.
 	".comment__like", ".comment__delete", ".comment__flag",
+	// Amended 2026-10-30 by quick 261030-u78 (WR-E04): the Block button beside
+	// Flag, 44px through --touch-target-min in the same comments.css rule as
+	// Flag. No other entry changed.
+	".comment__block",
 	// Amended 2026-10-29 by review fix round 2 (SK-01): the Show more replies
 	// button of a long thread, 44px through --touch-target-min in comments.css,
 	// in the same rule as Show more comments. No other entry changed.

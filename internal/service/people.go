@@ -123,6 +123,9 @@ type PeopleService struct {
 	screener TextScreener
 	signals  SignalSource
 	ratings  RatingReader
+	// comments turns a comment into its author for BlockCommentAuthor (quick
+	// 261030-u78). Nil refuses every such block.
+	comments CommentAuthorSource
 }
 
 // PeopleOption configures a PeopleService.
@@ -534,7 +537,8 @@ func (s *PeopleService) RemoveAllFollowers(ctx context.Context, accountID int64)
 // has a private profile; blocking yourself is ErrPersonNotFound. The block row
 // is written first, then the follows in both directions end with reason blocked
 // through endFollowPair; FollowAccount refuses once the block row exists, so
-// nothing can slip in between.
+// nothing can slip in between. The tail (blockPair) is shared with
+// BlockCommentAuthor.
 func (s *PeopleService) Block(ctx context.Context, blockerID int64, username string) error {
 	name, ok := canonicalUsername(username)
 	if !ok {
@@ -558,15 +562,23 @@ func (s *PeopleService) Block(ctx context.Context, blockerID int64, username str
 		return ErrPersonNotFound
 	}
 
+	return s.blockPair(ctx, "Block", blockerID, person.ID)
+}
+
+// blockPair is the tail of every block (the profile Block and
+// BlockCommentAuthor share it, quick 261030-u78): the block row first, then the
+// follows in both directions end with reason blocked, which also deletes the
+// queued follow notes of the pair. op names the caller in error text.
+func (s *PeopleService) blockPair(ctx context.Context, op string, blockerID, blockedID int64) error {
 	now := s.now().UTC()
-	if err := s.q.BlockAccount(ctx, sqlcgen.BlockAccountParams{BlockerID: blockerID, BlockedID: person.ID, Now: now}); err != nil {
-		return fmt.Errorf("service: Block: blocking: %w", err)
+	if err := s.q.BlockAccount(ctx, sqlcgen.BlockAccountParams{BlockerID: blockerID, BlockedID: blockedID, Now: now}); err != nil {
+		return fmt.Errorf("service: %s: blocking: %w", op, err)
 	}
-	if _, err := endFollowPair(ctx, s.q, blockerID, person.ID, FollowEndBlocked, now); err != nil {
-		return fmt.Errorf("service: Block: ending your follow: %w", err)
+	if _, err := endFollowPair(ctx, s.q, blockerID, blockedID, FollowEndBlocked, now); err != nil {
+		return fmt.Errorf("service: %s: ending your follow: %w", op, err)
 	}
-	if _, err := endFollowPair(ctx, s.q, person.ID, blockerID, FollowEndBlocked, now); err != nil {
-		return fmt.Errorf("service: Block: ending their follow: %w", err)
+	if _, err := endFollowPair(ctx, s.q, blockedID, blockerID, FollowEndBlocked, now); err != nil {
+		return fmt.Errorf("service: %s: ending their follow: %w", op, err)
 	}
 	return nil
 }

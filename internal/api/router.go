@@ -763,6 +763,9 @@ func NewRouter(deps Deps) *chi.Mux {
 			service.WithPeopleRatings(deps.Ratings),
 		)
 	}
+	// Quick 261030-u78 (WR-E04): the comment service tells the people service
+	// who wrote a comment, for the Block button beside Flag.
+	peopleOpts = append(peopleOpts, service.WithPeopleCommentAuthors(comments))
 	people := service.NewPeopleService(deps.Sessions, peopleOpts...)
 	// Delete my account (plan 03.2-09): built from the sessions store and the
 	// optional transaction seam.
@@ -995,18 +998,20 @@ func NewRouter(deps Deps) *chi.Mux {
 		// route with r.With. The absolute address comes from the configured
 		// base, never from the request.
 		r.With(rateGate.ShareMiddleware()).Post("/api/reports/{id}/share", handlers.ShareReport(shares, shareBase))
-		// The six comment routes (Phase 8 plan 12, PAGE-02, SC3). Gated, flat
+		// The seven comment routes (Phase 8 plan 12, PAGE-02, SC3). Gated, flat
 		// literal paths. The list is a read polled like the bell, so it has no
 		// bucket. Posts and replies spend the comment bucket, with no refund
 		// because each attempt may cost a screener call. Likes, unlikes and
 		// deletes spend the like bucket. A comment flag shares the report flag
-		// bucket and its network backstop (D-14).
+		// bucket and its network backstop (D-14). Block beside Flag spends the
+		// per account people action bucket like a profile block (quick 261030-u78).
 		r.Get("/api/reports/{id}/comments", handlers.ListComments(comments))
 		r.With(rateGate.CommentMiddleware()).Post("/api/reports/{id}/comments", handlers.PostComment(comments))
 		r.With(rateGate.LikeMiddleware()).Post("/api/comments/{id}/like", handlers.LikeComment(comments))
 		r.With(rateGate.LikeMiddleware()).Post("/api/comments/{id}/unlike", handlers.UnlikeComment(comments))
 		r.With(rateGate.LikeMiddleware()).Post("/api/comments/{id}/delete", handlers.DeleteComment(comments))
 		r.With(rateGate.FlagMiddleware()).Post("/api/comments/{id}/flag", handlers.FlagComment(comments))
+		r.With(rateGate.PeopleActionMiddleware()).Post("/api/comments/{id}/block-author", handlers.BlockCommentAuthor(people))
 		// The five Phase 3.2 routes (plan 07). Flat literal paths like the
 		// others, gated because they act only for the account the gate
 		// resolved. The bell polls every 30 seconds from its own script, so
