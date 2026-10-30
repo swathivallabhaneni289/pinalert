@@ -179,10 +179,18 @@ window.PinalertComments = (function () {
   var pendingBlock = null;
   var boundBlockBox = null;
 
+  // A Cancel puts focus back through asked.restore, which picks the comments
+  // heading when the comment left the list or became a placeholder while the
+  // box was open (review WR-03).
   function onBlockBoxClose() {
     var asked = pendingBlock;
     pendingBlock = null;
-    if (asked && !asked.answered && asked.opener && typeof asked.opener.focus === 'function') {
+    if (!asked || asked.answered) {
+      return;
+    }
+    if (typeof asked.restore === 'function') {
+      asked.restore();
+    } else if (asked.opener && typeof asked.opener.focus === 'function') {
       asked.opener.focus();
     }
   }
@@ -731,8 +739,11 @@ window.PinalertComments = (function () {
       // action), and shows only where the author's name is shown (review
       // CR-01, 2026-10-30): never on a New member or a Deleted account
       // comment, whose blocks the server refuses (quick 261030-u78).
+      // A placeholder never gets Block back, even when an answer that was out
+      // rewrites the actions (review WR-03).
       var named = blockName(data);
-      rec.block.hidden = mine || held || data.is_own === true || named === '';
+      var placeholder = data.deleted === true || data.removed === true || data.hidden === true;
+      rec.block.hidden = placeholder || mine || held || data.is_own === true || named === '';
       rec.block.setAttribute('aria-label', named === '' ? BLOCK_LABEL : BLOCK_LABEL + ' ' + named);
       if (rec.blockBusy) {
         rec.block.setAttribute('aria-disabled', 'true');
@@ -932,7 +943,9 @@ window.PinalertComments = (function () {
       clearActionError(rec);
       var title = BLOCK_LABEL + ' ' + name + '?';
       var lines = [BLOCK_LINE_SEEN, BLOCK_LINE_SETTINGS];
-      var asked = { opener: rec.block, answered: false, run: function () {
+      var asked = { opener: rec.block, answered: false, restore: function () {
+        focusBlockOrHeading(rec);
+      }, run: function () {
         sendBlock(rec, name);
       } };
       if (!openBlockBox(asked, title, lines)) {
@@ -942,10 +955,38 @@ window.PinalertComments = (function () {
       }
     }
 
+    // blockUsable says whether a Block button can still take focus: it is in
+    // this section and neither it nor any row around it is hidden. A poll can
+    // take a comment away or turn it into a placeholder while the box is open
+    // or the request is out (review WR-03). It walks parentNode up to the
+    // section, so it needs nothing newer than the DOM the page already uses.
+    function blockUsable(rec) {
+      for (var n = rec.block; n; n = n.parentNode) {
+        if (n === root) {
+          return true;
+        }
+        if (n.hidden) {
+          return false;
+        }
+      }
+      return false;
+    }
+
+    // focusBlockOrHeading puts focus back on Block when it is still there and
+    // on the comments heading otherwise, never on a detached or hidden button
+    // or the page body (review WR-03).
+    function focusBlockOrHeading(rec) {
+      if (blockUsable(rec)) {
+        rec.block.focus();
+      } else {
+        heading.focus({ preventScroll: true });
+      }
+    }
+
     function sendBlock(rec, name) {
       if (navigator.onLine === false) {
         showActionError(rec, OFFLINE_ACTION);
-        rec.block.focus();
+        focusBlockOrHeading(rec);
         return;
       }
       rec.blockBusy = true;
@@ -957,12 +998,18 @@ window.PinalertComments = (function () {
           return;
         }
         writeActions(rec);
-        rec.block.focus();
+        // A 404 means the comment is gone and the list is read again, which
+        // may take the button away, so focus goes to the heading (WR-03).
+        if (res.status === STATUS_GONE) {
+          heading.focus({ preventScroll: true });
+        } else {
+          focusBlockOrHeading(rec);
+        }
         actionFailed(rec, res);
       }).catch(function () {
         rec.blockBusy = false;
         writeActions(rec);
-        rec.block.focus();
+        focusBlockOrHeading(rec);
         showActionError(rec, navigator.onLine === false ? OFFLINE_ACTION : ACTION_ERROR);
       });
     }

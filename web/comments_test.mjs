@@ -1786,6 +1786,9 @@ test('Block on a comment that is gone reloads and shows no toast', async () => {
   assert.equal(env.fetches.length, before + 1, 'a list read follows');
   assert.equal(lastFetch(env).opts.method, 'GET');
   assert.deepEqual(toasts, []);
+  // Review WR-03: the comment is gone, so focus goes to the heading, never to
+  // a Block button the reload may take away.
+  assert.equal(env.doc.activeElement, find(page.view.el, 'comments__heading'));
 });
 
 test('Block offline sends nothing', async () => {
@@ -1820,4 +1823,75 @@ test('a username written into the Block box is plain text', async () => {
   blockButton(page.items()[0]).fire('click');
   assert.equal(boxes.block.title.textContent, 'Block <b>x</b>?');
   assert.equal(blockButton(page.items()[0]).getAttribute('aria-label'), 'Block <b>x</b>');
+});
+
+// ---- Review WR-03 (2026-10-30): focus never lands on a gone or hidden Block ----
+
+function heading(page) { return find(page.view.el, 'comments__heading'); }
+
+test('WR-03: Cancel after the comment became a placeholder focuses the heading', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  const page = await start(env, [cm(1), cm(2)]);
+  const li = page.items()[0];
+  blockButton(li).fire('click');
+  env.advance(30000);
+  lastFetch(env).reply(200, body([cm(1, { hidden: true, author: '', words: '' }), cm(2)]));
+  await flush();
+  assert.equal(find(li, 'comment__meta').hidden, true, 'the row is a placeholder now');
+  boxes.block.cancel.fire('click');
+  assert.equal(env.doc.activeElement, heading(page), 'focus is on the heading');
+  assert.equal(blockButton(li).hidden, true);
+});
+
+test('WR-03: Cancel after the comment left the list focuses the heading', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  const page = await start(env, [cm(1), cm(2)]);
+  const li = page.items()[0];
+  blockButton(li).fire('click');
+  env.advance(30000);
+  lastFetch(env).reply(200, body([cm(2)]));
+  await flush();
+  assert.equal(page.items().length, 1, 'the comment left the list');
+  boxes.block.cancel.fire('click');
+  assert.equal(env.doc.activeElement, heading(page));
+});
+
+test('WR-03: a failed Block on a comment that became a placeholder keeps Block hidden and focuses the heading', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  const page = await start(env, [cm(1)]);
+  const li = page.items()[0];
+  // The block leaves at 25 s and the poll at 30 s, inside the block's 10 s limit.
+  env.advance(25000);
+  blockButton(li).fire('click');
+  boxes.block.yes.fire('click');
+  const sent = lastFetch(env);
+  assert.equal(sent.opts.method, 'POST');
+  env.advance(5000);
+  const poll = lastFetch(env);
+  assert.equal(poll.opts.method, 'GET');
+  poll.reply(200, body([cm(1, { removed: true, author: '', words: '' })]));
+  await flush();
+  sent.reply(500, null);
+  await flush();
+  assert.equal(blockButton(li).hidden, true, 'writeActions never unhides Block in a placeholder');
+  assert.equal(find(li, 'comment__meta').hidden, true);
+  assert.equal(env.doc.activeElement, heading(page), 'focus is on the heading');
+});
+
+test('WR-03: an offline Block on a comment that left the list focuses the heading', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  const page = await start(env, [cm(1), cm(2)]);
+  const li = page.items()[0];
+  blockButton(li).fire('click');
+  env.advance(30000);
+  lastFetch(env).reply(200, body([cm(2)]));
+  await flush();
+  env.sandbox.navigator.onLine = false;
+  boxes.block.yes.fire('click');
+  assert.equal(blockPosts(env).length, 0);
+  assert.equal(env.doc.activeElement, heading(page));
 });
