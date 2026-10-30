@@ -398,6 +398,71 @@
                 }
             }
         },
+        "/comments/{id}/block-author": {
+            "post": {
+                "description": "Blocks the person who wrote the comment, whether or not their profile is public. Every\nfollow between you ends and neither can follow the other. You stop seeing their comments.\nThey are not told. Blocking someone already blocked answers 204 again. Your own comment, an\nunknown comment, one that is deleted, removed, held back, on a report that is not available,\nor by a deleted account all answer the same 404. Send no body or an empty object. It is\nlimited together with the other people actions, and a blocked call gets 429 with a\nRetry-After header.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "comments"
+                ],
+                "summary": "Block the author of a comment",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Comment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Blocked"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Blocked by a limit, see Retry-After",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.RateLimitResponse"
+                        },
+                        "headers": {
+                            "Retry-After": {
+                                "type": "integer",
+                                "description": "Whole seconds to wait before trying again"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/comments/{id}/delete": {
             "post": {
                 "description": "Deletes the caller's own comment, at any time and whatever the state of the report.\nThere is no edit. A comment that has visible replies stays as a placeholder with no\nwords. Deleting a comment that is already deleted answers 200 again. Someone else's\ncomment gets 403, and an unknown comment gets 404. Deleting is limited with likes,\nand a blocked delete gets 429 with a Retry-After header.\nRequires a session verified by email; an unverified caller receives 401.",

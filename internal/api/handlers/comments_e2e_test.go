@@ -644,6 +644,8 @@ func TestCommentRoutesAreGated(t *testing.T) {
 		{http.MethodPost, "/api/comments/" + cid + "/unlike", ""},
 		{http.MethodPost, "/api/comments/" + cid + "/delete", ""},
 		{http.MethodPost, "/api/comments/" + cid + "/flag", `{"reasons":["spam"]}`},
+		// Amended 2026-10-30 by quick 261030-u78: Block beside Flag is gated too.
+		{http.MethodPost, "/api/comments/" + cid + "/block-author", ""},
 	}
 	for _, rt := range routes {
 		t.Run(rt.method+" "+rt.path, func(t *testing.T) {
