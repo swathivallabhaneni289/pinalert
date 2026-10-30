@@ -195,6 +195,8 @@ Also from 09-VALIDATION: the 40 point note about five raters in TRUST-MODEL (B4)
 
 **2. WR-E04: blocking someone who keeps their profile private.** Today you can block a person only from their public profile. Most people keep their profile off, so if a commenter has a private profile you cannot block them to hide their comments, even though blocking is meant to do that. Should that change now? **Recommendation: accept it for now.** A later small change could put Block beside Flag on a comment, which would also work for private commenters. The block, the comment hiding and the follow clean-up already work for anyone who is public.
 
+**Answered 2026-10-30:** the owner said "do it now". Block goes beside Flag on every comment by someone else, for public and private commenters alike, built as a quick task.
+
 ## Gaps Summary
 
 No gaps. All five success criteria are met in the code and by passing tests that I ran myself on a scratch database. The remaining work is the owner's: the viewing session, the two-account follow flow, the real phone, the four fix-report items and the two questions above, then a yes.
