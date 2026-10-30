@@ -310,8 +310,12 @@ func TestFixedPositionSeam(t *testing.T) {
 }
 
 // TestDemoMarksInFeedAndMap pins the marks (D-02, ROBUST-06, T-05-71): the Demo
-// tag on every row and popup, the dashed ring class on every pin, and no Flag
-// and no Mute control on the Demo page.
+// tag on every row and popup, the pin name that starts with Demo., that a Demo
+// pin has no ring of its own and is the same round crowd pin, and no Flag and
+// no Mute control on the Demo page.
+//
+// Amended 2026-10-30 by quick 261030-v5f (owner decision): the Demo pin ring is
+// removed, a Demo pin looks exactly like a crowd pin.
 func TestDemoMarksInFeedAndMap(t *testing.T) {
 	feed := dm13Code(p13ReadStatic(t, "static/js/feed.js"))
 	create := jsFunctionBody(t, feed, "createRow(id)")
@@ -324,7 +328,10 @@ func TestDemoMarksInFeedAndMap(t *testing.T) {
 
 	mapJS := dm13Code(p13ReadStatic(t, "static/js/map.js"))
 	badge := jsFunctionBody(t, mapJS, "buildBadgeElement(report)")
-	p13MustContain(t, "map.js buildBadgeElement", badge, "PinalertDemoPage", "icon-badge--demo")
+	p13MustNotContain(t, "map.js buildBadgeElement", badge, "PinalertDemoPage", "icon-badge--demo")
+	p13MustNotContain(t, "map.js", mapJS, "icon-badge--demo")
+	pinName := jsFunctionBody(t, mapJS, "pinName(report)")
+	p13MustContain(t, "map.js pinName", pinName, "PinalertDemoPage", "'Demo. '")
 	popup := jsFunctionBody(t, mapJS, "buildPopupCard(report)")
 	p13MustContain(t, "map.js buildPopupCard", popup, "PinalertDemoPage", "demo-tag")
 	// Flag and Mute are not drawn on the Demo page, whatever scripts loaded.
@@ -332,8 +339,19 @@ func TestDemoMarksInFeedAndMap(t *testing.T) {
 	p13MustMatch(t, "map.js flag", popup, `window\.PinalertFlag\s*&&\s*!window\.PinalertDemoPage`)
 
 	css := p13ReadStatic(t, "static/css/demo.css")
-	ring := dm13Rule(t, css, "#map .icon-badge--pin.icon-badge--demo {")
-	p13MustContain(t, ".icon-badge--demo", ring, "outline: 2px dashed var(--color-text)", "outline-offset: 2px")
+	for _, rule := range p16ParseCSS("static/css/demo.css", css) {
+		if strings.Contains(rule.Head, "icon-badge") {
+			t.Errorf("demo.css %q: a Demo pin has no rule of its own, it is the crowd pin", rule.Head)
+		}
+		for prop, value := range rule.Decls {
+			if strings.HasPrefix(prop, "outline") {
+				t.Errorf("demo.css %q sets %s: a Demo pin has no ring", rule.Head, prop)
+			}
+			if strings.Contains(value, "dashed") {
+				t.Errorf("demo.css %q { %s: %s }: a Demo pin has no dashed ring", rule.Head, prop, value)
+			}
+		}
+	}
 	p13MustContain(t, "demo.css", css, ".demo-tag", "forced-colors: active")
 }
 

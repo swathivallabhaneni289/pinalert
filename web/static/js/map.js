@@ -991,12 +991,6 @@ window.PinalertMap = (function () {
     if (report.view === 'disputed') {
       badge.classList.add('icon-badge--disputed');
     }
-    // Every pin on the Demo page is a pretend report: demo.css draws a 2px
-    // dashed ring around it, so it can never be read as a crowd pin or an
-    // official one (plan 05-13, D-02, ROBUST-06). A fixed class name.
-    if (window.PinalertDemoPage === true) {
-      badge.classList.add('icon-badge--demo');
-    }
 
     // On this surface the state class goes on the badge element itself,
     // because there is no row ancestor — the same split main.css's own

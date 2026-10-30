@@ -3,15 +3,15 @@
  *
  * The Demo's own look, on top of the real Nearby page's styles: the strip that
  * is the first element of every Demo screen, the Exit demo button, the Demo tag
- * on rows and popups, and the dashed ring on every Demo pin. Together they make
- * sure a pretend report can never be read as a crowd report or an official one,
- * and never by colour alone.
+ * on rows and popups, and the alert banner Demo word. A Demo pin is drawn
+ * exactly like a crowd pin (owner decision 2026-10-30), and every Demo pin's
+ * name starts with Demo. Together they make sure a pretend report can never be
+ * read as a crowd report or an official one, and never by colour alone.
  *
  * Tokens only: no new hue. The strip's 52px floor, 4px by 16px padding and 12px
- * gap, the 24px tag height and the 2px ring are the named literals of the
- * UI-SPEC table. This file loads last, after phone.css, because the ring has to
- * win over the phone dot's disputed rule. Every display rule on an element that
- * can carry hidden says :not([hidden]).
+ * gap and the 24px tag height are the named literals of the UI-SPEC table. This
+ * file loads last, after phone.css. Every display rule on an element that can
+ * carry hidden says :not([hidden]).
  */
 
 /* ---- The Demo strip -------------------------------------------------------- */
@@ -152,19 +152,6 @@
   display: none;
 }
 
-/* ---- The Demo pin ------------------------------------------------------------ */
-
-/* Every pin on the Demo map has a 2px dashed ring in the text colour, 2px
-   outside the pin, always drawn (it is not the selection ring). The outline
-   follows the round badge, takes no room, and leaves the 44px marker box as it
-   was. The selection growth (map-pin--chosen) is a transform and a shadow, so
-   the two do not fight. The id keeps this above phone.css's disputed rule,
-   which sets outline 0 for a grey dot. */
-#map .icon-badge--pin.icon-badge--demo {
-  outline: 2px dashed var(--color-text);
-  outline-offset: 2px;
-}
-
 /* ---- Forced colours ----------------------------------------------------------- */
 
 @media (forced-colors: active) {
@@ -180,9 +167,5 @@
 
   .demo-tag {
     border-color: CanvasText;
-  }
-
-  #map .icon-badge--pin.icon-badge--demo {
-    outline-color: CanvasText;
   }
 }

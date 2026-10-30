@@ -1,6 +1,7 @@
 package web
 
 import (
+	"io/fs"
 	"regexp"
 	"strings"
 	"testing"
@@ -37,8 +38,12 @@ func pxOrToken(value string) bool {
 // pin is a flat rectangle 28px high with a 4px radius, filled with the text
 // colour and never with a severity colour, centred in a marker box that is at
 // least 44px each way, and it shares no class with the crowd pin (round, a
-// severity fill) or the Demo pin (round, a dashed ring). The crowd rules in
-// main.css and the Demo ring in demo.css are untouched.
+// severity fill). A Demo pin is that same crowd pin with no rule of its own,
+// marked by the Demo strip, the Demo tag and its pin name. The crowd rules in
+// main.css are untouched.
+//
+// Amended 2026-10-30 by quick 261030-v5f (owner decision): the Demo pin ring is
+// removed, a Demo pin looks exactly like a crowd pin.
 func TestOfficialPinDistinctFromCrowdAndDemo(t *testing.T) {
 	pin := officialPinRule(t, ".official-pin")
 	if pin.Decls["height"] != "28px" {
@@ -85,6 +90,7 @@ func TestOfficialPinDistinctFromCrowdAndDemo(t *testing.T) {
 	code := p19Code(t, officialPinsScript)
 	p13MustContain(t, "official-pins.js pinIcon", code,
 		"className: 'official-pin-box'", "iconSize: [96, 44]", "iconAnchor: [48, 22]", "official-pin__glyph")
+	p13MustContain(t, "official-pins.js pinIcon", code, "'official-pin__word', 'GDACS'")
 	p13MustNotContain(t, "official-pins.js", code, "icon-badge", "icon-badge--pin", "icon-badge--demo", "map-pin--chosen")
 
 	// The chosen look is a grow and nothing else: no ring, nothing under reduced
@@ -103,16 +109,25 @@ func TestOfficialPinDistinctFromCrowdAndDemo(t *testing.T) {
 		t.Errorf("reduced motion: .official-pin transition = %q, want none", reduced.Decls["transition"])
 	}
 
-	// The crowd pin stays round on a severity fill and the Demo pin keeps its
-	// dashed ring: the two things the official pin is told apart from.
+	// The crowd pin stays round on a severity fill and a Demo pin is that same
+	// crowd pin: the one thing the official pin is told apart from.
 	crowd := p31mRule(t, "static/css/main.css", "", ".icon-badge")
 	if crowd.Decls["border-radius"] != "50%" {
 		t.Errorf("main.css .icon-badge border-radius = %q, want 50%% (the crowd pin stays round)", crowd.Decls["border-radius"])
 	}
-	demo := p31mRule(t, "static/css/demo.css", "", "#map .icon-badge--pin.icon-badge--demo")
-	if !strings.Contains(demo.Decls["outline"], "dashed") {
-		t.Errorf("demo.css ring = %q, want a dashed ring on the Demo pin", demo.Decls["outline"])
+	files, err := fs.Glob(StaticFS, "static/css/*.css")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("listing the embedded stylesheets: %v (%d found)", err, len(files))
 	}
+	for _, file := range files {
+		for _, rule := range p16ParseCSS(file, p16ReadStatic(t, file)) {
+			if strings.Contains(rule.Head, "icon-badge--demo") {
+				t.Errorf("%s %q: a Demo pin has no rule of its own, it is the crowd pin", file, rule.Head)
+			}
+		}
+	}
+	badge := jsFunctionBody(t, p19Code(t, "static/js/map.js"), "buildBadgeElement(report)")
+	p13MustNotContain(t, "map.js buildBadgeElement", badge, "PinalertDemoPage")
 }
 
 // TestOfficialPinCard pins UI-SPEC 3b and P5-C14: the card carries the GDACS

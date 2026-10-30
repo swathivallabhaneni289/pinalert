@@ -8,9 +8,10 @@
 // Bengal beside the crowd's reports and can never mistake one for the other.
 //
 // Told apart by shape and word, never by colour. A crowd pin is a round badge on
-// a severity fill and a Demo pin is round with a dashed ring. The GDACS pin is a
-// flat rectangle with the word GDACS and the hazard glyph, in the text colour
-// (official-pins.css), inside a 44px marker box.
+// a severity fill and a Demo pin is drawn exactly like it, marked by the Demo
+// strip, the Demo tag and its pin name. The GDACS pin is a flat rectangle with
+// the word GDACS and the hazard glyph, in the text colour (official-pins.css),
+// inside a 44px marker box.
 //
 // Apart from the crowd. The layer is fed by GET <base>/official/pins and nothing
 // else. It never reads the report store, never writes to the Nearby list or to
