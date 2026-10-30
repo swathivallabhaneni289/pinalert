@@ -795,8 +795,9 @@ func (w *PushWorker) eventStillHolds(event UpdateKind, f pushReportFacts, now ti
 		return f.Vis == VisibilityRetracted
 	case UpdateFading:
 		// A report someone confirmed again since no longer fades within the hour,
-		// so the note would be false and is skipped (backlog 999.12). The bell may
-		// write a new fading row for the new fade time when it comes.
+		// so the note would be false and is skipped (backlog 999.12). When it fades
+		// again the bell refreshes its one fading row and no second phone note
+		// follows (MarkFadingAndInsertUpdate, review WR-03).
 		return MayNotifyAboutReport(UpdateFading, f.Vis, f.ExpiresAt, now) && !f.ExpiresAt.After(now.Add(FadingLead))
 	case UpdateCommentOnYours, UpdateReplyToYours:
 		// Phase 8 plan 15 (D-16, D-07, repo rule 15): a comment note reaches a

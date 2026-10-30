@@ -129,6 +129,15 @@ SELECT id FROM more;
 -- (same hour gap, same soft ceiling, same roll up) but keyed on the expiry that
 -- was announced: fading_for must differ from expires_at, so the same expiry is
 -- announced once and a changed expiry arms the event again.
+--
+-- Quick task 261030-64q, review WR-03 (2026-10-30): a confirmation from a new
+-- spot can move the expiry later, so a report can enter its last hour more than
+-- once. The bell keeps ONE fading row per account and report: when one exists,
+-- the event refreshes it in place (moved to the top, unread again, the same id)
+-- instead of writing another. The phone note is keyed on the update row's id
+-- (EnqueueChangedFromUpdates), so the refreshed row sends no second note: the
+-- "fades in about an hour" note goes out at most once per account and report.
+-- The ceiling and the roll up apply to a refresh like to a new row.
 WITH moved AS (
     UPDATE update_cursors
     SET fading_for = sqlc.arg(expires_at)::timestamptz,
@@ -144,11 +153,27 @@ WITH moved AS (
     WHERE account_id = sqlc.arg(account_id)::bigint
       AND kind NOT IN ('more', 'comment_on_yours', 'reply_to_yours')
       AND created_at > sqlc.arg(hour_edge)::timestamptz
+), existing AS (
+    SELECT id
+    FROM updates
+    WHERE account_id = sqlc.arg(account_id)::bigint
+      AND report_id = sqlc.arg(report_id)::bigint
+      AND kind = 'fading'
+    ORDER BY id DESC
+    LIMIT 1
 ), ins AS (
     INSERT INTO updates (account_id, report_id, kind, created_at)
     SELECT m.account_id, m.report_id, 'fading', sqlc.arg(now)::timestamptz
     FROM moved m, recent
     WHERE recent.n < sqlc.arg(ceiling)::bigint
+      AND NOT EXISTS (SELECT 1 FROM existing)
+    RETURNING id
+), refreshed AS (
+    UPDATE updates
+    SET created_at = sqlc.arg(now)::timestamptz,
+        read_at = NULL
+    WHERE id = (SELECT id FROM existing)
+      AND EXISTS (SELECT 1 FROM moved m, recent WHERE recent.n < sqlc.arg(ceiling)::bigint)
     RETURNING id
 ), more AS (
     INSERT INTO updates (account_id, report_id, kind, created_at, bucket_start, more_count)
@@ -162,6 +187,8 @@ WITH moved AS (
     RETURNING id
 )
 SELECT id FROM ins
+UNION ALL
+SELECT id FROM refreshed
 UNION ALL
 SELECT id FROM more;
 
