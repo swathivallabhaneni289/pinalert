@@ -18,7 +18,8 @@
 // box) and Flag (everyone else's, through the Flag dialog's comment mode) to
 // the meta line after the Reply button. A deleted or removed placeholder has
 // none of them. Quick 261030-u78 (WR-E04, D-12) adds Block right after Flag on
-// every comment by someone else: a real button that asks first in its own
+// every comment by someone else whose name is shown (never on a New member
+// comment, review CR-01): a real button that asks first in its own
 // confirm box and only then sends POST /api/comments/{id}/block-author, after
 // which the list is read again at once so the blocked person's words go.
 //
@@ -92,13 +93,11 @@ window.PinalertComments = (function () {
   var DELETE_CANCEL_ID = 'comment-delete-cancel';
   var DELETE_YES_ID = 'comment-delete-yes';
   // Quick 261030-u78 (WR-E04): Block beside Flag, its box and its words.
+  // Block is offered only where the name is shown (review CR-01, 2026-10-30),
+  // so there are no words for a person whose name is not shown.
   var BLOCK_LABEL = 'Block';
-  var BLOCK_UNNAMED = 'Block this person';
-  var BLOCK_TITLE_UNNAMED = 'Block this person?';
   var BLOCK_LINE_SEEN = 'You will not see their comments. They are not told.';
   var BLOCK_LINE_SETTINGS = 'You can unblock them in Settings, Blocked people.';
-  var BLOCK_LINE_SETTINGS_PENDING = 'They show in Settings, Blocked people, once their username is checked. You can unblock them there.';
-  var BLOCKED_UNNAMED = 'This person is blocked.';
   var BLOCK_BOX_ID = 'comment-block-confirm';
   var BLOCK_TITLE_ID = 'comment-block-title';
   var BLOCK_TEXT_ID = 'comment-block-text';
@@ -180,10 +179,18 @@ window.PinalertComments = (function () {
   var pendingBlock = null;
   var boundBlockBox = null;
 
+  // A Cancel puts focus back through asked.restore, which picks the comments
+  // heading when the comment left the list or became a placeholder while the
+  // box was open (review WR-03).
   function onBlockBoxClose() {
     var asked = pendingBlock;
     pendingBlock = null;
-    if (asked && !asked.answered && asked.opener && typeof asked.opener.focus === 'function') {
+    if (!asked || asked.answered) {
+      return;
+    }
+    if (typeof asked.restore === 'function') {
+      asked.restore();
+    } else if (asked.opener && typeof asked.opener.focus === 'function') {
       asked.opener.focus();
     }
   }
@@ -286,6 +293,11 @@ window.PinalertComments = (function () {
     // being written (review fix round 3, SK2-01).
     var pendingTails = [];
     var loadSeq = 0;
+    // Counts the times the list was cleared. A Show more, a Show more replies
+    // or a tail read that left before a clear is ignored when it lands, so a
+    // reset after a Block never gets an older page written back into it
+    // (review WR-04). loadSeq is not used for this because every poll bumps it.
+    var listGen = 0;
     var inflight = null;
     var pollTimer = null;
     var posting = false;
@@ -517,7 +529,7 @@ window.PinalertComments = (function () {
       // comment. A real button, never a link.
       var block = element('button', 'comment__block');
       block.setAttribute('type', 'button');
-      block.setAttribute('aria-label', BLOCK_UNNAMED);
+      block.setAttribute('aria-label', BLOCK_LABEL);
       Pinalert.setText(block, BLOCK_LABEL);
       block.hidden = true;
       var held = element('span', 'comment__held');
@@ -729,11 +741,15 @@ window.PinalertComments = (function () {
         writeClass(rec.flag, 'comment__flag');
       }
       // Block follows Flag's rule, never the commentsOpen one (a safety
-      // action), and is also absent on a Deleted account comment, whose blocks
-      // the server would refuse (quick 261030-u78).
+      // action), and shows only where the author's name is shown (review
+      // CR-01, 2026-10-30): never on a New member or a Deleted account
+      // comment, whose blocks the server refuses (quick 261030-u78).
+      // A placeholder never gets Block back, even when an answer that was out
+      // rewrites the actions (review WR-03).
       var named = blockName(data);
-      rec.block.hidden = mine || held || data.is_own === true || data.author_kind === 'deleted_account';
-      rec.block.setAttribute('aria-label', named === '' ? BLOCK_UNNAMED : BLOCK_LABEL + ' ' + named);
+      var placeholder = data.deleted === true || data.removed === true || data.hidden === true;
+      rec.block.hidden = placeholder || mine || held || data.is_own === true || named === '';
+      rec.block.setAttribute('aria-label', named === '' ? BLOCK_LABEL : BLOCK_LABEL + ' ' + named);
       if (rec.blockBusy) {
         rec.block.setAttribute('aria-disabled', 'true');
       } else {
@@ -918,18 +934,23 @@ window.PinalertComments = (function () {
     }
 
     // onBlock asks first, in the app's confirm box; only its Block button sends
-    // anything (quick 261030-u78, WR-E04). A name that is not shown gets the
-    // line that says the person is listed in Settings once the username is
-    // checked, because Blocked people never lists an unchecked name.
+    // anything (quick 261030-u78, WR-E04). It runs only for a name that is
+    // shown (review CR-01), so every block it makes is listed in Settings,
+    // Blocked people and can be taken back there.
     function onBlock(rec) {
       if (rec.blockBusy || rec.block.hidden || rec.data.deleted || rec.data.removed || rec.data.hidden) {
         return;
       }
-      clearActionError(rec);
       var name = blockName(rec.data);
-      var title = name === '' ? BLOCK_TITLE_UNNAMED : BLOCK_LABEL + ' ' + name + '?';
-      var lines = [BLOCK_LINE_SEEN, name === '' ? BLOCK_LINE_SETTINGS_PENDING : BLOCK_LINE_SETTINGS];
-      var asked = { opener: rec.block, answered: false, run: function () {
+      if (name === '') {
+        return;
+      }
+      clearActionError(rec);
+      var title = BLOCK_LABEL + ' ' + name + '?';
+      var lines = [BLOCK_LINE_SEEN, BLOCK_LINE_SETTINGS];
+      var asked = { opener: rec.block, answered: false, restore: function () {
+        focusBlockOrHeading(rec);
+      }, run: function () {
         sendBlock(rec, name);
       } };
       if (!openBlockBox(asked, title, lines)) {
@@ -939,10 +960,43 @@ window.PinalertComments = (function () {
       }
     }
 
+    // blockUsable says whether a Block button can still take focus: it is in
+    // this section and neither it nor any row around it is hidden. A poll can
+    // take a comment away or turn it into a placeholder while the box is open
+    // or the request is out (review WR-03). It walks parentNode up to the
+    // section, so it needs nothing newer than the DOM the page already uses.
+    function blockUsable(rec) {
+      for (var n = rec.block; n; n = n.parentNode) {
+        if (n === root) {
+          return true;
+        }
+        if (n.hidden) {
+          return false;
+        }
+      }
+      return false;
+    }
+
+    // focusBlockOrHeading puts focus back on Block when it is still there and
+    // on the comments heading otherwise, never on a detached or hidden button
+    // or the page body (review WR-03).
+    function focusBlockOrHeading(rec) {
+      if (blockUsable(rec)) {
+        rec.block.focus();
+      } else {
+        heading.focus({ preventScroll: true });
+      }
+    }
+
     function sendBlock(rec, name) {
+      // Its own busy guard, so a second press that reaches it by any path
+      // while a block is out sends nothing (review IN-01).
+      if (rec.blockBusy) {
+        return;
+      }
       if (navigator.onLine === false) {
         showActionError(rec, OFFLINE_ACTION);
-        rec.block.focus();
+        focusBlockOrHeading(rec);
         return;
       }
       rec.blockBusy = true;
@@ -954,26 +1008,42 @@ window.PinalertComments = (function () {
           return;
         }
         writeActions(rec);
-        rec.block.focus();
+        // A 404 means the comment is gone and the list is read again, which
+        // may take the button away, so focus goes to the heading (WR-03).
+        if (res.status === STATUS_GONE) {
+          heading.focus({ preventScroll: true });
+        } else {
+          focusBlockOrHeading(rec);
+        }
         actionFailed(rec, res);
       }).catch(function () {
         rec.blockBusy = false;
         writeActions(rec);
-        rec.block.focus();
+        focusBlockOrHeading(rec);
         showActionError(rec, navigator.onLine === false ? OFFLINE_ACTION : ACTION_ERROR);
       });
     }
 
     // afterBlock: one calm toast says who is blocked, focus goes to the
-    // heading and the list is read again at once, so the blocked person's words
-    // become the existing placeholder or leave the list. The server decides
-    // what is shown; nothing is removed here by guess.
+    // heading and the list is read again at once from the first page, as the
+    // Retry button and a first open do, so the blocked person's words become
+    // the existing placeholder or leave the list. Every page and thread read
+    // so far is dropped, and a read already out is ignored when it lands
+    // (review WR-04), so no loaded page keeps their words; Show more brings the
+    // rest back. A failed reload shows the error line with Retry. The server
+    // decides what is shown; nothing is removed here by guess.
     function afterBlock(rec, name) {
       writeActions(rec);
       if (window.Pinalert && typeof window.Pinalert.showToast === 'function') {
-        window.Pinalert.showToast(name === '' ? BLOCKED_UNNAMED : name + ' is blocked.', null, TOAST_MS);
+        window.Pinalert.showToast(name + ' is blocked.', null, TOAST_MS);
       }
       heading.focus({ preventScroll: true });
+      // The reset below drops the list at once, so no removeRoot will clear a
+      // reply aimed at the blocked person; it goes here, with its mention.
+      if (replyTarget && replyTarget.shown === name) {
+        clearReplyTarget(false);
+      }
+      mode = 'none';
       load();
     }
 
@@ -1129,9 +1199,10 @@ window.PinalertComments = (function () {
       }
       var after = t.headLast;
       var sentStamp = answerStamp;
+      var gen = listGen;
       var call = request('GET', threadPath(rec.id, after));
       call.promise.then(function (res) {
-        if (nodes[rec.id] !== rec || t.headLast !== after || t.busy) {
+        if (gen !== listGen || nodes[rec.id] !== rec || t.headLast !== after || t.busy) {
           return;
         }
         if (!res.ok || !res.body || !Array.isArray(res.body.comments)) {
@@ -1238,6 +1309,12 @@ window.PinalertComments = (function () {
       // A cleared list starts again from the first page.
       loadedMore = false;
       lastPageAfter = 0;
+      // Reads already out belong to the old list and are ignored when they
+      // land, so Show more is free to be pressed again at once (review WR-04).
+      listGen += 1;
+      pendingTails = [];
+      moreBusy = false;
+      moreButton.removeAttribute('aria-disabled');
       while (list.firstChild) {
         list.removeChild(list.firstChild);
       }
@@ -1488,8 +1565,14 @@ window.PinalertComments = (function () {
       moreButton.setAttribute('aria-disabled', 'true');
       var after = nextAfter;
       var sentStamp = answerStamp;
+      var gen = listGen;
       var call = request('GET', listPath(after));
       call.promise.then(function (res) {
+        // A page asked for before the list was cleared is ignored; the clear
+        // already gave Show more back (review WR-04).
+        if (gen !== listGen) {
+          return;
+        }
         moreBusy = false;
         moreButton.removeAttribute('aria-disabled');
         if (!res.ok || !res.body || !Array.isArray(res.body.comments)) {
@@ -1499,6 +1582,9 @@ window.PinalertComments = (function () {
         lastPageAfter = after;
         renderTail(res.body, after, sentStamp);
       }).catch(function () {
+        if (gen !== listGen) {
+          return;
+        }
         moreBusy = false;
         moreButton.removeAttribute('aria-disabled');
         moreError.hidden = false;
@@ -1520,11 +1606,14 @@ window.PinalertComments = (function () {
       t.more.setAttribute('aria-disabled', 'true');
       var after = t.coveredTo;
       var sentStamp = answerStamp;
+      var gen = listGen;
       var call = request('GET', threadPath(rec.id, after));
       call.promise.then(function (res) {
         t.busy = false;
         t.more.removeAttribute('aria-disabled');
-        if (nodes[rec.id] !== rec) {
+        // A thread read that left before the list was cleared is ignored
+        // (review WR-04); its thread node is no longer on the page.
+        if (gen !== listGen || nodes[rec.id] !== rec) {
           return;
         }
         if (!res.ok || !res.body || !Array.isArray(res.body.comments)) {
@@ -1549,7 +1638,7 @@ window.PinalertComments = (function () {
       }).catch(function () {
         t.busy = false;
         t.more.removeAttribute('aria-disabled');
-        if (nodes[rec.id] === rec) {
+        if (gen === listGen && nodes[rec.id] === rec) {
           t.moreError.hidden = false;
         }
       });

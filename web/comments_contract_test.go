@@ -325,14 +325,22 @@ func TestBlockBoxReusesLogoutConfirm(t *testing.T) {
 func TestCommentBlockIsAButton(t *testing.T) {
 	js := stripJSComments(p16ReadStatic(t, "static/js/comments.js"))
 	for _, want := range []string{
-		"block-author", "'Block'", "'Block this person'",
+		"block-author", "'Block'",
 		"You will not see their comments. They are not told.",
 		"You can unblock them in Settings, Blocked people.",
-		"They show in Settings, Blocked people, once their username is checked. You can unblock them there.",
 		"element('button', 'comment__block')",
 	} {
 		if !strings.Contains(js, want) {
 			t.Errorf("comments.js (comments stripped) lacks %q", want)
+		}
+	}
+	// Review CR-01 (2026-10-30): Block is offered only where the name is shown,
+	// so the words for a person whose name is not shown are gone.
+	for _, gone := range []string{
+		"Block this person", "This person is blocked.", "once their username is checked",
+	} {
+		if strings.Contains(js, gone) {
+			t.Errorf("comments.js (comments stripped) still holds %q; a New member comment has no Block", gone)
 		}
 	}
 	if strings.Contains(js, "element('a', 'comment__block')") || strings.Contains(js, `createElement('a')`) {

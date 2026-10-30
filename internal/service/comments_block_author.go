@@ -8,7 +8,7 @@ import (
 // BlockableAuthor answers whose account a Block button on this comment would
 // block, for the reader viewerID (quick 261030-u78, WR-E04). Every refusal is
 // ErrCommentGone, so the answer cannot be used to probe a report, a comment, a
-// private profile, a pending username or who has blocked whom.
+// private profile or who has blocked whom.
 //
 // The order is the specification:
 //
@@ -22,7 +22,14 @@ import (
 //  4. A comment whose author account is deleted is ErrCommentGone: deleting an
 //     account removes its blocks, so a block written later could never be
 //     listed or taken back.
-//  5. Otherwise the author's account id.
+//  5. A comment whose author has no username, or one whose screen is not clear,
+//     is ErrCommentGone (review CR-01, 2026-10-30). The reader sees such an
+//     author as New member, so the refusal reveals nothing new, and Block is
+//     offered only where the name is shown: Settings, Blocked people lists
+//     only a clear name, so a block on any other could not be seen or taken
+//     back there, and the follow totals would tell the blocker whether an
+//     unnamed person followed them.
+//  6. Otherwise the author's account id.
 //
 // It does not look at rep.open, because Block stays available on a report whose
 // comments are closed, as Flag does (a safety action). It does not look at
@@ -43,6 +50,10 @@ func (s *CommentService) BlockableAuthor(ctx context.Context, commentID, viewerI
 		return 0, ErrCommentGone
 	}
 	if target.AuthorDeleted {
+		return 0, ErrCommentGone
+	}
+	if target.AuthorUsername == nil || target.AuthorUsernameScreen == nil ||
+		*target.AuthorUsernameScreen != UsernameScreenClear {
 		return 0, ErrCommentGone
 	}
 	return target.AccountID, nil

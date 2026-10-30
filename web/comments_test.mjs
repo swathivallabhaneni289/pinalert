@@ -1624,8 +1624,8 @@ function blockPosts(env) { return posts(env).filter((f) => /block-author$/.test(
 
 test('Block sits right after Flag with its own name', async () => {
   const env = load();
-  const page = await start(env, [cm(1), cm(2, { author: '', author_kind: 'new_member' })]);
-  const [named, unnamed] = page.items();
+  const page = await start(env, [cm(1)]);
+  const [named] = page.items();
   const block = blockButton(named);
   assert.ok(block, 'a Block button exists');
   assert.equal(block.tagName, 'BUTTON');
@@ -1635,8 +1635,6 @@ test('Block sits right after Flag with its own name', async () => {
   assert.equal(block.hidden, false);
   const meta = find(named, 'comment__meta');
   assert.equal(meta.children[meta.children.indexOf(flagButton(named)) + 1], block, 'the next element after Flag');
-  assert.equal(blockButton(unnamed).hidden, false);
-  assert.equal(blockButton(unnamed).getAttribute('aria-label'), 'Block this person');
 });
 
 test('Block is hidden where it does not belong', async () => {
@@ -1695,24 +1693,41 @@ test('Block asks first in the box and only its Block button sends', async () => 
   assert.equal(blockPosts(env).length, 1, 'and sends nothing more');
 });
 
-test('Block box for a name not shown', async () => {
+// Review CR-01 (2026-10-30): Block is offered only where the name is shown, so
+// a New member comment has no Block, not even after a poll, and a press on the
+// hidden button opens nothing.
+test('no Block on a New member comment', async () => {
   const env = load();
   const boxes = addBoxes(env);
-  const page = await start(env, [cm(1, { author: '', author_kind: 'new_member' })]);
+  const page = await start(env, [cm(1, { author: 'New member', author_kind: 'new_member' }), cm(2, { author: '', author_kind: 'new_member' })]);
+  page.items().forEach((li, i) => assert.equal(blockButton(li).hidden, true, 'comment ' + (i + 1)));
+  assert.equal(flagButton(page.items()[0]).hidden, false, 'Flag stays');
+  env.advance(30000);
+  lastFetch(env).reply(200, body([cm(1, { author: 'New member', author_kind: 'new_member' })]));
+  await flush();
+  assert.equal(blockButton(page.items()[0]).hidden, true, 'still hidden after a poll');
   blockButton(page.items()[0]).fire('click');
-  assert.equal(boxes.block.title.textContent, 'Block this person?');
-  assert.deepEqual(boxes.block.text.children.map((p) => p.textContent), [
-    'You will not see their comments. They are not told.',
-    'They show in Settings, Blocked people, once their username is checked. You can unblock them there.'
-  ]);
+  assert.equal(boxes.block.box.open, false, 'no box opens');
+  assert.equal(blockPosts(env).length, 0, 'nothing is sent');
+});
+
+test('a name that clears brings Block back at the next poll', async () => {
+  const env = load();
+  const page = await start(env, [cm(1, { author: 'New member', author_kind: 'new_member' })]);
+  assert.equal(blockButton(page.items()[0]).hidden, true);
+  env.advance(30000);
+  lastFetch(env).reply(200, body([cm(1)]));
+  await flush();
+  assert.equal(blockButton(page.items()[0]).hidden, false);
+  assert.equal(blockButton(page.items()[0]).getAttribute('aria-label'), 'Block ravi.k');
 });
 
 test('Block success: one toast, the list reloaded, focus on the heading', async () => {
   const env = load();
   const boxes = addBoxes(env);
   const toasts = recordToasts(env);
-  const page = await start(env, [cm(1), cm(2, { author: '', author_kind: 'new_member' })]);
-  const [named, unnamed] = page.items();
+  const page = await start(env, [cm(1), cm(2, { author: 'meena.r' })]);
+  const [named] = page.items();
   blockButton(named).fire('click');
   boxes.block.yes.fire('click');
   assert.equal(blockButton(named).getAttribute('aria-disabled'), 'true', 'busy while it runs');
@@ -1723,14 +1738,12 @@ test('Block success: one toast, the list reloaded, focus on the heading', async 
   assert.equal(env.fetches.length, before + 1, 'the list is asked again at once');
   assert.equal(lastFetch(env).opts.method, 'GET');
   assert.equal(env.doc.activeElement, find(page.view.el, 'comments__heading'));
-  lastFetch(env).reply(200, body([cm(2, { author: '', author_kind: 'new_member' })]));
+  lastFetch(env).reply(200, body([cm(2, { author: 'meena.r' })]));
   await flush();
   assert.equal(page.items().length, 1, 'the blocked person left the list');
-  blockButton(unnamed).fire('click');
-  boxes.block.yes.fire('click');
-  lastFetch(env).reply(204, null);
-  await flush();
-  assert.equal(toasts[1], 'This person is blocked.');
+  assert.equal(wordsOf(page.items()[0]).textContent, 'The road is open');
+  assert.equal(blockButton(page.items()[0]).getAttribute('aria-label'), 'Block meena.r');
+  assert.equal(toasts.length, 1, 'one toast');
 });
 
 test('Block failures show the calm line and change nothing', async () => {
@@ -1773,6 +1786,9 @@ test('Block on a comment that is gone reloads and shows no toast', async () => {
   assert.equal(env.fetches.length, before + 1, 'a list read follows');
   assert.equal(lastFetch(env).opts.method, 'GET');
   assert.deepEqual(toasts, []);
+  // Review WR-03: the comment is gone, so focus goes to the heading, never to
+  // a Block button the reload may take away.
+  assert.equal(env.doc.activeElement, find(page.view.el, 'comments__heading'));
 });
 
 test('Block offline sends nothing', async () => {
@@ -1807,4 +1823,231 @@ test('a username written into the Block box is plain text', async () => {
   blockButton(page.items()[0]).fire('click');
   assert.equal(boxes.block.title.textContent, 'Block <b>x</b>?');
   assert.equal(blockButton(page.items()[0]).getAttribute('aria-label'), 'Block <b>x</b>');
+});
+
+// ---- Review WR-03 (2026-10-30): focus never lands on a gone or hidden Block ----
+
+function heading(page) { return find(page.view.el, 'comments__heading'); }
+
+test('WR-03: Cancel after the comment became a placeholder focuses the heading', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  const page = await start(env, [cm(1), cm(2)]);
+  const li = page.items()[0];
+  blockButton(li).fire('click');
+  env.advance(30000);
+  lastFetch(env).reply(200, body([cm(1, { hidden: true, author: '', words: '' }), cm(2)]));
+  await flush();
+  assert.equal(find(li, 'comment__meta').hidden, true, 'the row is a placeholder now');
+  boxes.block.cancel.fire('click');
+  assert.equal(env.doc.activeElement, heading(page), 'focus is on the heading');
+  assert.equal(blockButton(li).hidden, true);
+});
+
+test('WR-03: Cancel after the comment left the list focuses the heading', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  const page = await start(env, [cm(1), cm(2)]);
+  const li = page.items()[0];
+  blockButton(li).fire('click');
+  env.advance(30000);
+  lastFetch(env).reply(200, body([cm(2)]));
+  await flush();
+  assert.equal(page.items().length, 1, 'the comment left the list');
+  boxes.block.cancel.fire('click');
+  assert.equal(env.doc.activeElement, heading(page));
+});
+
+test('WR-03: a failed Block on a comment that became a placeholder keeps Block hidden and focuses the heading', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  const page = await start(env, [cm(1)]);
+  const li = page.items()[0];
+  // The block leaves at 25 s and the poll at 30 s, inside the block's 10 s limit.
+  env.advance(25000);
+  blockButton(li).fire('click');
+  boxes.block.yes.fire('click');
+  const sent = lastFetch(env);
+  assert.equal(sent.opts.method, 'POST');
+  env.advance(5000);
+  const poll = lastFetch(env);
+  assert.equal(poll.opts.method, 'GET');
+  poll.reply(200, body([cm(1, { removed: true, author: '', words: '' })]));
+  await flush();
+  sent.reply(500, null);
+  await flush();
+  assert.equal(blockButton(li).hidden, true, 'writeActions never unhides Block in a placeholder');
+  assert.equal(find(li, 'comment__meta').hidden, true);
+  assert.equal(env.doc.activeElement, heading(page), 'focus is on the heading');
+});
+
+test('WR-03: an offline Block on a comment that left the list focuses the heading', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  const page = await start(env, [cm(1), cm(2)]);
+  const li = page.items()[0];
+  blockButton(li).fire('click');
+  env.advance(30000);
+  lastFetch(env).reply(200, body([cm(2)]));
+  await flush();
+  env.sandbox.navigator.onLine = false;
+  boxes.block.yes.fire('click');
+  assert.equal(blockPosts(env).length, 0);
+  assert.equal(env.doc.activeElement, heading(page));
+});
+
+// ---- Review WR-04 (2026-10-30): after a block no loaded page keeps their words ----
+
+// blockOn presses Block on li, says yes and answers the block with 204.
+async function blockOn(env, boxes, li) {
+  blockButton(li).fire('click');
+  boxes.block.yes.fire('click');
+  const sent = lastFetch(env);
+  assert.ok(/block-author$/.test(sent.address));
+  sent.reply(204, null);
+  await flush();
+}
+
+// The reset drops the list at once, so the reply target is checked here and
+// not by a later removeRoot: a reply to the blocked person is dropped with its
+// mention, and a reply to anyone else stays.
+test('WR-04: a reply to the blocked person is dropped from the box', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  recordToasts(env);
+  const page = await start(env, [cm(1), cm(2, { author: 'meena.r' })]);
+  const [ravi] = page.items();
+  replyButton(ravi).fire('click');
+  assert.equal(page.input.value, '@ravi.k ');
+  await blockOn(env, boxes, ravi);
+  assert.equal(page.replying.hidden, true, 'no Replying to the blocked person');
+  assert.equal(page.input.value, '', 'the mention went with the target');
+  lastFetch(env).reply(200, body([cm(2, { author: 'meena.r' })]));
+  await flush();
+  assert.equal(page.replying.hidden, true);
+});
+
+test('WR-04: a reply to someone else survives a block', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  recordToasts(env);
+  const page = await start(env, [cm(1), cm(2, { author: 'meena.r' })]);
+  const [ravi, meena] = page.items();
+  replyButton(meena).fire('click');
+  await blockOn(env, boxes, ravi);
+  lastFetch(env).reply(200, body([cm(2, { author: 'meena.r' })]));
+  await flush();
+  assert.equal(page.replying.hidden, false, 'the reply to meena.r stays');
+  assert.equal(page.input.value, '@meena.r ');
+});
+
+test('WR-04: a block on a middle page reads the list again from the first page', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  recordToasts(env);
+  const page = await start(env, roots(1, 50), { more: true, next_after: 50, comment_count: 110 });
+  const more = find(page.view.el, 'comments__more');
+  more.fire('click');
+  lastFetch(env).reply(200, body(roots(51, 100).map((c) => (c.id === 60 ? cm(60, { author: 'meena.r', words: 'c60' }) : c)), { more: true, next_after: 100, comment_count: 110 }));
+  await flush();
+  more.fire('click');
+  lastFetch(env).reply(200, body(roots(101, 110), { more: false, next_after: 0, comment_count: 110 }));
+  await flush();
+  assert.equal(page.items().length, 110);
+  await blockOn(env, boxes, page.items()[59]);
+  const reload = lastFetch(env);
+  assert.equal(reload.opts.method, 'GET');
+  assert.ok(reload.address.endsWith('/comments'), 'the first page, it asked ' + reload.address);
+  const sentBefore = env.fetches.length;
+  reload.reply(200, body(roots(1, 50), { more: true, next_after: 50, comment_count: 109 }));
+  await flush();
+  assert.equal(env.fetches.length, sentBefore, 'no later page is read again by itself');
+  const ids = shownIds(page);
+  assert.equal(ids.length, 50, 'only the first page is on the list');
+  assert.equal(ids.includes('c60'), false, 'the blocked words are gone');
+  assert.equal(more.hidden, false, 'Show more is back for the rest');
+  more.fire('click');
+  assert.ok(lastFetch(env).address.endsWith('?after=50'), 'Show more starts again after the first page');
+});
+
+test('WR-04: a Show more answer already out when the block lands is ignored', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  recordToasts(env);
+  const page = await start(env, roots(1, 50), { more: true, next_after: 50, comment_count: 70 });
+  const more = find(page.view.el, 'comments__more');
+  more.fire('click');
+  const stale = lastFetch(env);
+  assert.ok(stale.address.endsWith('?after=50'));
+  await blockOn(env, boxes, page.items()[0]);
+  const reload = lastFetch(env);
+  assert.equal(reload.opts.method, 'GET');
+  stale.reply(200, body(roots(51, 70), { more: false, next_after: 0, comment_count: 70 }));
+  await flush();
+  reload.reply(200, body(roots(2, 50), { more: true, next_after: 50, comment_count: 69 }));
+  await flush();
+  const ids = shownIds(page);
+  assert.equal(ids.length, 49, 'the stale page was not written');
+  assert.equal(ids.includes('c51'), false);
+  assert.equal(more.hidden, false);
+  assert.equal(more.hasAttribute('aria-disabled'), false, 'Show more can be pressed again');
+  more.fire('click');
+  assert.ok(lastFetch(env).address.endsWith('?after=50'));
+});
+
+test('WR-04: a failed Show more already out when the block lands says nothing', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  recordToasts(env);
+  const page = await start(env, roots(1, 50), { more: true, next_after: 50, comment_count: 70 });
+  find(page.view.el, 'comments__more').fire('click');
+  const stale = lastFetch(env);
+  await blockOn(env, boxes, page.items()[0]);
+  const reload = lastFetch(env);
+  reload.reply(200, body(roots(2, 50), { more: true, next_after: 50, comment_count: 69 }));
+  await flush();
+  stale.fail(new Error('network'));
+  await flush();
+  assert.equal(find(page.view.el, 'comments__more-error').hidden, true, 'no error for a read the block made stale');
+});
+
+test('WR-04: a reply read already out when the block lands is ignored', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  recordToasts(env);
+  const page = await start(env, [
+    cm(1, { author: 'meena.r', words: 'root', replies: replyRange(2, 101), reply_count: 102 }),
+    cm(300, { author: 'ravi.k', words: 'ravi root' })
+  ]);
+  const [threadLi, raviLi] = page.items();
+  find(threadLi, 'comment-thread__toggle').fire('click');
+  find(threadLi, 'comment-thread__more').fire('click');
+  const stale = lastFetch(env);
+  assert.ok(stale.address.includes('replies_of=1'));
+  await blockOn(env, boxes, raviLi);
+  const reload = lastFetch(env);
+  reload.reply(200, body([cm(1, { author: 'meena.r', words: 'root', replies: [], reply_count: 0 })]));
+  await flush();
+  stale.reply(200, body([cm(1, { author: 'meena.r', reply_count: 102, replies: [cm(102, { words: 'reply 102' })] })], { more: false, next_after: 102 }));
+  await flush();
+  const [li] = page.items();
+  assert.equal(page.items().length, 1);
+  assert.deepEqual(threadIds(li), [], 'no reply by the blocked person came back');
+});
+
+// Review IN-01 (2026-10-30): sendBlock has its own busy guard. The box here
+// fires its close event later, as a browser may, so a second fast press of its
+// Block button reaches sendBlock while the first request is out.
+test('IN-01: a second Block press while sending sends nothing more', async () => {
+  const env = load();
+  const boxes = addBoxes(env);
+  const b = boxes.block;
+  const later = [];
+  b.box.close = () => { if (b.box.open) { b.box.open = false; later.push(() => b.box.fire('close')); } };
+  const page = await start(env, [cm(1)]);
+  blockButton(page.items()[0]).fire('click');
+  b.yes.fire('click');
+  b.yes.fire('click');
+  later.forEach((fn) => fn());
+  assert.equal(blockPosts(env).length, 1, 'one request');
 });

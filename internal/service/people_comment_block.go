@@ -21,7 +21,10 @@ func WithPeopleCommentAuthors(src CommentAuthorSource) PeopleOption {
 // BlockCommentAuthor blocks the person who wrote a comment the viewer can see
 // (quick 261030-u78, WR-E04, D-12). It skips publicFace on purpose: the reader
 // already sees the comment and its author name, and refusing a person who
-// blocked the reader would reveal that block. Every other rule of Block holds:
+// blocked the reader would reveal that block. The name must be shown, though:
+// an author whose username is not clear is refused (review CR-01), so every
+// block it writes can be listed and taken back in Settings, Blocked people.
+// Every other rule of Block holds:
 // the block row is written first, the follows end both ways with reason blocked
 // and the queued follow notes of the pair are deleted, all through the same
 // blockPair tail. Every refusal is ErrCommentGone, so it can probe nothing; a

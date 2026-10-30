@@ -191,6 +191,42 @@ func TestBlockAccountInsertsBlockOnly(t *testing.T) {
 	}
 }
 
+// TestBlockAccountSkipsADeletedAccount (review IN-04 of quick 261030-u78,
+// 2026-10-30): the insert checks the blocked account in the same statement, so
+// an account already deleted gets no block row that no list could show or take
+// back, and the call is still not an error. A live account in the same test
+// gets its row, so the skip comes from the deleted stamp.
+func TestBlockAccountSkipsADeletedAccount(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	q := sqlcgen.New(pool)
+	ctx := context.Background()
+	a := testutil.SeedPerson(t, pool, "block-del-a@example.com", "block.del.a", true)
+	gone := testutil.SeedPerson(t, pool, "block-del-gone@example.com", "block.del.gone", true)
+	live := testutil.SeedPerson(t, pool, "block-del-live@example.com", "block.del.live", true)
+	testutil.MustExec(t, pool, `UPDATE accounts SET deleted_at = now() WHERE id = $1`, gone)
+
+	if err := q.BlockAccount(ctx, sqlcgen.BlockAccountParams{BlockerID: a, BlockedID: gone, Now: peopleNow}); err != nil {
+		t.Fatalf("BlockAccount of a deleted account: %v", err)
+	}
+	if err := q.BlockAccount(ctx, sqlcgen.BlockAccountParams{BlockerID: a, BlockedID: live, Now: peopleNow}); err != nil {
+		t.Fatalf("BlockAccount of a live account: %v", err)
+	}
+	count := func(blocked int64) int {
+		t.Helper()
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM person_blocks WHERE blocker_id = $1 AND blocked_id = $2`, a, blocked).Scan(&n); err != nil {
+			t.Fatalf("counting blocks: %v", err)
+		}
+		return n
+	}
+	if n := count(gone); n != 0 {
+		t.Errorf("block rows against a deleted account = %d, want 0", n)
+	}
+	if n := count(live); n != 1 {
+		t.Errorf("block rows against a live account = %d, want 1", n)
+	}
+}
+
 // TestEndedFollowsAreInvisible proves an ended follow appears in no read of
 // current follows (D-21, T-09-95). A control follow that stays active proves
 // every read does see an active one.

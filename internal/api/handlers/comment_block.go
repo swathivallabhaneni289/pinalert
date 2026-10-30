@@ -6,7 +6,8 @@
 // caller) and one 404 body, the same bytes as a like on a deleted comment, for
 // every refusal: an unknown comment, one on a report the caller cannot see, a
 // finished Rescue report, a deleted, removed or held comment, the caller's own
-// comment and one by a deleted account. It spends the per account people action
+// comment, one by a deleted account and one by someone shown as New member
+// (review CR-01: Block is offered only where the name is shown). It spends the per account people action
 // bucket, like a profile block. A cross site POST carries no session cookie
 // (DEC-L), so there is no CSRF token.
 package handlers
@@ -32,9 +33,9 @@ func writeCommentBlockGone(w http.ResponseWriter) {
 // @Description follow between you ends and neither can follow the other. You stop seeing their comments.
 // @Description They are not told. Blocking someone already blocked answers 204 again. Your own comment, an
 // @Description unknown comment, one that is deleted, removed, held back, on a report that is not available,
-// @Description or by a deleted account all answer the same 404. Send no body or an empty object. It is
-// @Description limited together with the other people actions, and a blocked call gets 429 with a
-// @Description Retry-After header.
+// @Description by a deleted account, or by someone shown as New member all answer the same 404. Send no
+// @Description body or an empty object. It is limited together with the other people actions, and a
+// @Description blocked call gets 429 with a Retry-After header.
 // @Description Requires a session verified by email; an unverified caller receives 401.
 // @Tags comments
 // @Accept json
