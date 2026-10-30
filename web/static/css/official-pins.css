@@ -6,10 +6,11 @@
  * The pin is a flat rectangle, never round, 28px high with a 4px radius, in the
  * text colour with the page colour for its glyph and its word GDACS. It has no
  * severity colour: those hues belong to the crowd's reports, and a pin that
- * carried one could be read as a report. A crowd pin is a round badge and a Demo
- * pin is a round badge with a dashed ring, so the three are told apart by shape
- * and by word, never by colour alone (research Pitfall 12). The same on phone and
- * laptop. The 28px rectangle sits centred in a transparent 44px marker box, which
+ * carried one could be read as a report. A crowd pin is a round badge on a
+ * severity fill and a Demo pin is drawn exactly the same (the Demo is marked by
+ * its strip, its Demo tag and a pin name that starts with Demo), so the GDACS
+ * pin is told apart from both by shape and by word, never by colour alone
+ * (research Pitfall 12). The same on phone and laptop. The 28px rectangle sits centred in a transparent 44px marker box, which
  * is the touch target; script passes the same box to Leaflet because Leaflet
  * writes the icon size inline.
  *
