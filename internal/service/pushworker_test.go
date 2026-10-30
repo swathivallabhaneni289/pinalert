@@ -681,12 +681,17 @@ func TestWorkerSkipsWhenNoLongerEligible(t *testing.T) {
 		// note is also sent only while the report still fades within the hour, so
 		// the "sent" case now has facts that fade in 30 minutes, and a report
 		// someone confirmed again since (facts 5 hours out) is skipped.
+		// Amended 2026-10-30 (review WR-01): the provisional, hidden, retracted and
+		// withheld cases below carry facts that fade in 30 minutes (fadesSoon), so
+		// each is skipped for its own visibility reason and not by the time check
+		// alone. With the default facts (5 hours out) they passed even with the
+		// Live requirement for fading notes removed.
 		withFades(lowLive("fading, live", "changed", "fading", "sent"), fadesSoon),
 		lowLive("fading, confirmed again since", "changed", "fading", "not_eligible"),
-		{name: "fading, still active but provisional", kind: "changed", event: "fading", severity: "low", wantVis: VisibilityProvisional, want: "not_eligible"},
-		{name: "fading, hidden since", kind: "changed", event: "fading", severity: "low", votes: pwDispute(3), wantVis: VisibilityHidden, want: "not_eligible"},
-		{name: "fading, retracted since", kind: "changed", event: "fading", severity: "low", votes: pwReporterResolved(), wantVis: VisibilityRetracted, want: "not_eligible"},
-		{name: "fading, withheld since", kind: "changed", event: "fading", severity: "low", moderate: "removed", wantVis: VisibilityWithheld, want: "not_eligible"},
+		{name: "fading, still active but provisional", kind: "changed", event: "fading", severity: "low", wantVis: VisibilityProvisional, want: "not_eligible", mutate: fadesSoon},
+		{name: "fading, hidden since", kind: "changed", event: "fading", severity: "low", votes: pwDispute(3), wantVis: VisibilityHidden, want: "not_eligible", mutate: fadesSoon},
+		{name: "fading, retracted since", kind: "changed", event: "fading", severity: "low", votes: pwReporterResolved(), wantVis: VisibilityRetracted, want: "not_eligible", mutate: fadesSoon},
+		{name: "fading, withheld since", kind: "changed", event: "fading", severity: "low", moderate: "removed", wantVis: VisibilityWithheld, want: "not_eligible", mutate: fadesSoon},
 		{name: "fading, expired", kind: "changed", event: "fading", severity: "low", wantVis: VisibilityProvisional, want: "stale",
 			mutate: func(r *pwRig) {
 				r.report(func(row *sqlcgen.PushReportFactsRow) { row.ExpiresAt = pushFactsNow.Add(-time.Second) })
