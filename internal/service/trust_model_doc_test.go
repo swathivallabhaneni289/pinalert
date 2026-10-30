@@ -209,6 +209,7 @@ var p20MustCite = []string{
 	"TestFeedAndFocusCarryConfirmExtends",
 	"TestDemoParityExtensionWithSQL",
 	"TestFadingRefreshedInPlaceNoSecondPush",
+	"TestConfirmWhileResolvedUsesUpSpotAndPerson",
 }
 
 // p20NoSpoofClaims are phrases the document must never contain. A spoofed
