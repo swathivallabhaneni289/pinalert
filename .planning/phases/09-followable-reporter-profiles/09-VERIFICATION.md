@@ -191,6 +191,8 @@ Also from 09-VALIDATION: the 40 point note about five raters in TRUST-MODEL (B4)
 
 **1. K1: moderators and a rater's name while the name check is still running.** On the moderator Ratings screen a moderator sees the username of someone who rated a reporter, even when that username has not yet passed its name check, because a moderator removes a rating by naming the person. Nobody else ever sees a rater's name. Should a moderator see it during the check? **Recommendation: keep it.** Hiding it would mean building some other way for a moderator to remove a rating, and the name is the simplest handle they have.
 
+**Answered 2026-10-30:** the owner said "yes, moderators can see it". Kept as built, no change.
+
 **2. WR-E04: blocking someone who keeps their profile private.** Today you can block a person only from their public profile. Most people keep their profile off, so if a commenter has a private profile you cannot block them to hide their comments, even though blocking is meant to do that. Should that change now? **Recommendation: accept it for now.** A later small change could put Block beside Flag on a comment, which would also work for private commenters. The block, the comment hiding and the follow clean-up already work for anyone who is public.
 
 ## Gaps Summary
