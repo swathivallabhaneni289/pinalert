@@ -312,8 +312,17 @@ WHERE f.follower_id = sqlc.arg(account_id)::bigint
 -- block. The follow sweep finds such pairs with BlockedActiveFollowPairs and ends
 -- them (review IN-S01 and IN-E01, 2026-10-30). A block of yourself fails with
 -- SQLSTATE 23514.
+-- Review IN-04 of quick 261030-u78 (2026-10-30): the blocked account is
+-- checked in the same statement, so an account whose deletion has committed
+-- gets no row (deleting an account removes its blocks first, and a row written
+-- after that could never be listed or taken back). Under READ COMMITTED a
+-- deletion still in flight when this statement starts is not seen; that
+-- window is narrower than before and is left as an accepted residual.
 INSERT INTO person_blocks (blocker_id, blocked_id, created_at)
-VALUES (sqlc.arg(blocker_id)::bigint, sqlc.arg(blocked_id)::bigint, sqlc.arg(now)::timestamptz)
+SELECT sqlc.arg(blocker_id)::bigint, a.id, sqlc.arg(now)::timestamptz
+FROM accounts a
+WHERE a.id = sqlc.arg(blocked_id)::bigint
+  AND a.deleted_at IS NULL
 ON CONFLICT (blocker_id, blocked_id) DO NOTHING;
 
 -- name: UnblockAccount :execrows

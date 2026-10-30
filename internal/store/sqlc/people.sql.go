@@ -38,14 +38,17 @@ func (q *Queries) ActiveFollowNotify(ctx context.Context, arg ActiveFollowNotify
 
 const blockAccount = `-- name: BlockAccount :exec
 INSERT INTO person_blocks (blocker_id, blocked_id, created_at)
-VALUES ($1::bigint, $2::bigint, $3::timestamptz)
+SELECT $1::bigint, a.id, $2::timestamptz
+FROM accounts a
+WHERE a.id = $3::bigint
+  AND a.deleted_at IS NULL
 ON CONFLICT (blocker_id, blocked_id) DO NOTHING
 `
 
 type BlockAccountParams struct {
 	BlockerID int64
-	BlockedID int64
 	Now       time.Time
+	BlockedID int64
 }
 
 // Block a person (D-12). It writes the block row only; a repeat is a no op.
@@ -58,8 +61,14 @@ type BlockAccountParams struct {
 // block. The follow sweep finds such pairs with BlockedActiveFollowPairs and ends
 // them (review IN-S01 and IN-E01, 2026-10-30). A block of yourself fails with
 // SQLSTATE 23514.
+// Review IN-04 of quick 261030-u78 (2026-10-30): the blocked account is
+// checked in the same statement, so an account whose deletion has committed
+// gets no row (deleting an account removes its blocks first, and a row written
+// after that could never be listed or taken back). Under READ COMMITTED a
+// deletion still in flight when this statement starts is not seen; that
+// window is narrower than before and is left as an accepted residual.
 func (q *Queries) BlockAccount(ctx context.Context, arg BlockAccountParams) error {
-	_, err := q.db.Exec(ctx, blockAccount, arg.BlockerID, arg.BlockedID, arg.Now)
+	_, err := q.db.Exec(ctx, blockAccount, arg.BlockerID, arg.Now, arg.BlockedID)
 	return err
 }
 
