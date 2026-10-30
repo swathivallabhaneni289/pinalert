@@ -522,6 +522,20 @@ func TestTrustModelDocMatchesCode(t *testing.T) {
 		}
 	})
 
+	// Review IN-01 of quick task 261030-64q (2026-10-30): the browser's time fade
+	// divides by the whole extended life, so an extended report goes stale with
+	// more time left in absolute terms. The document states the effect.
+	t.Run("extended fade look stated", func(t *testing.T) {
+		for _, want := range []string{
+			"the aging look starts with 12 hours left and the stale look with 6 hours left",
+			"goes stale only in its last 3 hours",
+		} {
+			if !strings.Contains(doc, want) {
+				t.Errorf("document does not state the effect of an extension on the time fade: missing %q", want)
+			}
+		}
+	})
+
 	t.Run("plain text", func(t *testing.T) {
 		for _, r := range []rune{rune(0x2013), rune(0x2014)} {
 			if strings.ContainsRune(doc, r) {
