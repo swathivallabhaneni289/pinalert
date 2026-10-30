@@ -251,6 +251,7 @@ comment. Anyone signed in with a username may write one. The rules (D-12 to D-15
 
 Tests: `TestCommentScreening`, `TestCommentFlagRoutes`, `TestCommentRateLimit`,
 `TestLikeRateLimit`, `TestBlockCommentAuthorBlocksAnyCommenter`, `TestBlockCommentAuthorUniformRefusal`,
+`TestBlockCommentAuthorStopsCommentNotes`, `TestBlockAccountSkipsADeletedAccount`,
 `TestCommentBlockAuthorRoute`, `TestCommentBlockAuthorUniformNotFound`, `TestCommentBlockAuthorRateLimit`.
 
 ## Usernames
