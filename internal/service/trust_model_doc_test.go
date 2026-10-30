@@ -198,6 +198,17 @@ var p20MustCite = []string{
 	"TestConfirmExtensionUnderConcurrentVotes",
 	"TestExtendedExpiryOneColumnEveryReader",
 	"TestCastVoteTrustMatchesFeedAfterExtension",
+	// Amended 2026-10-30 by the review fixes of quick task 261030-64q (IN-06,
+	// WR-02, WR-03): the rest of the tests the same section cites, so a rename
+	// of any of them makes this test notice.
+	"TestExtendedExpiryRule",
+	"TestConfirmExtendsFlag",
+	"TestCastVoteExtendsOnlyOnConfirm",
+	"TestMemQuerierExtendsLikeSQL",
+	"TestCurrencyWindowKeepsNormalLifetime",
+	"TestFeedAndFocusCarryConfirmExtends",
+	"TestDemoParityExtensionWithSQL",
+	"TestFadingRefreshedInPlaceNoSecondPush",
 }
 
 // p20NoSpoofClaims are phrases the document must never contain. A spoofed
