@@ -180,6 +180,12 @@ func (f *fakeUpdatesQuerier) MutedPeopleIDs(_ context.Context, _ int64) ([]int64
 	return nil, nil
 }
 
+// Amended 2026-11-03 by quick 261103-jal (follow up F1): the fake gained
+// BlockedEitherWayIDs. It answers an empty set and records nothing.
+func (f *fakeUpdatesQuerier) BlockedEitherWayIDs(_ context.Context, _ int64) ([]int64, error) {
+	return nil, nil
+}
+
 // Amended 2026-10-29 by Phase 9 plan 22 (D-09): the fake gained the five reads of
 // the follow note. Each answers nothing and records nothing, so no existing call
 // order assertion changes; the tests of the follow note use followFake

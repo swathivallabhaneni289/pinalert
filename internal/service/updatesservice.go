@@ -54,6 +54,10 @@ type UpdatesQuerier interface {
 	// D-12). The Reliable reporter alert skips their reports; nothing else reads
 	// it here.
 	MutedPeopleIDs(ctx context.Context, muterID int64) ([]int64, error)
+	// BlockedEitherWayIDs is the set of people with a block between them and the
+	// reader in either direction (quick 261103-jal, F1). The Reliable reporter
+	// alert skips their reports, the way the worker's person check does.
+	BlockedEitherWayIDs(ctx context.Context, accountID int64) ([]int64, error)
 	// The follow note (Phase 9 plan 22, D-09). NotifyFollowsFor lists the
 	// reader's Notify me follows, FolloweeStanding says who is still followable,
 	// InsertFollowedPostedAlert writes the note, and for the list

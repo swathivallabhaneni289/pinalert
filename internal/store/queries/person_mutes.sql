@@ -59,6 +59,21 @@ SELECT muted_id
 FROM person_mutes
 WHERE muter_id = sqlc.arg(muter_id)::bigint;
 
+-- name: BlockedEitherWayIDs :many
+-- The account ids with a block between them and the reader in either direction
+-- (the reader blocked them, or they blocked the reader), for the Reliable
+-- reporter bell row to skip (quick 261103-jal, follow up F1). It matches the
+-- worker's personNotMutedOrBlocked rule. A block never hides a report on a map,
+-- list or feed; it only keeps this person level note away. Read once per
+-- refresh, with no limit and no join.
+SELECT blocked_id AS other_id
+FROM person_blocks
+WHERE blocker_id = sqlc.arg(account_id)::bigint
+UNION
+SELECT blocker_id AS other_id
+FROM person_blocks
+WHERE blocked_id = sqlc.arg(account_id)::bigint;
+
 -- name: DeleteAccountPersonMutes :execrows
 -- Delete my account: the mutes the person made and the mutes of them, so no
 -- mute row survives pointing at a scrubbed account (D-12, research G6).

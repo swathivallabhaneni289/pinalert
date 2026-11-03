@@ -44,7 +44,8 @@ import (
 //     Reliable (the same tag the Show menu tick reads), it is not the reader's
 //     own, not one the reader follows or muted, not one by a person the reader
 //     muted (person_mutes, read once per refresh through MutedPeopleIDs, plan
-//     09-18, D-12), and it was posted after the start point, and it is not by a
+//     09-18, D-12) or has a block with in either direction (BlockedEitherWayIDs,
+//     quick 261103-jal F1), and it was posted after the start point, and it is not by a
 //     person the reader follows with Notify me on (follow.notifying, plan 09-22,
 //     review WR-02), posted after that bell went on.
 //  4. Read the reporter accounts of the survivors once. For each, oldest report
@@ -127,14 +128,25 @@ func (s *UpdatesService) refreshReliableAlerts(ctx context.Context, accountID in
 	// level note and nothing else. It does not touch the Critical phone path, the
 	// changes rows for reports the reader posted or voted on, or any feed, map or
 	// list, because those are about the place and the reader's own reports.
+	//
+	// A block in either direction keeps this note away the same way (quick
+	// 261103-jal, F1), matching the worker's personNotMutedOrBlocked rule. It
+	// hides no report anywhere: the report still shows on Nearby.
 	var mutedPeople map[int64]bool
 	if len(views) > 0 {
 		mutedIDs, err := s.q.MutedPeopleIDs(ctx, accountID)
 		if err != nil {
 			return fmt.Errorf("reading muted people: %w", err)
 		}
-		mutedPeople = make(map[int64]bool, len(mutedIDs))
+		blockedIDs, err := s.q.BlockedEitherWayIDs(ctx, accountID)
+		if err != nil {
+			return fmt.Errorf("reading blocked people: %w", err)
+		}
+		mutedPeople = make(map[int64]bool, len(mutedIDs)+len(blockedIDs))
 		for _, id := range mutedIDs {
+			mutedPeople[id] = true
+		}
+		for _, id := range blockedIDs {
 			mutedPeople[id] = true
 		}
 	}

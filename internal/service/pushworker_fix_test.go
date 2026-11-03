@@ -66,7 +66,7 @@ func newReliableScene(t *testing.T, withRules bool) *reliableScene {
 		t.Fatalf("seeding the reliable rows: %v", err)
 	}
 	for name, id := range map[string]int64{"muter": s.muter, "blocker": s.blocker, "blocked": s.blocked, "control": s.control} {
-		if withRules && id == s.muter {
+		if withRules && id != s.control {
 			continue
 		}
 		if !outboxKindsEqual(r.outbox(s.report)[id], "reliable") {
@@ -80,6 +80,27 @@ func newReliableScene(t *testing.T, withRules bool) *reliableScene {
 func (s *reliableScene) bellRows(id int64) int {
 	s.r.t.Helper()
 	return s.r.reliableNotes(id, s.report)
+}
+
+// wantBellRows checks the Reliable bell row itself: a mute, a block by the reader
+// and a block by the reporter each keep it away from that reader, and the control
+// reader gets one. It fails when the mute or either block seed is absent (follow
+// up F1 of quick 261103-jal: a block keeps the row away, matching the worker).
+func (s *reliableScene) wantBellRows(t *testing.T) {
+	t.Helper()
+	for name, c := range map[string]struct {
+		id   int64
+		want int
+	}{
+		"muter":   {s.muter, 0},
+		"blocker": {s.blocker, 0},
+		"blocked": {s.blocked, 0},
+		"control": {s.control, 1},
+	} {
+		if n := s.bellRows(c.id); n != c.want {
+			t.Errorf("%s: Reliable bell rows = %d, want %d", name, n, c.want)
+		}
+	}
 }
 
 // wantPersonRules asks the worker's person check directly for each reader. It is
@@ -133,17 +154,12 @@ func (s *reliableScene) sweep(t *testing.T, sender *pwSender) {
 // person check, asked directly. It fails when the mute or a block is absent.
 func TestQueuedReliablePushStopsAfterMuteOrBlock(t *testing.T) {
 	s := newReliableScene(t, true)
-	if n := s.bellRows(s.muter); n != 0 {
-		t.Errorf("muter: Reliable bell rows = %d, want 0 (a mute keeps the row away)", n)
-	}
-	if n := s.bellRows(s.control); n != 1 {
-		t.Errorf("control: Reliable bell rows = %d, want 1 (the fixture must alert)", n)
-	}
+	s.wantBellRows(t)
 	s.wantPersonRules(t)
 
 	sender := &pwSender{answers: map[string]pwAnswer{}}
 	s.sweep(t, sender)
-	for name, id := range map[string]int64{"blocker": s.blocker, "blocked": s.blocked, "control": s.control} {
+	for name, id := range map[string]int64{"control": s.control} {
 		if state, skip, _ := pwOutboxRow(t, s.r, id, s.report, "reliable"); state != "skipped" || skip != "not_eligible" {
 			t.Errorf("%s: reliable row is %q (%q), want skipped as not_eligible", name, state, skip)
 		}
@@ -184,8 +200,9 @@ func (s *reliableScene) confirm(t *testing.T) {
 // the confirmed update of a Reliable note is never sent now, so every update is
 // skipped as not eligible, with or without a mute or a block. The Reliable notes
 // are marked sent by SQL, the way one sent before this change sits in the outbox.
-// Review IN-03: the mute and the blocks are stored first, so the muter raised no
-// Reliable row and so no confirmed update, and the worker's person check, asked
+// Review IN-03 and follow up F1: the mute and the blocks are stored first, so
+// the muter and both sides of a block raised no Reliable row and so no confirmed
+// update, and the worker's person check, asked
 // directly, still says no for each of them and yes for the control reader.
 func TestConfirmedUpdateOfReliablePushStopsAfterMuteOrBlock(t *testing.T) {
 	s := newReliableScene(t, true)
@@ -193,18 +210,19 @@ func TestConfirmedUpdateOfReliablePushStopsAfterMuteOrBlock(t *testing.T) {
 	s.markReliableSentBeforeTheChange(t)
 
 	s.confirm(t)
-	if got := s.r.outbox(s.report)[s.muter]; len(got) != 0 {
-		t.Errorf("muter: outbox = %v, want nothing (a mute keeps the Reliable row, and so its confirmed update, away)", got)
-	}
-	for name, id := range map[string]int64{"blocker": s.blocker, "blocked": s.blocked, "control": s.control} {
-		if !outboxKindsEqual(s.r.outbox(s.report)[id], "confirmed_update", "reliable") {
-			t.Fatalf("%s: outbox = %v, want a reliable row and a confirmed update", name, s.r.outbox(s.report)[id])
+	s.wantBellRows(t)
+	for name, id := range map[string]int64{"muter": s.muter, "blocker": s.blocker, "blocked": s.blocked} {
+		if got := s.r.outbox(s.report)[id]; len(got) != 0 {
+			t.Errorf("%s: outbox = %v, want nothing (no Reliable row, so no confirmed update)", name, got)
 		}
+	}
+	if got := s.r.outbox(s.report)[s.control]; !outboxKindsEqual(got, "confirmed_update", "reliable") {
+		t.Fatalf("control: outbox = %v, want a reliable row and a confirmed update", got)
 	}
 	s.wantPersonRules(t)
 
 	s.sweep(t, sender)
-	for name, id := range map[string]int64{"blocker": s.blocker, "blocked": s.blocked, "control": s.control} {
+	for name, id := range map[string]int64{"control": s.control} {
 		if state, skip, _ := pwOutboxRow(t, s.r, id, s.report, "confirmed_update"); state != "skipped" || skip != "not_eligible" {
 			t.Errorf("%s: confirmed update is %q (%q), want skipped as not_eligible", name, state, skip)
 		}
