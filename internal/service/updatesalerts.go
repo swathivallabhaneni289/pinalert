@@ -44,9 +44,9 @@ import (
 //     Reliable (the same tag the Show menu tick reads), it is not the reader's
 //     own, not one the reader follows or muted, not one by a person the reader
 //     muted (person_mutes, read once per refresh through MutedPeopleIDs, plan
-//     09-18, D-12), and it was posted after the start point, and it is not one
-//     the follow note step wrote a note for
-//     in this same Refresh (followNoted, plan 09-22).
+//     09-18, D-12), and it was posted after the start point, and it is not by a
+//     person the reader follows with Notify me on (follow.notifying, plan 09-22,
+//     review WR-02), posted after that bell went on.
 //  4. Read the reporter accounts of the survivors once. For each, oldest report
 //     first: skip it when this reader already got ReliableAlertsPerReporterPerHour
 //     alert from that reporter in the last hour, otherwise write it. A reporter
@@ -72,7 +72,7 @@ import (
 // the same per reporter cap, the hourly ceiling and the Not confirmed yet
 // wording; since the 2026-10-18 amendment this also covers non critical reports
 // at posting.
-func (s *UpdatesService) refreshReliableAlerts(ctx context.Context, accountID int64, now time.Time, followNoted map[int64]struct{}) error {
+func (s *UpdatesService) refreshReliableAlerts(ctx context.Context, accountID int64, now time.Time, follow followStep) error {
 	if s.reports == nil {
 		return nil
 	}
@@ -158,12 +158,13 @@ func (s *UpdatesService) refreshReliableAlerts(ctx context.Context, accountID in
 		if v.CreatedAt.Before(since) {
 			continue
 		}
-		// Follow wins the one first alert slot (plan 09-22, D-09, review W3): skip
-		// exactly the reports the follow note step wrote in this same Refresh. A
-		// report whose follow note was not written, for example over the hourly
-		// ceiling, is not skipped, so the reader can still hear about it here. A
-		// race that writes both is stopped by the shared unique index.
-		if _, noted := followNoted[v.ID]; noted {
+		// Follow wins the one first alert slot (plan 09-22, D-09, review WR-02): the
+		// follow phone note is queued only from a written follow row, so a report by
+		// a person the reader follows with Notify me on is left to the follow step,
+		// even when that step could not write it this time (over the hourly ceiling,
+		// say); it tries again on a later poll. The shared unique index stops a race
+		// that would write both.
+		if at, ok := follow.notifying[v.ReporterAccount()]; ok && v.CreatedAt.After(at) {
 			continue
 		}
 		candidates = append(candidates, v)

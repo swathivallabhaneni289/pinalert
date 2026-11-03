@@ -442,17 +442,21 @@ func newFollowFake(follows ...int64) *followFake {
 	return f
 }
 
-// TestFollowBellFollowWinsButCeilingDoesNotCost: the Reliable step skips exactly
-// the reports the follow step wrote. A report whose follow note was not written
-// (the hourly ceiling answer, pgx.ErrNoRows) is still offered to the Reliable
-// step, review W3.
-func TestFollowBellFollowWinsButCeilingDoesNotCost(t *testing.T) {
-	f := newFollowFake(7, 8)
+// TestFollowBellFollowWinsEvenWhenTheCeilingStopsIt: the Reliable step skips
+// every report by a person the reader follows with Notify me on, written or not.
+// Amended 2026-11-03 by quick 261103-jal (review WR-02, which replaces W3): a
+// report whose follow note was not written (the hourly ceiling answer,
+// pgx.ErrNoRows) is no longer offered to the Reliable step, because the Reliable
+// row would take the one first alert slot and the follow phone note, queued only
+// from a written follow row, would be lost. A Reliable report by someone the
+// reader does not follow is still written.
+func TestFollowBellFollowWinsEvenWhenTheCeilingStopsIt(t *testing.T) {
+	f := newFollowFake(7)
 	f.noteErr[100] = pgx.ErrNoRows
-	f.reporters = reporterRows(100, 7, 101, 8)
+	f.reporters = reporterRows(100, 7, 101, 7, 102, 9)
 	n := &fakeFollowReader{}
-	n.views = []ReportView{followedView(100, 7, ReporterReliable), followedView(101, 8, ReporterReliable)}
-	n.followed = n.views
+	n.views = []ReportView{followedView(100, 7, ReporterReliable), followedView(101, 7, ReporterReliable), followedView(102, 9, ReporterReliable)}
+	n.followed = n.views[:2]
 	svc := newFollowService(f, n)
 
 	if err := svc.Refresh(context.Background(), 5); err != nil {
@@ -461,8 +465,8 @@ func TestFollowBellFollowWinsButCeilingDoesNotCost(t *testing.T) {
 	if !sameIDs(f.noted, []int64{101}) {
 		t.Errorf("follow notes written for %v, want [101]", f.noted)
 	}
-	if got := insertedReportIDs(f.alertFake); !sameIDs(got, []int64{100}) {
-		t.Errorf("Reliable alerts attempted for %v, want [100]: the follow wrote 101, and 100 was not written", got)
+	if got := insertedReportIDs(f.alertFake); !sameIDs(got, []int64{102}) {
+		t.Errorf("Reliable alerts attempted for %v, want [102] only: 100 and 101 are by a person followed with Notify me on", got)
 	}
 }
 
@@ -549,9 +553,12 @@ func TestFollowBellNoReaderEndsQuietly(t *testing.T) {
 	}
 }
 
-// TestFollowBellErrorKeepsReliableStep: a failure in the follow step is the
-// error Refresh returns, but the Reliable step still ran.
-func TestFollowBellErrorKeepsReliableStep(t *testing.T) {
+// TestFollowBellErrorSkipsReliableStep: a failure in the follow step is the error
+// Refresh returns, and the Reliable step does not run in that refresh. Amended
+// 2026-11-03 by quick 261103-jal (review WR-02): it used to run, which let a
+// Reliable row take the first alert slot of a report the follow step had not
+// finished with.
+func TestFollowBellErrorSkipsReliableStep(t *testing.T) {
 	f := newFollowFake(7)
 	f.reporters = reporterRows(100, 8)
 	f.noteErr[200] = errors.New("boom")
@@ -564,8 +571,40 @@ func TestFollowBellErrorKeepsReliableStep(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "follow notes") {
 		t.Fatalf("Refresh error = %v, want the follow notes error", err)
 	}
-	if got := insertedReportIDs(f.alertFake); !sameIDs(got, []int64{100}) {
-		t.Errorf("Reliable alerts attempted for %v, want [100] even though the follow step failed", got)
+	if got := insertedReportIDs(f.alertFake); len(got) != 0 {
+		t.Errorf("Reliable alerts attempted for %v, want none after the follow step failed", got)
+	}
+}
+
+// TestFollowBellTruncatedSkipsReliableStep: when the follow read hit
+// FollowedPostsCap it may have missed a report, so the Reliable step waits for
+// the next refresh (review WR-02). One report fewer and it runs.
+func TestFollowBellTruncatedSkipsReliableStep(t *testing.T) {
+	for _, c := range []struct {
+		name      string
+		followed  int
+		wantTried []int64
+	}{
+		{"at the cap", FollowedPostsCap, nil},
+		{"one under the cap", FollowedPostsCap - 1, []int64{100}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFollowFake(7)
+			f.reporters = reporterRows(100, 8)
+			n := &fakeFollowReader{}
+			n.views = []ReportView{followedView(100, 8, ReporterReliable)}
+			for i := 0; i < c.followed; i++ {
+				n.followed = append(n.followed, followedView(int64(1000+i), 7, ReporterMixed))
+			}
+			svc := newFollowService(f, n)
+
+			if err := svc.Refresh(context.Background(), 5); err != nil {
+				t.Fatalf("Refresh: %v", err)
+			}
+			if got := insertedReportIDs(f.alertFake); !sameIDs(got, c.wantTried) {
+				t.Errorf("Reliable alerts attempted for %v, want %v", got, c.wantTried)
+			}
+		})
 	}
 }
 
