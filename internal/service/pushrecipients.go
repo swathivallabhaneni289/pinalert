@@ -94,8 +94,10 @@ type PushRecipient struct {
 // filterRecipients applies the rules the candidate read leaves to Go: the home
 // cell must decode, the distance from its middle to the report point must be at
 // most the account's own chosen distance, the account must not be the author,
-// and want (when not nil) must accept the row, which is how the caller picks the
-// Critical or the Reliable switch. The result is nearest first, ties by account
+// and want (when not nil) must accept the row. want is the caller's own row
+// filter (Critical passes nil, the Reliable bell refresh passes the not serious
+// test); no stored switch is read (owner decision 2026-11-03, quick 261103-jal,
+// D2). The result is nearest first, ties by account
 // id, and holds at most PushRecipientsPerReport accounts.
 func filterRecipients(rows []sqlcgen.PushHomeCandidatesRow, lat, lon float64, author *int64, want func(sqlcgen.PushHomeCandidatesRow) bool) []PushRecipient {
 	var out []PushRecipient

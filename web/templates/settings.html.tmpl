@@ -78,95 +78,54 @@
       </div>
       {{/* One classless wrapper, so on the laptop grid the box and the error lines are one item beside the title, not three. */}}
       <div>
-      {{/* Phase 3.3 plan 14 (UI-SPEC Surface 2): one box, the rows in the owner's order. The four wrappers (device, Critical, official, Reliable) are never hidden themselves, so the hairline between rows is always drawn by the box; inside a wrapper the variant that does not apply carries the hidden attribute, which places.css respects on a row. */}}
+      {{/* Quick 261103-jal (owner decision 2026-11-03, two row notifications box): one box with two rows. The two wrappers (the device, the distance) are never hidden themselves, so the hairline between rows is always drawn by the box; inside a wrapper the variant that does not apply carries the hidden attribute, which places.css respects on a row. The Critical, official, Changes and Reliable rows are gone: the device switch is the only way to stop phone notes. */}}
       <div class="place-box" id="settings-alerts-box">
         <div id="settings-device-row">
           <label class="place-row place-row--switch" id="settings-device-on" for="settings-device-switch">
             <span class="place-row__text">
-              <span class="place-row__label">On this device</span>
+              <span class="place-row__label">Alerts on this device</span>
+              <span class="place-row__sub">Critical reports and severe official alerts near your home area, and posts by people you follow.</span>
             </span>
             <input class="place-switch" type="checkbox" role="switch" id="settings-device-switch" name="device_alerts">
           </label>
           <button type="button" class="place-row" id="settings-device-install" aria-haspopup="dialog" hidden>
             <span class="place-row__text">
-              <span class="place-row__label">On this device</span>
+              <span class="place-row__label">Alerts on this device</span>
               <span class="place-row__sub">Add Pinalert to your Home Screen first</span>
             </span>
             <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
           </button>
           <div class="place-row" id="settings-device-blocked" hidden>
             <span class="place-row__text">
-              <span class="place-row__label">On this device</span>
+              <span class="place-row__label">Alerts on this device</span>
               <span class="place-row__sub">Blocked in your browser settings. Allow notifications for Pinalert there, then come back.</span>
             </span>
           </div>
           <div class="place-row" id="settings-device-unsupported" hidden>
             <span class="place-row__text">
-              <span class="place-row__label">On this device</span>
+              <span class="place-row__label">Alerts on this device</span>
               <span class="place-row__sub">This browser can't show notifications. Updates still show in the bell.</span>
             </span>
           </div>
         </div>
-        <div id="settings-critical-row">
-          <label class="place-row place-row--switch" id="settings-critical-on" for="settings-critical-switch"{{if not .HasHomeArea}} hidden{{end}}>
+        <div id="settings-radius-wrap">
+          <div class="place-row" id="settings-radius-row"{{if not .HasHomeArea}} hidden{{end}}>
+            <label class="place-row__text" for="settings-radius-select">
+              <span class="place-row__label">How far from my home area</span>
+            </label>
+            <select class="place-select" id="settings-radius-select" name="alert_radius_km">
+              {{- range .AlertRadii}}
+              <option value="{{.}}"{{if eq . $.AlertRadiusKm}} selected{{end}}>{{.}} km</option>
+              {{- end}}
+            </select>
+          </div>
+          <button type="button" class="place-row" id="settings-radius-nohome" aria-haspopup="dialog"{{if .HasHomeArea}} hidden{{end}}>
             <span class="place-row__text">
-              <span class="place-row__label">Critical reports near my home area</span>
-            </span>
-            <input class="place-switch" type="checkbox" role="switch" id="settings-critical-switch" name="critical_push"{{if .CriticalPushOn}} checked{{end}}>
-          </label>
-          <button type="button" class="place-row" id="settings-critical-nohome" aria-haspopup="dialog"{{if .HasHomeArea}} hidden{{end}}>
-            <span class="place-row__text">
-              <span class="place-row__label">Critical reports near my home area</span>
+              <span class="place-row__label">How far from my home area</span>
               <span class="place-row__sub">Add a home area first</span>
             </span>
             <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
           </button>
-        </div>
-        <div id="settings-official-row">
-          <label class="place-row place-row--switch" id="settings-official-on" for="settings-official-switch"{{if not .HasHomeArea}} hidden{{end}}>
-            <span class="place-row__text">
-              <span class="place-row__label">Severe official alerts for my area</span>
-            </span>
-            <input class="place-switch" type="checkbox" role="switch" id="settings-official-switch" name="official_push"{{if .OfficialPushOn}} checked{{end}}>
-          </label>
-          <button type="button" class="place-row" id="settings-official-nohome" aria-haspopup="dialog"{{if .HasHomeArea}} hidden{{end}}>
-            <span class="place-row__text">
-              <span class="place-row__label">Severe official alerts for my area</span>
-              <span class="place-row__sub">Add a home area first</span>
-            </span>
-            <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
-          </button>
-        </div>
-        <label class="place-row place-row--switch" id="settings-changes-row" for="settings-changes-switch">
-          <span class="place-row__text">
-            <span class="place-row__label">Changes and comments on reports I posted, voted on or commented on</span>
-          </span>
-          <input class="place-switch" type="checkbox" role="switch" id="settings-changes-switch" name="changes_push"{{if .ChangesPushOn}} checked{{end}}>
-        </label>
-        <div id="settings-reliable-wrap">
-          <label class="place-row place-row--switch" id="settings-reliable-row" for="settings-reliable-switch"{{if not .HasHomeArea}} hidden{{end}}>
-            <span class="place-row__text">
-              <span class="place-row__label">A Reliable reporter posts near me</span>
-            </span>
-            <input class="place-switch" type="checkbox" role="switch" id="settings-reliable-switch" name="reliable_alerts"{{if .AlertsOn}} checked{{end}}>
-          </label>
-          <button type="button" class="place-row" id="settings-reliable-nohome" aria-haspopup="dialog"{{if .HasHomeArea}} hidden{{end}}>
-            <span class="place-row__text">
-              <span class="place-row__label">A Reliable reporter posts near me</span>
-              <span class="place-row__sub">Add a home area first</span>
-            </span>
-            <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
-          </button>
-        </div>
-        <div class="place-row" id="settings-radius-row"{{if not .HasHomeArea}} hidden{{end}}>
-          <label class="place-row__text" for="settings-radius-select">
-            <span class="place-row__label">How far from my home area</span>
-          </label>
-          <select class="place-select" id="settings-radius-select" name="alert_radius_km">
-            {{- range .AlertRadii}}
-            <option value="{{.}}"{{if eq . $.AlertRadiusKm}} selected{{end}}>{{.}} km</option>
-            {{- end}}
-          </select>
         </div>
       </div>
       <p class="inline-error" id="settings-device-error" role="alert" hidden></p>
@@ -437,7 +396,7 @@
     </div>
   </div>
 
-  {{/* Phase 3.3 plan 14 (UI-SPEC Surface 4b): the install guide, opened from the On this device row on an iPhone tab. Same window look as the others; the X is the only way out and the body holds the guide and nothing else. */}}
+  {{/* Phase 3.3 plan 14 (UI-SPEC Surface 4b): the install guide, opened from the Alerts on this device row on an iPhone tab. Same window look as the others; the X is the only way out and the body holds the guide and nothing else. */}}
   <div class="app-window app-window--edit" id="device-guide-window" hidden>
     <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="device-guide-title">
       <div class="app-window__head">

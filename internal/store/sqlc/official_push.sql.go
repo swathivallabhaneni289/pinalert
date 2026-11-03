@@ -221,7 +221,8 @@ WHERE a.id = $1::bigint
 // The switch "Severe official alerts for my area" (D-11). An account with no
 // settings row reads it as on: the same value as the Go constant
 // DefaultOfficialPushOn, pinned by a test. Always returns a row for an existing
-// account.
+// account. Owner decision 2026-11-03, quick 261103-jal: the column is kept and
+// no longer decides delivery; production code does not call this any more.
 func (q *Queries) GetOfficialPushSetting(ctx context.Context, accountID int64) (bool, error) {
 	row := q.db.QueryRow(ctx, getOfficialPushSetting, accountID)
 	var official_push_on bool
@@ -521,10 +522,8 @@ const officialPushCandidates = `-- name: OfficialPushCandidates :many
 SELECT a.id AS account_id,
        COALESCE(a.home_area_cell, '')::text AS home_area_cell
 FROM accounts a
-LEFT JOIN account_alert_settings s ON s.account_id = a.id
 WHERE a.deleted_at IS NULL
   AND a.home_area_cell IS NOT NULL
-  AND COALESCE(s.official_push_on, true)
   AND left(a.home_area_cell, $1::int) = ANY($2::text[])
   AND EXISTS (
       SELECT 1
@@ -548,11 +547,12 @@ type OfficialPushCandidatesRow struct {
 	HomeAreaCell string
 }
 
-// Who might be told: accounts with a home cell, not deleted, the switch on
-// (COALESCE with true for an account with no settings row) and at least one live
-// device, whose home cell lies under one of the given geohash prefixes (the
-// caller passes the prefixes that cover the alert's districts, so the row cap
-// applies only after the area filter: WR-S05 of the Phase 5 review). Ordered
+// Who might be told: accounts with a home cell, not deleted and with at least
+// one live device, whose home cell lies under one of the given geohash
+// prefixes (the caller passes the prefixes that cover the alert's districts, so
+// the row cap applies only after the area filter: WR-S05 of the Phase 5
+// review). The stored official switch is not read: the device switch is the only
+// way to stop these notes (owner decision 2026-11-03, quick 261103-jal). Ordered
 // by account id and bounded by row_cap; the caller turns each home cell into
 // districts and keeps the accounts whose districts meet the alert's. It
 // selects by cell, never by a coordinate.
@@ -717,7 +717,8 @@ type UpsertOfficialPushSettingParams struct {
 }
 
 // Saves the switch. The other settings columns keep their stored values, or
-// their defaults on insert.
+// their defaults on insert. Owner decision 2026-11-03, quick 261103-jal: kept
+// for tests that seed a value stored before this change (C6).
 func (q *Queries) UpsertOfficialPushSetting(ctx context.Context, arg UpsertOfficialPushSettingParams) (bool, error) {
 	row := q.db.QueryRow(ctx, upsertOfficialPushSetting, arg.AccountID, arg.OfficialPushOn, arg.Now)
 	var official_push_on bool

@@ -133,25 +133,82 @@ func sameIDs(a, b []int64) bool {
 	return true
 }
 
-func TestReliableAlertsSwitchedOff(t *testing.T) {
-	offRow := &sqlcgen.GetAlertSettingsRow{ReliableAlertsOn: false, AlertRadiusKm: 5}
+// TestReliableBellLookBackIsNamed pins the look back to one hour (quick
+// 261103-jal, C1): the start point of the Reliable bell row for every account.
+func TestReliableBellLookBackIsNamed(t *testing.T) {
+	if ReliableBellLookBack != time.Hour {
+		t.Errorf("ReliableBellLookBack = %s, want 1h0m0s", ReliableBellLookBack)
+	}
+}
+
+// TestReliableBellLookBackTable replaces TestReliableAlertsSwitchedOff. Amended
+// 2026-11-03 by quick 261103-jal (owner, two row notifications box, D4): the
+// Reliable bell row has no switch, so every account with a home area gets it,
+// with no settings row, with the old switch off, with it on and no stamp, and
+// with an old stamp. The start point is the later of the stored enabled_at and
+// now minus ReliableBellLookBack, so a report older than an hour never raises a
+// row, even for an old stamp.
+func TestReliableBellLookBackTable(t *testing.T) {
+	stampAgo := func(d time.Duration) *sqlcgen.GetAlertSettingsRow {
+		return &sqlcgen.GetAlertSettingsRow{
+			ReliableAlertsOn: true, AlertRadiusKm: 5,
+			EnabledAt: pgtype.Timestamptz{Time: updatesNow.Add(-d), Valid: true},
+		}
+	}
 	cases := []struct {
 		name     string
 		settings *sqlcgen.GetAlertSettingsRow
-		homeCell *string
-		nilRead  bool
+		// ages of the two Reliable reports in range: report 1 and report 2.
+		ages [2]time.Duration
+		want []int64
 	}{
-		{"no settings row", nil, cellPtr("tdr1v"), false},
-		{"switch off", offRow, cellPtr("tdr1v"), false},
-		{"switch on but no stamp", &sqlcgen.GetAlertSettingsRow{ReliableAlertsOn: true, AlertRadiusKm: 5}, cellPtr("tdr1v"), false},
-		{"no home cell", alertOn(5), nil, false},
-		{"unreadable home cell", alertOn(5), cellPtr("TDR1V"), false},
-		{"nil nearby reader", alertOn(5), cellPtr("tdr1v"), true},
+		{"no settings row", nil, [2]time.Duration{90 * time.Minute, 30 * time.Minute}, []int64{2}},
+		{"switch off", &sqlcgen.GetAlertSettingsRow{ReliableAlertsOn: false, AlertRadiusKm: 5}, [2]time.Duration{90 * time.Minute, 30 * time.Minute}, []int64{2}},
+		{"switch on but no stamp", &sqlcgen.GetAlertSettingsRow{ReliableAlertsOn: true, AlertRadiusKm: 5}, [2]time.Duration{90 * time.Minute, 30 * time.Minute}, []int64{2}},
+		{"an old stamp three hours back", alertOn(5), [2]time.Duration{90 * time.Minute, 30 * time.Minute}, []int64{2}},
+		{"an old stamp from weeks ago", stampAgo(21 * 24 * time.Hour), [2]time.Duration{2 * time.Hour, 59 * time.Minute}, []int64{2}},
+		{"a stamp 20 minutes ago bounds the start", stampAgo(20 * time.Minute), [2]time.Duration{30 * time.Minute, 10 * time.Minute}, []int64{2}},
+		{"a report exactly at the look back is still in", nil, [2]time.Duration{ReliableBellLookBack, 61 * time.Minute}, []int64{1}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			f := &alertFake{fakeUpdatesQuerier: &fakeUpdatesQuerier{}, settings: c.settings, homeCell: c.homeCell}
-			n := &fakeNearby{views: []ReportView{alertView(1, VisibilityLive, ReporterReliable, time.Hour)}}
+			f := &alertFake{fakeUpdatesQuerier: &fakeUpdatesQuerier{}, settings: c.settings, homeCell: cellPtr("tdr1v")}
+			f.reporters = reporterRows(1, 101, 2, 102)
+			n := &fakeNearby{views: []ReportView{
+				alertView(1, VisibilityLive, ReporterReliable, c.ages[0]),
+				alertView(2, VisibilityLive, ReporterReliable, c.ages[1]),
+			}}
+			if err := newAlertService(f, n).Refresh(context.Background(), 7); err != nil {
+				t.Fatalf("Refresh: %v", err)
+			}
+			if got := insertedReportIDs(f); !sameIDs(got, c.want) {
+				t.Errorf("alerts written for %v, want %v", got, c.want)
+			}
+			if len(n.queries) != 1 {
+				t.Fatalf("Nearby was called %d times, want 1", len(n.queries))
+			}
+			wantRadius := 5.0
+			if n.queries[0].RadiusKm != wantRadius {
+				t.Errorf("distance = %v km, want the stored or default %v", n.queries[0].RadiusKm, wantRadius)
+			}
+		})
+	}
+
+	// Nothing is written without a home area, with a home cell that does not
+	// decode, or without a nearby reader.
+	nothing := []struct {
+		name     string
+		homeCell *string
+		nilRead  bool
+	}{
+		{"no home cell", nil, false},
+		{"unreadable home cell", cellPtr("TDR1V"), false},
+		{"nil nearby reader", cellPtr("tdr1v"), true},
+	}
+	for _, c := range nothing {
+		t.Run(c.name, func(t *testing.T) {
+			f := &alertFake{fakeUpdatesQuerier: &fakeUpdatesQuerier{}, settings: alertOn(5), homeCell: c.homeCell}
+			n := &fakeNearby{views: []ReportView{alertView(1, VisibilityLive, ReporterReliable, 10*time.Minute)}}
 			var reader NearbyReader = n
 			if c.nilRead {
 				reader = nil
@@ -546,14 +603,17 @@ func TestReliableAlertsOnRealHistory(t *testing.T) {
 		}
 	}
 
-	// A report posted before the switch was turned on never alerts.
+	// A report posted before the look back never alerts. Amended 2026-11-03 by
+	// quick 261103-jal (owner, two row notifications box, D4): there is no switch,
+	// so "before the switch" is "more than ReliableBellLookBack before the
+	// refresh", and the distance is the only thing saved.
 	cur = base.Add(-10 * time.Minute)
-	earlier := insertReport(SeverityLow, base.Add(-30*time.Minute))
+	earlier := insertReport(SeverityLow, base.Add(-90*time.Minute))
 
-	// Turn the switch on at base.
+	// Save the distance at base.
 	cur = base
-	if _, err := accounts.UpdateAlertSettings(ctx, recipient, AlertSettingsUpdate{ReliableAlerts: boolPtrForAlerts(true)}); err != nil {
-		t.Fatalf("turning the alert on: %v", err)
+	if _, err := accounts.UpdateAlertSettings(ctx, recipient, AlertSettingsUpdate{AlertRadiusKm: intPtrForAlerts(5)}); err != nil {
+		t.Fatalf("saving the distance: %v", err)
 	}
 
 	// A critical report nobody confirmed: it alerts once, from posting.
@@ -628,7 +688,7 @@ func TestReliableAlertsOnRealHistory(t *testing.T) {
 	}
 }
 
-func boolPtrForAlerts(b bool) *bool { return &b }
+func intPtrForAlerts(n int) *int { return &n }
 
 // TestReliableNoteCountsTowardTheHourGap is the W3 sequence on a real database
 // (D-12, one update per report per hour): a Reliable reporter posts, the
@@ -666,9 +726,11 @@ func TestReliableNoteCountsTowardTheHourGap(t *testing.T) {
 	}
 	spotLat, spotLon, _ := HomeAreaAnchor(cell)
 
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+	// D4): the Reliable bell row has no switch, so only the distance is saved.
 	cur = base
-	if _, err := accounts.UpdateAlertSettings(ctx, reader, AlertSettingsUpdate{ReliableAlerts: boolPtrForAlerts(true)}); err != nil {
-		t.Fatalf("turning the alert on: %v", err)
+	if _, err := accounts.UpdateAlertSettings(ctx, reader, AlertSettingsUpdate{AlertRadiusKm: intPtrForAlerts(5)}); err != nil {
+		t.Fatalf("saving the distance: %v", err)
 	}
 
 	// A low report is Provisional until two people at different spots confirm it.

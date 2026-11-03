@@ -781,9 +781,6 @@ func NewRouter(deps Deps) *chi.Mux {
 	// Nearby and the Low data view start at the account's home area cell centre
 	// when the device location is not available (plan 03.4-33).
 	page.HomeCentre = accounts
-	// Nearby and the Low data view read the Changes switch to decide whether to
-	// render the first post or vote pop-up (plan 03.3-21).
-	page.AlertSettings = accounts
 	// Nearby reads the home area name for the installed app alerts ask
 	// (plan 07.1-13c).
 	page.Profiles = accounts
@@ -1149,9 +1146,11 @@ func NewRouter(deps Deps) *chi.Mux {
 		// username (Phase 7.1, D-07). Gated, per account limited by authGate,
 		// never cached, and it never calls the text screening.
 		r.Get("/api/username/check", handlers.UsernameCheck(accounts, authGate))
-		// PATCH /api/me/alerts saves the Reliable reporter alert switch and its
-		// distance from the home area (Phase 3.2, NOTIF-05, D-26). Gated; the
-		// account comes from the gate and the body names nothing else.
+		// PATCH /api/me/alerts saves the distance from the home area that alerts
+		// reach (Phase 3.2, NOTIF-05, D-26; narrowed to the distance alone by quick
+		// 261103-jal, owner decision 2026-11-03). Gated; the account comes from the
+		// gate and the body names nothing else. The four switch keys of earlier
+		// versions are accepted and ignored.
 		r.Patch("/api/me/alerts", handlers.UpdateAlertSettings(accounts))
 		// POST /api/me/first-run-done marks the first-time flow finished.
 		r.Post("/api/me/first-run-done", handlers.FirstRunDone(accounts))

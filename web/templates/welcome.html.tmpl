@@ -33,9 +33,9 @@
   Plan 03.3-19 (the 03.3-UAT gap for test 4, owner, 2026-10-27): the pop-up
   names the home area in its title (the stored one, with the words your home
   area when there is none), holds the same place search as step 4 for an account
-  without a home area (welcome.js hides it when data-home-area is set), and
-  offers the unticked Reliable reporter tick box, whose words are the Settings
-  row's. Allow saves the picked area, then the box, after the device is turned on.
+  without a home area (welcome.js hides it when data-home-area is set). Allow
+  saves the picked area after the device is turned on. The pop-up has no
+  checkbox since quick 261103-jal (owner, 2026-11-03).
   Quick 261027-jhd (owner, 2026-10-27) makes step 2's Agree and Disagree wait
   until the end of the text has been seen, which welcome.js does (the marker is
   the last child of the text box; the hold is never written here). The install
@@ -216,7 +216,6 @@
         <p class="app-window__status" id="welcome-alerts-home-status" role="status" aria-live="polite" hidden></p>
         <ul class="app-window__results" id="welcome-alerts-home-results" role="listbox" aria-label="Places found" hidden></ul>
       </div>
-      <label class="welcome-ask__check"><input type="checkbox" id="welcome-alerts-reliable"><span>A Reliable reporter posts near me</span></label>
       <p class="inline-error" id="welcome-alerts-ask-error" role="alert" hidden></p>
       <div class="logout-confirm__actions">
         <button type="button" class="btn" id="welcome-alerts-later">Not now</button>

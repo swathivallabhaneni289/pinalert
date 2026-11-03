@@ -114,38 +114,17 @@ func TestLoginCardTitleNoRing(t *testing.T) {
 }
 
 // TestReliableTickBoxSharedLook (WR-T01 with WR-B04): the Reliable reporter tick
-// box looks the same in the installed app's ask on Nearby as in the sign up
-// pop-up: a flex row at least 44px high, a 20px box, the text colour and 16px
-// above Not now and Allow. Before the fix the rules were scoped to the sign up
-// pop-up's ids and lived in welcome.css, which Nearby does not link, so on
-// Nearby the label was an inline line with a 12px box against the buttons. The
-// shared rules live in auth.css, which both pages link, scoped to the Log out
-// box class both pop-ups use, and welcome.css keeps no copy.
+// box looked the same in the installed app's ask on Nearby as in the sign up
+// pop-up, through shared rules in auth.css.
+//
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D5):
+// the tick box is gone from both pop-ups, so the test now pins the absence. No
+// template has a checkbox in either alerts pop-up, no stylesheet styles the
+// removed label or its box, and the installed ask's title keeps its 16px
+// margin, since the title is still the box's first line above the buttons.
 func TestReliableTickBoxSharedLook(t *testing.T) {
 	auth := r71tRules(t, "static/css/auth.css")
-	const labelHead = ".logout-confirm .welcome-ask__check"
-	const boxHead = `.logout-confirm .welcome-ask__check input[type="checkbox"]`
-	if r, ok := r71tFind(auth, "", labelHead); !ok {
-		t.Errorf("auth.css has no %s rule, so the tick box on Nearby is unstyled", labelHead)
-	} else {
-		p16MustDecl(t, labelHead, r, map[string]string{
-			"display":     "flex",
-			"align-items": "center",
-			"gap":         "var(--space-sm)",
-			"min-height":  "var(--touch-target-min)",
-			"margin":      "0 0 var(--space-md)",
-			"color":       "var(--color-text)",
-			"font-size":   "var(--font-size-body)",
-			"line-height": "var(--line-height-body)",
-			"cursor":      "pointer",
-		})
-	}
-	if r, ok := r71tFind(auth, "", boxHead); !ok {
-		t.Errorf("auth.css has no %s rule, so the box on Nearby is the small native one", boxHead)
-	} else {
-		p16MustDecl(t, boxHead, r, map[string]string{"flex": "none", "width": "20px", "height": "20px", "margin": "0"})
-	}
-	// The installed ask's title leaves 16px to the tick box, as the sign up
+	// The installed ask's title leaves 16px to the buttons, as the sign up
 	// pop-up's does, not the Log out box's 24px.
 	if r, ok := r71tFind(auth, "", "#installed-alerts-ask-title"); !ok {
 		t.Errorf("auth.css has no #installed-alerts-ask-title rule")
@@ -159,28 +138,31 @@ func TestReliableTickBoxSharedLook(t *testing.T) {
 			t.Errorf("%s does not link auth.css", page)
 		}
 	}
-	// One rule: welcome.css keeps no id scoped copy, and no other stylesheet
-	// names the tick box.
-	welcome := stripCSSComments(p16ReadStatic(t, "static/css/welcome.css"))
-	for _, gone := range []string{"welcome-ask__check", "#welcome-alerts-reliable"} {
-		if strings.Contains(welcome, gone) {
-			t.Errorf("welcome.css still holds %q; the look lives in auth.css only", gone)
-		}
-	}
-	for _, r := range p16AllCSS(t) {
-		if strings.Contains(r.Head, "welcome-ask__check") && r.File != "static/css/auth.css" {
-			t.Errorf("%s names the tick box (%q); auth.css holds its only rules", r.File, r.Head)
+	// No stylesheet names the removed label or its box.
+	for _, gone := range []string{"welcome-ask__check", "#welcome-alerts-reliable", "#installed-alerts-ask-reliable"} {
+		for _, r := range p16AllCSS(t) {
+			if strings.Contains(r.Head, gone) {
+				t.Errorf("%s names the removed tick box (%q)", r.File, r.Head)
+			}
 		}
 	}
 
-	// The markup the script reads is unchanged: the box keeps its id inside the
-	// shared label class in both pop-ups.
-	p13MustContain(t, "installed_alerts_ask.html.tmpl", stripReadTemplate(t, "installed_alerts_ask.html.tmpl"),
-		`<label class="welcome-ask__check"><input type="checkbox" id="installed-alerts-ask-reliable"><span>A Reliable reporter posts near me</span></label>`,
+	// The markup the script reads: the dialogs keep their title and class and
+	// hold no checkbox and no Reliable words.
+	installed := stripReadTemplate(t, "installed_alerts_ask.html.tmpl")
+	welcome := stripReadTemplate(t, "welcome.html.tmpl")
+	p13MustContain(t, "installed_alerts_ask.html.tmpl", installed,
 		`<h2 class="logout-confirm__title" id="installed-alerts-ask-title" tabindex="-1">`,
 		`<dialog id="installed-alerts-ask" class="logout-confirm"`)
-	p13MustContain(t, "welcome.html.tmpl", stripReadTemplate(t, "welcome.html.tmpl"),
-		`<label class="welcome-ask__check"><input type="checkbox" id="welcome-alerts-reliable"><span>A Reliable reporter posts near me</span></label>`)
+	at := strings.Index(welcome, `<dialog id="welcome-alerts-ask"`)
+	end := strings.Index(welcome[at:], "</dialog>")
+	for name, box := range map[string]string{"installed_alerts_ask.html.tmpl": installed, "welcome.html.tmpl (alerts pop-up)": welcome[at : at+end]} {
+		for _, banned := range []string{`type="checkbox"`, "welcome-ask__check", "A Reliable reporter posts near me", "-reliable"} {
+			if strings.Contains(box, banned) {
+				t.Errorf("%s still holds %q", name, banned)
+			}
+		}
+	}
 }
 
 // TestInstallAskNotNowStaysInView (WR-T05): on a short or zoomed iPhone (320x568,
@@ -283,6 +265,14 @@ func TestPolicyNamesAskedLists(t *testing.T) {
 // about a report changing) and the per account pinalert.locationAsked. marker.
 // Each line says what it remembers and that it stays on the device, and each
 // key is checked to still be in use, so a stale line shows.
+//
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D6,
+// C5): the changes asked key is retired. The first post or vote pop-up and its
+// script are gone, so no script reads the key, but devices that were asked
+// before still hold it. The Policy line stays as it is, because editing the
+// Policy would move policyLastUpdated and the terms version and make every
+// account agree again. The line is still required, and no script check is made
+// for the retired key.
 func TestPolicyNamesOlderStorageKeys(t *testing.T) {
 	storage := r71tPolicySection(t, "Cookies and storage on your device")
 	cases := []struct {
@@ -294,7 +284,7 @@ func TestPolicyNamesOlderStorageKeys(t *testing.T) {
 		},
 		{
 			"<li>Which accounts on this device were already asked whether to be told when a report changes, kept as a list of account numbers on this device, so it does not ask again.</li>",
-			"js/changes-ask.js", "'pinalert.changesAsked'",
+			"", "", // retired key: the line stays, no script uses it (C5)
 		},
 		{
 			"<li>Whether this device already asked for your location for an account, kept as a mark with the account number on this device, so it does not ask again.</li>",
@@ -304,6 +294,9 @@ func TestPolicyNamesOlderStorageKeys(t *testing.T) {
 	for _, c := range cases {
 		if !strings.Contains(storage, c.line) {
 			t.Errorf("the Policy's storage list lacks:\n%s", c.line)
+		}
+		if c.script == "" {
+			continue
 		}
 		if !strings.Contains(stripJSComments(p421ReadStatic(t, c.script)), c.key) {
 			t.Errorf("%s no longer uses %s; the Policy line about it may be stale", c.script, c.key)

@@ -88,7 +88,10 @@ func TestOfficialPushQueries(t *testing.T) {
 		}
 	})
 
-	t.Run("candidates need a home cell, a live device, the switch and no deletion", func(t *testing.T) {
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+	// D2): the stored official switch is no longer a candidate condition, so the
+	// account with the switch saved off is returned like the others.
+	t.Run("candidates need a home cell, a live device and no deletion, and no stored switch", func(t *testing.T) {
 		testutil.Truncate(t, pool)
 		ok := officialPushPerson(t, pool, "op-ok@example.com", "op-ok-sess", "tf3bq")
 		noRow := officialPushPerson(t, pool, "op-ok2@example.com", "op-ok2-sess", "tf3bq")
@@ -112,8 +115,8 @@ func TestOfficialPushQueries(t *testing.T) {
 		if err != nil {
 			t.Fatalf("OfficialPushCandidates: %v", err)
 		}
-		if len(rows) != 2 || rows[0].AccountID != ok || rows[1].AccountID != noRow {
-			t.Fatalf("candidates = %+v, want accounts %d and %d in id order (switch off %d, deleted %d, revoked %d must be absent)",
+		if len(rows) != 3 || rows[0].AccountID != ok || rows[1].AccountID != noRow || rows[2].AccountID != off {
+			t.Fatalf("candidates = %+v, want accounts %d, %d and %d (switch off) in id order (deleted %d, revoked %d must be absent)",
 				rows, ok, noRow, off, deleted, revoked)
 		}
 		if rows[0].HomeAreaCell != "tf3bq" {

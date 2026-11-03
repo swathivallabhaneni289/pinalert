@@ -646,24 +646,9 @@
           if (typeof CustomEvent === 'function') {
             document.dispatchEvent(new CustomEvent('pinalert:updates-refresh'));
           }
-          if (action === 'confirm' || action === 'dispute') {
-            offerChangesAsk();
-          }
           return body;
         });
       });
-    }
-  }
-
-  // 03.3-UAT test 4: a saved confirm or dispute offers the first-time alerts
-  // pop-up (P-2: not resolve, reopen or take back). Never changes the vote.
-  function offerChangesAsk() {
-    try {
-      if (window.PinalertChangesAsk) {
-        window.PinalertChangesAsk.offer();
-      }
-    } catch (err) {
-      // The pop-up never changes a vote's result.
     }
   }
 
@@ -2013,9 +1998,9 @@
   // report id -> the box on this page, and the ids Skip was pressed for.
   var rateBoxes = {};
   var rateSkipped = {};
-  // report id -> a counter that each offer takes and each Undo of the resolve
-  // moves on, so a box that was waiting for the first pop-up can tell that its
-  // resolve was taken back meanwhile (skeptic SK-I04, 2026-10-30).
+  // report id -> a counter that each Undo of the resolve moves on. Since quick
+  // 261103-jal (D6) no offer waits for a pop-up, so nothing reads it any more; it
+  // stays as the place a later wait would take its number from (skeptic SK-I04).
   var rateGeneration = {};
   // report id -> what stops the timers of that box when it leaves.
   var rateCleanups = {};
@@ -2036,8 +2021,7 @@
     stopWindowWatchIfIdle();
   }
 
-  // takeRateBoxBack is the Undo of a resolve: the box goes, and an offer still
-  // waiting for the first pop-up is called off.
+  // takeRateBoxBack is the Undo of a resolve: the box goes.
   function takeRateBoxBack(reportId) {
     var key = String(reportId);
     rateGeneration[key] = (rateGeneration[key] || 0) + 1;
@@ -2328,8 +2312,8 @@
   // offerRateBox runs after a resolve was saved and the list was read again. It
   // never throws and never changes the vote's outcome: a page without the star
   // script, a prompt with no username, or any failure inside simply shows
-  // nothing. When the first post or vote pop-up is on the page, the box waits
-  // until that pop-up is answered, so the two are never open together.
+  // nothing. The box mounts at once (the first post or vote pop-up it used to wait
+  // for was removed on 2026-11-03, quick 261103-jal, D6).
   function offerRateBox(block, reportId, result) {
     try {
       var prompt = result && result.rate_prompt;
@@ -2340,29 +2324,6 @@
         return;
       }
       if (rateSkipped[String(reportId)] === true || (!rateHostIsLive(block) && rateHostElement() === null)) {
-        return;
-      }
-      var wait = null;
-      if (window.PinalertChangesAsk && typeof window.PinalertChangesAsk.settled === 'function') {
-        wait = window.PinalertChangesAsk.settled();
-      }
-      // Each offer takes a number; an Undo of the resolve moves the number on.
-      // A box that waited for the first pop-up mounts only if its number still
-      // stands, so no box appears for a resolve that was taken back (SK-I04).
-      var key = String(reportId);
-      rateGeneration[key] = (rateGeneration[key] || 0) + 1;
-      var mine = rateGeneration[key];
-      if (wait && typeof wait.then === 'function') {
-        wait.then(function () {
-          if (rateGeneration[key] !== mine) {
-            return;
-          }
-          try {
-            mountRateBox(block, reportId, prompt);
-          } catch (err) {
-            // The star box never changes a vote's result.
-          }
-        }, function () {});
         return;
       }
       mountRateBox(block, reportId, prompt);

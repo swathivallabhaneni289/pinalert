@@ -539,7 +539,8 @@ func TestWelcomeEscapesStoredValues(t *testing.T) {
 // 2026-10-27, which replaced Phase 3.3 plan 13's step 5) as amended by plan
 // 03.3-19 (03.3-UAT gap for test 4, owner 2026-10-27): the alerts pop-up on
 // /welcome names the home area in its title, holds the home area search when no
-// area is stored, offers the unticked Reliable reporter tick box, and carries
+// area is stored (it had an unticked Reliable reporter tick box until quick
+// 261103-jal removed it), and carries
 // the configured public key on the flow root; there is no fifth step. A page
 // with no key renders an empty attribute, which welcome.js reads as no pop-up.
 // One subtest per case.
@@ -554,8 +555,6 @@ func TestWelcomeAlertsAskRendersForNewAccount(t *testing.T) {
 			`<dialog id="welcome-alerts-ask" class="logout-confirm" aria-labelledby="welcome-alerts-ask-title"`,
 			`<button type="button" class="btn" id="welcome-alerts-later">Not now</button>`,
 			`<button type="button" class="btn btn--primary" id="welcome-alerts-allow">Allow</button>`,
-			`id="welcome-alerts-reliable"`,
-			`A Reliable reporter posts near me`,
 			`/static/css/auth.css`,
 		} {
 			if !strings.Contains(body, want) {
@@ -568,10 +567,9 @@ func TestWelcomeAlertsAskRendersForNewAccount(t *testing.T) {
 		if strings.Contains(body, "near you?") {
 			t.Errorf("/welcome still holds a title ending in near you?")
 		}
-		box := regexp.MustCompile(`<input[^>]*id="welcome-alerts-reliable"[^>]*>`).FindString(body)
-		if box == "" || strings.Contains(box, "checked") {
-			t.Errorf("the Reliable tick box %q must exist and start unticked", box)
-		}
+		// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+		// D5): the unticked Reliable tick box left the pop-up; the absence is pinned
+		// by TestWelcomeAlertsAskHasNoTickBox.
 		tag := p25OpeningTag(t, body, `<div class="welcome" id="welcome"`)
 		if !strings.Contains(tag, `data-push-key="`+key+`"`) {
 			t.Errorf("the flow root %q does not carry data-push-key=%q", tag, key)
@@ -670,6 +668,43 @@ func TestWelcomeAlertsAskRendersForNewAccount(t *testing.T) {
 			t.Errorf("the dialog %q lacks the escaped name in data-home-area", dialog)
 		}
 	})
+}
+
+// TestWelcomeAlertsAskHasNoTickBox is D9 (f) of quick 261103-jal (owner decision
+// 2026-11-03, D5): the rendered sign up page's alerts pop-up holds no checkbox at
+// all and none of the Reliable reporter words, and the installed app's ask, which
+// repeats its words, holds none either (TestInstalledAlertsAskMatchesSignUp reads
+// the two templates side by side).
+func TestWelcomeAlertsAskHasNoTickBox(t *testing.T) {
+	base, newClient, _ := welcomeServerWithKey(t, "test-public-key-placeholder")
+	_, still := newClient("welcome-no-tick@example.com")
+	resp, body := welcomeGet(t, still, base, "/welcome")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /welcome: %d", resp.StatusCode)
+	}
+	at := strings.Index(body, `<dialog id="welcome-alerts-ask"`)
+	if at == -1 {
+		t.Fatalf("/welcome has no alerts pop-up")
+	}
+	end := strings.Index(body[at:], "</dialog>")
+	if end == -1 {
+		t.Fatalf("the alerts pop-up is not closed")
+	}
+	box := body[at : at+end]
+	if regexp.MustCompile(`<input[^>]*type="checkbox"`).MatchString(box) {
+		t.Errorf("the alerts pop-up holds a checkbox: %s", box)
+	}
+	for _, banned := range []string{"A Reliable reporter posts near me", "Reliable reporter", "welcome-alerts-reliable", "welcome-ask__check"} {
+		if strings.Contains(box, banned) {
+			t.Errorf("the alerts pop-up still holds %q", banned)
+		}
+	}
+	// The pop-up keeps its title, its search and its two buttons.
+	for _, want := range []string{`id="welcome-alerts-ask-title"`, `id="welcome-alerts-home-input"`, `id="welcome-alerts-later"`, `id="welcome-alerts-allow"`} {
+		if !strings.Contains(box, want) {
+			t.Errorf("the alerts pop-up lacks %q", want)
+		}
+	}
 }
 
 // TestWelcomeIsNotDoneBeforeFirstRunDone pins decision 15: the flow is recorded

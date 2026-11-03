@@ -13,13 +13,14 @@ import (
 
 var (
 	i13cTitle  = regexp.MustCompile(`(?s)<h2[^>]*id="[a-z-]*ask-title"[^>]*>(.*?)</h2>`)
-	i13cLabel  = regexp.MustCompile(`(?s)<label[^>]*>\s*<input type="checkbox"[^>]*><span>(.*?)</span></label>`)
 	i13cButton = regexp.MustCompile(`(?s)<button type="button" class="([^"]*)" id="[a-z-]*-(later|allow)">(.*?)</button>`)
 )
 
-// i13cWords pulls the words of one pop-up: the title up to the home area, the
-// tick box label, and the two button labels with their classes, in order.
-func i13cWords(t *testing.T, src string, dialogID string) (titleStart, label string, buttons []string, ticked bool) {
+// i13cWords pulls the words of one pop-up: the title up to the home area, the two
+// button labels with their classes, in order, and whether the box holds a
+// checkbox. Amended 2026-11-03 by quick 261103-jal (owner, two row notifications
+// box, D5): neither pop-up has a checkbox any more, so the tick box label is gone.
+func i13cWords(t *testing.T, src string, dialogID string) (titleStart string, buttons []string, checkbox bool) {
 	t.Helper()
 	at := strings.Index(src, `<dialog id="`+dialogID+`"`)
 	if at == -1 {
@@ -38,27 +39,22 @@ func i13cWords(t *testing.T, src string, dialogID string) (titleStart, label str
 	if cut := strings.Index(titleStart, "{{"); cut != -1 {
 		titleStart = titleStart[:cut]
 	}
-	l := i13cLabel.FindStringSubmatch(box)
-	if l == nil {
-		t.Fatalf("dialog %q has no tick box label", dialogID)
-	}
-	label = strings.TrimSpace(l[1])
 	for _, b := range i13cButton.FindAllStringSubmatch(box, -1) {
 		buttons = append(buttons, b[2]+"|"+strings.TrimSpace(b[3])+"|"+b[1])
 	}
-	ticked = regexp.MustCompile(`<input type="checkbox"[^>]*\bchecked\b`).MatchString(box)
-	return titleStart, label, buttons, ticked
+	checkbox = strings.Contains(box, `type="checkbox"`)
+	return titleStart, buttons, checkbox
 }
 
 // TestInstalledAlertsAskMatchesSignUp pins that the Nearby dialog uses the title
-// words, the Reliable reporter tick box label and the two buttons of the sign up
-// alerts pop-up, and that the box starts unticked in both.
+// words and the two buttons of the sign up alerts pop-up, and that neither holds
+// a checkbox (quick 261103-jal, D5).
 func TestInstalledAlertsAskMatchesSignUp(t *testing.T) {
 	welcome := templateCopy(stripReadTemplate(t, "welcome.html.tmpl"))
 	installed := templateCopy(stripReadTemplate(t, "installed_alerts_ask.html.tmpl"))
 
-	wTitle, wLabel, wButtons, wTicked := i13cWords(t, welcome, "welcome-alerts-ask")
-	iTitle, iLabel, iButtons, iTicked := i13cWords(t, installed, "installed-alerts-ask")
+	wTitle, wButtons, wBox := i13cWords(t, welcome, "welcome-alerts-ask")
+	iTitle, iButtons, iBox := i13cWords(t, installed, "installed-alerts-ask")
 
 	if wTitle != "Get alerts for critical reports near " {
 		t.Fatalf("the sign up title words changed to %q; update this test and welcome.js ASK_TITLE_START together", wTitle)
@@ -69,11 +65,8 @@ func TestInstalledAlertsAskMatchesSignUp(t *testing.T) {
 	if !strings.Contains(installed, `Get alerts for critical reports near {{.HomeAreaName}}?</h2>`) {
 		t.Errorf("the title must end with the home area and a question mark")
 	}
-	if iLabel != wLabel || iLabel == "" {
-		t.Errorf("tick box label = %q, sign up pop-up has %q", iLabel, wLabel)
-	}
-	if wTicked || iTicked {
-		t.Errorf("the Reliable tick box starts unticked in both pop-ups (sign up %v, installed %v)", wTicked, iTicked)
+	if wBox || iBox {
+		t.Errorf("neither alerts pop-up holds a checkbox (sign up %v, installed %v)", wBox, iBox)
 	}
 	if len(wButtons) != 2 || len(iButtons) != 2 {
 		t.Fatalf("each pop-up has Not now and Allow: sign up %v, installed %v", wButtons, iButtons)
@@ -92,7 +85,6 @@ func TestInstalledAlertsAskMatchesSignUp(t *testing.T) {
 		`{{define "installed_alerts_ask"}}`,
 		`class="logout-confirm"`,
 		`id="installed-alerts-ask-title"`,
-		`id="installed-alerts-ask-reliable"`,
 		`id="installed-alerts-ask-later"`,
 		`id="installed-alerts-ask-allow"`,
 		`data-push-key="{{.PushPublicKey}}"`,

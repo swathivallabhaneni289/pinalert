@@ -157,8 +157,11 @@ func TestOfficialPushEnqueue(t *testing.T) {
 	// has a corner in it, and nobody else.
 	const gDistrict = "1792000000000101"
 	w.save(version(gDistrict, "IN-1792000000000101_1", SeveritySevere), districts(749))
-	if got := w.queued(gDistrict); !sameIDs(got, inDistrict, onEdge) {
-		t.Fatalf("district Severe queued %v, want the home in the district %d and the corner %d", got, inDistrict, onEdge)
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+	// D2): the stored official switch is no longer read, so the account whose
+	// stored switch is off is queued with the others.
+	if got := w.queued(gDistrict); !sameIDs(got, inDistrict, onEdge, switchedOff) {
+		t.Fatalf("district Severe queued %v, want the home in the district %d, the corner %d and the stored-off account %d", got, inDistrict, onEdge, switchedOff)
 	}
 	if w.rowCount(gDistrict, inDistrict, "new") != 1 {
 		t.Error("the first queued row must carry the reason new")
@@ -178,8 +181,8 @@ func TestOfficialPushEnqueue(t *testing.T) {
 
 	// Refreshing the same feed again queues no second row.
 	w.save(version(gDistrict, "IN-1792000000000101_1", SeveritySevere), districts(749))
-	if got := w.queued(gDistrict); !sameIDs(got, inDistrict, onEdge) {
-		t.Errorf("after a repeat save the queue is %v, want the same two rows", got)
+	if got := w.queued(gDistrict); !sameIDs(got, inDistrict, onEdge, switchedOff) {
+		t.Errorf("after a repeat save the queue is %v, want the same three rows", got)
 	}
 
 	// An alert that ends sooner than the push TTL expires with the alert.
@@ -200,8 +203,8 @@ func TestOfficialPushEnqueue(t *testing.T) {
 	// homes, not the person in Chennai.
 	const gStateExtreme = "1792000000000103"
 	w.save(version(gStateExtreme, "IN-1792000000000103_1", SeverityExtreme), Placement{Tier: TierState, StateCodes: []int{28}})
-	if got := w.queued(gStateExtreme); !sameIDs(got, inDistrict, onEdge, inState) {
-		t.Errorf("state Extreme queued %v, want the three homes in Andhra Pradesh", got)
+	if got := w.queued(gStateExtreme); !sameIDs(got, inDistrict, onEdge, inState, switchedOff) {
+		t.Errorf("state Extreme queued %v, want the four homes in Andhra Pradesh (the stored-off account included)", got)
 	}
 
 	// A state level Severe queues nobody (D-16).

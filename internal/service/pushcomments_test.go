@@ -349,9 +349,9 @@ func (r *pcRig) pushedKinds(reportID int64) []string {
 
 func (r *pcRig) followers(reportID int64) map[int64]bool {
 	r.t.Helper()
-	ids, err := r.q.FollowersWithChangesPush(context.Background(), reportID)
+	ids, err := r.q.FollowersForBellRefresh(context.Background(), reportID)
 	if err != nil {
-		r.t.Fatalf("FollowersWithChangesPush: %v", err)
+		r.t.Fatalf("FollowersForBellRefresh: %v", err)
 	}
 	out := map[int64]bool{}
 	for _, id := range ids {
@@ -388,9 +388,15 @@ func TestCommenterFollowsReportForPush(t *testing.T) {
 		if !got[clearID] {
 			t.Error("an account whose only link is a clear comment is not a push follower")
 		}
+		// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box):
+		// the set is the accounts whose bell is refreshed early and no stored
+		// Changes switch picks it, so a clear comment with Changes off counts.
+		if !got[offID] {
+			t.Error("an account with a clear comment and Changes switched off is not in the bell refresh set")
+		}
 		for name, id := range map[string]int64{
 			"deleted comment": deletedID, "removed comment": removedID, "held comment": pendingID,
-			"Changes switched off": offID, "no link at all": noneID,
+			"no link at all": noneID,
 		} {
 			if got[id] {
 				t.Errorf("an account with %s is a push follower", name)
@@ -398,16 +404,20 @@ func TestCommenterFollowsReportForPush(t *testing.T) {
 		}
 	})
 
-	t.Run("a comment on your report queues one changed row for you, not the commenter", func(t *testing.T) {
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box):
+	// comment notes stay in the bell, so the reporter gets the bell row and no
+	// changed phone row is queued, whatever the stored Changes switch says.
+	t.Run("a comment on your report writes the bell row and queues no changed row", func(t *testing.T) {
 		r := newPCRig(t)
 		reporter, report := r.reporter("pc-q-rep", true)
 		commenter, _ := r.reader("pc-q-com", 1, 5, false, false, true)
 
 		r.post(report, commenter, "water is rising here", nil)
-		got := r.pushedKinds(report)
-		want := fmt.Sprintf("%d:comment_on_yours", reporter)
-		if len(got) != 1 || got[0] != want {
-			t.Fatalf("changed rows = %v, want [%s]", got, want)
+		if got := r.pushedKinds(report); len(got) != 0 {
+			t.Fatalf("changed rows = %v, want none", got)
+		}
+		if n := r.count(`SELECT COUNT(*) FROM updates WHERE account_id = $1 AND report_id = $2 AND kind = 'comment_on_yours'`, reporter, report); n != 1 {
+			t.Errorf("bell rows for the reporter = %d, want 1", n)
 		}
 		if r.note.calls != 1 {
 			t.Errorf("dispatcher pokes = %d, want 1", r.note.calls)
@@ -437,21 +447,16 @@ func TestCommenterFollowsReportForPush(t *testing.T) {
 		root := r.post(report, first, "first words", nil)
 		r.post(report, second, "an answer", &root.ID)
 
-		got := r.pushedKinds(report)
-		want := fmt.Sprintf("%d:reply_to_yours", first)
-		found := 0
-		for _, g := range got {
-			if g == want {
-				found++
-			}
+		// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box):
+		// the reply reaches the first commenter's bell and no phone.
+		if got := r.pushedKinds(report); len(got) != 0 {
+			t.Errorf("changed rows = %v, want none", got)
 		}
-		if found != 1 {
-			t.Errorf("changed rows = %v, want exactly one %s", got, want)
+		if n := r.count(`SELECT COUNT(*) FROM updates WHERE account_id = $1 AND report_id = $2 AND kind = 'reply_to_yours'`, first, report); n != 1 {
+			t.Errorf("bell rows for the first commenter = %d, want 1", n)
 		}
-		for _, g := range got {
-			if g == fmt.Sprintf("%d:reply_to_yours", second) {
-				t.Errorf("the replier was queued a note about their own reply: %v", got)
-			}
+		if n := r.count(`SELECT COUNT(*) FROM updates WHERE account_id = $1 AND report_id = $2 AND kind = 'reply_to_yours'`, second, report); n != 0 {
+			t.Errorf("the replier got %d bell rows about their own reply", n)
 		}
 	})
 }
@@ -498,9 +503,9 @@ func TestLikesNotifyNoPush(t *testing.T) {
 // followersOf lists the push follower ids of a report, in id order.
 func (r *pcRig) followersOf(reportID int64) []int64 {
 	r.t.Helper()
-	ids, err := r.q.FollowersWithChangesPush(context.Background(), reportID)
+	ids, err := r.q.FollowersForBellRefresh(context.Background(), reportID)
 	if err != nil {
-		r.t.Fatalf("FollowersWithChangesPush: %v", err)
+		r.t.Fatalf("FollowersForBellRefresh: %v", err)
 	}
 	return ids
 }

@@ -240,10 +240,9 @@ function setup(options) {
     location: { href: 'https://pinalert.example/' },
     PinalertQueue
   };
-  // Phase 3.3 plan 20: a page with the first post or vote pop-up script.
-  if (options && options.changesAsk) {
-    window.PinalertChangesAsk = options.changesAsk;
-  }
+  // Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D6):
+  // the first post or vote pop-up was removed, so the page option for its script
+  // and the five tests that used it are gone.
   const sandbox = { window, document: doc, CustomEvent, crypto, Map, Date, Math, JSON, Promise, Array, Object, isFinite, encodeURIComponent };
   window.Pinalert = Pinalert;
   sandbox.Pinalert = Pinalert;
@@ -562,93 +561,6 @@ test('a posted report is never called refused when the closing code throws', asy
   assert.ok(page.toasts.every((t) => !t.startsWith("Your earlier report wasn't posted.")),
     'a posted report must not be told as refused: ' + JSON.stringify(page.toasts));
   assert.equal(page.queueSaves.length, 0, 'a posted report must not be saved again');
-});
-
-// ----- Phase 3.3 plan 20: the first post or vote pop-up -----
-
-// withChangesAsk sets up a page whose pop-up counts offers and records what the
-// page looked like at that moment. throws makes offer throw.
-function withChangesAsk(throws) {
-  const seen = [];
-  let page = null;
-  page = setup({
-    changesAsk: {
-      offer() {
-        seen.push({ closed: page.el('report-backdrop').hidden, toasts: page.toasts.slice() });
-        if (throws) { throw new Error('pop-up broke'); }
-        return Promise.resolve();
-      }
-    }
-  });
-  return { page, seen };
-}
-
-test('changes ask: an accepted post offers the pop-up once, after the form closed and the toast', async () => {
-  const { page, seen } = withChangesAsk(false);
-  page.open();
-  page.fill('Water over the main road near the bridge');
-  page.submit();
-  assert.equal(seen.length, 0, 'not offered while the post is out');
-  page.posts[0].resolve({ id: 61 });
-  await settle();
-  assert.deepEqual(seen, [{ closed: true, toasts: ['Report posted.'] }]);
-});
-
-test('changes ask: a post accepted as held offers the pop-up once', async () => {
-  const { page, seen } = withChangesAsk(false);
-  page.open();
-  page.fill('Water over the main road near the bridge');
-  page.submit();
-  page.posts[0].resolve({ id: 62, held: true });
-  await settle();
-  assert.equal(seen.length, 1);
-  assert.equal(seen[0].closed, true);
-  assert.equal(seen[0].toasts.length, 1);
-});
-
-test('changes ask: a refused or unanswered post never offers the pop-up', async () => {
-  const refused = withChangesAsk(false);
-  refused.page.open();
-  refused.page.fill('Water over the main road near the bridge');
-  refused.page.submit();
-  refused.page.posts[0].reject(Object.assign(new Error('x'), {
-    queueable: false, status: 422, field: 'description', fieldMessage: 'That text is not allowed.'
-  }));
-  await settle();
-  assert.equal(refused.seen.length, 0, 'refused');
-
-  const queued = withChangesAsk(false);
-  queued.page.open();
-  queued.page.fill('Water over the main road near the bridge');
-  queued.page.submit();
-  queued.page.posts[0].reject(Object.assign(new Error('x'), { queueable: true, status: 504 }));
-  await settle();
-  assert.equal(queued.page.queueSaves.length, 1);
-  assert.equal(queued.seen.length, 0, 'saved on the device for later');
-});
-
-test('changes ask: a post accepted after its form was closed offers the pop-up once, after the toast', async () => {
-  const { page, seen } = withChangesAsk(false);
-  page.open();
-  page.fill('Water over the main road near the bridge');
-  page.submit();
-  page.cancelInFlight();
-  page.posts[0].resolve({ id: 63 });
-  await settle();
-  assert.deepEqual(seen, [{ closed: true, toasts: [EARLIER_POSTED] }]);
-});
-
-test('changes ask: a pop-up that throws never turns an accepted post into a refused one', async () => {
-  const { page, seen } = withChangesAsk(true);
-  page.open();
-  page.fill('Water over the main road near the bridge');
-  page.submit();
-  page.posts[0].resolve({ id: 64 });
-  await settle();
-  assert.equal(seen.length, 1, 'it was offered');
-  assert.deepEqual(page.toasts, ['Report posted.']);
-  assert.equal(page.queueSaves.length, 0);
-  assert.equal(page.el('form-error').textContent, '');
 });
 
 test('a post refused while its form is still open shows the message in the form', async () => {

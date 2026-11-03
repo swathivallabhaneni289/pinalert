@@ -42,6 +42,15 @@ func newReliableScene(t *testing.T) *reliableScene {
 	r.cur = r.base.Add(10 * time.Minute)
 	s.report = r.report(session, SeverityLow, r.base.Add(5*time.Minute), "clear")
 	r.eval(s.report, 0)
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+	// D3): the dispatcher no longer queues a Reliable note, so the rows are
+	// queued by the query that is kept for them, the way a row queued before this
+	// change sits in the outbox. The dispatcher still wrote the bell rows.
+	if _, err := r.q.EnqueueReliableFromUpdates(context.Background(), sqlcgen.EnqueueReliableFromUpdatesParams{
+		ExpiresAt: r.cur.Add(PushOtherTTL), Now: r.cur, ReportID: s.report,
+	}); err != nil {
+		t.Fatalf("seeding the reliable rows: %v", err)
+	}
 	for name, id := range map[string]int64{"muter": s.muter, "blocker": s.blocker, "blocked": s.blocked, "control": s.control} {
 		if !outboxKindsEqual(r.outbox(s.report)[id], "reliable") {
 			t.Fatalf("%s: outbox = %v, want a queued reliable row (the fixture must alert)", name, r.outbox(s.report)[id])
@@ -60,6 +69,10 @@ func (s *reliableScene) sweep(t *testing.T, sender *pwSender) {
 // TestQueuedReliablePushStopsAfterMuteOrBlock (WR-S03, D-12): a Reliable
 // reporter note queued before the reader muted the reporter, or before either
 // blocked the other, is skipped as not eligible at send time.
+//
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D3):
+// a Reliable note is never sent now, so every row is skipped as not eligible,
+// with or without a mute or a block, and the control reader's row too.
 func TestQueuedReliablePushStopsAfterMuteOrBlock(t *testing.T) {
 	s := newReliableScene(t)
 	testutil.SeedMute(t, s.r.pool, s.muter, s.reporter)
@@ -68,17 +81,23 @@ func TestQueuedReliablePushStopsAfterMuteOrBlock(t *testing.T) {
 
 	sender := &pwSender{answers: map[string]pwAnswer{}}
 	s.sweep(t, sender)
-	for name, id := range map[string]int64{"muter": s.muter, "blocker": s.blocker, "blocked": s.blocked} {
+	for name, id := range map[string]int64{"muter": s.muter, "blocker": s.blocker, "blocked": s.blocked, "control": s.control} {
 		if state, skip, _ := pwOutboxRow(t, s.r, id, s.report, "reliable"); state != "skipped" || skip != "not_eligible" {
 			t.Errorf("%s: reliable row is %q (%q), want skipped as not_eligible", name, state, skip)
 		}
 	}
-	if state, skip, _ := pwOutboxRow(t, s.r, s.control, s.report, "reliable"); state != "sent" {
-		t.Errorf("control: reliable row is %q (%q), want sent", state, skip)
+	if got := len(sender.messages()); got != 0 {
+		t.Errorf("messages = %d, want 0 (a Reliable note never reaches a phone)", got)
 	}
-	if got := len(sender.messages()); got != 1 {
-		t.Errorf("messages = %d, want 1 (the control only)", got)
-	}
+}
+
+// markReliableSentBeforeTheChange marks every queued reliable row sent with the
+// words Not confirmed yet, the way a note sent before 2026-11-03 sits in the
+// outbox, so the confirmed update of a Reliable note can be queued.
+func (s *reliableScene) markReliableSentBeforeTheChange(t *testing.T) {
+	t.Helper()
+	testutil.MustExec(t, s.r.pool, `UPDATE push_outbox SET state = 'sent', sent_at = $2, sent_unconfirmed = true
+		WHERE report_id = $1 AND kind = 'reliable'`, s.report, s.r.cur)
 }
 
 // confirm adds two confirming votes from two cells and runs the dispatcher, so
@@ -98,13 +117,15 @@ func (s *reliableScene) confirm(t *testing.T) {
 // TestConfirmedUpdateOfReliablePushStopsAfterMuteOrBlock (WR-S03): hours later
 // the confirmed update of a sent Reliable note goes through the same person
 // check, so a person muted or blocked since then gets nothing.
+//
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D3):
+// the confirmed update of a Reliable note is never sent now, so every update is
+// skipped as not eligible, with or without a mute or a block. The Reliable notes
+// are marked sent by SQL, the way one sent before this change sits in the outbox.
 func TestConfirmedUpdateOfReliablePushStopsAfterMuteOrBlock(t *testing.T) {
 	s := newReliableScene(t)
 	sender := &pwSender{answers: map[string]pwAnswer{}}
-	s.sweep(t, sender)
-	if got := len(sender.messages()); got != 4 {
-		t.Fatalf("messages after the first sweep = %d, want 4", got)
-	}
+	s.markReliableSentBeforeTheChange(t)
 
 	s.confirm(t)
 	for name, id := range map[string]int64{"muter": s.muter, "blocker": s.blocker, "blocked": s.blocked, "control": s.control} {
@@ -117,16 +138,13 @@ func TestConfirmedUpdateOfReliablePushStopsAfterMuteOrBlock(t *testing.T) {
 	testutil.SeedBlock(t, s.r.pool, s.reporter, s.blocked)
 
 	s.sweep(t, sender)
-	for name, id := range map[string]int64{"muter": s.muter, "blocker": s.blocker, "blocked": s.blocked} {
+	for name, id := range map[string]int64{"muter": s.muter, "blocker": s.blocker, "blocked": s.blocked, "control": s.control} {
 		if state, skip, _ := pwOutboxRow(t, s.r, id, s.report, "confirmed_update"); state != "skipped" || skip != "not_eligible" {
 			t.Errorf("%s: confirmed update is %q (%q), want skipped as not_eligible", name, state, skip)
 		}
 	}
-	if state, skip, _ := pwOutboxRow(t, s.r, s.control, s.report, "confirmed_update"); state != "sent" {
-		t.Errorf("control: confirmed update is %q (%q), want sent", state, skip)
-	}
-	if got := len(sender.messages()); got != 5 {
-		t.Errorf("messages = %d, want 5 (four first notes and the control's update)", got)
+	if got := len(sender.messages()); got != 0 {
+		t.Errorf("messages = %d, want 0 (the confirmed update of a Reliable note never reaches a phone)", got)
 	}
 }
 
@@ -137,7 +155,7 @@ func TestConfirmedUpdateOfReliablePushStopsAfterMuteOrBlock(t *testing.T) {
 func TestConfirmedUpdateWithoutItsFirstRowIsSkipped(t *testing.T) {
 	s := newReliableScene(t)
 	sender := &pwSender{answers: map[string]pwAnswer{}}
-	s.sweep(t, sender)
+	s.markReliableSentBeforeTheChange(t)
 	s.confirm(t)
 
 	// The control keeps its first row; the muter's first row was pruned, and the

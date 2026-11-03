@@ -606,6 +606,12 @@ func TestWorkerSkipsWhenNoLongerEligible(t *testing.T) {
 		return c
 	}
 
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+	// D2 and D3): the stored Critical switch no longer decides, so a Critical row
+	// is sent whatever it says; and a Reliable row, a changed or comment row, and
+	// the confirmed update of a Reliable alert are never sent, so every case of
+	// those kinds that used to be sent is now skipped as not_eligible (the worker
+	// paths for those kinds stay behind kindSwitchOn as a defensive layer, C7).
 	cases := []tc{
 		// Critical.
 		{name: "critical, still live", kind: "critical", severity: "critical", wantVis: VisibilityLive, want: "sent"},
@@ -622,7 +628,7 @@ func TestWorkerSkipsWhenNoLongerEligible(t *testing.T) {
 			mutate: func(r *pwRig) {
 				r.claim(func(c *sqlcgen.ClaimDuePushesRow) { c.ExpiresAt = pushFactsNow })
 			}},
-		{name: "critical, the Critical switch is off now", kind: "critical", severity: "critical", wantVis: VisibilityLive, want: "not_eligible",
+		{name: "critical, the stored Critical switch is off, which no longer decides", kind: "critical", severity: "critical", wantVis: VisibilityLive, want: "sent",
 			mutate: off(func(h *sqlcgen.PushAccountHomeRow) { h.CriticalPushOn = false })},
 		{name: "critical, muted after it was queued", kind: "critical", severity: "critical", wantVis: VisibilityLive, want: "not_eligible",
 			mutate: off(func(h *sqlcgen.PushAccountHomeRow) { h.Muted = true })},
@@ -630,8 +636,8 @@ func TestWorkerSkipsWhenNoLongerEligible(t *testing.T) {
 			mutate: func(r *pwRig) { r.q.homeErr = pgx.ErrNoRows }},
 
 		// Reliable.
-		lowLive("reliable, live", "reliable", "", "sent"),
-		{name: "reliable, provisional is still active", kind: "reliable", severity: "low", wantVis: VisibilityProvisional, want: "sent"},
+		lowLive("reliable, live", "reliable", "", "not_eligible"),
+		{name: "reliable, provisional is still active", kind: "reliable", severity: "low", wantVis: VisibilityProvisional, want: "not_eligible"},
 		{name: "reliable, disputed since", kind: "reliable", severity: "low", votes: pwDispute(3), wantVis: VisibilityHidden, want: "not_eligible"},
 		{name: "reliable, retracted since", kind: "reliable", severity: "low", votes: pwReporterResolved(), wantVis: VisibilityRetracted, want: "not_eligible"},
 		{name: "reliable, the Reliable switch is off now", kind: "reliable", severity: "low", votes: pwConfirm(2), wantVis: VisibilityLive, want: "not_eligible",
@@ -643,11 +649,11 @@ func TestWorkerSkipsWhenNoLongerEligible(t *testing.T) {
 		{name: "confirmed update, still confirmed", kind: "confirmed_update", severity: "critical", votes: pwConfirm(2), wantVis: VisibilityLive, first: pwStr("critical"), want: "sent"},
 		{name: "confirmed update, not confirmed any more", kind: "confirmed_update", severity: "critical", votes: pwConfirm(1), wantVis: VisibilityLive, first: pwStr("critical"), want: "not_eligible"},
 		{name: "confirmed update, disputed by most", kind: "confirmed_update", severity: "critical", votes: append(pwConfirm(2), pwDispute(3)...), wantVis: VisibilityLive, first: pwStr("critical"), want: "not_eligible"},
-		{name: "confirmed update of a critical alert, Critical off now", kind: "confirmed_update", severity: "critical", votes: pwConfirm(2), wantVis: VisibilityLive, first: pwStr("critical"), want: "not_eligible",
+		{name: "confirmed update of a critical alert, stored Critical off, which no longer decides", kind: "confirmed_update", severity: "critical", votes: pwConfirm(2), wantVis: VisibilityLive, first: pwStr("critical"), want: "sent",
 			mutate: off(func(h *sqlcgen.PushAccountHomeRow) { h.CriticalPushOn = false; h.ReliableAlertsOn = true })},
 		{name: "confirmed update of a reliable alert, Reliable off now", kind: "confirmed_update", severity: "critical", votes: pwConfirm(2), wantVis: VisibilityLive, first: pwStr("reliable"), want: "not_eligible",
 			mutate: off(func(h *sqlcgen.PushAccountHomeRow) { h.CriticalPushOn = true; h.ReliableAlertsOn = false })},
-		{name: "confirmed update of a reliable alert, Reliable on and Critical off", kind: "confirmed_update", severity: "critical", votes: pwConfirm(2), wantVis: VisibilityLive, first: pwStr("reliable"), want: "sent",
+		{name: "confirmed update of a reliable alert, Reliable on and Critical off", kind: "confirmed_update", severity: "critical", votes: pwConfirm(2), wantVis: VisibilityLive, first: pwStr("reliable"), want: "not_eligible",
 			mutate: off(func(h *sqlcgen.PushAccountHomeRow) { h.CriticalPushOn = false; h.ReliableAlertsOn = true })},
 		{name: "confirmed update, first row pruned, serious report is skipped (K3, 2026-10-30: no re-basing)", kind: "confirmed_update", severity: "critical", votes: pwConfirm(2), wantVis: VisibilityLive, want: "not_eligible",
 			mutate: off(func(h *sqlcgen.PushAccountHomeRow) { h.CriticalPushOn = false; h.ReliableAlertsOn = true })},
@@ -658,8 +664,8 @@ func TestWorkerSkipsWhenNoLongerEligible(t *testing.T) {
 		{name: "confirmed update, removed since", kind: "confirmed_update", severity: "critical", moderate: "removed", votes: pwConfirm(2), wantVis: VisibilityWithheld, first: pwStr("critical"), want: "not_eligible"},
 
 		// Changed rows follow their event (W4).
-		lowLive("reached_live, still live", "changed", "reached_live", "sent"),
-		{name: "reached_live, critical report still confirmed", kind: "changed", event: "reached_live", severity: "critical", votes: pwConfirm(2), wantVis: VisibilityLive, want: "sent"},
+		lowLive("reached_live, still live", "changed", "reached_live", "not_eligible"),
+		{name: "reached_live, critical report still confirmed", kind: "changed", event: "reached_live", severity: "critical", votes: pwConfirm(2), wantVis: VisibilityLive, want: "not_eligible"},
 		{name: "reached_live, critical report disputed by most since (still Live, no longer confirmed)", kind: "changed", event: "reached_live", severity: "critical", votes: append(pwConfirm(2), pwDispute(3)...), wantVis: VisibilityLive, want: "not_eligible"},
 		{name: "reached_live, critical report with no confirmations", kind: "changed", event: "reached_live", severity: "critical", wantVis: VisibilityLive, want: "not_eligible"},
 		{name: "reached_live, hidden since", kind: "changed", event: "reached_live", severity: "low", votes: pwDispute(3), wantVis: VisibilityHidden, want: "not_eligible"},
@@ -669,10 +675,10 @@ func TestWorkerSkipsWhenNoLongerEligible(t *testing.T) {
 		// phone only for a report people had confirmed before. The vote history
 		// the fake answers is the votes in the order given.
 		{name: "hidden, never confirmed", kind: "changed", event: "hidden", severity: "low", votes: pwDispute(3), wantVis: VisibilityHidden, want: "not_eligible"},
-		{name: "hidden, confirmed before and disputed now", kind: "changed", event: "hidden", severity: "low", votes: append(pwConfirm(2), pwDispute(3)...), wantVis: VisibilityHidden, want: "sent"},
+		{name: "hidden, confirmed before and disputed now", kind: "changed", event: "hidden", severity: "low", votes: append(pwConfirm(2), pwDispute(3)...), wantVis: VisibilityHidden, want: "not_eligible"},
 		{name: "hidden, live again", kind: "changed", event: "hidden", severity: "low", votes: pwConfirm(2), wantVis: VisibilityLive, want: "not_eligible"},
 		{name: "hidden, retracted since", kind: "changed", event: "hidden", severity: "low", votes: append(pwDispute(3), pwReporterResolved()...), wantVis: VisibilityRetracted, want: "not_eligible"},
-		{name: "resolved, still retracted", kind: "changed", event: "resolved", severity: "low", votes: pwReporterResolved(), wantVis: VisibilityRetracted, want: "sent"},
+		{name: "resolved, still retracted", kind: "changed", event: "resolved", severity: "low", votes: pwReporterResolved(), wantVis: VisibilityRetracted, want: "not_eligible"},
 		{name: "resolved, reopened", kind: "changed", event: "resolved", severity: "low", votes: pwConfirm(2), wantVis: VisibilityLive, want: "not_eligible"},
 		// 2026-10-25 (review S-01, D-07): a fading note follows MayNotifyAboutReport
 		// like every non Reliable kind, so it needs a Live report. A Provisional
@@ -686,7 +692,7 @@ func TestWorkerSkipsWhenNoLongerEligible(t *testing.T) {
 		// each is skipped for its own visibility reason and not by the time check
 		// alone. With the default facts (5 hours out) they passed even with the
 		// Live requirement for fading notes removed.
-		withFades(lowLive("fading, live", "changed", "fading", "sent"), fadesSoon),
+		withFades(lowLive("fading, live", "changed", "fading", "not_eligible"), fadesSoon),
 		lowLive("fading, confirmed again since", "changed", "fading", "not_eligible"),
 		{name: "fading, still active but provisional", kind: "changed", event: "fading", severity: "low", wantVis: VisibilityProvisional, want: "not_eligible", mutate: fadesSoon},
 		{name: "fading, hidden since", kind: "changed", event: "fading", severity: "low", votes: pwDispute(3), wantVis: VisibilityHidden, want: "not_eligible", mutate: fadesSoon},
@@ -700,10 +706,10 @@ func TestWorkerSkipsWhenNoLongerEligible(t *testing.T) {
 		// 2026-10-29 (review IN-S05): a comment note goes out only while a clear
 		// comment it could be about is still there. One removed or deleted after
 		// the row was queued, with no other unread one, sends nothing to a phone.
-		lowLive("comment_on_yours, comment still shown", "changed", "comment_on_yours", "sent"),
+		lowLive("comment_on_yours, comment still shown", "changed", "comment_on_yours", "not_eligible"),
 		{name: "comment_on_yours, comment removed or deleted since", kind: "changed", event: "comment_on_yours", severity: "low", votes: pwConfirm(2), wantVis: VisibilityLive, want: "not_eligible",
 			mutate: func(r *pwRig) { r.q.commentGone = true }},
-		lowLive("reply_to_yours, reply still shown", "changed", "reply_to_yours", "sent"),
+		lowLive("reply_to_yours, reply still shown", "changed", "reply_to_yours", "not_eligible"),
 		{name: "reply_to_yours, reply removed or deleted since", kind: "changed", event: "reply_to_yours", severity: "low", votes: pwConfirm(2), wantVis: VisibilityLive, want: "not_eligible",
 			mutate: func(r *pwRig) { r.q.commentGone = true }},
 		{name: "changed, update row of another kind", kind: "changed", event: "reliable_nearby", severity: "low", wantVis: VisibilityProvisional, want: "not_eligible"},
@@ -921,6 +927,12 @@ func TestWorkerBuildsWordsAtSendTime(t *testing.T) {
 		title     string
 		body      string
 		unconf    bool
+		// skip marks a row of a kind that never reaches a phone any more. Amended
+		// 2026-11-03 by quick 261103-jal (owner, two row notifications box, D3): a
+		// Reliable row, a changed row and the confirmed update of a Reliable alert
+		// are skipped as not_eligible, and their words stay pinned by the
+		// BuildPushText tests in pushcopy_test.go.
+		skip bool
 	}
 	cases := []tc{
 		{name: "critical, not confirmed yet", kind: "critical", severity: "critical", happening: pwStr("fire"), area: "Central Market",
@@ -931,22 +943,22 @@ func TestWorkerBuildsWordsAtSendTime(t *testing.T) {
 			title: "Fire", body: "2 km from your home area. Not confirmed yet.", unconf: true},
 		{name: "critical with no pick uses the category", kind: "critical", severity: "critical", area: "Central Market",
 			title: "Flood, Critical near Central Market", body: "2 km from your home area. Not confirmed yet.", unconf: true},
-		{name: "reliable, not confirmed yet", kind: "reliable", severity: "low", area: "Central Market",
+		{name: "reliable, not confirmed yet", skip: true, kind: "reliable", severity: "low", area: "Central Market",
 			title: "Flood near Central Market", body: "From a Reliable reporter. 2 km from your home area. Not confirmed yet.", unconf: true},
-		{name: "confirmed update of a low report uses the Reliable title", kind: "confirmed_update", first: pwStr("reliable"), severity: "low", votes: pwConfirm(2), area: "Central Market",
+		{name: "confirmed update of a low report uses the Reliable title", skip: true, kind: "confirmed_update", first: pwStr("reliable"), severity: "low", votes: pwConfirm(2), area: "Central Market",
 			title: "Flood near Central Market", body: "Confirmed by people nearby. 2 km from your home area."},
 		{name: "confirmed update of a critical alert keeps the Critical title", kind: "confirmed_update", first: pwStr("critical"), severity: "critical", votes: pwConfirm(2), happening: pwStr("fire"), area: "Central Market",
 			title: "Fire near Central Market", body: "Confirmed by people nearby. 2 km from your home area."},
-		{name: "confirmed update of a Reliable alert about a serious report keeps the Reliable title", kind: "confirmed_update", first: pwStr("reliable"), severity: "critical", votes: pwConfirm(2), happening: pwStr("fire"), area: "Central Market",
+		{name: "confirmed update of a Reliable alert about a serious report keeps the Reliable title", skip: true, kind: "confirmed_update", first: pwStr("reliable"), severity: "critical", votes: pwConfirm(2), happening: pwStr("fire"), area: "Central Market",
 			home:  func(h *sqlcgen.PushAccountHomeRow) { h.CriticalPushOn = false; h.ReliableAlertsOn = true },
 			title: "Flood near Central Market", body: "Confirmed by people nearby. 2 km from your home area."},
 		{name: "confirmed update of a Critical alert about a serious report (2026-10-30: first row named, no fallback)", kind: "confirmed_update", first: pwStr("critical"), severity: "critical", votes: pwConfirm(2), happening: pwStr("fire"), area: "Central Market",
 			title: "Fire near Central Market", body: "Confirmed by people nearby. 2 km from your home area."},
-		{name: "changed, someone else's report", kind: "changed", severity: "low", votes: pwConfirm(2), area: "Central Market",
+		{name: "changed, someone else's report", skip: true, kind: "changed", severity: "low", votes: pwConfirm(2), area: "Central Market",
 			title: "A report you voted on is now confirmed", body: "Flood, Low. Central Market, 2 km from your home area."},
-		{name: "changed, my own report", kind: "changed", severity: "low", votes: pwConfirm(2), area: "Central Market", own: true,
+		{name: "changed, my own report", skip: true, kind: "changed", severity: "low", votes: pwConfirm(2), area: "Central Market", own: true,
 			title: "Your report is now confirmed", body: "Flood, Low. Central Market, 2 km from your home area."},
-		{name: "changed without a home area has no distance", kind: "changed", severity: "low", votes: pwConfirm(2), area: "Central Market",
+		{name: "changed without a home area has no distance", skip: true, kind: "changed", severity: "low", votes: pwConfirm(2), area: "Central Market",
 			home:  func(h *sqlcgen.PushAccountHomeRow) { h.HomeAreaCell = nil },
 			title: "A report you voted on is now confirmed", body: "Flood, Low. Central Market."},
 		{name: "a long area name is cut", kind: "critical", severity: "critical", happening: pwStr("fire"), area: "Mahatma Gandhi Road Metro Station Complex",
@@ -978,6 +990,10 @@ func TestWorkerBuildsWordsAtSendTime(t *testing.T) {
 			})
 			if err := r.sweep(); err != nil {
 				t.Fatalf("SweepOnce: %v", err)
+			}
+			if c.skip {
+				r.wantSkipped("not_eligible")
+				return
 			}
 			msgs := r.s.messages()
 			if len(msgs) != 1 {
@@ -1028,15 +1044,19 @@ func TestWorkerMessageOptions(t *testing.T) {
 		urgency push.Urgency
 		ttl     time.Duration
 		stale   bool
+		// skip: Amended 2026-11-03 by quick 261103-jal (owner, two row
+		// notifications box, D3). A Reliable row and a changed row are never
+		// sent, so these cases now pin the skip.
+		skip bool
 	}
 	cases := []tc{
 		{name: "critical, long life", kind: "critical", sev: "critical", expires: 5 * time.Hour, urgency: push.UrgencyHigh, ttl: PushCriticalTTLMax},
 		{name: "critical, 20 minutes left", kind: "critical", sev: "critical", expires: 20 * time.Minute, urgency: push.UrgencyHigh, ttl: 20 * time.Minute},
 		{name: "critical, 45 seconds left", kind: "critical", sev: "critical", expires: 45 * time.Second, urgency: push.UrgencyHigh, ttl: 45 * time.Second},
 		{name: "critical, under a second left is stale", kind: "critical", sev: "critical", expires: 900 * time.Millisecond, stale: true},
-		{name: "reliable, long life", kind: "reliable", sev: "low", expires: 5 * time.Hour, urgency: push.UrgencyNormal, ttl: PushOtherTTL},
-		{name: "reliable, 10 minutes left", kind: "reliable", sev: "low", expires: 10 * time.Minute, urgency: push.UrgencyNormal, ttl: 10 * time.Minute},
-		{name: "changed", kind: "changed", sev: "low", votes: pwConfirm(2), expires: 5 * time.Hour, urgency: push.UrgencyNormal, ttl: PushOtherTTL},
+		{name: "reliable, long life", skip: true, kind: "reliable", sev: "low", expires: 5 * time.Hour, urgency: push.UrgencyNormal, ttl: PushOtherTTL},
+		{name: "reliable, 10 minutes left", skip: true, kind: "reliable", sev: "low", expires: 10 * time.Minute, urgency: push.UrgencyNormal, ttl: 10 * time.Minute},
+		{name: "changed", skip: true, kind: "changed", sev: "low", votes: pwConfirm(2), expires: 5 * time.Hour, urgency: push.UrgencyNormal, ttl: PushOtherTTL},
 		{name: "confirmed update of a critical alert is normal", kind: "confirmed_update", sev: "critical", votes: pwConfirm(2), first: pwStr("critical"), expires: 5 * time.Hour, urgency: push.UrgencyNormal, ttl: PushOtherTTL},
 	}
 	for _, c := range cases {
@@ -1057,6 +1077,10 @@ func TestWorkerMessageOptions(t *testing.T) {
 			}
 			if c.stale {
 				r.wantSkipped("stale")
+				return
+			}
+			if c.skip {
+				r.wantSkipped("not_eligible")
 				return
 			}
 			msgs := r.s.messages()
@@ -1177,40 +1201,14 @@ func TestWorkerCapPerAccountHour(t *testing.T) {
 			}
 		})
 	}
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+	// D3, D9): a reliable row and a changed row never reach a phone, so they are
+	// skipped as not_eligible before the hourly cap is read, whatever the count.
+	// The hold itself (a follow row over the cap is held, Critical is counted and
+	// never held) is pinned on a real database by TestWorkerCriticalNeverHeldButCounted
+	// with follow rows, and the per kind answer by TestHeldByHourlyCap.
 	for _, kind := range []string{"reliable", "changed"} {
-		t.Run(kind+" over the cap is skipped and nothing else is queued", func(t *testing.T) {
-			r := newPWRig(t)
-			r.q.claimRows = []sqlcgen.ClaimDuePushesRow{pwClaim(1, kind)}
-			r.q.home.ReliableAlertsOn = true
-			r.q.home.ChangesPushOn = true
-			r.q.count = PushPerAccountPerHour
-			if kind == "changed" {
-				r.q.claimRows[0].UpdateKind = pwStr("fading")
-				r.q.votes = pwConfirm(2) // a fading note needs a Live report (S-01)
-			}
-			r.report(func(row *sqlcgen.PushReportFactsRow) {
-				if kind != "critical" {
-					row.Severity = "low"
-					row.Happening = nil
-					// Amended 2026-10-30 by quick task 261030-64q (backlog 999.12): a
-					// fading note is sent only while the report still fades within
-					// the hour, so the fixture's report fades in 30 minutes.
-					row.ExpiresAt = pushFactsNow.Add(30 * time.Minute)
-				}
-			})
-			if err := r.sweep(); err != nil {
-				t.Fatal(err)
-			}
-			r.wantSkipped("cap_account_hour")
-			if len(r.q.countParams) != 1 {
-				t.Fatalf("count reads = %d", len(r.q.countParams))
-			}
-			p := r.q.countParams[0]
-			if p.AccountID != pwAccountID || !p.Since.Equal(pushFactsNow.Add(-time.Hour)) {
-				t.Errorf("count params = %+v, want the account and a rolling hour", p)
-			}
-		})
-		t.Run(kind+" under the cap is sent", func(t *testing.T) {
+		t.Run(kind+" is skipped as not_eligible before the cap is read", func(t *testing.T) {
 			r := newPWRig(t)
 			r.q.claimRows = []sqlcgen.ClaimDuePushesRow{pwClaim(1, kind)}
 			r.q.home.ReliableAlertsOn = true
@@ -1218,23 +1216,19 @@ func TestWorkerCapPerAccountHour(t *testing.T) {
 			r.q.count = PushPerAccountPerHour - 1
 			if kind == "changed" {
 				r.q.claimRows[0].UpdateKind = pwStr("fading")
-				r.q.votes = pwConfirm(2) // a fading note needs a Live report (S-01)
+				r.q.votes = pwConfirm(2)
 			}
 			r.report(func(row *sqlcgen.PushReportFactsRow) {
-				if kind != "critical" {
-					row.Severity = "low"
-					row.Happening = nil
-					// Amended 2026-10-30 by quick task 261030-64q (backlog 999.12): a
-					// fading note is sent only while the report still fades within
-					// the hour, so the fixture's report fades in 30 minutes.
-					row.ExpiresAt = pushFactsNow.Add(30 * time.Minute)
-				}
+				row.Severity = "low"
+				row.Happening = nil
+				row.ExpiresAt = pushFactsNow.Add(30 * time.Minute)
 			})
 			if err := r.sweep(); err != nil {
 				t.Fatal(err)
 			}
-			if m := r.onlyMark(); m.kind != "sent" {
-				t.Fatalf("mark = %+v", m)
+			r.wantSkipped("not_eligible")
+			if n := r.q.callCount("CountAccountPushesInWindow"); n != 0 {
+				t.Errorf("the cap was read %d times for a row that never reaches a phone", n)
 			}
 		})
 	}
@@ -1305,21 +1299,13 @@ func TestDeviceSkipsRepeatPush(t *testing.T) {
 }
 
 func TestWorkerAppleFirstPushOnly(t *testing.T) {
-	// setup builds a changed row about a Live report with an Apple and a Google
+	// setup builds a Critical row about a Live report with an Apple and a Google
 	// device by default; sentAbout is what AccountPushSentAboutReport answers.
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+	// D3, D9): the vehicle was a changed row, which never reaches a phone now; the
+	// Apple first note rule is the same for any row that reaches the device step.
 	setup := func(t *testing.T, sentAbout bool, devices ...sqlcgen.PushSubscriptionsForAccountRow) *pwRig {
 		r := newPWRig(t)
-		r.q.claimRows = []sqlcgen.ClaimDuePushesRow{pwClaim(1, "changed")}
-		r.q.claimRows[0].UpdateKind = pwStr("fading")
-		r.q.votes = pwConfirm(2) // a fading note needs a Live report (S-01)
-		r.q.home.ChangesPushOn = true
-		r.report(func(row *sqlcgen.PushReportFactsRow) {
-			row.Severity = "low"
-			row.Happening = nil
-			// Amended 2026-10-30 by quick task 261030-64q (backlog 999.12): the
-			// fading note is sent only while the report fades within the hour.
-			row.ExpiresAt = pushFactsNow.Add(30 * time.Minute)
-		})
 		r.q.sentAbout = sentAbout
 		r.q.subs = devices
 		return r
@@ -1412,6 +1398,8 @@ func TestWorkerNoDeviceOrNoHome(t *testing.T) {
 		}
 		r.wantSkipped("no_home_area")
 	})
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+	// D3): a reliable row is skipped as not_eligible before the home area is read.
 	t.Run("a reliable row without a home area is skipped", func(t *testing.T) {
 		r := newPWRig(t)
 		r.q.claimRows = []sqlcgen.ClaimDuePushesRow{pwClaim(1, "reliable")}
@@ -1421,7 +1409,7 @@ func TestWorkerNoDeviceOrNoHome(t *testing.T) {
 		if err := r.sweep(); err != nil {
 			t.Fatal(err)
 		}
-		r.wantSkipped("no_home_area")
+		r.wantSkipped("not_eligible")
 	})
 	t.Run("a home area now beyond the account's radius is out of range", func(t *testing.T) {
 		r := newPWRig(t)

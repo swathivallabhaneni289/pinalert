@@ -482,8 +482,11 @@ func TestOfficialWorkerRechecksAtSendTime(t *testing.T) {
 			r.q.feed = sqlcgen.OfficialFeedStatus{}
 			r.q.feedErr = pgx.ErrNoRows
 		}, "feed_not_fresh"},
-		{"the switch is off", func(r *owRig) { r.q.setting = false }, "switched_off"},
-		{"the account is gone", func(r *owRig) { r.q.settingErr = pgx.ErrNoRows }, "not_eligible"},
+		// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+		// D2): the stored official switch is no longer read, so "the switch is off"
+		// moved to its own subtest below that expects the row sent, and a gone
+		// account is now found by the home area read.
+		{"the account is gone", func(r *owRig) { r.q.homeErr = pgx.ErrNoRows }, "not_eligible"},
 		{"no home area", func(r *owRig) { r.q.home = nil }, "no_home_area"},
 		{"an empty home area", func(r *owRig) { empty := ""; r.q.home = &empty }, "no_home_area"},
 		{"the home is no longer in the alert's districts", func(r *owRig) {
@@ -507,6 +510,20 @@ func TestOfficialWorkerRechecksAtSendTime(t *testing.T) {
 			r.wantSkipped(tc.reason)
 		})
 	}
+
+	t.Run("a stored switch that says off no longer stops the push", func(t *testing.T) {
+		r := newOWRig(t)
+		r.q.setting = false
+		if err := r.sweep(); err != nil {
+			t.Fatalf("SweepOnce: %v", err)
+		}
+		if m := r.onlyMark(); m.kind != "sent" {
+			t.Errorf("mark = %+v, want sent: the device switch is the only way to stop it", m)
+		}
+		if n := r.q.callCount("GetOfficialPushSetting"); n != 0 {
+			t.Errorf("the stored switch was read %d times, want none", n)
+		}
+	})
 
 	t.Run("a feed that is fresh covers an alert not seen for an hour", func(t *testing.T) {
 		r := newOWRig(t)

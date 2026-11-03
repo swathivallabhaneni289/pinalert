@@ -124,6 +124,8 @@ RETURNING failures, last_ok_at;
 -- The Critical and Changes switches (decision 12). An account with no settings
 -- row reads Critical as on and Changes as off: the same value as the Go
 -- constant DefaultCriticalPushOn. Always returns a row for an existing account.
+-- Owner decision 2026-11-03, quick 261103-jal: the columns are kept and no
+-- longer decide delivery; production code does not call this any more.
 SELECT COALESCE(s.critical_push_on, true)::bool AS critical_push_on,
        COALESCE(s.changes_push_on, false)::bool AS changes_push_on,
        s.changes_enabled_at
@@ -164,7 +166,9 @@ RETURNING critical_push_on, changes_push_on, changes_enabled_at;
 -- the row cap the nearest accounts are kept and the farthest dropped (review
 -- note N1). Selects by cell, never by a coordinate; the caller decides the
 -- distance and the rest of the rules in Go (D-20). The defaults of an account
--- with no settings row are 5 km, Critical on, Reliable off.
+-- with no settings row are 5 km, Critical on, Reliable off. Owner decision
+-- 2026-11-03, quick 261103-jal: the two switch columns are kept and no longer
+-- decide delivery; the dispatcher does not read them.
 SELECT a.id AS account_id,
        COALESCE(a.home_area_cell, '')::text AS home_area_cell,
        COALESCE(s.alert_radius_km, 5)::smallint AS alert_radius_km,
@@ -190,11 +194,12 @@ WHERE a.deleted_at IS NULL
 ORDER BY array_position(sqlc.arg(cells)::text[], a.home_area_cell), a.id
 LIMIT sqlc.arg(row_cap)::int;
 
--- name: FollowersWithChangesPush :many
--- Who may hear a change about a report (PWA-06): the accounts that posted it
--- (through any of their sessions) or have any vote row on it, with Changes
--- switched on in an explicit settings row (the default is off), not deleted,
--- not muted, with a live subscription.
+-- name: FollowersForBellRefresh :many
+-- Whose bell the dispatcher refreshes early after a vote on a report: the
+-- accounts that posted it (through any of their sessions) or have any vote row
+-- on it, not deleted, not muted, with a live device. No stored switch is read
+-- (owner decision 2026-11-03, quick 261103-jal): no phone note follows, and the
+-- bell poll (GET /api/updates) stays the producer for everyone else.
 -- Phase 8 plan 15 (D-16, PAGE-02): a third arm, the accounts that commented on
 -- the report. Only a clear, undeleted comment counts, so a refused, removed,
 -- deleted or held comment never makes its author a push follower (review W8).
@@ -221,7 +226,6 @@ WITH people AS (
 SELECT a.id AS account_id
 FROM people pe
 JOIN accounts a ON a.id = pe.account_id
-JOIN account_alert_settings st ON st.account_id = a.id AND st.changes_push_on
 WHERE a.deleted_at IS NULL
   AND NOT EXISTS (
       SELECT 1
@@ -238,14 +242,15 @@ WHERE a.deleted_at IS NULL
   )
 ORDER BY a.id;
 
--- name: AccountsWithChangesPush :many
--- Every account that wants change pushes and has a live subscription, for the
--- sweep that turns 3.2 updates rows into outbox rows. Bounded by row_cap and
--- served from after_id on, so the caller can rotate through every account a
--- page at a time instead of always taking the same first row_cap (review S-04).
+-- name: AccountsForBellRefresh :many
+-- Every account with a live device, for the sweep that refreshes bells early.
+-- No stored switch is read and no phone note follows (owner decision
+-- 2026-11-03, quick 261103-jal); the bell poll (GET /api/updates) stays the
+-- producer for everyone else. Bounded by row_cap and served from after_id on,
+-- so the caller can rotate through every account a page at a time instead of
+-- always taking the same first row_cap (review S-04).
 SELECT a.id AS account_id
 FROM accounts a
-JOIN account_alert_settings st ON st.account_id = a.id AND st.changes_push_on
 WHERE a.deleted_at IS NULL
   AND EXISTS (
       SELECT 1
@@ -393,7 +398,9 @@ RETURNING id;
 -- One 3.2 row, two channels: for every reliable_nearby updates row of the
 -- report whose account has a live subscription, queue a reliable push. The 3.2
 -- rule wrote the row; push only follows it. A critical row already queued for
--- the pair wins through the shared unique index.
+-- the pair wins through the shared unique index. Owner decision 2026-11-03,
+-- quick 261103-jal: not called since this change (Reliable notes no longer
+-- reach a phone); kept with its store tests (C6).
 INSERT INTO push_outbox (account_id, report_id, kind, expires_at, created_at, next_attempt_at)
 SELECT u.account_id, u.report_id, 'reliable',
        sqlc.arg(expires_at)::timestamptz,
@@ -481,7 +488,9 @@ WHERE o.kind = 'follow'
 -- when the account already has a critical, reliable or follow row for that
 -- report: the in place confirmed update carries that news, so the person never
 -- gets both
--- (UI-SPEC 3c). expires_at comes from the report. Once per update row.
+-- (UI-SPEC 3c). expires_at comes from the report. Once per update row. Owner
+-- decision 2026-11-03, quick 261103-jal: not called since this change (change
+-- and comment notes no longer reach a phone); kept with its store tests (C6).
 INSERT INTO push_outbox (account_id, report_id, kind, update_id, expires_at, created_at, next_attempt_at)
 SELECT u.account_id, u.report_id, 'changed', u.id, r.expires_at,
        sqlc.arg(now)::timestamptz,
@@ -743,7 +752,9 @@ WHERE account_id = sqlc.arg(account_id)::bigint;
 -- after a row was queued stops it, confirmed updates included (review W5,
 -- T-03.3-09): the home cell, the distance and the three switches of the
 -- account, and whether the account muted this report. Defaults of an account
--- with no settings row: 5 km, Critical on, Changes off, Reliable off.
+-- with no settings row: 5 km, Critical on, Changes off, Reliable off. Owner
+-- decision 2026-11-03, quick 261103-jal: the switch columns are kept and the
+-- worker no longer reads them; only the mute and the kind decide.
 SELECT a.home_area_cell,
        COALESCE(s.alert_radius_km, 5)::smallint AS alert_radius_km,
        COALESCE(s.critical_push_on, true)::bool AS critical_push_on,

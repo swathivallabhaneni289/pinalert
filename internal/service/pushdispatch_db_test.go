@@ -267,7 +267,10 @@ func TestPushRecipients(t *testing.T) {
 		if radius == 0 {
 			radius = DefaultAlertRadiusKm
 		}
-		critical := rd.name != "here-off"
+		// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications
+		// box): the stored Critical switch of here-off no longer decides, so it is
+		// queued like the others.
+		critical := true
 		want := critical && r.distKm(r.cell(rd.cell)) <= float64(radius)
 		has := outboxKindsEqual(got[rd.id], "critical")
 		if want {
@@ -357,7 +360,11 @@ func TestPushReliable(t *testing.T) {
 
 	const reporterSession = "p33-09-reliable-reporter"
 	reporter := testutil.SeedReliableReporter(t, r.pool, r.email("reliable"), reporterSession, r.base)
-	// R1: Critical off, Reliable on. R2: both on. R3: Reliable off.
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box):
+	// a Reliable reporter note never reaches a phone, whatever the stored flags
+	// say. The dispatcher only refreshes the bell, so every subscribed reader in
+	// range holds the reliable_nearby bell row and no reader holds a reliable
+	// phone row. R1: Critical off, Reliable on. R2: both on. R3: Reliable off.
 	r1, _ := r.reader("r1", 0, 5, false, true, false)
 	r2, _ := r.reader("r2", 0, 5, true, true, false)
 	r3, _ := r.reader("r3", 0, 5, true, false, false)
@@ -368,36 +375,32 @@ func TestPushReliable(t *testing.T) {
 	r.eval(low, 0)
 
 	got := r.outbox(low)
-	if !outboxKindsEqual(got[r1], "reliable") {
-		t.Fatalf("R1 holds %v, want one reliable row", got[r1])
-	}
-	if len(got[r3]) != 0 {
-		t.Errorf("R3 (Reliable off) holds %v", got[r3])
-	}
-	// The row is tied to 3.2's own reliable_nearby row: one row, two channels.
-	if n := r.count(`SELECT COUNT(*) FROM updates WHERE account_id = $1 AND report_id = $2 AND kind = 'reliable_nearby'`, r1, low); n != 1 {
-		t.Errorf("3.2 reliable_nearby rows for R1 = %d, want 1", n)
-	}
-	// R2 has Critical on and the report is not Critical: it is a Reliable report
-	// for R2 too.
-	if !outboxKindsEqual(got[r2], "reliable") {
-		t.Errorf("R2 holds %v, want one reliable row", got[r2])
+	for name, id := range map[string]int64{"R1": r1, "R2": r2, "R3": r3} {
+		if len(got[id]) != 0 {
+			t.Errorf("%s holds %v, want no phone row for a Reliable report", name, got[id])
+		}
+		// The early refresh wrote 3.2's own reliable_nearby row for every reader.
+		if n := r.count(`SELECT COUNT(*) FROM updates WHERE account_id = $1 AND report_id = $2 AND kind = 'reliable_nearby'`, id, low); n != 1 {
+			t.Errorf("3.2 reliable_nearby rows for %s = %d, want 1", name, n)
+		}
 	}
 
 	// A second evaluation (sweep or poke) adds nothing.
 	r.eval(low, 0)
 	r.eval(low, 77)
-	if n := len(r.outbox(low)[r1]); n != 1 {
-		t.Errorf("R1 holds %d rows after repeat evaluations, want 1", n)
+	if n := len(r.outbox(low)[r1]); n != 0 {
+		t.Errorf("R1 holds %d rows after repeat evaluations, want 0", n)
+	}
+	if n := r.count(`SELECT COUNT(*) FROM updates WHERE account_id = $1 AND report_id = $2 AND kind = 'reliable_nearby'`, r1, low); n != 1 {
+		t.Errorf("3.2 reliable_nearby rows for R1 after repeats = %d, want 1", n)
 	}
 	if _, rel := r.progress(low); rel != "fanned" {
 		t.Errorf("reliable_state = %q, want fanned", rel)
 	}
 
-	// A Critical report by the Reliable reporter goes out as Critical to an
-	// account with Critical on, and the Reliable rule serves the account with
-	// Critical off. R2 gets no reliable row even after its own bell poll wrote
-	// the 3.2 note.
+	// A Critical report by the Reliable reporter goes out as Critical to all
+	// three readers, R1 (stored Critical off) included, and no reliable row is
+	// queued even after R2's own bell poll wrote the 3.2 note.
 	r.cur = r.base.Add(20 * time.Minute)
 	critical := r.report(reporterSession, SeverityCritical, r.base.Add(15*time.Minute), "clear")
 	r.eval(critical, 0)
@@ -406,11 +409,10 @@ func TestPushReliable(t *testing.T) {
 	}
 	r.eval(critical, 41)
 	got = r.outbox(critical)
-	if !outboxKindsEqual(got[r2], "critical") {
-		t.Errorf("R2 holds %v for a Critical report, want exactly one critical row and no reliable row", got[r2])
-	}
-	if len(got[r3]) != 1 || got[r3][0] != "critical" {
-		t.Errorf("R3 holds %v, want one critical row", got[r3])
+	for name, id := range map[string]int64{"R1": r1, "R2": r2, "R3": r3} {
+		if !outboxKindsEqual(got[id], "critical") {
+			t.Errorf("%s holds %v for a Critical report, want exactly one critical row and no reliable row", name, got[id])
+		}
 	}
 }
 
@@ -466,8 +468,14 @@ func TestPushChangedRaceWithBell(t *testing.T) {
 		}
 		r.eval(report, voter)
 		r.eval(report, voter)
-		if n := changedFor(report, follower); n != 1 {
-			t.Errorf("changed rows for the follower = %d, want 1", n)
+		// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications
+		// box): change notes stay in the bell, so no phone row is ever queued and
+		// the bell row stays.
+		if n := changedFor(report, follower); n != 0 {
+			t.Errorf("changed rows for the follower = %d, want 0", n)
+		}
+		if reachedLive(report, follower) != 1 {
+			t.Errorf("the bell holds %d reached_live rows after the dispatcher ran, want 1", reachedLive(report, follower))
 		}
 		if n := changedFor(report, voter); n != 0 {
 			t.Errorf("the voter got %d change pushes for their own vote", n)
@@ -484,8 +492,11 @@ func TestPushChangedRaceWithBell(t *testing.T) {
 			t.Fatalf("bell refresh: %v", err)
 		}
 		r.eval(report, voter)
-		if n := changedFor(report, follower); n != 1 {
-			t.Errorf("changed rows for the follower = %d, want 1", n)
+		if n := changedFor(report, follower); n != 0 {
+			t.Errorf("changed rows for the follower = %d, want 0", n)
+		}
+		if reachedLive(report, follower) != 1 {
+			t.Errorf("the bell holds %d reached_live rows after both ran, want 1", reachedLive(report, follower))
 		}
 		if n := changedFor(report, voter); n != 0 {
 			t.Errorf("the voter got %d change pushes for their own vote", n)

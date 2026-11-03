@@ -243,10 +243,6 @@
 
   {{template "app_bottombar" .}}
 
-  {{/* Phase 3.3 plan 21: the first post or vote pop-up, a direct child of body, drawn only while this account's Changes switch is off. Its script comes with it and only with it (03.3-REVIEW fix WR-03). */}}
-  {{if .ChangesAsk}}{{template "changes_ask"}}
-  <script src="/static/js/changes-ask.js?v={{.AssetVersion}}" defer></script>{{end}}
-
   {{/* Phase 7.1 plan 13c (D-17): the alerts ask inside the installed iPhone or iPad app, drawn only when the server has a push key and the account has a home area. installed-ask.js opens it once per device and account, and only there. */}}
   {{if and .PushPublicKey .HomeAreaName}}{{template "installed_alerts_ask" .}}
   <script src="/static/js/installed-ask.js?v={{.AssetVersion}}" defer></script>{{end}}

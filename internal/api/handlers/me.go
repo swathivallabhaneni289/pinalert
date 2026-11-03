@@ -211,52 +211,47 @@ func UpdateProfile(svc *service.AccountService, gate *AuthGate) http.HandlerFunc
 	}
 }
 
-// AlertSettingsRequest is the body of PATCH /me/alerts. Each key is optional: a
-// key left out keeps what is stored, and at least one must be sent.
+// AlertSettingsRequest is the body of PATCH /me/alerts. The one key,
+// alert_radius_km, is how far from the home area alerts reach.
 //
-// Phase 3.3 (PWA-03, PWA-06) adds the two phone switches critical_push and
-// changes_push next to 3.2's two keys.
+// Owner decision 2026-11-03, quick 261103-jal (D7): the four boolean keys of
+// earlier versions, reliable_alerts, critical_push, changes_push and
+// official_push, are no longer documented. They stay on the struct, hidden from
+// the API reference, because the handler decodes with DisallowUnknownFields and
+// an old cached page still sends them; they are decoded and ignored.
 type AlertSettingsRequest struct {
-	ReliableAlerts *bool `json:"reliable_alerts" example:"true"`
-	AlertRadiusKm  *int  `json:"alert_radius_km" example:"5"`
-	CriticalPush   *bool `json:"critical_push" example:"true"`
-	ChangesPush    *bool `json:"changes_push" example:"false"`
-	OfficialPush   *bool `json:"official_push" example:"true"`
+	AlertRadiusKm *int `json:"alert_radius_km" example:"5"`
+
+	ReliableAlerts *bool `json:"reliable_alerts" swaggerignore:"true"`
+	CriticalPush   *bool `json:"critical_push" swaggerignore:"true"`
+	ChangesPush    *bool `json:"changes_push" swaggerignore:"true"`
+	OfficialPush   *bool `json:"official_push" swaggerignore:"true"`
+}
+
+// ignoredKeySent reports whether the body named one of the four ignored keys.
+func (req AlertSettingsRequest) ignoredKeySent() bool {
+	return req.ReliableAlerts != nil || req.CriticalPush != nil || req.ChangesPush != nil || req.OfficialPush != nil
 }
 
 // AlertSettingsResponse is the caller's alert settings as stored. It carries no
 // position and no home area cell, only whether a home area is saved.
 type AlertSettingsResponse struct {
-	ReliableAlerts bool `json:"reliable_alerts" example:"true"`
-	AlertRadiusKm  int  `json:"alert_radius_km" example:"5"`
-	HasHomeArea    bool `json:"has_home_area" example:"true"`
-	CriticalPush   bool `json:"critical_push" example:"true"`
-	ChangesPush    bool `json:"changes_push" example:"false"`
-	OfficialPush   bool `json:"official_push" example:"true"`
+	AlertRadiusKm int  `json:"alert_radius_km" example:"5"`
+	HasHomeArea   bool `json:"has_home_area" example:"true"`
 }
 
 // UpdateAlertSettings produces the handler of PATCH /me/alerts.
 //
-// @Summary Turn the Reliable reporter alert on or off and choose its distance
-// @Description Saves whether the signed in account wants an update when a Reliable reporter posts
-// @Description near its home area, and how far away that may be: 1, 2, 5 or 10 km. A key left out
-// @Description keeps what is stored. The alert is off until turned on and the distance is 5 km until
-// @Description changed. The distance is measured from the middle of the saved home area, which is a
-// @Description cell about 5 km across; no position is ever sent or stored for this. Turning the
-// @Description alert on without a home area is refused with the field reliable_alerts, and removing
-// @Description the home area turns the alert off. Only reports posted after the alert was turned on
-// @Description can raise it.
-// @Description Two more keys control the phone notifications: critical_push (Critical reports near the
-// @Description home area, on until turned off, even for an account that never saved a choice) and
-// @Description changes_push (changes to reports the account posted or voted on, off until turned on).
-// @Description Turning critical_push on without a home area is refused with the field critical_push;
-// @Description changes_push needs no home area, and turning either off never does. Removing the home
-// @Description area keeps the stored critical_push value. No position is ever sent.
-// @Description A fifth key, official_push, is the switch for Severe official alerts for the home area
-// @Description (on until turned off, even for an account that never saved a choice). Turning
-// @Description official_push on without a home area is refused with the field official_push; turning it
-// @Description off never needs one, and removing the home area keeps the stored value. The answer is all
-// @Description the settings as stored.
+// @Summary Choose how far from the home area alerts reach
+// @Description Saves the one alert setting of the signed in account: alert_radius_km, how far from the
+// @Description home area alerts reach, 1, 2, 5 or 10 km (5 km until changed). It is measured from the
+// @Description middle of the saved home area, which is a cell about 5 km across; no position is ever sent
+// @Description or stored for this. It applies to Critical reports near the home area and to the Reliable
+// @Description reporter row in the bell. Whether a device gets notifications is decided only by that
+// @Description device's own registration, not by this call. Keys from earlier versions (the four
+// @Description on or off switches for the Reliable alert, Critical reports, changes and official alerts) are
+// @Description accepted and ignored. A body with no alert_radius_km is refused with the field body. The
+// @Description answer is the stored distance and whether a home area is saved.
 // @Description Requires a session verified by email; an unverified caller receives 401.
 // @Tags me
 // @Accept json
@@ -285,13 +280,17 @@ func UpdateAlertSettings(accounts *service.AccountService) http.HandlerFunc {
 			return
 		}
 
-		got, err := accounts.UpdateAlertSettings(r.Context(), acc.ID, service.AlertSettingsUpdate{
-			ReliableAlerts: req.ReliableAlerts,
-			AlertRadiusKm:  req.AlertRadiusKm,
-			CriticalPush:   req.CriticalPush,
-			ChangesPush:    req.ChangesPush,
-			OfficialPush:   req.OfficialPush,
-		})
+		// A body that names only the ignored keys (an old cached page) changes
+		// nothing and answers with the stored settings.
+		var (
+			got service.AlertSettings
+			err error
+		)
+		if req.AlertRadiusKm == nil && req.ignoredKeySent() {
+			got, err = accounts.AlertSettings(r.Context(), acc.ID)
+		} else {
+			got, err = accounts.UpdateAlertSettings(r.Context(), acc.ID, service.AlertSettingsUpdate{AlertRadiusKm: req.AlertRadiusKm})
+		}
 		if err != nil {
 			var ve service.ValidationError
 			if errors.As(err, &ve) {
@@ -304,12 +303,8 @@ func UpdateAlertSettings(accounts *service.AccountService) http.HandlerFunc {
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, http.StatusOK, AlertSettingsResponse{
-			ReliableAlerts: got.ReliableAlertsOn,
-			AlertRadiusKm:  got.AlertRadiusKm,
-			HasHomeArea:    got.HasHomeArea,
-			CriticalPush:   got.CriticalPushOn,
-			ChangesPush:    got.ChangesPushOn,
-			OfficialPush:   got.OfficialPushOn,
+			AlertRadiusKm: got.AlertRadiusKm,
+			HasHomeArea:   got.HasHomeArea,
 		})
 	}
 }

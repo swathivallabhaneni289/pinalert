@@ -2,7 +2,7 @@
 // 05-16, owner decisions D-11 and D-16). It sends what plan 05-11 queued in
 // official_push_outbox, and it re-checks everything at send time: the alert
 // (cancelled, replaced, over, or about to end), that the alert is current, the
-// person's switch, their stored home area and its match to the alert, and the
+// person's stored home area and its match to the alert, and the
 // cap of OfficialPushPerAccountPer6Hours pushes in six hours. A row that fails a
 // check is marked skipped with a word from the closed list and nothing more is
 // shown.
@@ -78,6 +78,10 @@ const (
 	officialSkipOutOfArea   = "out_of_area"
 	officialSkipNoDevice    = "no_device"
 	officialSkipCap         = "cap_account"
+	// officialSkipSwitchedOff is no longer produced (owner decision 2026-11-03,
+	// quick 261103-jal, C8): the worker stops reading the stored official switch.
+	// The word stays because the official_push_outbox CHECK lists it and rows
+	// skipped before this change carry it.
 	officialSkipSwitchedOff = "switched_off"
 	officialSkipFeedStale   = "feed_not_fresh"
 	officialSkipAlreadySent = "already_notified"
@@ -102,7 +106,6 @@ type OfficialPushWorkerQuerier interface {
 	OfficialAlertSeries(ctx context.Context, alertID int64) ([]sqlcgen.OfficialAlertSeriesRow, error)
 	OfficialPushSentForSeries(ctx context.Context, arg sqlcgen.OfficialPushSentForSeriesParams) (bool, error)
 	GetFeedStatus(ctx context.Context, feed string) (sqlcgen.OfficialFeedStatus, error)
-	GetOfficialPushSetting(ctx context.Context, accountID int64) (bool, error)
 	GetAccountHomeCell(ctx context.Context, id int64) (*string, error)
 	CountAccountOfficialPushesInWindow(ctx context.Context, arg sqlcgen.CountAccountOfficialPushesInWindowParams) (int64, error)
 	PushSubscriptionsForAccount(ctx context.Context, accountID int64) ([]sqlcgen.PushSubscriptionsForAccountRow, error)
@@ -250,8 +253,8 @@ func (w *OfficialPushWorker) rowLogf(rowID int64) func(format string, args ...an
 }
 
 // sendOfficialRow works one claimed row, in this order: renew the lease; read the
-// alert again; read its series; prove the alert is current; read the switch; find
-// the home area and match it to the alert; apply the 6 hour cap; find the
+// alert again; read its series; prove the alert is current; find the home area
+// and match it to the alert; apply the 6 hour cap; find the
 // devices; apply the one notification per series rule; word it; fan out; settle
 // each device; mark the row.
 func (w *OfficialPushWorker) sendOfficialRow(ctx context.Context, claim sqlcgen.ClaimDueOfficialPushesRow) error {
@@ -323,19 +326,10 @@ func (w *OfficialPushWorker) sendOfficialRow(ctx context.Context, claim sqlcgen.
 		}
 	}
 
-	// 5. The switch, read again. An account that is gone has no row.
-	on, err := w.q.GetOfficialPushSetting(ctx, claim.AccountID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return w.skip(ctx, run, officialSkipNotEligible)
-		}
-		return w.rowErr(claim.ID, err)
-	}
-	if !on {
-		return w.skip(ctx, run, officialSkipSwitchedOff)
-	}
-
-	// 6. The home area and its match to the alert, from the stored cell only.
+	// 5. The home area and its match to the alert, from the stored cell only. An
+	// account that is gone has no row. The stored official switch is no longer
+	// read: the device switch is the only way to stop these notes (owner decision
+	// 2026-11-03, quick 261103-jal, D2).
 	home, err := w.q.GetAccountHomeCell(ctx, claim.AccountID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -351,7 +345,7 @@ func (w *OfficialPushWorker) sendOfficialRow(ctx context.Context, claim sqlcgen.
 		return w.skip(ctx, run, officialSkipOutOfArea)
 	}
 
-	// 7. The 6 hour cap. These rows live in their own table, so they never count
+	// 6. The 6 hour cap. These rows live in their own table, so they never count
 	// toward 3.3's hourly cap and that cap never counts them.
 	sent, err := w.q.CountAccountOfficialPushesInWindow(ctx, sqlcgen.CountAccountOfficialPushesInWindowParams{
 		AccountID: claim.AccountID,
@@ -364,7 +358,7 @@ func (w *OfficialPushWorker) sendOfficialRow(ctx context.Context, claim sqlcgen.
 		return w.skip(ctx, run, officialSkipCap)
 	}
 
-	// 8. The devices. The host comes from the policy's reading of the endpoint,
+	// 7. The devices. The host comes from the policy's reading of the endpoint,
 	// never from a stored column, so a wrong stored value cannot let a second push
 	// through to an Apple endpoint (3.3 review N6).
 	subs, err := w.q.PushSubscriptionsForAccount(ctx, claim.AccountID)
@@ -419,7 +413,7 @@ func (w *OfficialPushWorker) sendOfficialRow(ctx context.Context, claim sqlcgen.
 		}
 	}
 
-	// 9. The words and the message, from closed tables.
+	// 8. The words and the message, from closed tables.
 	text, ok := BuildOfficialPushText(OfficialPushInput{
 		Level:       alert.Severity,
 		EventWord:   OfficialEventWord(alert.Event),
@@ -434,10 +428,10 @@ func (w *OfficialPushWorker) sendOfficialRow(ctx context.Context, claim sqlcgen.
 	}
 	msg := officialMessage(rootGUID, level, text, remaining)
 
-	// 10. The fan out, bounded in time and in concurrency, by 3.3's function.
+	// 9. The fan out, bounded in time and in concurrency, by 3.3's function.
 	results := fanOutSend(ctx, w.sender, devices, msg)
 
-	// 11. Everything after the sends is written on a context that outlives a
+	// 10. Everything after the sends is written on a context that outlives a
 	// shutdown, so a send a push service accepted is still marked.
 	wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pushWriteTimeout)
 	defer cancel()

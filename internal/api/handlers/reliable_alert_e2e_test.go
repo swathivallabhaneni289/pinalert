@@ -124,11 +124,22 @@ func p17raAlerts(t *testing.T, w *p17raWorld, client *http.Client, body string) 
 	meWant(t, "PATCH /api/me/alerts "+body, meSend(t, client, http.MethodPatch, w.srv.URL+"/api/me/alerts", body), http.StatusOK)
 }
 
-// p17raOptIn gives client a home area and switches the alert on at 5 km.
+// p17raOptIn gives client a home area and sets the distance to 5 km.
+//
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D4):
+// the Reliable bell row has no switch, so the helper no longer sends
+// reliable_alerts; every account with a home area gets the row.
 func p17raOptIn(t *testing.T, w *p17raWorld, client *http.Client) {
 	t.Helper()
 	p17raHome(t, w, client)
-	p17raAlerts(t, w, client, `{"reliable_alerts":true,"alert_radius_km":5}`)
+	p17raAlerts(t, w, client, `{"alert_radius_km":5}`)
+}
+
+// p17raAgeReport moves one report's posting time two hours back, which is
+// "posted before the look back" for the Reliable bell row (ReliableBellLookBack).
+func p17raAgeReport(t *testing.T, w *p17raWorld, id int64) {
+	t.Helper()
+	testutil.MustExec(t, w.pool, `UPDATE reports SET created_at = created_at - interval '2 hours' WHERE id = $1`, id)
 }
 
 // p17raPost files a report of the given category and severity as client.
@@ -206,8 +217,11 @@ func p17raWantNoAlert(t *testing.T, label string, w *p17raWorld, client *http.Cl
 func TestReliableAlertOverTheBell(t *testing.T) {
 	w := p17raSetup(t, "p17ra-bell")
 
-	// Posted before the switch: it must never alert.
+	// Posted before the look back: it must never alert. Amended 2026-11-03 by
+	// quick 261103-jal (D4): there is no switch, so "before the switch" is "more
+	// than ReliableBellLookBack ago".
 	before := p17raPost(t, w, w.r, "flood", "low")
+	p17raAgeReport(t, w, before)
 
 	p17raOptIn(t, w, w.a)
 	w.clock.Advance(time.Minute)
@@ -349,6 +363,7 @@ func TestReliableAlertSkipsOwnMutedAndOld(t *testing.T) {
 	w := p17raSetup(t, "p17ra-skip")
 
 	old := p17raPost(t, w, w.r, "flood", "low")
+	p17raAgeReport(t, w, old) // Amended 2026-11-03 by quick 261103-jal (D4): older than the look back.
 	p17raOptIn(t, w, w.a)
 	w.clock.Advance(time.Minute)
 
@@ -378,41 +393,63 @@ func TestReliableAlertSkipsOwnMutedAndOld(t *testing.T) {
 	p17raWantNoAlert(t, "R after its fresh report", w, w.r)
 }
 
-// TestReliableAlertStopsWhenSwitchedOff: turning the switch off through PATCH
+// TestReliableAlertStopsWhenSwitchedOff was: turning the switch off through PATCH
 // /api/me/alerts stops new alerts, and removing the home area leaves the switch
 // off in the database (D-26, D-29).
+//
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D4):
+// there is no switch now. A stored switch that says off no longer stops the row
+// while a home area exists, and removing the home area still stops new rows.
 func TestReliableAlertStopsWhenSwitchedOff(t *testing.T) {
 	w := p17raSetup(t, "p17ra-off")
 
-	p17raOptIn(t, w, w.a)
+	p17raHome(t, w, w.a)
+	// The old switch is stored off by SQL, so the test holds whatever the API does.
+	testutil.MustExec(t, w.pool,
+		`INSERT INTO account_alert_settings (account_id, reliable_alerts_on, alert_radius_km, updated_at)
+		 SELECT id, false, 5, now() FROM accounts WHERE email = $1
+		 ON CONFLICT (account_id) DO UPDATE SET reliable_alerts_on = false, enabled_at = NULL`, w.emailA)
 	w.clock.Advance(time.Minute)
-	p17raAlerts(t, w, w.a, `{"reliable_alerts":false}`)
 
-	p17raPost(t, w, w.r, "flood", "critical")
-	p17raWantNoAlert(t, "A with the switch off", w, w.a)
-	if n := p17raCountAlerts(t, w); n != 0 {
-		t.Errorf("stored alert rows with the switch off = %d, want 0", n)
+	first := p17raPost(t, w, w.r, "flood", "critical")
+	got, raw := p32uPoll(t, "A with the stored switch off", w.a, w.srv.URL)
+	if len(got.Updates) != 1 {
+		t.Fatalf("A with the stored switch off: bell = %s, want one alert", raw)
 	}
+	p17raWantAlert(t, "A with the stored switch off", got.Updates[0], first)
 
-	// Turn it on again, then remove the home area: the switch goes off with it
-	// and a new report still gives nothing.
-	p17raAlerts(t, w, w.a, `{"reliable_alerts":true}`)
-	if r := p13alRead(t, w.pool, w.emailA); !r.found || !r.on {
-		t.Fatalf("stored after turning on again = %+v, want on", r)
-	}
-	// Amended 2026-10-29 by Phase 7.1 plan 06 (D-15): the route now refuses to
-	// clear the home area (400, the switch stays on). The "no home area, switch
-	// off" state is then set directly in the database; the assertions below and
-	// the silence after them are unchanged.
-	meWant(t, "clear home area", meSend(t, w.a, http.MethodPatch, w.srv.URL+"/api/me/profile", `{"home_area":null}`), http.StatusBadRequest)
-	if r := p13alRead(t, w.pool, w.emailA); !r.found || !r.on {
-		t.Fatalf("a refused clear changed the switch: %+v", r)
-	}
+	// Remove the home area: new reports give nothing more.
 	meRemoveHomeArea(t, w.pool, w.emailA)
-	if r := p13alRead(t, w.pool, w.emailA); !r.found || r.on || r.enabledAt != nil {
-		t.Errorf("stored after clearing the home area = %+v, want off with no enabled_at", r)
-	}
+	p17raAgeAlerts(t, w)
 	w.clock.Advance(time.Minute)
 	p17raPost(t, w, w.r, "flood", "critical")
-	p17raWantNoAlert(t, "A with no home area", w, w.a)
+	if _, rawAfter := p32uPoll(t, "A with no home area", w.a, w.srv.URL); !strings.Contains(string(rawAfter), `"report_id":`+strconv.FormatInt(first, 10)) {
+		t.Errorf("A with no home area: bell = %s, want only the first alert", rawAfter)
+	}
+	if n := p17raCountAlerts(t, w); n != 1 {
+		t.Errorf("stored alert rows with no home area = %d, want 1", n)
+	}
+}
+
+// TestReliableBellRowForEveryHomeAreaAccount is D9 (c) over HTTP: an account with
+// a home area that never sent a PATCH to the alerts route, so it has no settings
+// row at all, gets the Reliable reporter bell row through GET /api/updates.
+func TestReliableBellRowForEveryHomeAreaAccount(t *testing.T) {
+	w := p17raSetup(t, "p17ra-every")
+
+	p17raHome(t, w, w.a)
+	if r := p13alRead(t, w.pool, w.emailA); r.found {
+		t.Fatalf("the account has a settings row %+v, want none (it never sent a PATCH)", r)
+	}
+	w.clock.Advance(time.Minute)
+
+	id := p17raPost(t, w, w.r, "flood", "critical")
+	got, raw := p32uPoll(t, "A with a home area and no settings row", w.a, w.srv.URL)
+	if len(got.Updates) != 1 || got.Unread != 1 {
+		t.Fatalf("poll = %s, want one unread row", raw)
+	}
+	p17raWantAlert(t, "A with a home area and no settings row", got.Updates[0], id)
+	if got.Updates[0].Trust != p17raUnconfirm {
+		t.Errorf("trust = %q, want %q", got.Updates[0].Trust, p17raUnconfirm)
+	}
 }

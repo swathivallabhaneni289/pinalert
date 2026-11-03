@@ -118,6 +118,11 @@ const (
 	// ReliableAlertsPerReporterPerHour is the NOTIF-05 cap per reporter per
 	// recipient per hour. One constant, so the number is easy to change.
 	ReliableAlertsPerReporterPerHour = 1
+	// ReliableBellLookBack is how far back the Reliable reporter bell row looks,
+	// for every account with a home area. A stored enabled_at can only move the
+	// start later, so the bell never fills with old reports now that the switch
+	// is gone (owner 2026-11-03, quick 261103-jal, D4).
+	ReliableBellLookBack = time.Hour
 	// MutedListCap bounds how many reports one account may mute.
 	MutedListCap = 100
 	// ReportLineMaxRunes is the longest first line of a report an update shows.

@@ -307,7 +307,11 @@ func TestOfficialWorkerOnRealOutbox(t *testing.T) {
 		}
 	})
 
-	t.Run("the switch, the cap and a deleted account are read again at send time", func(t *testing.T) {
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+	// D2): the stored official switch is no longer read, so the account whose
+	// stored switch was turned off after the row was queued is sent the push; the
+	// cap and a deleted account are still read again at send time.
+	t.Run("the cap and a deleted account are read again at send time, a stored off switch is not", func(t *testing.T) {
 		w := newDBWorld(t, pool)
 		off := w.person("off", dbEndpointFCM)
 		capped := w.person("capped", dbEndpointFCM+"-2")
@@ -329,15 +333,17 @@ func TestOfficialWorkerOnRealOutbox(t *testing.T) {
 		testutil.MustExec(t, pool, `UPDATE accounts SET deleted_at = now() WHERE id = $1`, gone)
 
 		w.sweep()
-		if n := len(w.sender.messages()); n != 0 {
-			t.Fatalf("%d messages sent, want none", n)
+		if n := len(w.sender.messages()); n != 1 {
+			t.Fatalf("%d messages sent, want 1 (the account with the stored switch off)", n)
+		}
+		if state, skip := w.rowFor(off, "IN-1792000000000621_1"); state != "sent" {
+			t.Errorf("switch off: row is %q/%q, want sent", state, skip)
 		}
 		for _, tc := range []struct {
 			name    string
 			account int64
 			reason  string
 		}{
-			{"switch off", off, "switched_off"},
 			{"capped", capped, "cap_account"},
 			{"deleted", gone, "no_device"},
 		} {
@@ -346,4 +352,32 @@ func TestOfficialWorkerOnRealOutbox(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestStoredOfficialOffStillReachesThePhone is the official half of D9 (b), quick
+// 261103-jal, owner decision 2026-11-03: an account with a device whose stored
+// official and Critical switches are both off is still a candidate for a Severe
+// official alert, the real push hook queues it, and the worker sends it.
+func TestStoredOfficialOffStillReachesThePhone(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	w := newDBWorld(t, pool)
+	person := w.person("storedoff", dbEndpointFCM)
+	if _, err := w.q.UpsertOfficialPushSetting(context.Background(), sqlcgen.UpsertOfficialPushSettingParams{
+		AccountID: person, OfficialPushOn: false, Now: w.now}); err != nil {
+		t.Fatalf("official switch off: %v", err)
+	}
+	testutil.MustExec(t, pool, `UPDATE account_alert_settings SET critical_push_on = false WHERE account_id = $1`, person)
+
+	_, saved := w.alert("1792000000000631", "Severe", "Alert", nil)
+	w.queue(saved)
+	if n := w.count(`SELECT count(*) FROM official_push_outbox WHERE account_id = $1 AND state = 'queued'`, person); n != 1 {
+		t.Fatalf("%d rows queued for the account with both stored switches off, want 1", n)
+	}
+	w.sweep()
+	if n := len(w.sender.messages()); n != 1 {
+		t.Fatalf("%d messages sent, want 1", n)
+	}
+	if state, skip := w.rowFor(person, "IN-1792000000000631_1"); state != "sent" {
+		t.Errorf("row is %q/%q, want sent", state, skip)
+	}
 }

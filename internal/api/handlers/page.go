@@ -52,13 +52,6 @@ type PageConfig struct {
 	// HomeCentre is filled by api.NewRouter. When it is nil, or the account has
 	// no home area, the page starts at the configured fallback centre as always.
 	HomeCentre HomeCentreLookup
-	// AlertSettings is filled by api.NewRouter with the account service. Nearby
-	// and the Low data view read it per request to decide whether to render the
-	// first post or vote pop-up (the 03.3-UAT gap for test 4, owner 2026-10-27):
-	// the pop-up is drawn only while the account's Changes switch is off. A nil
-	// value is safe and means no pop-up, so a router built without it still
-	// serves both pages as before.
-	AlertSettings AlertSettingsLookup
 	// Profiles is filled by api.NewRouter with the account service (Phase 7.1
 	// plan 13c). Nearby reads the home area name from it per request for the
 	// installed app alerts ask. A nil value is safe and means no ask.
@@ -69,13 +62,6 @@ type PageConfig struct {
 // Nearby uses only the home area name from it.
 type ProfileReader interface {
 	Profile(ctx context.Context, accountID int64) (service.AccountProfile, error)
-}
-
-// AlertSettingsLookup answers one account's alert settings
-// (service.AccountService.AlertSettings). The pages use only the Changes
-// switch from it.
-type AlertSettingsLookup interface {
-	AlertSettings(ctx context.Context, accountID int64) (service.AlertSettings, error)
 }
 
 // HomeCentreLookup answers the centre of an account's stored home area cell
@@ -110,26 +96,6 @@ func startCentre(ctx context.Context, cfg PageConfig, accountID int64) (lat, lon
 		}
 	}
 	return cfg.FallbackLat, cfg.FallbackLon, 0
-}
-
-// changesAskFor decides whether a page renders the first post or vote pop-up
-// (Phase 3.3 plan 21, the 03.3-UAT gap for test 4). It is true only when the
-// server has a push key, the lookup is wired, and the account's Changes switch
-// is off, so an account that already said yes, in the pop-up or in Settings, is
-// never asked again on any browser. The read never fails the page: on an error
-// it logs one line with the numeric account id and the error, no email and no
-// other account data, and answers false so the pop-up is left out. Nearby and
-// the Low data view share it. The id comes from the gate's context only.
-func changesAskFor(ctx context.Context, cfg PageConfig, accountID int64) bool {
-	if cfg.PushPublicKey == "" || cfg.AlertSettings == nil {
-		return false
-	}
-	s, err := cfg.AlertSettings.AlertSettings(ctx, accountID)
-	if err != nil {
-		log.Printf("handlers: changes ask: reading the alert settings of account %d failed, leaving the pop-up out: %v", accountID, err)
-		return false
-	}
-	return !s.ChangesPushOn
 }
 
 // homeAreaNameFor answers the stored home area name of an account for the
@@ -189,10 +155,6 @@ type pageViewModel struct {
 	// public /disclaimer and /policy pages render, so the window cannot drift from
 	// them. It holds nothing about the account (R-07, T-34-34).
 	Legal LegalText
-	// ChangesAsk true renders the first post or vote pop-up (the changes_ask
-	// partial). It is false when the Changes switch is already on, when push is
-	// off, or when the settings read failed.
-	ChangesAsk bool
 	// HomeAreaName is the account's stored home area name, read per request, only
 	// for the title of the installed app alerts ask (Phase 7.1 plan 13c). It is ""
 	// when there is none, push is off or the read failed, and then the ask is not
@@ -324,7 +286,6 @@ func Page(tmpl *template.Template, cfg PageConfig) http.HandlerFunc {
 			Chrome:          chrome,
 			Nav:             navFor(NavNearby),
 			Legal:           legalTextFor(chrome),
-			ChangesAsk:      changesAskFor(r.Context(), cfg, acc.ID),
 			HomeAreaName:    homeAreaNameFor(r.Context(), cfg, acc.ID),
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

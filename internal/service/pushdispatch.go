@@ -8,14 +8,21 @@
 // fresh and asks the same resolver the feed uses, with the stored moderation
 // state set. So a push is never queued for a report the feed would not show.
 //
+// What reaches a phone (owner decision 2026-11-03, quick 261103-jal, D2 and D3):
+// Critical reports near the home area, notes about people the reader follows
+// with the Notify me bell on, and the confirmed update of those two. Severe
+// official alerts have their own lane (pushworker_official.go). The stored
+// critical_push, reliable_alerts and changes_push flags are kept and no longer
+// decide anything; the device switch is the only way to stop the phone notes.
+// Reliable reporter posts and changes or comments on a person's reports reach
+// the bell only: their paths below refresh bells early and queue nothing.
+//
 // Kinds:
 //   - Critical (kind 1) goes through MayNotifyAboutReport(UpdateCriticalNearby,
 //     ...), the one predicate every notification uses (D-29 of 3.2).
-//   - Reliable reporter (kind 4) goes through MayNotifyAboutReport(
-//     UpdateReliableNearby, ...) and then through 3.2's own rule: the dispatcher
-//     asks the updates service to Refresh each nearby account that turned the
-//     switch on and pushes exactly the reliable_nearby rows that rule wrote. One
-//     row, two channels, never a second rule (D-06, owner amendment 2026-10-18).
+//   - Reliable reporter (kind 4) is a bell refresh only: the dispatcher asks the
+//     updates service to Refresh each subscribed neighbour so the
+//     reliable_nearby bell row arrives early, and queues no phone note (D3).
 //   - Follow (Phase 9 plan 25, D-09) is a report by a person the reader follows
 //     with the Notify me bell on. The same one row, two channels shape: the
 //     dispatcher asks the updates service to Refresh each follower of the
@@ -24,26 +31,27 @@
 //     MayNotifyAboutReport(UpdateFollowedPosted, ...), the Reliable reporter
 //     check and every mute, block and privacy rule. A follow note is not about
 //     distance, so a follower needs no home area.
-//   - Changed (kind 3) is pushed from the same 3.2 updates rows the bell reads.
-//     After a vote the report's followers are refreshed and their new event rows
-//     are queued, and a periodic sweep does the same for fading reports and for
-//     rows a bell poll wrote first, so a race with the bell never gives two
-//     pushes (D-06, D-13 of 3.2).
+//   - Changed (kind 3, and the comment notes) is a bell refresh only. After a
+//     vote the report's posters, voters and commenters are refreshed, and a
+//     periodic sweep does the same for the accounts with a device, so the bell
+//     rows exist early. No phone note is queued (D3); the bell poll stays the
+//     producer for everyone else (D-06, D-13 of 3.2).
 //   - Confirmed update (kind 5) is queued once for each initial alert that went
-//     out saying Not confirmed yet, when ConfirmedByPeople becomes true.
+//     out saying Not confirmed yet, when ConfirmedByPeople becomes true. One
+//     whose base is Reliable is still queued by SQL for an old sent note and the
+//     worker skips it at send time.
 //
 // One first alert per person and report (D-09, research 5.2 item 7): when one
 // report matches several kinds for one person only the first is queued, because
 // the branches run in this order and uq_push_outbox_first allows one row per
 // account and report across critical, follow and reliable:
 //
-//	Critical, then Follow, then Reliable (the first alert), then Changes (a
-//	reached_live change is skipped while a first alert exists), then the
-//	confirmed update.
+//	Critical, then Follow, then the confirmed update. The Reliable and Changes
+//	branches refresh bells only.
 //
-// Critical wins over Follow, and Follow wins over Reliable. The phone default is
-// few notes that never pile up (D-25): at most one first alert per report, and
-// the hourly cap counts follow pushes.
+// Critical wins over Follow. The phone default is few notes that never pile up
+// (D-25): at most one first alert per report, and the hourly cap counts follow
+// pushes.
 //
 // Disputes: a Critical report that most nearby cells dispute stays Live and
 // listed, because disputes cannot hide a Critical report. Its push follows the
@@ -156,15 +164,12 @@ type PushDispatchQuerier interface {
 	CountReporterFanouts(ctx context.Context, arg sqlcgen.CountReporterFanoutsParams) (int64, error)
 	PushHomeCandidates(ctx context.Context, arg sqlcgen.PushHomeCandidatesParams) ([]sqlcgen.PushHomeCandidatesRow, error)
 	EnqueueInitialPush(ctx context.Context, arg sqlcgen.EnqueueInitialPushParams) (int64, error)
-	EnqueueReliableFromUpdates(ctx context.Context, arg sqlcgen.EnqueueReliableFromUpdatesParams) (int64, error)
 	EnqueueFollowFromUpdates(ctx context.Context, arg sqlcgen.EnqueueFollowFromUpdatesParams) (int64, error)
 	NotifyFollowersOf(ctx context.Context, arg sqlcgen.NotifyFollowersOfParams) ([]int64, error)
-	EnqueueChangedFromUpdates(ctx context.Context, arg sqlcgen.EnqueueChangedFromUpdatesParams) (int64, error)
 	EnqueueConfirmedUpdates(ctx context.Context, arg sqlcgen.EnqueueConfirmedUpdatesParams) (int64, error)
-	FollowersWithChangesPush(ctx context.Context, reportID int64) ([]int64, error)
-	AccountsWithChangesPush(ctx context.Context, arg sqlcgen.AccountsWithChangesPushParams) ([]int64, error)
+	FollowersForBellRefresh(ctx context.Context, reportID int64) ([]int64, error)
+	AccountsForBellRefresh(ctx context.Context, arg sqlcgen.AccountsForBellRefreshParams) ([]int64, error)
 	RecentReportsForPush(ctx context.Context, arg sqlcgen.RecentReportsForPushParams) ([]int64, error)
-	GetPushKindSettings(ctx context.Context, accountID int64) (sqlcgen.GetPushKindSettingsRow, error)
 }
 
 var _ ReportChangeNotifier = (*PushDispatcher)(nil)
@@ -322,9 +327,9 @@ func (d *PushDispatcher) SweepOnce(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// ChangesSweepOnce turns the 3.2 event rows of every account that wants change
-// pushes into outbox rows. It catches fading reports and rows a bell poll wrote
-// first; the unique index makes it idempotent.
+// ChangesSweepOnce refreshes the bell of every account with a device, so the 3.2
+// event rows exist early. It queues no phone note: since the owner decision of
+// 2026-11-03 (quick 261103-jal, D3) change and comment notes stay in the bell.
 //
 // It serves at most PushChangesSweepAccountCap accounts, starting after the
 // last account the previous full page served, and wraps to the start after a
@@ -333,7 +338,7 @@ func (d *PushDispatcher) SweepOnce(ctx context.Context) error {
 func (d *PushDispatcher) ChangesSweepOnce(ctx context.Context) error {
 	d.changesMu.Lock()
 	defer d.changesMu.Unlock()
-	accounts, err := d.q.AccountsWithChangesPush(ctx, sqlcgen.AccountsWithChangesPushParams{
+	accounts, err := d.q.AccountsForBellRefresh(ctx, sqlcgen.AccountsForBellRefreshParams{
 		AfterID: d.changesAfter,
 		RowCap:  PushChangesSweepAccountCap,
 	})
@@ -380,9 +385,10 @@ type evalRun struct {
 // Order: the facts, the evaluated mark, the Critical branch, the Follow branch,
 // the Reliable branch, the changes branch (only with an actor) and the confirmed
 // update. The first alert kinds are queued in that order, so a report that
-// matches several goes out once, as the first of Critical, Follow, Reliable, and
-// the Changes branch skips a reached_live note while a first alert exists. Each
-// branch is independent; their errors come back joined.
+// matches several goes out once, as the first of Critical and Follow. The
+// Reliable and changes branches refresh bells early and queue nothing (owner
+// decision 2026-11-03, quick 261103-jal, D3). Each branch is independent; their
+// errors come back joined.
 func (d *PushDispatcher) EvaluateReport(ctx context.Context, reportID, actorAccountID int64) error {
 	now := d.now().UTC()
 	facts, ok, err := loadPushFacts(ctx, d.q, reportID, now)
@@ -455,7 +461,9 @@ func pushEarlier(a, b time.Time) time.Time {
 }
 
 // criticalBranch queues the Critical alert for accounts whose home area lies
-// within their chosen distance of a fresh Critical report.
+// within their chosen distance of a fresh Critical report. The stored
+// critical_push flag is not read: every subscribed device gets it (owner
+// decision 2026-11-03, quick 261103-jal, D2).
 //
 // A re run, the 30 second sweep with actor 0 or a later poke, evaluates a fanned
 // report again so accounts that subscribed or set a home area since the first
@@ -500,7 +508,7 @@ func (d *PushDispatcher) criticalBranch(ctx context.Context, run *evalRun) error
 	if err != nil {
 		return err
 	}
-	recipients := filterRecipients(rows, f.Lat, f.Lon, f.ReporterAccountID, func(r sqlcgen.PushHomeCandidatesRow) bool { return r.CriticalPushOn })
+	recipients := filterRecipients(rows, f.Lat, f.Lon, f.ReporterAccountID, nil)
 	if len(recipients) == 0 {
 		return nil
 	}
@@ -596,16 +604,20 @@ func (d *PushDispatcher) followBranch(ctx context.Context, run *evalRun) error {
 	return nil
 }
 
-// reliableBranch asks 3.2's rule to write the reliable_nearby rows of the
-// accounts that turned the switch on, then queues a push for each row the rule
-// wrote for this report. The tag check before it only avoids needless work: the
-// rule itself decides again (D-29).
+// reliableBranch asks 3.2's rule to write the reliable_nearby bell rows of the
+// subscribed neighbours of a Reliable reporter's report, so the rows arrive
+// early. It queues no phone note: since the owner decision of 2026-11-03 (quick
+// 261103-jal, D3, C2) a Reliable reporter note never reaches a phone, and the
+// stored reliable_alerts flag is not read. The bell poll covers everyone the
+// early refresh does not reach (filterRecipients keeps the nearest
+// PushRecipientsPerReport accounts). The tag check before it only avoids
+// needless work: the rule itself decides again (D-29).
 //
 // One fan out per report (review note N4): a report capped under Critical is
 // never sent through here, and a report fanned under Critical takes no Reliable
-// slot, so it counts once toward its reporter's caps across both kinds. For a
-// serious report this branch only reaches accounts with Critical off, since an
-// account with Critical on already got its one initial alert as Critical.
+// slot, so it counts once toward its reporter's caps across both kinds. A
+// serious report reaches nobody here, since its neighbours already got the
+// Critical push.
 func (d *PushDispatcher) reliableBranch(ctx context.Context, run *evalRun) error {
 	f := run.facts
 	if f.ReporterAccountID == nil {
@@ -666,8 +678,8 @@ func (d *PushDispatcher) reliableBranch(ctx context.Context, run *evalRun) error
 	if err != nil {
 		return err
 	}
-	recipients := filterRecipients(rows, f.Lat, f.Lon, f.ReporterAccountID, func(r sqlcgen.PushHomeCandidatesRow) bool {
-		return r.ReliableAlertsOn && !(serious && r.CriticalPushOn)
+	recipients := filterRecipients(rows, f.Lat, f.Lon, f.ReporterAccountID, func(sqlcgen.PushHomeCandidatesRow) bool {
+		return !serious
 	})
 	if len(recipients) == 0 {
 		return nil
@@ -686,13 +698,6 @@ func (d *PushDispatcher) reliableBranch(ctx context.Context, run *evalRun) error
 			}
 		}
 	}
-	if _, err := d.q.EnqueueReliableFromUpdates(ctx, sqlcgen.EnqueueReliableFromUpdatesParams{
-		ExpiresAt: pushEarlier(f.ExpiresAt, run.now.Add(PushOtherTTL)),
-		Now:       run.now,
-		ReportID:  f.ID,
-	}); err != nil {
-		return err
-	}
 	if run.reliable == "" {
 		if err := d.q.MarkReliableFanout(ctx, sqlcgen.MarkReliableFanoutParams{ReportID: f.ID, State: pushStateFanned, Now: run.now}); err != nil {
 			return err
@@ -702,14 +707,16 @@ func (d *PushDispatcher) reliableBranch(ctx context.Context, run *evalRun) error
 	return nil
 }
 
-// changesBranch refreshes the report's followers (the person who posted it and
-// anyone who voted on it) except the voter who caused the call, and queues
-// their new event rows. It runs only with an actor: the sweep covers the rest.
+// changesBranch refreshes the bell of the report's followers (the person who
+// posted it, anyone who voted on it and anyone who commented) except the voter
+// who caused the call, so their event rows arrive early. It queues no phone note
+// (owner decision 2026-11-03, quick 261103-jal, D3, C3). It runs only with an
+// actor: the sweep covers the rest.
 func (d *PushDispatcher) changesBranch(ctx context.Context, run *evalRun) error {
 	if run.actor == 0 || run.facts.Vis == VisibilityWithheld {
 		return nil
 	}
-	followers, err := d.q.FollowersWithChangesPush(ctx, run.facts.ID)
+	followers, err := d.q.FollowersForBellRefresh(ctx, run.facts.ID)
 	if err != nil {
 		return err
 	}
@@ -728,28 +735,17 @@ func (d *PushDispatcher) changesBranch(ctx context.Context, run *evalRun) error 
 	return errors.Join(errs...)
 }
 
-// changesFor brings one account's 3.2 rows up to date and queues the event rows
-// after the later of the moment Changes went on and the changed window.
-func (d *PushDispatcher) changesFor(ctx context.Context, accountID int64, now time.Time) error {
+// changesFor brings one account's 3.2 rows up to date so the bell rows exist
+// early. It queues nothing: change and comment notes stay in the bell (owner
+// decision 2026-11-03, quick 261103-jal, D3, C3). now stays in the signature for
+// the callers.
+func (d *PushDispatcher) changesFor(ctx context.Context, accountID int64, _ time.Time) error {
 	if d.updates != nil {
 		if err := d.updates.Refresh(ctx, accountID); err != nil {
 			log.Printf("push dispatch: refresh failed for account %d", accountID)
 		}
 	}
-	settings, err := d.q.GetPushKindSettings(ctx, accountID)
-	if err != nil {
-		return err
-	}
-	since := now.Add(-PushChangedWindow)
-	if settings.ChangesEnabledAt.Valid && settings.ChangesEnabledAt.Time.After(since) {
-		since = settings.ChangesEnabledAt.Time
-	}
-	_, err = d.q.EnqueueChangedFromUpdates(ctx, sqlcgen.EnqueueChangedFromUpdatesParams{
-		Now:       now,
-		AccountID: accountID,
-		Since:     since,
-	})
-	return err
+	return nil
 }
 
 // confirmedBranch queues the in place confirmed update when ConfirmedByPeople is

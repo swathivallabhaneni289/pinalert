@@ -58,16 +58,20 @@ func pwConfirmReport(r *pushDBRig, reportID, a, b int64) {
 // person in the rolling hour, a new Critical row is still sent; it counts, so
 // the next push of another kind in the same hour is held back as
 // cap_account_hour.
+//
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D3,
+// D9): the held kind is a follow note, because a changed or Reliable note never
+// reaches a phone now. The reader follows a person with the Notify me bell on.
 func TestWorkerCriticalNeverHeldButCounted(t *testing.T) {
-	r := newPushDBRig(t)
+	r := newFollowPushRig(t)
 	ctx := context.Background()
 
 	const reporterSession = "p33-16-cap-reporter"
 	reporter := testutil.SeedReporterAccount(t, r.pool, r.email("reporter"), reporterSession)
-	// Critical and Changes on, radius 5 km, one Google device.
-	reader, _ := r.reader("reader", 1, 5, true, false, true)
-	v1 := testutil.SeedReporterAccount(t, r.pool, r.email("v1"), "p33-16-cap-v1")
-	v2 := testutil.SeedReporterAccount(t, r.pool, r.email("v2"), "p33-16-cap-v2")
+	// Radius 5 km, one Google device.
+	reader, _ := r.reader("reader", 1, 5, true, false, false)
+	person, personSession := r.person("cap.person")
+	r.bellOn(reader, person, r.base.Add(2*time.Minute))
 
 	r.cur = r.base.Add(10 * time.Minute)
 
@@ -93,7 +97,7 @@ func TestWorkerCriticalNeverHeldButCounted(t *testing.T) {
 	}
 
 	sender := &pwSender{answers: map[string]pwAnswer{}}
-	worker := pwDBWorker(r, sender)
+	worker := pwFollowWorker(r, sender)
 
 	// 1. The Critical row goes out although the hour already holds four pushes.
 	if err := worker.SweepOnce(ctx); err != nil {
@@ -102,7 +106,7 @@ func TestWorkerCriticalNeverHeldButCounted(t *testing.T) {
 	if n := len(sender.messages()); n != 1 {
 		t.Fatalf("messages after the first sweep = %d, want 1 (a Critical alert is never held by the cap)", n)
 	}
-	if state, skip, _ := pwOutboxRow(t, r, reader, reportID, "critical"); state != "sent" {
+	if state, skip, _ := pwOutboxRow(t, r.pushDBRig, reader, reportID, "critical"); state != "sent" {
 		t.Fatalf("the critical row is %q (%q), want sent", state, skip)
 	}
 
@@ -115,14 +119,18 @@ func TestWorkerCriticalNeverHeldButCounted(t *testing.T) {
 		t.Fatalf("pushes counted after the Critical push = %d, want %d (it counts toward the limit)", n, PushPerAccountPerHour+1)
 	}
 
-	// 3. So the next push of another kind in the same hour is held back.
-	pwConfirmReport(r, reportID, v1, v2)
-	pwQueueChanged(t, r, reader, reportID)
+	// 3. So the next push of another kind in the same hour is held back: a follow
+	// note about a report by the person the reader follows.
+	followed := r.report(personSession, SeverityLow, r.base.Add(8*time.Minute), "clear")
+	r.eval(followed, 0)
+	if !outboxKindsEqual(r.outbox(followed)[reader], "follow") {
+		t.Fatalf("outbox for the followed report = %v, want one follow row", r.outbox(followed))
+	}
 	if err := worker.SweepOnce(ctx); err != nil {
 		t.Fatalf("second sweep: %v", err)
 	}
-	if state, skip, _ := pwOutboxRow(t, r, reader, reportID, "changed"); state != "skipped" || skip != "cap_account_hour" {
-		t.Errorf("the changed row is %q (%q), want skipped as cap_account_hour", state, skip)
+	if state, skip, _ := pwOutboxRow(t, r.pushDBRig, reader, followed, "follow"); state != "skipped" || skip != "cap_account_hour" {
+		t.Errorf("the follow row is %q (%q), want skipped as cap_account_hour", state, skip)
 	}
 	if n := len(sender.messages()); n != 1 {
 		t.Errorf("messages after the second sweep = %d, want still 1 (nothing extra shown)", n)
@@ -175,30 +183,30 @@ func TestWorkerAppleGetsFirstPushOnly(t *testing.T) {
 		t.Fatalf("first alert went to %v in %d messages, want both devices", got, len(sender.messages()))
 	}
 
-	// 2. A later change about R reaches the Google device only.
+	// 2. The confirmed update about R reaches the Google device only.
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+	// D3, D9): the later push is the confirmed update of the Critical alert, since
+	// a change note never reaches a phone now.
 	pwConfirmReport(r, reportR, v1, v2)
-	pwQueueChanged(t, r, reader, reportR)
+	r.eval(reportR, v1)
 	if err := worker.SweepOnce(ctx); err != nil {
 		t.Fatalf("second sweep: %v", err)
 	}
 	if got := endpointsOf(2); len(sender.messages()) != 3 || !got[googleEndpoint] || got[appleEndpoint] {
-		t.Fatalf("change about R went to %v in %d messages in total, want the Google device only", got, len(sender.messages()))
+		t.Fatalf("confirmed update about R went to %v in %d messages in total, want the Google device only", got, len(sender.messages()))
 	}
-	if state, skip, _ := pwOutboxRow(t, r, reader, reportR, "changed"); state != "sent" {
-		t.Errorf("the changed row is %q (%q), want sent (to the Google device)", state, skip)
-	}
-	if n := r.count(`SELECT COUNT(*) FROM updates WHERE account_id = $1 AND report_id = $2 AND kind = 'reached_live'`, reader, reportR); n != 1 {
-		t.Errorf("the reader's bell row for R is gone: %d rows, want 1", n)
+	if state, skip, _ := pwOutboxRow(t, r, reader, reportR, "confirmed_update"); state != "sent" {
+		t.Errorf("the confirmed update row is %q (%q), want sent (to the Google device)", state, skip)
 	}
 
-	// 3. A change about another report S, never pushed before, reaches both.
-	reportS := r.report(reporterSession, SeverityLow, r.base.Add(6*time.Minute), "clear")
-	pwConfirmReport(r, reportS, v1, v2)
-	pwQueueChanged(t, r, reader, reportS)
+	// 3. The alert about another report S, never pushed before, reaches both.
+	reportS := r.report(reporterSession, SeverityCritical, r.base.Add(6*time.Minute), "clear")
+	testutil.MustExec(t, r.pool, `UPDATE reports SET happening = 'fire' WHERE id = $1`, reportS)
+	r.eval(reportS, 0)
 	if err := worker.SweepOnce(ctx); err != nil {
 		t.Fatalf("third sweep: %v", err)
 	}
 	if got := endpointsOf(3); len(sender.messages()) != 5 || !got[appleEndpoint] || !got[googleEndpoint] {
-		t.Fatalf("change about S went to %v in %d messages in total, want both devices", got, len(sender.messages()))
+		t.Fatalf("alert about S went to %v in %d messages in total, want both devices", got, len(sender.messages()))
 	}
 }

@@ -1,7 +1,11 @@
-// alertsettings.go holds the settings behind the Reliable reporter alert
-// (NOTIF-05, D-26): one switch and one distance per account, and the home area
-// anchor the distance is measured from. The alert itself is raised by
-// refreshReliableAlerts (updatesalerts.go); nothing here raises anything.
+// alertsettings.go holds the one setting left behind the alerts (NOTIF-05, D-26,
+// narrowed by quick 261103-jal, owner decision 2026-11-03): the distance from the
+// home area that Critical reports and the Reliable bell row reach, and the home
+// area anchor the distance is measured from. The switches that used to sit next
+// to it are gone from the product: the device switch is the only way to stop
+// phone notes, and the Reliable bell row has no switch. The bell row itself is
+// raised by refreshReliableAlerts (updatesalerts.go); nothing here raises
+// anything.
 
 package service
 
@@ -9,7 +13,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/mmcloughlin/geohash"
@@ -29,40 +32,25 @@ const DefaultAlertRadiusKm = 5
 const (
 	// AlertRadiusMessage is the refusal for a distance outside AlertRadii.
 	AlertRadiusMessage = "Choose 1, 2, 5 or 10 km."
-	// AlertsNeedHomeAreaMessage is the refusal for turning the alert on while no
-	// home area is saved (UI-SPEC E1).
-	AlertsNeedHomeAreaMessage = "Add a home area first."
-	// AlertsNothingToSaveMessage is the refusal for a body that names neither
-	// the switch nor the distance.
+	// AlertsNothingToSaveMessage is the refusal for a body that names no
+	// distance.
 	AlertsNothingToSaveMessage = "Nothing to save."
 )
 
-// AlertSettings is one account's alert switch and distance as stored, with
-// whether a home area exists. EnabledAt is when the switch last went on, nil
-// while it is off. It never carries the home area cell or any coordinate.
+// AlertSettings is one account's alert distance as stored, with whether a home
+// area exists. It never carries the home area cell or any coordinate.
 //
-// CriticalPushOn and ChangesPushOn are the two phone switches of Phase 3.3
-// (PWA-03, PWA-06) that sit next to the Reliable switch. The Reliable switch and
-// the distance stay 3.2's and are not duplicated.
+// Owner decision 2026-11-03, quick 261103-jal (D8, C10): the four columns
+// reliable_alerts_on, critical_push_on, changes_push_on and official_push_on are
+// kept in the database and no longer decide delivery, so they leave this struct.
 type AlertSettings struct {
-	ReliableAlertsOn bool
-	AlertRadiusKm    int
-	EnabledAt        *time.Time
-	HasHomeArea      bool
-	CriticalPushOn   bool
-	ChangesPushOn    bool
-	// OfficialPushOn is Phase 5's switch "Severe official alerts for my area"
-	// (D-11), on by default.
-	OfficialPushOn bool
+	AlertRadiusKm int
+	HasHomeArea   bool
 }
 
 // AlertSettingsUpdate is one edit. A nil field leaves that part as stored.
 type AlertSettingsUpdate struct {
-	ReliableAlerts *bool
-	AlertRadiusKm  *int
-	CriticalPush   *bool
-	ChangesPush    *bool
-	OfficialPush   *bool
+	AlertRadiusKm *int
 }
 
 // HomeAreaAnchor decodes a stored home area cell into the point a distance is
@@ -113,46 +101,17 @@ func (s *AccountService) HomeAreaCell(ctx context.Context, accountID int64) (cel
 	return *stored, true, nil
 }
 
-// AlertSettings reads the account's alert switch and distance. An account that
-// never saved a choice reads off and DefaultAlertRadiusKm, with Critical on and
-// Changes off (decision 12: an account with no row counts as Critical on, the
-// same constant in the SQL COALESCE and in Go, pinned by
-// TestCriticalDefaultMatchesSQL).
+// AlertSettings reads the account's alert distance. An account that never saved
+// a choice reads DefaultAlertRadiusKm. Owner decision 2026-11-03, quick
+// 261103-jal: the stored switches are not read.
 func (s *AccountService) AlertSettings(ctx context.Context, accountID int64) (AlertSettings, error) {
-	out := AlertSettings{
-		AlertRadiusKm:  DefaultAlertRadiusKm,
-		CriticalPushOn: DefaultCriticalPushOn,
-		ChangesPushOn:  DefaultChangesPushOn,
-		OfficialPushOn: DefaultOfficialPushOn,
-	}
-	switch official, err := s.q.GetOfficialPushSetting(ctx, accountID); {
-	case err == nil:
-		out.OfficialPushOn = official
-	case errors.Is(err, pgx.ErrNoRows):
-		// No such account row: the default.
-	default:
-		return AlertSettings{}, fmt.Errorf("service: reading the official alerts switch: %w", err)
-	}
-	switch push, err := s.q.GetPushKindSettings(ctx, accountID); {
-	case err == nil:
-		out.CriticalPushOn = push.CriticalPushOn
-		out.ChangesPushOn = push.ChangesPushOn
-	case errors.Is(err, pgx.ErrNoRows):
-		// No such account row: the defaults.
-	default:
-		return AlertSettings{}, fmt.Errorf("service: reading push switches: %w", err)
-	}
+	out := AlertSettings{AlertRadiusKm: DefaultAlertRadiusKm}
 	row, err := s.q.GetAlertSettings(ctx, accountID)
 	switch {
 	case err == nil:
-		out.ReliableAlertsOn = row.ReliableAlertsOn
 		out.AlertRadiusKm = int(row.AlertRadiusKm)
-		if row.EnabledAt.Valid {
-			at := row.EnabledAt.Time
-			out.EnabledAt = &at
-		}
 	case errors.Is(err, pgx.ErrNoRows):
-		// No row: the defaults.
+		// No row: the default.
 	default:
 		return AlertSettings{}, fmt.Errorf("service: reading alert settings: %w", err)
 	}
@@ -164,101 +123,36 @@ func (s *AccountService) AlertSettings(ctx context.Context, accountID int64) (Al
 	return out, nil
 }
 
-// UpdateAlertSettings merges the update over the stored state, validates the
-// result and saves it. The distance must be one of AlertRadii, and the Reliable
-// switch cannot be on without a home area. The answer is the state as stored, so
-// a switch that goes on carries the time the database stamped.
-//
-// Phase 3.3 adds the two phone switches (decision 12). D-08: asking for Critical
-// on needs a home area, because Critical reports are measured from it; Changes
-// to reports I posted or voted on needs none, and turning either off never does.
-// UI-SPEC 2b: the stored Critical value is kept while the home area is missing,
-// so UpdateProfile's clear path does not touch it and setting an area again
-// brings Critical back as it was. Every part is checked before anything is
-// written; 3.2's row is written only when one of its fields is set and the push
-// row only when one of its two fields is set.
+// UpdateAlertSettings saves the distance. It must be one of AlertRadii, and a
+// body with no distance is refused as nothing to save. The stored
+// reliable_alerts_on goes through UpsertAlertSettings unchanged, so enabled_at,
+// the start point the Reliable bell row can still be moved later by, is kept as
+// stored by a distance change (quick 261103-jal, D7, D8, C10). The answer is the
+// state as stored.
 func (s *AccountService) UpdateAlertSettings(ctx context.Context, accountID int64, u AlertSettingsUpdate) (AlertSettings, error) {
-	if u.ReliableAlerts == nil && u.AlertRadiusKm == nil && u.CriticalPush == nil && u.ChangesPush == nil && u.OfficialPush == nil {
+	if u.AlertRadiusKm == nil {
 		return AlertSettings{}, ValidationError{Field: "body", Message: AlertsNothingToSaveMessage}
 	}
-	if u.AlertRadiusKm != nil && !validAlertRadius(*u.AlertRadiusKm) {
+	if !validAlertRadius(*u.AlertRadiusKm) {
 		return AlertSettings{}, ValidationError{Field: "alert_radius_km", Message: AlertRadiusMessage}
 	}
 
-	cur, err := s.AlertSettings(ctx, accountID)
-	if err != nil {
-		return AlertSettings{}, err
+	stored := false
+	switch row, err := s.q.GetAlertSettings(ctx, accountID); {
+	case err == nil:
+		stored = row.ReliableAlertsOn
+	case errors.Is(err, pgx.ErrNoRows):
+		// No row yet: the stored switch reads off.
+	default:
+		return AlertSettings{}, fmt.Errorf("service: reading alert settings: %w", err)
 	}
-	on, radius := cur.ReliableAlertsOn, cur.AlertRadiusKm
-	if u.ReliableAlerts != nil {
-		on = *u.ReliableAlerts
+	if _, err := s.q.UpsertAlertSettings(ctx, sqlcgen.UpsertAlertSettingsParams{
+		AccountID:        accountID,
+		ReliableAlertsOn: stored,
+		AlertRadiusKm:    int16(*u.AlertRadiusKm),
+		Now:              s.now().UTC(),
+	}); err != nil {
+		return AlertSettings{}, fmt.Errorf("service: saving alert settings: %w", err)
 	}
-	if u.AlertRadiusKm != nil {
-		radius = *u.AlertRadiusKm
-	}
-	critical, changes := cur.CriticalPushOn, cur.ChangesPushOn
-	if u.CriticalPush != nil {
-		critical = *u.CriticalPush
-	}
-	if u.ChangesPush != nil {
-		changes = *u.ChangesPush
-	}
-	if on && !cur.HasHomeArea {
-		return AlertSettings{}, ValidationError{Field: "reliable_alerts", Message: AlertsNeedHomeAreaMessage}
-	}
-	if u.CriticalPush != nil && *u.CriticalPush && !cur.HasHomeArea {
-		return AlertSettings{}, ValidationError{Field: "critical_push", Message: AlertsNeedHomeAreaMessage}
-	}
-	// Phase 5 (D-11): the official switch follows the same home area rule as
-	// Critical, because official alerts are matched to the home district. Turning
-	// it off never needs an area, and the stored value is kept while the area is
-	// missing.
-	if u.OfficialPush != nil && *u.OfficialPush && !cur.HasHomeArea {
-		return AlertSettings{}, ValidationError{Field: "official_push", Message: AlertsNeedHomeAreaMessage}
-	}
-
-	out := cur
-	if u.ReliableAlerts != nil || u.AlertRadiusKm != nil {
-		row, err := s.q.UpsertAlertSettings(ctx, sqlcgen.UpsertAlertSettingsParams{
-			AccountID:        accountID,
-			ReliableAlertsOn: on,
-			AlertRadiusKm:    int16(radius),
-			Now:              s.now().UTC(),
-		})
-		if err != nil {
-			return AlertSettings{}, fmt.Errorf("service: saving alert settings: %w", err)
-		}
-		out.ReliableAlertsOn = row.ReliableAlertsOn
-		out.AlertRadiusKm = int(row.AlertRadiusKm)
-		out.EnabledAt = nil
-		if row.EnabledAt.Valid {
-			at := row.EnabledAt.Time
-			out.EnabledAt = &at
-		}
-	}
-	if u.CriticalPush != nil || u.ChangesPush != nil {
-		row, err := s.q.UpsertPushKindSettings(ctx, sqlcgen.UpsertPushKindSettingsParams{
-			AccountID:      accountID,
-			CriticalPushOn: critical,
-			ChangesPushOn:  changes,
-			Now:            s.now().UTC(),
-		})
-		if err != nil {
-			return AlertSettings{}, fmt.Errorf("service: saving push switches: %w", err)
-		}
-		out.CriticalPushOn = row.CriticalPushOn
-		out.ChangesPushOn = row.ChangesPushOn
-	}
-	if u.OfficialPush != nil {
-		stored, err := s.q.UpsertOfficialPushSetting(ctx, sqlcgen.UpsertOfficialPushSettingParams{
-			AccountID:      accountID,
-			OfficialPushOn: *u.OfficialPush,
-			Now:            s.now().UTC(),
-		})
-		if err != nil {
-			return AlertSettings{}, fmt.Errorf("service: saving the official alerts switch: %w", err)
-		}
-		out.OfficialPushOn = stored
-	}
-	return out, nil
+	return s.AlertSettings(ctx, accountID)
 }

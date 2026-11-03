@@ -612,29 +612,25 @@ func TestWelcomeAlertsAsk(t *testing.T) {
 		`<p class="app-window__status" id="welcome-alerts-home-status" role="status" aria-live="polite" hidden></p>`,
 		`<ul class="app-window__results" id="welcome-alerts-home-results" role="listbox" aria-label="Places found" hidden></ul>`)
 
-	// The tick box: unticked, labelled with the Settings row words.
-	box := regexp.MustCompile(`<input[^>]*id="welcome-alerts-reliable"[^>]*>`).FindString(ask)
-	if box == "" {
-		t.Fatalf("no Reliable tick box in the alerts pop-up")
-	}
-	p13MustContain(t, "tick box", box, `type="checkbox"`)
-	p13MustNotContain(t, "tick box", box, "checked")
-	p13MustContain(t, "alerts pop-up", ask,
-		`<label class="welcome-ask__check"><input type="checkbox" id="welcome-alerts-reliable"><span>A Reliable reporter posts near me</span></label>`)
+	// The tick box: there is none.
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+	// D5, D9 f): the alerts pop-up had an unticked Reliable reporter tick box; it
+	// has no checkbox, no label for one and no Reliable words now.
+	p13MustNotContain(t, "alerts pop-up", ask, `type="checkbox"`, "welcome-alerts-reliable", "welcome-ask__check", "A Reliable reporter posts near me")
 
 	// Amended by the 03.3-REVIEW fix WR-05: one hidden error line, in the look of
 	// the step 4 error line, says when the home area picked here was not saved.
-	// It sits after the tick box and before the buttons.
+	// It sits after the home area search and before the buttons.
 	p13MustContain(t, "alerts pop-up", ask,
 		`<p class="inline-error" id="welcome-alerts-ask-error" role="alert" hidden></p>`)
-	p13Ordered(t, ask, "alerts pop-up", `id="welcome-alerts-ask-title"`, `id="welcome-alerts-home"`, `id="welcome-alerts-reliable"`, `id="welcome-alerts-ask-error"`, `class="logout-confirm__actions"`, `id="welcome-alerts-later"`, `id="welcome-alerts-allow"`)
+	p13Ordered(t, ask, "alerts pop-up", `id="welcome-alerts-ask-title"`, `id="welcome-alerts-home"`, `id="welcome-alerts-ask-error"`, `class="logout-confirm__actions"`, `id="welcome-alerts-later"`, `id="welcome-alerts-allow"`)
 	// Nothing is chosen on open, there is no supporting line (the paragraphs are
 	// the search status line and the hidden error line), and no link.
 	p13MustNotContain(t, "alerts pop-up", ask, "autofocus", "<a ")
 	w10Count(t, "alerts pop-up", ask, "<p", 2)
 	w10Count(t, "alerts pop-up", ask, "<button", 2)
-	w10Count(t, "alerts pop-up", ask, "<input", 2)
-	for _, id := range []string{"welcome-alerts-ask-title", "welcome-alerts-later", "welcome-alerts-allow", "welcome-alerts-home", "welcome-alerts-home-form", "welcome-alerts-home-input", "welcome-alerts-home-status", "welcome-alerts-home-results", "welcome-alerts-reliable", "welcome-alerts-ask-error"} {
+	w10Count(t, "alerts pop-up", ask, "<input", 1)
+	for _, id := range []string{"welcome-alerts-ask-title", "welcome-alerts-later", "welcome-alerts-allow", "welcome-alerts-home", "welcome-alerts-home-form", "welcome-alerts-home-input", "welcome-alerts-home-status", "welcome-alerts-home-results", "welcome-alerts-ask-error"} {
 		w10Count(t, "welcome.html.tmpl", page, `id="`+id+`"`, 1)
 	}
 
@@ -714,13 +710,16 @@ func TestWelcomeAlertsScript(t *testing.T) {
 	w10Count(t, "welcome.js", js, "'welcome-alerts-ask'", 1)
 
 	// Plan 03.3-19 (03.3-UAT gap for test 4, owner 2026-10-27): the pop-up saves a
-	// home area and the Reliable choice after enable. The alerts address and the
-	// Reliable field are each written once in the whole file (comments included, so
-	// no comment spells them), the one Reliable request is saveReliable, and the
-	// old changes_push field is not used. A Mac Dock app never gets the pop-up.
-	w10Count(t, "welcome.js", raw, "/api/me/alerts", 1)
-	w10Count(t, "welcome.js", raw, "reliable_alerts", 1)
-	w10Count(t, "welcome.js", raw, "function saveReliable(", 1)
+	// home area and the Reliable choice after enable. A Mac Dock app never gets
+	// the pop-up.
+	//
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D5):
+	// the alerts address, the Reliable field and saveReliable are gone from the
+	// file, comments included, and the old changes_push field is not used.
+	w10Count(t, "welcome.js", raw, "/api/me/alerts", 0)
+	w10Count(t, "welcome.js", raw, "reliable_alerts", 0)
+	w10Count(t, "welcome.js", raw, "saveReliable", 0)
+	w10Count(t, "welcome.js", raw, "welcome-alerts-reliable", 0)
 	p13MustNotContain(t, "welcome.js", js, "changes_push")
 	p13MustContain(t, "canAsk", jsFunctionBody(t, js, "canAsk()"), "isMacDockApp")
 	// The title words in the script are the words before the home area in the
@@ -740,8 +739,8 @@ func TestWelcomeAlertsScript(t *testing.T) {
 	// The Allow handler: busy check, then enable as the first real statement,
 	// then the busy flags. Nothing is awaited before enable.
 	allow := jsFunctionBody(t, js, "onAskAllow()")
-	p13Ordered(t, allow, "onAskAllow", "if (askBusy) {", "window.PinalertNotify.enable(pushKey)", "askBusy = true;", ".then(", "saveReliable(", "postDone()")
-	p13MustNotContain(t, "onAskAllow", allow, "await ", "setTimeout(")
+	p13Ordered(t, allow, "onAskAllow", "if (askBusy) {", "window.PinalertNotify.enable(pushKey)", "askBusy = true;", ".then(", "postDone()")
+	p13MustNotContain(t, "onAskAllow", allow, "await ", "setTimeout(", "saveReliable(", "/api/me/alerts")
 	// Not now and Escape never reach enable.
 	for _, name := range []string{"onAskLater()", "onAskCancel(e)", "endFlow()", "openAsk()", "canAsk()"} {
 		p13MustNotContain(t, name, jsFunctionBody(t, js, name), "enable(", "requestPermission")

@@ -442,9 +442,14 @@ func TestPhoneAlertCriticalEndToEnd(t *testing.T) {
 	pwWantCount(t, w, a, 2)
 }
 
-// TestPhoneAlertReliableAtPosting is decision 6 and ROADMAP criterion 3: a
-// Reliable reporter's low report is pushed at posting, while it is still
-// Provisional, to the reader who turned that switch on and to nobody else.
+// TestPhoneAlertReliableAtPosting was decision 6 and ROADMAP criterion 3: a
+// Reliable reporter's low report was pushed at posting, while it was still
+// Provisional, to the reader who turned that switch on.
+//
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D3
+// and D4): a Reliable reporter note never reaches a phone now, whatever the
+// stored reliable_alerts flag says. The reader with the flag stored on and the
+// reader without it both get no message, and both hold the bell row.
 func TestPhoneAlertReliableAtPosting(t *testing.T) {
 	w := pwSetup(t)
 	const sessionID = "pw-reliable-reporter-session"
@@ -452,46 +457,45 @@ func TestPhoneAlertReliableAtPosting(t *testing.T) {
 	reporter := p17raSessionClient(t, w.srv.URL, sessionID)
 
 	a := w.near(t, "rel-a")
-	pwAlerts(t, w, a.client, `{"reliable_alerts":true,"alert_radius_km":5}`)
-	// N is near too, with the Reliable switch off: a low report is not Critical,
-	// so N gets nothing.
+	pwAlerts(t, w, a.client, `{"alert_radius_km":5}`)
+	// The old flag is stored on by SQL, so the test holds whatever the API does.
+	testutil.MustExec(t, w.pool, `UPDATE account_alert_settings SET reliable_alerts_on = true, enabled_at = now() - interval '3 hours' WHERE account_id = $1`, a.id)
 	n := w.near(t, "rel-n")
 
-	id := submitReportGetID(t, reporter, w.srv.URL, floodReportBody(p07ReportLat, p07ReportLon))
+	submitReportGetID(t, reporter, w.srv.URL, floodReportBody(p07ReportLat, p07ReportLon))
 	w.run(t)
 
-	msg := pwWantCount(t, w, a, 1)[0]
-	if msg.Payload.Kind != "reliable" || msg.Payload.Tag != "report-"+strconv.FormatInt(id, 10) {
-		t.Errorf("kind/tag = %q %q", msg.Payload.Kind, msg.Payload.Tag)
-	}
-	if msg.Payload.Title != "Flood near "+pwAreaName {
-		t.Errorf("title = %q", msg.Payload.Title)
-	}
-	body := msg.Payload.Body
-	if !strings.HasPrefix(body, "From a Reliable reporter.") || !strings.HasSuffix(body, pwUnconfirmed) {
-		t.Errorf("body = %q, want it to start From a Reliable reporter. and end %s", body, pwUnconfirmed)
-	}
-	if want := "From a Reliable reporter. " + service.DistanceWords(pwHomeKm(t, p07ReportLat, p07ReportLon)) + pwFromHome + " " + pwUnconfirmed; body != want {
-		t.Errorf("body = %q, want %q", body, want)
-	}
-	if msg.Urgency != push.UrgencyNormal || msg.TTL <= 0 || msg.TTL > 30*time.Minute {
-		t.Errorf("urgency/TTL = %q %v, want normal and at most 30m", msg.Urgency, msg.TTL)
-	}
+	pwWantCount(t, w, a, 0)
 	pwWantCount(t, w, n, 0)
+	for name, id := range map[string]int64{"flag stored on": a.id, "flag never set": n.id} {
+		if got := delCount(t, w.pool, `SELECT count(*) FROM updates WHERE account_id = $1 AND kind = 'reliable_nearby'`, id); got != 1 {
+			t.Errorf("%s: reliable_nearby bell rows = %d, want 1", name, got)
+		}
+		if got := delCount(t, w.pool, `SELECT count(*) FROM push_outbox WHERE account_id = $1`, id); got != 0 {
+			t.Errorf("%s: push_outbox rows = %d, want none", name, got)
+		}
+	}
 	w.laterSweepsSendNothing(t)
 }
 
-// TestPhoneAlertChangesToMyReport is decision 3 for the Changes kind: the
-// person who posted a report and turned Changes on is told once it is
-// confirmed, and the voter whose vote caused the change is not told about their
+// TestPhoneAlertChangesToMyReport was decision 3 for the Changes kind: the
+// person who posted a report and turned Changes on was told once it was
+// confirmed, and the voter whose vote caused the change was not told about their
 // own vote.
+//
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D3
+// and D4): a change note never reaches a phone now, whatever the stored
+// changes_push flag says. Nobody gets a message, and the reporter's bell still
+// holds the reached_live row.
 func TestPhoneAlertChangesToMyReport(t *testing.T) {
 	w := pwSetup(t)
 	r := w.near(t, "chg-r")
 	v1 := w.near(t, "chg-v1")
 	v2 := w.near(t, "chg-v2")
 	for _, p := range []*pwReader{r, v1, v2} {
-		pwAlerts(t, w, p.client, `{"changes_push":true}`)
+		pwAlerts(t, w, p.client, `{"alert_radius_km":5}`)
+		// The old flag is stored on by SQL, so the test holds whatever the API does.
+		testutil.MustExec(t, w.pool, `UPDATE account_alert_settings SET changes_push_on = true, changes_enabled_at = now() - interval '3 hours' WHERE account_id = $1`, p.id)
 	}
 	// Critical is on by default and r, v1 and v2 live near the report, so a
 	// Critical report would push to v1 and v2. A low report does not.
@@ -501,26 +505,15 @@ func TestPhoneAlertChangesToMyReport(t *testing.T) {
 
 	pwConfirmTwice(t, w, id, v1, v2)
 
-	got := pwWantCount(t, w, r, 1)[0]
-	if got.Payload.Kind != "changed" || got.Payload.Title != "Your report is now confirmed" {
-		t.Errorf("reporter message kind/title = %q %q, want changed and Your report is now confirmed", got.Payload.Kind, got.Payload.Title)
-	}
-	if got.Payload.Tag != "report-"+strconv.FormatInt(id, 10) {
-		t.Errorf("tag = %q", got.Payload.Tag)
-	}
-	// v2 cast the vote that confirmed the report: nothing for their own vote,
-	// including after the timed changes sweep.
+	pwWantCount(t, w, r, 0)
+	pwWantCount(t, w, v1, 0)
 	pwWantCount(t, w, v2, 0)
 	w.laterSweepsSendNothing(t)
-	pwWantCount(t, w, r, 1)
-	pwWantCount(t, w, v2, 0)
-	// v1 voted earlier. Their first refresh happens at v2's vote, when the
-	// report is already confirmed, so 3.2 takes a silent baseline and v1 gets
-	// nothing; the loop only guards the kind of any message they might get.
-	for _, m := range w.sender.to(v1.endpoint) {
-		if m.Payload.Kind != "changed" || !strings.HasPrefix(m.Payload.Title, "A report you voted on") {
-			t.Errorf("v1 got an unexpected message: %+v", m.Payload)
-		}
+	if got := delCount(t, w.pool, `SELECT count(*) FROM updates WHERE account_id = $1 AND report_id = $2 AND kind = 'reached_live'`, r.id, id); got != 1 {
+		t.Errorf("the reporter's reached_live bell rows = %d, want 1", got)
+	}
+	if got := delCount(t, w.pool, `SELECT count(*) FROM push_outbox WHERE kind = 'changed'`); got != 0 {
+		t.Errorf("changed rows in the outbox = %d, want none", got)
 	}
 }
 
@@ -530,12 +523,12 @@ func TestPhoneAlertChangesToMyReport(t *testing.T) {
 // reports from five reporters near one reader in one hour give five
 // notifications, every one of kind critical, with no summary and no extra kind.
 // They count toward the cap, so the next push of another kind in the same hour
-// (a Reliable reporter's report, with that switch on) is held back: the phone
-// gets nothing for it and its outbox row is skipped as cap_account_hour.
+// (a follow note, since 2026-11-03) is held back: the phone gets nothing for it
+// and its outbox row is skipped as cap_account_hour.
 func TestPhoneAlertCapShowsNothingExtra(t *testing.T) {
 	w := pwSetup(t)
 	a := w.near(t, "cap-a")
-	pwAlerts(t, w, a.client, `{"reliable_alerts":true,"alert_radius_km":5}`)
+	pwAlerts(t, w, a.client, `{"alert_radius_km":5}`)
 	const critical = 5
 	var ids []int64
 	for i := 0; i < critical; i++ {
@@ -569,15 +562,22 @@ func TestPhoneAlertCapShowsNothingExtra(t *testing.T) {
 	}
 
 	// The sixth push, of another kind, in the same hour: held back, nothing shown.
-	const sessionID = "pw-cap-reliable-reporter-session"
-	testutil.SeedReliableReporter(t, w.pool, pwEmail("cap-rel"), sessionID, time.Now().UTC())
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+	// D3, D9): the other kind is a follow note, because a Reliable reporter note
+	// never reaches a phone now. The reader follows a public Reliable reporter
+	// with the Notify me bell on.
+	const sessionID = "pw-cap-followed-session"
+	followee := testutil.SeedPublicReporter(t, w.pool, pwEmail("cap-rel"), "capfollowed", sessionID, time.Now().UTC())
+	testutil.SeedFollow(t, w.pool, a.id, followee, time.Now().UTC().Add(-3*time.Hour))
+	testutil.MustExec(t, w.pool, `UPDATE account_follows SET notify = true, notify_since = $3 WHERE follower_id = $1 AND followee_id = $2`,
+		a.id, followee, time.Now().UTC().Add(-2*time.Hour))
 	relReporter := p17raSessionClient(t, w.srv.URL, sessionID)
 	submitReportGetID(t, relReporter, w.srv.URL, floodReportBody(p07ReportLat, p07ReportLon))
 	w.run(t)
 
 	pwWantCount(t, w, a, critical)
-	if n := delCount(t, w.pool, `SELECT count(*) FROM push_outbox WHERE account_id = $1 AND kind = 'reliable' AND state = 'skipped' AND skip_reason = 'cap_account_hour'`, a.id); n != 1 {
-		t.Errorf("reliable rows skipped by the hourly cap = %d, want 1", n)
+	if n := delCount(t, w.pool, `SELECT count(*) FROM push_outbox WHERE account_id = $1 AND kind = 'follow' AND state = 'skipped' AND skip_reason = 'cap_account_hour'`, a.id); n != 1 {
+		t.Errorf("follow rows skipped by the hourly cap = %d, want 1", n)
 	}
 	if total := w.sender.total(); total != critical {
 		t.Errorf("the fake push service saw %d messages in all, want %d", total, critical)

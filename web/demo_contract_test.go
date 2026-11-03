@@ -140,7 +140,7 @@ func TestDemoPageMarkup(t *testing.T) {
 	// window, the first-post pop-up and every tel link are left out.
 	p13MustNotContain(t, "demo page", page,
 		`notice_strip`, `place_search`, `flag_dialog`, `data-reliable`, `reader_dialog`,
-		`changes_ask`, `tel:`, `TelHref`, `Only Reliable reporters`, `href="/alerts"`, `href="/profile`)
+		`tel:`, `TelHref`, `Only Reliable reporters`, `href="/alerts"`, `href="/profile`)
 
 	// The strip partial and the page both name the same strip once.
 	if n := strings.Count(page, `{{template "demo_strip"`); n != 1 {
@@ -177,7 +177,7 @@ func TestDemoPageLoadsNoForbiddenScripts(t *testing.T) {
 	}
 	for _, banned := range []string{"notify.js", "queue.js", "flag.js", "mute.js", "updates.js",
 		"account-menu.js", "position.js", "reader.js", "reliable.js", "settings-alerts.js", "slow-notice.js",
-		"changes-ask.js", "low.js", "welcome.js"} {
+		"low.js", "welcome.js"} {
 		if dm13Index(names, banned) != -1 {
 			t.Errorf("the Demo page must not load %s", banned)
 		}

@@ -8,8 +8,9 @@
 //     and this device has not asked this account before;
 //   - the account id is added to the list in pinalert.alertsAsked just before
 //     the dialog opens, keeping the last 8, and not at all when it skips;
-//   - Allow calls enable first, then saves the Reliable switch only when the box
-//     is ticked; Not now and Escape ask the browser nothing and send nothing;
+//   - Allow calls enable first and then closes the dialog; no answer sends a
+//     request (Amended 2026-11-03 by quick 261103-jal, D5: the Reliable tick box
+//     and its save are gone); Not now and Escape ask the browser nothing;
 //   - it runs once per page load and builds no markup.
 //
 // Run it with: node --test web/installed_ask_test.mjs
@@ -131,18 +132,11 @@ function load(o = {}) {
   const title = make('installed-alerts-ask-title');
   const later = make('installed-alerts-ask-later');
   const allow = make('installed-alerts-ask-allow');
-  let ticked = !!opts.ticked;
-  const reliable = make('installed-alerts-ask-reliable');
-  Object.defineProperty(reliable, 'checked', {
-    get() { log.push('read-checked'); return ticked; },
-    set(v) { ticked = !!v; }
-  });
   const els = opts.noDialog ? {} : {
     'installed-alerts-ask': dialog,
     'installed-alerts-ask-title': title,
     'installed-alerts-ask-later': later,
-    'installed-alerts-ask-allow': allow,
-    'installed-alerts-ask-reliable': reliable
+    'installed-alerts-ask-allow': allow
   };
   doc.getElementById = (id) => els[id] || null;
   doc.querySelector = (sel) => {
@@ -220,10 +214,9 @@ function load(o = {}) {
     looks,
     advance,
     fakeTimers,
-    dialog, title, later, allow, reliable, doc, log, fetches, enables, deviceCalls, store, make,
+    dialog, title, later, allow, doc, log, fetches, enables, deviceCalls, store, make,
     releaseEnable: (value) => releaseEnable(value),
     escape: () => dialog.fire('cancel'),
-    tick: (on) => { ticked = on; },
     // go runs the ask with the page above and waits for its decision.
     go: () => sandbox.PinalertInstalledAsk.run(options)
   };
@@ -391,15 +384,18 @@ test(NAME + 'leaves quietly at load on a page without the dialog', async () => {
 
 // ---- the answers ---------------------------------------------------------
 
-test(NAME + 'Allow: enable is the first call of the click, before the box is read and before any request', async () => {
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D5):
+// the box has no Reliable tick box, so Allow calls enable, closes the dialog and
+// sends no request at all. The cases about reading the box and saving the
+// Reliable switch became cases that no request is sent.
+test(NAME + 'Allow: enable is the first call of the click, then the dialog closes and no request is sent', async () => {
   const m = load({ enable: 'pending' });
   await m.go();
-  m.tick(true);
   m.log.length = 0;
   m.allow.click();
   assert.deepEqual(m.enables, ['BPUSHKEY']);
   assert.equal(m.log[0], 'enable', 'enable is the first statement of the tap');
-  assert.equal(m.fetches.length, 0, 'no request before enable settles');
+  assert.equal(m.fetches.length, 0);
   assert.equal(m.dialog.open, true);
   assert.equal(m.allow.disabled, true);
   assert.equal(m.later.disabled, true);
@@ -407,31 +403,13 @@ test(NAME + 'Allow: enable is the first call of the click, before the box is rea
   m.releaseEnable({ ok: true });
   await settle();
   await settle();
-  assert.equal(m.fetches.length, 1);
-  assert.ok(m.log.indexOf('enable') < m.log.indexOf('fetch'));
+  assert.equal(m.fetches.length, 0, 'Allow never sends a request');
   assert.equal(m.dialog.open, false);
+  assert.equal(m.dialog.closeCalls, 1);
   assert.equal(m.dialog.attrs['aria-busy'], undefined);
 });
 
-test(NAME + 'Allow with the box ticked sends the Reliable request, the same one the sign up pop-up sends', async () => {
-  const m = load();
-  await m.go();
-  m.tick(true);
-  m.allow.click();
-  await settle();
-  await settle();
-  assert.equal(m.fetches.length, 1);
-  const req = m.fetches[0];
-  assert.equal(req.url, '/api/me/alerts');
-  assert.equal(req.method, 'PATCH');
-  assert.equal(req.credentials, 'same-origin');
-  assert.equal(JSON.stringify(req.headers), '{"Content-Type":"application/json"}');
-  assert.equal(JSON.stringify(req.body), '{"reliable_alerts":true}');
-  assert.equal(m.dialog.open, false);
-  assert.equal(m.dialog.closeCalls, 1);
-});
-
-test(NAME + 'Allow with the box unticked sends no request and closes the dialog', async () => {
+test(NAME + 'Allow sends no request and closes the dialog', async () => {
   const m = load();
   await m.go();
   m.allow.click();
@@ -442,29 +420,16 @@ test(NAME + 'Allow with the box unticked sends no request and closes the dialog'
   assert.equal(m.dialog.open, false);
 });
 
-test(NAME + 'a refused, rejected or throwing enable still saves the ticked box and closes the dialog', async () => {
+test(NAME + 'a refused, rejected or throwing enable still closes the dialog and sends nothing', async () => {
   for (const enable of ['refused', 'reject', 'throw']) {
     const m = load({ enable });
     await m.go();
-    m.tick(true);
     m.allow.click();
     await settle();
     await settle();
     assert.equal(m.enables.length, 1, enable);
-    assert.equal(m.fetches.length, 1, enable);
+    assert.equal(m.fetches.length, 0, enable);
     assert.equal(m.dialog.open, false, enable);
-  }
-});
-
-test(NAME + 'a failed Reliable request still closes the dialog', async () => {
-  for (const patch of [500, 'reject']) {
-    const m = load({ patch });
-    await m.go();
-    m.tick(true);
-    m.allow.click();
-    await settle();
-    await settle();
-    assert.equal(m.dialog.open, false, String(patch));
   }
 });
 
@@ -483,10 +448,9 @@ test(NAME + 'a second tap on Allow while it is busy changes nothing', async () =
   assert.equal(m.dialog.closeCalls, 1);
 });
 
-test(NAME + 'Not now closes the dialog and never calls enable or sends a request, even with the box ticked', async () => {
+test(NAME + 'Not now closes the dialog and never calls enable or sends a request', async () => {
   const m = load();
   await m.go();
-  m.tick(true);
   m.later.click();
   await settle();
   assert.equal(m.enables.length, 0);
@@ -497,7 +461,6 @@ test(NAME + 'Not now closes the dialog and never calls enable or sends a request
 test(NAME + 'Escape is Not now: the cancel event is prevented, nothing is asked or sent', async () => {
   const m = load();
   await m.go();
-  m.tick(true);
   const event = m.escape();
   assert.equal(event.prevented, 1);
   assert.equal(m.enables.length, 0);
@@ -654,13 +617,12 @@ test(NAME + 'WR-B05: a position module that throws counts as do not open', async
 
 // ---- the script itself -----------------------------------------------------
 
-test(NAME + 'the script writes no markup, no words, and reads the Reliable box only after enable', () => {
+test(NAME + 'the script writes no markup, no words, no request and no Reliable save', () => {
   const code = source.split('\n').filter((line) => !line.trim().startsWith('//')).join('\n');
   assert.doesNotMatch(code, /innerHTML|outerHTML|insertAdjacentHTML|document\.write|createElement|textContent/);
+  assert.doesNotMatch(code, /fetch|\/api\/me\/alerts|reliable|saveReliable|\.checked/i);
   const tap = source.slice(source.indexOf('function onAllow'), source.indexOf('function onLater'));
   assert.ok(tap.indexOf('notify.enable(') !== -1);
-  assert.ok(tap.indexOf('notify.enable(') < tap.indexOf('.checked'), 'enable comes before the box is read');
-  assert.ok(tap.indexOf('notify.enable(') < tap.indexOf('saveReliable('), 'enable comes before the request');
 });
 
 test(NAME + 'the script touches no key of notify.js and adds no listener to the page or window', () => {

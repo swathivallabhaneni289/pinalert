@@ -1,7 +1,9 @@
 // updatesalerts.go is the Reliable reporter alert step of Refresh (plan
-// 03.2-13, NOTIF-05, D-26): an opt in update when a Reliable reporter posts
-// within the reader's chosen distance of their home area. It is the one place a
-// report becomes news for someone who has not voted on or posted it.
+// 03.2-13, NOTIF-05, D-26): an update when a Reliable reporter posts within the
+// reader's chosen distance of their home area. It is the one place a report
+// becomes news for someone who has not voted on or posted it. Since the owner
+// decision of 2026-11-03 (quick 261103-jal, D4) it is for every account with a
+// home area, with no switch, and it never reaches a phone.
 
 package service
 
@@ -17,16 +19,20 @@ import (
 	sqlcgen "pinalert/internal/store/sqlc"
 )
 
-// refreshReliableAlerts is NOTIF-05's rule, and Phase 3.3's kind 3 reuses it.
+// refreshReliableAlerts is NOTIF-05's rule, and Phase 3.3's kind 3 reused it.
 // It runs at the end of Refresh and does nothing, with no error, when the
-// reader has not switched the alert on, has no home area, or the service has no
-// nearby reader. It never stops the other updates: Refresh has already written
+// reader has no home area or the service has no nearby reader. There is no
+// switch: every account with a home area gets the row (owner 2026-11-03, quick
+// 261103-jal, D4). It never stops the other updates: Refresh has already written
 // those (D-28).
 //
 // The order is part of the rule:
 //
-//  1. Read the account's switch, distance and the time the switch went on, then
-//     its home area cell. Either missing ends the step.
+//  1. Read the account's distance and, when the row has one, the stored time the
+//     old switch went on, then its home area cell. No settings row means the
+//     default distance. A missing home area ends the step. The start point is
+//     the later of that stored time and now minus ReliableBellLookBack, so
+//     nothing older than an hour is ever back filled (C1).
 //  2. Read the reports around the middle of the home cell (HomeAreaAnchor,
 //     Q5) with the chosen distance, through the same Nearby read the feed uses.
 //     The anchor is decoded, used for this one read and dropped; nothing is
@@ -38,8 +44,8 @@ import (
 //     Reliable (the same tag the Show menu tick reads), it is not the reader's
 //     own, not one the reader follows or muted, not one by a person the reader
 //     muted (person_mutes, read once per refresh through MutedPeopleIDs, plan
-//     09-18, D-12), and it was posted after the
-//     switch went on, and it is not one the follow note step wrote a note for
+//     09-18, D-12), and it was posted after the start point, and it is not one
+//     the follow note step wrote a note for
 //     in this same Refresh (followNoted, plan 09-22).
 //  4. Read the reporter accounts of the survivors once. For each, oldest report
 //     first: skip it when this reader already got ReliableAlertsPerReporterPerHour
@@ -59,26 +65,37 @@ import (
 // hour. An existing cursor is left alone. Phase 3.3 kind 3 reuses this step, so
 // the seed belongs here and not in the bell's own read.
 //
-// TRUSTX-03 burst detection is not built, and it is a hard dependency before
-// this rule reaches push (ROADMAP 3.2 scope note 2). The per reporter cap and
-// the Not confirmed yet wording soften it for the in app bell only; since the
-// 2026-10-18 amendment this also covers non critical reports at posting.
+// TRUSTX-03 burst detection is not built. It was a hard dependency before this
+// rule reached push (ROADMAP 3.2 scope note 2); since 2026-11-03 the rule no
+// longer reaches the phone at all, so the dependency is met by not pushing this
+// kind. Widening the bell row to every account with a home area is softened by
+// the same per reporter cap, the hourly ceiling and the Not confirmed yet
+// wording; since the 2026-10-18 amendment this also covers non critical reports
+// at posting.
 func (s *UpdatesService) refreshReliableAlerts(ctx context.Context, accountID int64, now time.Time, followNoted map[int64]struct{}) error {
 	if s.reports == nil {
 		return nil
 	}
 
+	// No settings row is the default distance and the look back alone (quick
+	// 261103-jal, C1): since is the later of the stored enabled_at, when the row
+	// has one, and now minus ReliableBellLookBack, the way changesFor bounds its
+	// own window.
+	since := now.Add(-ReliableBellLookBack)
+	radius := DefaultAlertRadiusKm
 	settings, err := s.q.GetAlertSettings(ctx, accountID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
+	switch {
+	case err == nil:
+		if validAlertRadius(int(settings.AlertRadiusKm)) {
+			radius = int(settings.AlertRadiusKm)
 		}
+		if settings.EnabledAt.Valid && settings.EnabledAt.Time.After(since) {
+			since = settings.EnabledAt.Time
+		}
+	case errors.Is(err, pgx.ErrNoRows):
+	default:
 		return fmt.Errorf("reading alert settings: %w", err)
 	}
-	if !settings.ReliableAlertsOn || !settings.EnabledAt.Valid {
-		return nil
-	}
-	enabledAt := settings.EnabledAt.Time
 
 	cell, err := s.q.GetAccountHomeCell(ctx, accountID)
 	if err != nil {
@@ -95,10 +112,6 @@ func (s *UpdatesService) refreshReliableAlerts(ctx context.Context, accountID in
 		return nil
 	}
 
-	radius := int(settings.AlertRadiusKm)
-	if !validAlertRadius(radius) {
-		radius = DefaultAlertRadiusKm
-	}
 	views, err := s.reports.Nearby(ctx, NearbyQuery{
 		Latitude:        lat,
 		Longitude:       lon,
@@ -142,7 +155,7 @@ func (s *UpdatesService) refreshReliableAlerts(ctx context.Context, accountID in
 		if mutedPeople[v.ReporterAccount()] {
 			continue
 		}
-		if v.CreatedAt.Before(enabledAt) {
+		if v.CreatedAt.Before(since) {
 			continue
 		}
 		// Follow wins the one first alert slot (plan 09-22, D-09, review W3): skip

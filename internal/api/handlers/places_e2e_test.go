@@ -177,8 +177,14 @@ func TestSettingsRows(t *testing.T) {
 	// Amended 2026-10-29 by Phase 9 plan 20 (D-12, UI-SPEC Defaults 7): the Muted
 	// people button row sits between Muted reports and Blocked people. Every
 	// other id is unchanged.
-	if strings.Join(buttonIDs, ",") != "settings-username-row,settings-name-row,settings-home-row,settings-device-install,settings-critical-nohome,settings-official-nohome,settings-reliable-nohome,settings-following-row,settings-followers-row,settings-muted-row,settings-muted-people-row,settings-blocked-row,settings-logout-all-row,settings-delete-row" {
-		t.Errorf("Settings button rows are %v, want Username, Name, Home area, the On this device install row, the three Add a home area first rows, Following, Followers, Muted reports, Muted people, Blocked people, Log out of all devices, Delete my account", buttonIDs)
+	//
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+	// D1, C9): the three Add a home area first rows (Critical, official, Reliable)
+	// are gone. The one that is left is the distance row's button, which sits
+	// after the install row, so the list holds settings-device-install and then
+	// settings-radius-nohome where the three were.
+	if strings.Join(buttonIDs, ",") != "settings-username-row,settings-name-row,settings-home-row,settings-device-install,settings-radius-nohome,settings-following-row,settings-followers-row,settings-muted-row,settings-muted-people-row,settings-blocked-row,settings-logout-all-row,settings-delete-row" {
+		t.Errorf("Settings button rows are %v, want Username, Name, Home area, the Alerts on this device install row, the distance row's Add a home area first, Following, Followers, Muted reports, Muted people, Blocked people, Log out of all devices, Delete my account", buttonIDs)
 	}
 	for _, want := range []string{
 		// Amended 2026-10-22 (owner: "too much details under the heading for
@@ -207,7 +213,9 @@ func TestSettingsRows(t *testing.T) {
 		`<section class="place-section" aria-labelledby="settings-account-title">`,
 		"People and reports", "Muted reports", "Log out of all devices", "Delete my account",
 		// Amended 2026-10-19 by Phase 3.2 plan 15: the Notifications section.
-		`id="settings-phone-title">Notifications</h2>`, "A Reliable reporter posts near me", "Add a home area first",
+		// Amended 2026-11-03 by quick 261103-jal (D1): the Reliable label left the box
+		// and the device row reads Alerts on this device.
+		`id="settings-phone-title">Notifications</h2>`, "Alerts on this device", "Add a home area first",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("/settings lacks %q", want)
@@ -226,6 +234,135 @@ func TestSettingsRows(t *testing.T) {
 			t.Errorf("/settings holds %q", banned)
 		}
 	}
+}
+
+// jalBoxChildren splits the inside of the Notifications box into its direct
+// children, all of which must be divs: the text outside them must be blank.
+func jalBoxChildren(t *testing.T, inner string) []string {
+	t.Helper()
+	tag := regexp.MustCompile(`</?div\b[^>]*>`)
+	var tops []string
+	var outside strings.Builder
+	depth, start, pos := 0, 0, 0
+	for _, loc := range tag.FindAllStringIndex(inner, -1) {
+		if strings.HasPrefix(inner[loc[0]:loc[1]], "</div") {
+			depth--
+			if depth == 0 {
+				tops = append(tops, inner[start:loc[1]])
+				pos = loc[1]
+			}
+			continue
+		}
+		if depth == 0 {
+			outside.WriteString(inner[pos:loc[0]])
+			start = loc[0]
+		}
+		depth++
+	}
+	outside.WriteString(inner[pos:])
+	if strings.TrimSpace(outside.String()) != "" {
+		t.Errorf("the Notifications box holds markup outside its two wrappers: %q", strings.TrimSpace(outside.String()))
+	}
+	return tops
+}
+
+// TestSettingsNotificationsTwoRows is D9 (e) of quick 261103-jal (owner decision
+// 2026-11-03): /settings renders the Notifications box with exactly two direct
+// children, the device row wrapper and the distance wrapper. The device switch
+// row reads Alerts on this device with the one sub line, the install, blocked
+// and unsupported variants read Alerts on this device with their own sub lines,
+// and the select shows with a home area while the Add a home area first button
+// shows without one. The four removed rows are nowhere on the page.
+func TestSettingsNotificationsTwoRows(t *testing.T) {
+	srv, mailer, _ := newE2EServer(t)
+
+	check := func(t *testing.T, body string, hasHome bool) {
+		t.Helper()
+		const open = `<div class="place-box" id="settings-alerts-box">`
+		start := strings.Index(body, open)
+		end := strings.Index(body, `<p class="inline-error" id="settings-device-error"`)
+		if start == -1 || end == -1 || end < start {
+			t.Fatalf("the Notifications box or its error line is missing (box at %d, error line at %d)", start, end)
+		}
+		inner := strings.TrimSpace(body[start+len(open) : end])
+		inner = strings.TrimSpace(strings.TrimSuffix(inner, "</div>"))
+		tops := jalBoxChildren(t, inner)
+		if len(tops) != 2 {
+			t.Fatalf("the Notifications box has %d direct children, want 2", len(tops))
+		}
+		if !strings.HasPrefix(tops[0], `<div id="settings-device-row">`) || !strings.HasPrefix(tops[1], `<div id="settings-radius-wrap">`) {
+			t.Errorf("the two wrappers are %q and %q, want the device row and the distance wrapper", tops[0][:40], tops[1][:40])
+		}
+
+		device := tops[0]
+		if n := strings.Count(device, `<span class="place-row__label">Alerts on this device</span>`); n != 4 {
+			t.Errorf("the device row carries %d Alerts on this device labels, want 4 (switch, install, blocked, unsupported)", n)
+		}
+		const sub = `<span class="place-row__sub">Critical reports and severe official alerts near your home area, and posts by people you follow.</span>`
+		if n := strings.Count(device, sub); n != 1 {
+			t.Errorf("the device switch row carries the sub line %d times, want once", n)
+		}
+		switchRow := device[strings.Index(device, `id="settings-device-on"`):strings.Index(device, `id="settings-device-install"`)]
+		if !strings.Contains(switchRow, sub) || !strings.Contains(switchRow, `id="settings-device-switch"`) {
+			t.Errorf("the sub line is not on the device switch row")
+		}
+		for _, want := range []string{
+			"Add Pinalert to your Home Screen first",
+			"Blocked in your browser settings. Allow notifications for Pinalert there, then come back.",
+			"This browser can&#39;t show notifications. Updates still show in the bell.",
+		} {
+			if !strings.Contains(device, want) && !strings.Contains(device, strings.ReplaceAll(want, "&#39;", "'")) {
+				t.Errorf("the device row lacks the variant sub line %q", want)
+			}
+		}
+		// The device guide lead "On this device, alerts work once Pinalert is on
+		// your Home Screen." is not the row label and stays.
+		if strings.Contains(body, `<span class="place-row__label">On this device</span>`) {
+			t.Errorf("/settings still holds the old row label On this device")
+		}
+
+		radius := tops[1]
+		selectRow := regexp.MustCompile(`<div class="place-row" id="settings-radius-row"( hidden)?>`).FindStringSubmatch(radius)
+		noHome := regexp.MustCompile(`<button type="button" class="place-row" id="settings-radius-nohome" aria-haspopup="dialog"( hidden)?>`).FindStringSubmatch(radius)
+		if selectRow == nil || noHome == nil {
+			t.Fatalf("the distance wrapper lacks its select row or its Add a home area first button: %s", radius)
+		}
+		if shown := selectRow[1] == ""; shown != hasHome {
+			t.Errorf("select row shown = %v, want %v (home area %v)", shown, hasHome, hasHome)
+		}
+		if shown := noHome[1] == ""; shown == hasHome {
+			t.Errorf("Add a home area first button shown = %v, want %v (home area %v)", shown, !hasHome, hasHome)
+		}
+		if n := strings.Count(radius, `How far from my home area`); n != 2 {
+			t.Errorf("the distance wrapper carries the label %d times, want 2 (select row and button)", n)
+		}
+		if !strings.Contains(radius, `<span class="place-row__sub">Add a home area first</span>`) {
+			t.Errorf("the distance button lacks its Add a home area first sub line")
+		}
+
+		for _, gone := range []string{
+			"settings-critical", "settings-official", "settings-changes", "settings-reliable",
+			"Critical reports near my home area", "Severe official alerts for my area",
+			"Changes and comments on reports I posted", "A Reliable reporter posts near me",
+		} {
+			if strings.Contains(body, gone) {
+				t.Errorf("/settings still holds the removed row text %q", gone)
+			}
+		}
+	}
+
+	t.Run("an account with no home area", func(t *testing.T) {
+		client := newVerifiedClient(t, srv, mailer, "places-two-rows-nohome@example.com")
+		_, body := getPlacePage(t, client, srv.URL, "/settings")
+		check(t, body, false)
+	})
+	t.Run("an account with a home area", func(t *testing.T) {
+		client := newVerifiedClient(t, srv, mailer, "places-two-rows-home@example.com")
+		meWant(t, "set home area", meSend(t, client, http.MethodPatch, srv.URL+"/api/me/profile",
+			`{"home_area":{"name":"Indiranagar, Bengaluru","lat":12.9784,"lon":77.6408}}`), http.StatusOK)
+		_, body := getPlacePage(t, client, srv.URL, "/settings")
+		check(t, body, true)
+	})
 }
 
 // TestSettingsBackAndNoGear proves D-11: on Settings the phone top bar has a

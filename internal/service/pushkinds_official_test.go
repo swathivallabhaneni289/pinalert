@@ -64,6 +64,21 @@ func TestOfficialPushDefaultMatchesSQL(t *testing.T) {
 	if strings.Contains(text, "COALESCE(s.official_push_on, false)") || strings.Contains(text, "COALESCE(official_push_on, false)") {
 		t.Error("official_push.sql must never default official_push_on to false")
 	}
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+	// D2): GetOfficialPushSetting keeps the default above, but the candidate read
+	// no longer reads the stored switch at all.
+	const candidates = "-- name: OfficialPushCandidates"
+	start := strings.Index(text, candidates)
+	if start < 0 {
+		t.Fatal("official_push.sql lost the OfficialPushCandidates query")
+	}
+	block := text[start+len(candidates):]
+	if end := strings.Index(block, "-- name: "); end >= 0 {
+		block = block[:end]
+	}
+	if strings.Contains(block, "official_push_on") {
+		t.Error("the OfficialPushCandidates query must not read official_push_on any more")
+	}
 	migration, err := os.ReadFile("../store/migrations/00013_add_official_push.sql")
 	if err != nil {
 		t.Fatalf("reading the migration: %v", err)

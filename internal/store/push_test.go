@@ -402,7 +402,7 @@ func TestPushHomeCandidates(t *testing.T) {
 	}
 }
 
-func TestFollowersWithChangesPush(t *testing.T) {
+func TestFollowersForBellRefresh(t *testing.T) {
 	pool := testutil.NewTestDB(t)
 	q := sqlcgen.New(pool)
 	ctx := context.Background()
@@ -443,17 +443,21 @@ func TestFollowersWithChangesPush(t *testing.T) {
 		}
 	}
 
-	got, err := q.FollowersWithChangesPush(ctx, report)
+	got, err := q.FollowersForBellRefresh(ctx, report)
 	if err != nil {
 		t.Fatalf("followers: %v", err)
 	}
-	want := []int64{author, confirmer, reopener}
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+	// C3): the query reads no stored Changes switch any more, so the voter whose
+	// stored switch is off and the voter with no settings row are returned too.
+	// The muted voter and the stranger stay out.
+	want := []int64{author, confirmer, reopener, off, norow}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("followers = %v, want %v (author, confirmer, reopener)", got, want)
+		t.Errorf("followers = %v, want %v (author, confirmer, reopener, off, norow)", got, want)
 	}
 }
 
-func TestAccountsWithChangesPush(t *testing.T) {
+func TestAccountsForBellRefresh(t *testing.T) {
 	pool := testutil.NewTestDB(t)
 	q := sqlcgen.New(pool)
 	ctx := context.Background()
@@ -467,21 +471,30 @@ func TestAccountsWithChangesPush(t *testing.T) {
 			t.Fatalf("settings: %v", err)
 		}
 	}
-	got, err := q.AccountsWithChangesPush(ctx, sqlcgen.AccountsWithChangesPushParams{RowCap: 10})
-	if err != nil || !reflect.DeepEqual(got, []int64{a, b}) {
-		t.Errorf("accounts = %v (%v), want %v", got, err, []int64{a, b})
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+	// C3): the query reads no stored Changes switch, so an account with the switch
+	// off and an account with no settings row are returned when they have a device.
+	off := pushPerson(t, pool, "awc-off@example.com", "awc-sess-off")
+	norow := pushPerson(t, pool, "awc-norow@example.com", "awc-sess-norow")
+	if _, err := q.UpsertPushKindSettings(ctx, sqlcgen.UpsertPushKindSettingsParams{
+		AccountID: off, CriticalPushOn: true, ChangesPushOn: false, Now: pushNow}); err != nil {
+		t.Fatalf("settings: %v", err)
 	}
-	got, err = q.AccountsWithChangesPush(ctx, sqlcgen.AccountsWithChangesPushParams{RowCap: 1})
+	got, err := q.AccountsForBellRefresh(ctx, sqlcgen.AccountsForBellRefreshParams{RowCap: 10})
+	if err != nil || !reflect.DeepEqual(got, []int64{a, b, off, norow}) {
+		t.Errorf("accounts = %v (%v), want %v", got, err, []int64{a, b, off, norow})
+	}
+	got, err = q.AccountsForBellRefresh(ctx, sqlcgen.AccountsForBellRefreshParams{RowCap: 1})
 	if err != nil || !reflect.DeepEqual(got, []int64{a}) {
 		t.Errorf("capped accounts = %v (%v), want %v", got, err, []int64{a})
 	}
 	// Review S-04 (2026-10-25): the next page starts after the given id, so a
 	// caller can rotate past the cap instead of always taking the same first rows.
-	got, err = q.AccountsWithChangesPush(ctx, sqlcgen.AccountsWithChangesPushParams{AfterID: a, RowCap: 1})
+	got, err = q.AccountsForBellRefresh(ctx, sqlcgen.AccountsForBellRefreshParams{AfterID: a, RowCap: 1})
 	if err != nil || !reflect.DeepEqual(got, []int64{b}) {
 		t.Errorf("accounts after %d = %v (%v), want %v", a, got, err, []int64{b})
 	}
-	got, err = q.AccountsWithChangesPush(ctx, sqlcgen.AccountsWithChangesPushParams{AfterID: b, RowCap: 10})
+	got, err = q.AccountsForBellRefresh(ctx, sqlcgen.AccountsForBellRefreshParams{AfterID: norow, RowCap: 10})
 	if err != nil || len(got) != 0 {
 		t.Errorf("accounts after the last = %v (%v), want none", got, err)
 	}

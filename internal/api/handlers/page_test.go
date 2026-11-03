@@ -505,143 +505,44 @@ func TestPagesCarryPushKey(t *testing.T) {
 	}
 }
 
-// stubAlertSettings answers AlertSettings from fixed values and remembers which
-// accounts it was asked about.
-type stubAlertSettings struct {
-	settings service.AlertSettings
-	err      error
-	asked    []int64
-}
-
-func (s *stubAlertSettings) AlertSettings(_ context.Context, accountID int64) (service.AlertSettings, error) {
-	s.asked = append(s.asked, accountID)
-	return s.settings, s.err
-}
-
-// changesAskAccount carries an id and an address that cannot be mistaken for
-// anything else on the page, so the log check below can look for both.
-var changesAskAccount = account.Account{ID: 4242, Email: "changes-ask-reader@example.com"}
-
-// runChangesAskCases pins plan 03.3-21 (the 03.3-UAT gap for test 4): a page
-// where people post and vote renders the changes pop-up exactly once, closed,
-// for a signed in account whose Changes switch is off when the server has a
-// push key, and renders none in any other case, always with a 200. The one
-// deferred changes-ask.js tag carrying the asset version comes with the pop-up
-// and only with it (03.3-REVIEW fix WR-03). render
-// answers the status and the body of one request. No database is needed.
-func runChangesAskCases(t *testing.T, page string, render func(cfg PageConfig, acc account.Account) (int, string)) {
-	t.Helper()
-	const version = "v21test"
-	const key = "BPk1-test_key"
-	scriptTag := `<script src="/static/js/changes-ask.js?v=` + version + `" defer></script>`
-
-	cases := []struct {
-		name       string
-		key        string
-		lookup     *stubAlertSettings
-		nilLookup  bool
-		wantDialog bool
-		wantLog    bool
-	}{
-		{name: "Changes off with a key renders the pop-up", key: key, lookup: &stubAlertSettings{}, wantDialog: true},
-		{name: "Changes on renders none", key: key, lookup: &stubAlertSettings{settings: service.AlertSettings{ChangesPushOn: true}}},
-		{name: "no push key renders none", key: "", lookup: &stubAlertSettings{}},
-		{name: "no lookup renders none", key: key, nilLookup: true},
-		{name: "a failed read renders none and logs", key: key, lookup: &stubAlertSettings{err: errors.New("stub read failed")}, wantLog: true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			var logged bytes.Buffer
-			log.SetOutput(&logged)
-			t.Cleanup(func() { log.SetOutput(os.Stderr) })
-
-			cfg := PageConfig{
-				FallbackLat: 12.9716, FallbackLon: 77.5946, DefaultRadiusKm: 10,
-				PushPublicKey: tc.key, AssetVersion: version,
-			}
-			if !tc.nilLookup {
-				cfg.AlertSettings = tc.lookup
-			}
-			code, body := render(cfg, changesAskAccount)
-			if code != http.StatusOK {
-				t.Fatalf("%s: status = %d, want 200", page, code)
-			}
-
-			want := 0
-			if tc.wantDialog {
-				want = 1
-			}
-			if n := strings.Count(body, `id="changes-ask"`); n != want {
-				t.Errorf(`%s: id="changes-ask" appears %d times, want %d`, page, n, want)
-			}
-			if tc.wantDialog {
-				at := strings.Index(body, `<dialog id="changes-ask"`)
-				if at == -1 {
-					t.Fatalf("%s: no changes-ask dialog tag in the page", page)
-				}
-				end := strings.Index(body[at:], ">")
-				if tag := body[at : at+end]; regexp.MustCompile(`\sopen\b`).MatchString(tag) {
-					t.Errorf("%s: the dialog must start closed, got %q", page, tag)
-				}
-				if tc.lookup != nil && (len(tc.lookup.asked) != 1 || tc.lookup.asked[0] != changesAskAccount.ID) {
-					t.Errorf("%s: the lookup was asked about %v, want only [%d]", page, tc.lookup.asked, changesAskAccount.ID)
-				}
-			}
-			// Amended by the 03.3-REVIEW fix WR-03: the script comes with the
-			// dialog and only with it, after it, so an account that can never
-			// see the pop-up does not load it.
-			if n := strings.Count(body, "/static/js/changes-ask.js"); n != want {
-				t.Errorf("%s: changes-ask.js appears %d times, want %d", page, n, want)
-			}
-			if n := strings.Count(body, scriptTag); n != want {
-				t.Errorf("%s: %s appears %d times, want %d", page, scriptTag, n, want)
-			}
-			if tc.wantDialog && strings.Index(body, scriptTag) < strings.Index(body, `<dialog id="changes-ask"`) {
-				t.Errorf("%s: changes-ask.js must come after the dialog", page)
-			}
-
-			// A failed read is logged with the numeric id and nothing else about the account.
-			out := logged.String()
-			if tc.wantLog {
-				if !strings.Contains(out, strconv.FormatInt(changesAskAccount.ID, 10)) {
-					t.Errorf("%s: the failed read was not logged with the account id: %q", page, out)
-				}
-			}
-			if strings.Contains(out, changesAskAccount.Email) {
-				t.Errorf("%s: the log holds the account address: %q", page, out)
-			}
-		})
-	}
-}
-
-// TestNearbyRendersChangesAsk pins when Nearby renders the changes pop-up.
-func TestNearbyRendersChangesAsk(t *testing.T) {
+// TestPagesDrawNoFirstPostPopUp pins quick 261103-jal (owner decision 2026-11-03,
+// D6): Nearby and the Low data view draw no first post or vote pop-up and link
+// no script for it, for any account, with a push key or without one. The old
+// pop-up's id and script name are written in two pieces so no source file keeps
+// the whole name.
+//
+// Amended 2026-11-03 by quick 261103-jal: this replaces the two old per page tests
+// of the first post pop-up, whose cases were all about when the pop-up was
+// drawn.
+func TestPagesDrawNoFirstPostPopUp(t *testing.T) {
 	tmpl, err := ParsePageTemplate()
 	if err != nil {
 		t.Fatalf("ParsePageTemplate: %v", err)
 	}
-	runChangesAskCases(t, "Nearby", func(cfg PageConfig, acc account.Account) (int, string) {
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		req = req.WithContext(account.WithAccount(req.Context(), acc))
-		rec := httptest.NewRecorder()
-		Page(tmpl, cfg)(rec, req)
-		return rec.Code, rec.Body.String()
-	})
-}
-
-// TestLowDataRendersChangesAsk pins when the Low data view renders it.
-func TestLowDataRendersChangesAsk(t *testing.T) {
-	tmpl, err := ParsePageTemplate()
-	if err != nil {
-		t.Fatalf("ParsePageTemplate: %v", err)
+	acc := account.Account{ID: 4242, Email: "no-first-post-popup@example.com"}
+	oldID := "changes" + "-" + "ask"
+	for _, key := range []string{"", "BPk1-test_key"} {
+		cfg := PageConfig{FallbackLat: 12.9716, FallbackLon: 77.5946, DefaultRadiusKm: 10, PushPublicKey: key, AssetVersion: "v21test"}
+		for _, page := range []struct {
+			name   string
+			path   string
+			render func(rec *httptest.ResponseRecorder, req *http.Request)
+		}{
+			{"Nearby", "/", func(rec *httptest.ResponseRecorder, req *http.Request) { Page(tmpl, cfg)(rec, req) }},
+			{"Low data", LowDataPath, func(rec *httptest.ResponseRecorder, req *http.Request) { LowPage(tmpl, cfg)(rec, req) }},
+		} {
+			req := httptest.NewRequest(http.MethodGet, page.path, nil)
+			req = req.WithContext(account.WithAccount(req.Context(), acc))
+			rec := httptest.NewRecorder()
+			page.render(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("%s (key %q): status = %d, want 200", page.name, key, rec.Code)
+			}
+			if strings.Contains(rec.Body.String(), oldID) {
+				t.Errorf("%s (key %q): the page still names %q", page.name, key, oldID)
+			}
+		}
 	}
-	runChangesAskCases(t, "Low data", func(cfg PageConfig, acc account.Account) (int, string) {
-		req := httptest.NewRequest(http.MethodGet, LowDataPath, nil)
-		req = req.WithContext(account.WithAccount(req.Context(), acc))
-		rec := httptest.NewRecorder()
-		LowPage(tmpl, cfg)(rec, req)
-		return rec.Code, rec.Body.String()
-	})
 }
 
 // stubProfiles answers Profile from fixed values and remembers which accounts it

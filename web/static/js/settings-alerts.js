@@ -1,13 +1,15 @@
 // settings-alerts.js: the Muted reports window, the Log out of all devices
 // window and the Delete my account box of the Settings page (Phase 3.2 plan 12,
 // D-11, D-23, UI-SPEC E2, E3),
-// and the Notifications rows: the Reliable reporter switch and the distance
-// select, saved at once (Phase 3.2 plan 15, NOTIF-05, UI-SPEC E1).
+// and the Notifications rows (Phase 3.2 plan 15, NOTIF-05, UI-SPEC E1).
 //
-// Phase 3.3 plan 14 adds the phone rows to the same section (PWA-03, PWA-06,
-// UI-SPEC Surface 2): the On this device row with its four variants and the
-// install guide window, and the Critical and Changes switches, each saved at
-// once through the same route. The device row only asks notify.js (plan 06) what
+// Owner decision 2026-11-03 (quick 261103-jal): the Notifications box has two
+// rows. The distance select "How far from my home area" is saved at once, and
+// without a home area it is an Add a home area first button. Phase 3.3 plan 14
+// (PWA-03, UI-SPEC Surface 2) added the Alerts on this device row with its four
+// variants and the install guide window; it is the other row and the only
+// switch. The Reliable, Critical, official and Changes switches are gone. The
+// device row only asks notify.js (plan 06) what
 // this device can do and tells it to turn on or off. It never reads a position,
 // never decides a word outside the UI-SPEC strings below, and shows the switch
 // on only when notify.js reports that the server confirmed this endpoint for
@@ -583,109 +585,68 @@
     }, fail);
   }
 
-  // ---- Notifications (Phase 3.2 plan 15, NOTIF-05, UI-SPEC E1) ---------------
+  // ---- Notifications (Phase 3.2 plan 15, NOTIF-05, UI-SPEC E1; two rows since quick 261103-jal) ----
   //
-  // The switch "A Reliable reporter posts near me" and the select "How far from
-  // my home area" save at once through PATCH /api/me/alerts, with no Save
-  // button. A change that fails puts the old value back and says so in one
-  // line. The section follows the home area: settings.js writes the Home area
-  // row's data-value when a home area is saved, and a
-  // MutationObserver on that attribute redraws the section, so settings.js
-  // stays as it was built. The server already turns the alert off when the home
-  // area goes (plan 13), so the redraw sends nothing.
+  // The select "How far from my home area" saves at once through PATCH
+  // /api/me/alerts, with no Save button. A change that fails puts the old value
+  // back and says so in one line. Without a home area the select is replaced by
+  // an Add a home area first button that opens the Home area window. The section
+  // follows the home area: settings.js writes the Home area row's data-value when
+  // a home area is saved, and a MutationObserver on that attribute redraws the
+  // row, so settings.js stays as it was built. The other rows of the section are
+  // gone (owner decision 2026-11-03): the device row below is the only switch.
 
   var ALERTS_URL = '/api/me/alerts';
   var MESSAGE_ALERTS_FAILED = 'Couldn\'t save that. Try again.';
   var MESSAGE_ALERTS_OFFLINE = 'You\'re offline, so this wasn\'t saved. Try again when you have a signal.';
   var RADIUS_PATTERN = /^[1-9][0-9]{0,2}$/;
 
-  // Amended 2026-10-18 by Phase 3.3 plan 14 (D-12): the section is one box of
-  // rows, each with its own variants, in place of 3.2's two boxes. A row hides
-  // itself with the hidden attribute, which places.css respects.
-  var reliableRow = el('settings-reliable-row');
-  var reliableSwitch = el('settings-reliable-switch');
-  var noHomeRow = el('settings-reliable-nohome');
+  // The distance row has two variants inside one wrapper: the select, and the
+  // button that asks for a home area. A row hides itself with the hidden
+  // attribute, which places.css respects.
   var radiusRow = el('settings-radius-row');
   var radiusSelect = el('settings-radius-select');
-  var criticalRow = el('settings-critical-on');
-  var criticalSwitch = el('settings-critical-switch');
-  var criticalNoHome = el('settings-critical-nohome');
-  // Plan 05-14 (D-11): the official row has the same two variants as Critical.
-  var officialRow = el('settings-official-on');
-  var officialSwitch = el('settings-official-switch');
-  var officialNoHome = el('settings-official-nohome');
-  var changesSwitch = el('settings-changes-switch');
+  var radiusNoHome = el('settings-radius-nohome');
   var alertsError = el('settings-alerts-error');
   var deviceError = el('settings-device-error');
   var homeRowNode = el('settings-home-row');
   var homeWindow = el('settings-home-window');
-  var alertsReady = !!(reliableRow && reliableSwitch && noHomeRow && radiusRow && radiusSelect &&
-    criticalRow && criticalSwitch && criticalNoHome &&
-    officialRow && officialSwitch && officialNoHome && changesSwitch &&
+  var alertsReady = !!(radiusRow && radiusSelect && radiusNoHome &&
     alertsError && deviceError && homeRowNode && homeWindow);
 
-  // The five fields the alert route takes from this page, with the control that
-  // sends each. A switch holds a boolean, the select holds the option text.
-  var CONTROLS = alertsReady ? {
-    reliable_alerts: reliableSwitch,
-    alert_radius_km: radiusSelect,
-    critical_push: criticalSwitch,
-    changes_push: changesSwitch,
-    official_push: officialSwitch
-  } : {};
+  // The one field the alert route takes from this page, with the control that
+  // sends it. The select holds the option text.
+  var CONTROLS = alertsReady ? { alert_radius_km: radiusSelect } : {};
 
-  // saved holds the last values the server confirmed, which is what a failed
-  // save puts back.
+  // saved holds the last value the server confirmed, which is what a failed save
+  // puts back.
   var saved = {};
   if (alertsReady) {
-    saved.reliable_alerts = reliableSwitch.checked === true;
     saved.alert_radius_km = String(radiusSelect.value);
-    saved.critical_push = criticalSwitch.checked === true;
-    saved.changes_push = changesSwitch.checked === true;
-    saved.official_push = officialSwitch.checked === true;
   }
   var homeIsSet = alertsReady ? (homeRowNode.getAttribute('data-value') || '') !== '' : false;
-  // openedFromAlerts is the Reliable or the Critical no home row that opened the
-  // Home area window, so focus goes back to the matching control, or '' when the
-  // window was not opened from the Notifications section.
-  var openedFromAlerts = '';
+  // openedFromAlerts is true while the Home area window was opened from the
+  // distance row's button, so focus goes back to the matching control when it
+  // closes.
+  var openedFromAlerts = false;
 
-  function putBack(field) {
-    if (field === 'alert_radius_km') {
-      radiusSelect.value = saved.alert_radius_km;
-    } else {
-      CONTROLS[field].checked = saved[field];
-    }
+  function putBack() {
+    radiusSelect.value = saved.alert_radius_km;
   }
 
-  // saveAlerts sends one change ({reliable_alerts}, {alert_radius_km},
-  // {critical_push}, {changes_push} or {official_push}) and resolves to true when the server kept
-  // it. The control that sent it is disabled until the answer. Offline, nothing
-  // is sent. The device error line and this one never show together.
+  // saveAlerts sends one change ({alert_radius_km}) and resolves to true when the
+  // server kept it. The select is disabled until the answer. Offline, nothing is
+  // sent. The device error line and this one never show together.
   function saveAlerts(body) {
     if (!alertsReady || !body || typeof body !== 'object') {
       return Promise.resolve(false);
     }
-    var fields = [];
-    var names = ['reliable_alerts', 'alert_radius_km', 'critical_push', 'changes_push', 'official_push'];
-    for (var n = 0; n < names.length; n++) {
-      if (Object.prototype.hasOwnProperty.call(body, names[n])) {
-        fields.push(names[n]);
-      }
-    }
-    if (fields.length === 0) {
+    if (!Object.prototype.hasOwnProperty.call(body, 'alert_radius_km')) {
       return Promise.resolve(false);
     }
-    function senders(disabled) {
-      for (var i = 0; i < fields.length; i++) {
-        CONTROLS[fields[i]].disabled = disabled;
-      }
-    }
     function fail(message) {
-      senders(false);
-      for (var i = 0; i < fields.length; i++) {
-        putBack(fields[i]);
-      }
+      CONTROLS.alert_radius_km.disabled = false;
+      putBack();
       showLine(alertsError, message);
       return false;
     }
@@ -694,29 +655,21 @@
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       return Promise.resolve(fail(MESSAGE_ALERTS_OFFLINE));
     }
-    senders(true);
+    CONTROLS.alert_radius_km.disabled = true;
     var init = {
       method: 'PATCH',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(body)
+      body: JSON.stringify({ alert_radius_km: body.alert_radius_km })
     };
     return request(ALERTS_URL, init, REQUEST_TIMEOUT_MS).promise.then(function (answer) {
       if (!answer.ok || !answer.body || typeof answer.body !== 'object') {
         return fail(MESSAGE_ALERTS_FAILED);
       }
-      senders(false);
-      for (var i = 0; i < fields.length; i++) {
-        var field = fields[i];
-        if (field === 'alert_radius_km') {
-          if (typeof answer.body.alert_radius_km === 'number') {
-            saved.alert_radius_km = String(answer.body.alert_radius_km);
-            radiusSelect.value = saved.alert_radius_km;
-          }
-        } else {
-          saved[field] = answer.body[field] === true;
-          CONTROLS[field].checked = saved[field];
-        }
+      CONTROLS.alert_radius_km.disabled = false;
+      if (typeof answer.body.alert_radius_km === 'number') {
+        saved.alert_radius_km = String(answer.body.alert_radius_km);
+        radiusSelect.value = saved.alert_radius_km;
       }
       return true;
     }, function () {
@@ -724,41 +677,17 @@
     });
   }
 
-  // saveKind saves one kind switch (critical_push, changes_push or
-  // official_push). The switch is the control that sent it, so it is the one
-  // disabled while the save is in flight; the field decides which control that is.
-  function saveKind(field, value, input) {
-    if (field !== 'critical_push' && field !== 'changes_push' && field !== 'official_push') {
-      return Promise.resolve(false);
-    }
-    var body = {};
-    body[field] = value === true;
-    return saveAlerts(body);
-  }
-
-  // redrawAlerts draws the section for a person with or without a home area.
-  // Reliable, Critical and Severe official alerts show their switch or their Add
-  // a home area first row, and the distance row is drawn only with a home area.
-  // Without one Reliable is off (the server turned it off) and Critical and
-  // official keep their stored value. Changes is never touched. A home area can
-  // no longer be removed in Settings (Phase 7.1 plan 15, D-15), so this is only
-  // a defensive state for data repair and says nothing.
+  // redrawAlerts draws the distance row for a person with or without a home
+  // area: the select with one, the Add a home area first button without. A home
+  // area can no longer be removed in Settings (Phase 7.1 plan 15, D-15), so the
+  // no home state is only a defensive state for data repair and says nothing.
   function redrawAlerts(hasHome) {
     if (!alertsReady) {
       return;
     }
     homeIsSet = hasHome === true;
-    reliableRow.hidden = !homeIsSet;
-    noHomeRow.hidden = homeIsSet;
-    criticalRow.hidden = !homeIsSet;
-    criticalNoHome.hidden = homeIsSet;
-    officialRow.hidden = !homeIsSet;
-    officialNoHome.hidden = homeIsSet;
     radiusRow.hidden = !homeIsSet;
-    if (!homeIsSet) {
-      reliableSwitch.checked = false;
-      saved.reliable_alerts = false;
-    }
+    radiusNoHome.hidden = homeIsSet;
   }
 
   // syncHome follows the Home area row: it redraws only when the home area
@@ -770,29 +699,16 @@
     }
   }
 
-  // openHomeFrom opens the Home area window from one of the three no home rows
-  // (Reliable, Critical and, since plan 05-14, Official; IN-B06 comment fix)
-  // and remembers which, so focus can go back to the matching control.
-  function openHomeFrom(which) {
+  // openHomeFromRadius opens the Home area window from the distance row's button
+  // and remembers it, so focus can go back to the matching control.
+  function openHomeFromRadius() {
     if (window.PinalertSettings && typeof window.PinalertSettings.openWindow === 'function') {
-      openedFromAlerts = which;
+      openedFromAlerts = true;
       window.PinalertSettings.openWindow('home');
     }
   }
 
   function wireAlerts() {
-    reliableSwitch.addEventListener('change', function () {
-      saveAlerts({ reliable_alerts: reliableSwitch.checked === true });
-    });
-    criticalSwitch.addEventListener('change', function () {
-      saveKind('critical_push', criticalSwitch.checked === true, criticalSwitch);
-    });
-    officialSwitch.addEventListener('change', function () {
-      saveKind('official_push', officialSwitch.checked === true, officialSwitch);
-    });
-    changesSwitch.addEventListener('change', function () {
-      saveKind('changes_push', changesSwitch.checked === true, changesSwitch);
-    });
     radiusSelect.addEventListener('change', function () {
       if (!RADIUS_PATTERN.test(String(radiusSelect.value))) {
         radiusSelect.value = saved.alert_radius_km;
@@ -800,25 +716,16 @@
       }
       saveAlerts({ alert_radius_km: parseInt(radiusSelect.value, 10) });
     });
-    noHomeRow.addEventListener('click', function () { openHomeFrom('reliable'); });
-    criticalNoHome.addEventListener('click', function () { openHomeFrom('critical'); });
-    officialNoHome.addEventListener('click', function () { openHomeFrom('official'); });
+    radiusNoHome.addEventListener('click', openHomeFromRadius);
     if (typeof MutationObserver === 'function') {
       new MutationObserver(syncHome).observe(homeRowNode, { attributes: true, attributeFilter: ['data-value'] });
-      // When the Home area window opened from a no home row closes, focus goes
-      // to that row's switch if a home area now exists, or back to that row.
+      // When the Home area window opened from the button closes, focus goes to
+      // the select if a home area now exists, or back to the button.
       new MutationObserver(function () {
         syncHome();
-        if (homeWindow.hidden && openedFromAlerts !== '') {
-          var which = openedFromAlerts;
-          openedFromAlerts = '';
-          if (which === 'critical') {
-            (homeIsSet ? criticalSwitch : criticalNoHome).focus();
-          } else if (which === 'official') {
-            (homeIsSet ? officialSwitch : officialNoHome).focus();
-          } else {
-            (homeIsSet ? reliableSwitch : noHomeRow).focus();
-          }
+        if (homeWindow.hidden && openedFromAlerts) {
+          openedFromAlerts = false;
+          (homeIsSet ? radiusSelect : radiusNoHome).focus();
         }
       }).observe(homeWindow, { attributes: true, attributeFilter: ['hidden'] });
     }
@@ -828,7 +735,7 @@
     wireAlerts();
   }
 
-  // ---- On this device (Phase 3.3 plan 14, PWA-03, D-10 to D-12, UI-SPEC 2a) ----
+  // ---- Alerts on this device (Phase 3.3 plan 14, PWA-03, D-10 to D-12, UI-SPEC 2a) ----
   //
   // One row for this device, drawn in one of four variants: the switch (ready or
   // on), the install row (an iPhone tab, opens the guide window), and two plain
@@ -837,7 +744,8 @@
   // says the server confirmed this endpoint for this account. A tap on the
   // switch calls notify.js from the change handler itself, with nothing awaited
   // first, because the browser's prompt needs the tap. Turning it on or off
-  // changes nothing else in the section: the kind switches belong to the account.
+  // changes nothing else in the section. Since quick 261103-jal the device
+  // switch is the only way to stop phone notes.
 
   var MESSAGE_DEVICE_ON = 'Alerts are on for this device.';
   var MESSAGE_DEVICE_OFF = 'Alerts are off for this device.';
@@ -1039,7 +947,6 @@
     deleteAccount: deleteAccount,
     saveAlerts: saveAlerts,
     redrawAlerts: redrawAlerts,
-    drawDevice: drawDevice,
-    saveKind: saveKind
+    drawDevice: drawDevice
   };
 }());
