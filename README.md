@@ -180,9 +180,11 @@ ceiling shows the person "Something went wrong. Try again." and says nothing abo
 ## Phone notifications
 
 Pinalert can send a short, silent note to a person's lock screen when a Critical report is posted near
-their home area, and when a report they posted, voted on or commented on changes or gets a comment. It is off until both
+their home area, when a severe official alert covers it, and when a person they follow with Notify me
+on posts. Changes and comments on a person's reports, and posts by Reliable reporters nearby, show in
+the bell only. It is off until both
 `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` are set; with neither set the app works as before. People
-switch it on in Settings, under Notifications. [docs/PUSH.md](./docs/PUSH.md) covers making the keys,
+switch it on with Alerts on this device in Settings, under Notifications. [docs/PUSH.md](./docs/PUSH.md) covers making the keys,
 https, the push services the server accepts, what a lock screen shows, what the site cannot promise
 (an iPhone follows its own sound settings, and a sleeping host sends nothing) and the steps for
 checking it on real devices. [docs/TRUST-MODEL.md](./docs/TRUST-MODEL.md) says who gets which note.

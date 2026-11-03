@@ -512,6 +512,10 @@ The figures now are:
   bytes. A page that shows the pop-up adds `changes-ask.js` (11108 bytes) and the partial, about
   12 KB in all, which stays inside it.
 
+Removed on 2026-11-03 by quick 261103-jal (an owner decision): the changes pop-up, its partial
+and `changes-ask.js` are gone from the Low data view, so the page only got smaller. The figures
+above are history and the budget stands.
+
 Raw bytes are tested although the first design described a compressed budget (orchestrator
 decision 2). The router now compresses text, but the transfer size depends on the client, so raw
 bytes are the conservative bound.

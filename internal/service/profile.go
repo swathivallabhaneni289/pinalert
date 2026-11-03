@@ -333,17 +333,24 @@ type ProfileQuerier interface {
 	GetAccountIDByUsername(ctx context.Context, username string) (int64, error)
 	UsernamesByAccountIDs(ctx context.Context, ids []int64) ([]sqlcgen.UsernamesByAccountIDsRow, error)
 	// The four methods below belong to the Reliable reporter alert settings of
-	// plan 03.2-13 (NOTIF-05, D-26).
+	// plan 03.2-13 (NOTIF-05, D-26). Owner decision 2026-11-03, quick 261103-jal
+	// (D8): the columns are kept and no longer decide delivery; these methods
+	// remain for the distance and for the start point of the Reliable bell row,
+	// and the switch they store no longer decides anything.
 	GetAlertSettings(ctx context.Context, accountID int64) (sqlcgen.GetAlertSettingsRow, error)
 	UpsertAlertSettings(ctx context.Context, arg sqlcgen.UpsertAlertSettingsParams) (sqlcgen.UpsertAlertSettingsRow, error)
 	DisableReliableAlerts(ctx context.Context, arg sqlcgen.DisableReliableAlertsParams) error
 	GetAccountHomeCell(ctx context.Context, id int64) (*string, error)
 	// The two methods below belong to the Critical and Changes phone switches of
-	// plan 03.3-12 (PWA-03, PWA-06).
+	// plan 03.3-12 (PWA-03, PWA-06). Owner decision 2026-11-03, quick 261103-jal
+	// (D8): the columns are kept, the stored switches no longer decide delivery,
+	// and these methods remain for test seeding and the SQL defaults.
 	GetPushKindSettings(ctx context.Context, accountID int64) (sqlcgen.GetPushKindSettingsRow, error)
 	UpsertPushKindSettings(ctx context.Context, arg sqlcgen.UpsertPushKindSettingsParams) (sqlcgen.UpsertPushKindSettingsRow, error)
 	// Phase 5 (D-11): the switch "Severe official alerts for my area", on for an
-	// account with no stored value.
+	// account with no stored value. Owner decision 2026-11-03, quick 261103-jal
+	// (D8): the column is kept and no longer decides delivery; these methods
+	// remain for test seeding and the SQL default.
 	GetOfficialPushSetting(ctx context.Context, accountID int64) (bool, error)
 	UpsertOfficialPushSetting(ctx context.Context, arg sqlcgen.UpsertOfficialPushSettingParams) (bool, error)
 }
