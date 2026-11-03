@@ -46,7 +46,7 @@ func TestReliableRowsDoNotEatTheSharedCeiling(t *testing.T) {
 	// more people so it reaches Live after the one hour gap.
 	const author = "wr01-author-sess"
 	testutil.SeedReporterAccount(t, r.pool, "wr01-author@example.com", author)
-	voted := r.report(author,SeverityLow, r.base.Add(11*time.Minute), "clear")
+	voted := r.report(author, SeverityLow, r.base.Add(11*time.Minute), "clear")
 	r.vote(voted, reader, "content", "confirm", "tdr1v8y", r.base.Add(12*time.Minute))
 	r.refresh(reader, r.base.Add(13*time.Minute))
 	voterA := testutil.SeedReporterAccount(t, r.pool, "wr01-voter-a@example.com")
