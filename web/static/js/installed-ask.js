@@ -29,9 +29,11 @@
 //   - then, at the moment it would open, no other dialog is open and the page
 //     root carries no data-modal-open. Nearby can hold two small dialogs: this
 //     ask (on load) and the star box of Phase 9 (after Yes, mark resolved). The
-//     star box makes the same check, so the two boxes never stack. When this
-//     check skips, the key is not written. (The first post or vote pop-up of
-//     Phase 3.3 was removed on 2026-11-03, quick 261103-jal.)
+//     star box makes no such check. The ask is modal, so the page is inert while
+//     it is open, no resolve and so no star box can happen then, and the two
+//     boxes never stack. When this check skips, the key is not written. (The
+//     first post or vote pop-up of Phase 3.3 was removed on 2026-11-03, quick
+//     261103-jal.)
 // The Low data view and the Demo never load this script. Any probe that throws
 // counts as "do not open".
 //
