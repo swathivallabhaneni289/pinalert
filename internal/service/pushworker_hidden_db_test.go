@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	sqlcgen "pinalert/internal/store/sqlc"
 	"pinalert/internal/testutil"
 )
 
@@ -87,6 +88,15 @@ func TestWorkerHiddenNeedsEarlierConfirmation(t *testing.T) {
 	if err := r.d.ChangesSweepOnce(ctx); err != nil {
 		t.Fatalf("ChangesSweepOnce: %v", err)
 	}
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+	// D3): the sweep refreshes the bell and queues no change note any more, so the
+	// two rows are queued by the query that is kept for them, the way rows queued
+	// before this change sit in the outbox.
+	if _, err := r.q.EnqueueChangedFromUpdates(ctx, sqlcgen.EnqueueChangedFromUpdatesParams{
+		Now: r.cur, AccountID: reporter, Since: r.base,
+	}); err != nil {
+		t.Fatalf("seeding the changed rows: %v", err)
+	}
 
 	sender := &pwSender{answers: map[string]pwAnswer{}}
 	if err := pwDBWorker(r, sender).SweepOnce(ctx); err != nil {
@@ -100,15 +110,15 @@ func TestWorkerHiddenNeedsEarlierConfirmation(t *testing.T) {
 		t.Errorf("hidden bell rows: report A %d, report B %d, want 1 and 1", bellA, bellB)
 	}
 
-	// A had been confirmed: its note is sent.
-	if stateA != "sent" {
-		t.Errorf("report A (confirmed, then disputed): changed push is %q (%q), want sent", stateA, skipA)
+	// Both notes are skipped now: a change note never reaches a phone (D3). The
+	// earlier confirmation rule stays pinned by TestReportWasConfirmed.
+	if stateA != "skipped" || skipA != "not_eligible" {
+		t.Errorf("report A (confirmed, then disputed): changed push is %q (%q), want skipped as not_eligible", stateA, skipA)
 	}
-	// B never was: its note stays in the bell.
 	if stateB != "skipped" || skipB != "not_eligible" {
 		t.Errorf("report B (only disputed): changed push is %q (%q), want skipped as not_eligible", stateB, skipB)
 	}
-	if n := len(sender.messages()); n != 1 {
-		t.Errorf("messages sent = %d, want exactly 1 (report A's)", n)
+	if n := len(sender.messages()); n != 0 {
+		t.Errorf("messages sent = %d, want none", n)
 	}
 }

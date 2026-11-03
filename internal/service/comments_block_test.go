@@ -307,9 +307,10 @@ func TestBlockedCommentDoesNotNotify(t *testing.T) {
 		if got := r.count(`SELECT count(*) FROM updates WHERE account_id = $1 AND kind = $2`, p.reporter, on); got != 1 {
 			t.Errorf("after c's comment the blocker has %d rows, want 1", got)
 		}
-		want := fmt.Sprintf("%d:%s", p.reporter, on)
-		if got := r.pushedKinds(p.report); len(got) != 1 || got[0] != want {
-			t.Errorf("changed push rows = %v, want [%s]", got, want)
+		// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box):
+		// comment notes stay in the bell, so no changed phone row is queued.
+		if got := r.pushedKinds(p.report); len(got) != 0 {
+			t.Errorf("changed push rows = %v, want none (comment notes are bell only)", got)
 		}
 	})
 

@@ -22,7 +22,8 @@
 -- The switch "Severe official alerts for my area" (D-11). An account with no
 -- settings row reads it as on: the same value as the Go constant
 -- DefaultOfficialPushOn, pinned by a test. Always returns a row for an existing
--- account.
+-- account. Owner decision 2026-11-03, quick 261103-jal: the column is kept and
+-- no longer decides delivery; production code does not call this any more.
 SELECT COALESCE(s.official_push_on, true)::bool AS official_push_on
 FROM accounts a
 LEFT JOIN account_alert_settings s ON s.account_id = a.id
@@ -30,7 +31,8 @@ WHERE a.id = sqlc.arg(account_id)::bigint;
 
 -- name: UpsertOfficialPushSetting :one
 -- Saves the switch. The other settings columns keep their stored values, or
--- their defaults on insert.
+-- their defaults on insert. Owner decision 2026-11-03, quick 261103-jal: kept
+-- for tests that seed a value stored before this change (C6).
 INSERT INTO account_alert_settings (account_id, official_push_on, updated_at)
 VALUES (
     sqlc.arg(account_id)::bigint,
@@ -43,21 +45,20 @@ SET official_push_on = EXCLUDED.official_push_on,
 RETURNING COALESCE(official_push_on, true)::bool AS official_push_on;
 
 -- name: OfficialPushCandidates :many
--- Who might be told: accounts with a home cell, not deleted, the switch on
--- (COALESCE with true for an account with no settings row) and at least one live
--- device, whose home cell lies under one of the given geohash prefixes (the
--- caller passes the prefixes that cover the alert's districts, so the row cap
--- applies only after the area filter: WR-S05 of the Phase 5 review). Ordered
+-- Who might be told: accounts with a home cell, not deleted and with at least
+-- one live device, whose home cell lies under one of the given geohash
+-- prefixes (the caller passes the prefixes that cover the alert's districts, so
+-- the row cap applies only after the area filter: WR-S05 of the Phase 5
+-- review). The stored official switch is not read: the device switch is the only
+-- way to stop these notes (owner decision 2026-11-03, quick 261103-jal). Ordered
 -- by account id and bounded by row_cap; the caller turns each home cell into
 -- districts and keeps the accounts whose districts meet the alert's. It
 -- selects by cell, never by a coordinate.
 SELECT a.id AS account_id,
        COALESCE(a.home_area_cell, '')::text AS home_area_cell
 FROM accounts a
-LEFT JOIN account_alert_settings s ON s.account_id = a.id
 WHERE a.deleted_at IS NULL
   AND a.home_area_cell IS NOT NULL
-  AND COALESCE(s.official_push_on, true)
   AND left(a.home_area_cell, sqlc.arg(prefix_len)::int) = ANY(sqlc.arg(prefixes)::text[])
   AND EXISTS (
       SELECT 1

@@ -316,7 +316,9 @@ type GetAlertSettingsRow struct {
 }
 
 // The account's alert switch and distance (D-26). No row means the defaults:
-// off, 5 km.
+// off, 5 km. Owner decision 2026-11-03, quick 261103-jal: the switch column is
+// kept and no longer decides anything; enabled_at can still move the start of
+// the Reliable bell row later within ReliableBellLookBack (C1).
 func (q *Queries) GetAlertSettings(ctx context.Context, accountID int64) (GetAlertSettingsRow, error) {
 	row := q.db.QueryRow(ctx, getAlertSettings, accountID)
 	var i GetAlertSettingsRow

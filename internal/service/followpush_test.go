@@ -151,6 +151,13 @@ func TestFollowPushQueuedFromBellRows(t *testing.T) {
 // and as the follow note to a follower with Critical off, even with the Reliable
 // alert on; a plain report goes as the follow note to a follower who also has the
 // Reliable alert on, and as Reliable to a reader without the bell.
+//
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box): the
+// stored Critical and Reliable flags no longer decide and a Reliable note never
+// reaches a phone, so Critical wins for every reader in range (the follow note
+// is the Critical report's second alert and loses the shared slot), a plain
+// report goes as the follow note to a follower, and a reader without the bell
+// holds nothing.
 func TestFollowPushOrderCriticalFollowReliable(t *testing.T) {
 	r := newFollowPushRig(t)
 	person, session := r.person("push.order")
@@ -173,8 +180,8 @@ func TestFollowPushOrderCriticalFollowReliable(t *testing.T) {
 	if !outboxKindsEqual(got[criticalOn], "critical") {
 		t.Errorf("Critical on with the bell holds %v, want critical alone", got[criticalOn])
 	}
-	if !outboxKindsEqual(got[criticalOff], "follow") {
-		t.Errorf("Critical off, Reliable on, bell on holds %v, want follow alone", got[criticalOff])
+	if !outboxKindsEqual(got[criticalOff], "critical") {
+		t.Errorf("stored Critical off, Reliable on, bell on holds %v, want critical alone", got[criticalOff])
 	}
 	if !outboxKindsEqual(got[both], "critical") {
 		t.Errorf("Critical and Reliable on with the bell holds %v, want critical alone", got[both])
@@ -200,8 +207,8 @@ func TestFollowPushOrderCriticalFollowReliable(t *testing.T) {
 			t.Errorf("%s with the bell holds %v for a plain report, want follow alone", name, got[id])
 		}
 	}
-	if !outboxKindsEqual(got[reliableOnly], "reliable") {
-		t.Errorf("a reader without the bell holds %v for a plain report, want reliable alone", got[reliableOnly])
+	if len(got[reliableOnly]) != 0 {
+		t.Errorf("a reader without the bell holds %v for a plain report, want nothing (Reliable is bell only)", got[reliableOnly])
 	}
 	// At most one first alert per report and person, whatever the kind.
 	if n := r.count(`SELECT COUNT(*) FROM (SELECT account_id FROM push_outbox WHERE report_id = ANY($1)

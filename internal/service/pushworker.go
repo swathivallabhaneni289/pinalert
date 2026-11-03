@@ -410,9 +410,9 @@ func (w *PushWorker) rowErr(id int64, err error) error {
 }
 
 // sendRow works one claimed row, in this order: renew the lease; read the report
-// again; check the kind's predicate; read the switches and the mute; find the
-// home area and distance; apply the hourly cap; find the devices; word it; fan
-// out; settle each device; mark the row.
+// again; check the kind's predicate; read the mute and whether the kind may
+// reach a phone; find the home area and distance; apply the hourly cap; find the
+// devices; word it; fan out; settle each device; mark the row.
 func (w *PushWorker) sendRow(ctx context.Context, claim sqlcgen.ClaimDuePushesRow) error {
 	// 1. Only the holder of the current lease may work the row.
 	lease, err := w.q.ExtendPushLease(ctx, sqlcgen.ExtendPushLeaseParams{
@@ -517,7 +517,8 @@ func (w *PushWorker) sendRow(ctx context.Context, claim sqlcgen.ClaimDuePushesRo
 		}
 	}
 
-	// 4. The switches and the mute, read again (W5).
+	// 4. The mute, read again (W5), and whether the kind may reach a phone at all
+	// (owner decision 2026-11-03, quick 261103-jal: no stored switch is read).
 	home, err := w.q.PushAccountHome(ctx, sqlcgen.PushAccountHomeParams{ReportID: claim.ReportID, AccountID: claim.AccountID})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -525,7 +526,7 @@ func (w *PushWorker) sendRow(ctx context.Context, claim sqlcgen.ClaimDuePushesRo
 		}
 		return w.rowErr(claim.ID, err)
 	}
-	if home.Muted || !w.kindSwitchOn(run.kind, claim.FirstKind, home) {
+	if home.Muted || !w.kindSwitchOn(run.kind, claim.FirstKind) {
 		return w.skip(ctx, run, pushSkipNotEligible)
 	}
 
@@ -847,9 +848,13 @@ func (w *PushWorker) personNotMutedOrBlocked(ctx context.Context, run *pushRowRu
 	return true, nil
 }
 
-// kindSwitchOn says whether the switch of the row's kind is on now (review W5).
-// A confirmed update follows the switch of the initial alert it updates.
-func (w *PushWorker) kindSwitchOn(kind PushKind, first *string, h sqlcgen.PushAccountHomeRow) bool {
+// kindSwitchOn says whether a row of this kind may reach a phone now (review
+// W5). Since the owner decision of 2026-11-03 (quick 261103-jal, D2, D3, C7) the
+// stored account switches are no longer read: critical and follow are yes,
+// reliable and changed are never, so a row of those kinds queued before the
+// change is skipped at send time. A confirmed update answers for the kind of the
+// initial alert it updates.
+func (w *PushWorker) kindSwitchOn(kind PushKind, first *string) bool {
 	if kind == PushKindConfirmedUpdate {
 		base, known := confirmedBaseKind(first)
 		if !known {
@@ -859,15 +864,15 @@ func (w *PushWorker) kindSwitchOn(kind PushKind, first *string, h sqlcgen.PushAc
 	}
 	switch kind {
 	case PushKindCritical:
-		return h.CriticalPushOn
-	case PushKindReliable:
-		return h.ReliableAlertsOn
-	case PushKindChanged:
-		return h.ChangesPushOn
+		return true
 	case PushKindFollow:
 		// There is no account switch for follow notes: the Notify me bell on the
 		// follow is the switch, and followHolds reads it at send time (plan 09-26).
 		return true
+	case PushKindReliable, PushKindChanged:
+		// Bell only (D3). The worker paths for these kinds stay as a defensive
+		// layer behind this answer (C7).
+		return false
 	}
 	return false
 }

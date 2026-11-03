@@ -23,10 +23,12 @@ const (
 	// PushKindCritical is a Critical report near the home area (kind 1).
 	PushKindCritical PushKind = "critical"
 	// PushKindReliable is a report from a Reliable reporter near the home area
-	// (kind 4).
+	// (kind 4). No new row is queued since 2026-11-03 and a queued one is never
+	// sent: it lives in the bell only (owner decision, quick 261103-jal, D3).
 	PushKindReliable PushKind = "reliable"
 	// PushKindChanged is a change to a report the person posted or voted on
-	// (kind 3).
+	// (kind 3). Like PushKindReliable, no new row is queued since 2026-11-03 and
+	// a queued one is never sent (D3).
 	PushKindChanged PushKind = "changed"
 	// PushKindConfirmedUpdate is the in place replacement of a critical or
 	// reliable notification once people nearby confirm the report (kind 5). Its
@@ -139,17 +141,20 @@ const (
 // DefaultOfficialPushOn is on: Severe and Extreme official alerts for the home
 // area are the point of the feature (D-11). The SQL COALESCE in
 // official_push.sql uses the same value, and TestOfficialPushDefaultMatchesSQL
-// pins both.
+// pins both. Since 2026-11-03 (quick 261103-jal, D8) the stored column and this
+// default are kept for the SQL COALESCE only and no longer decide delivery.
 const DefaultOfficialPushOn = true
 
 // Defaults of the two switches. The SQL COALESCE in push.sql uses the same
-// values, and a test in plan 12 pins both.
+// values, and a test in plan 12 pins both. Owner decision 2026-11-03, quick
+// 261103-jal (D8): the stored columns and these defaults are kept for the SQL
+// COALESCE only and no longer decide delivery.
 const (
 	// DefaultCriticalPushOn is on: Critical reports near the home area are the
 	// point of the feature (decision 12).
 	DefaultCriticalPushOn = true
 	// DefaultChangesPushOn is off: changes to reports a person posted or voted
-	// on are opt in.
+	// on were opt in. The column no longer decides delivery (D8).
 	DefaultChangesPushOn = false
 	// DefaultAlertRadiusForPushKm is the radius used for a person with no
 	// radius of their own.

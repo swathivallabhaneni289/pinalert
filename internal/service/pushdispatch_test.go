@@ -60,7 +60,7 @@ type dispatchFake struct {
 	bellFollowers []int64 // answer of NotifyFollowersOf (Phase 9 plan 25)
 	followerCalls []int64
 	changeAccts   []int64
-	changeAfter   []int64 // the after_id of each AccountsWithChangesPush call
+	changeAfter   []int64 // the after_id of each AccountsForBellRefresh call
 	recent        []int64
 	recentCalls   []sqlcgen.RecentReportsForPushParams
 	settings      map[int64]sqlcgen.GetPushKindSettingsRow
@@ -296,18 +296,18 @@ func (f *dispatchFake) EnqueueConfirmedUpdates(_ context.Context, a sqlcgen.Enqu
 	return 0, nil
 }
 
-func (f *dispatchFake) FollowersWithChangesPush(_ context.Context, reportID int64) ([]int64, error) {
+func (f *dispatchFake) FollowersForBellRefresh(_ context.Context, reportID int64) ([]int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.rec("FollowersWithChangesPush")
+	f.rec("FollowersForBellRefresh")
 	f.followerCalls = append(f.followerCalls, reportID)
 	return f.followers, nil
 }
 
-func (f *dispatchFake) AccountsWithChangesPush(_ context.Context, a sqlcgen.AccountsWithChangesPushParams) ([]int64, error) {
+func (f *dispatchFake) AccountsForBellRefresh(_ context.Context, a sqlcgen.AccountsForBellRefreshParams) ([]int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.rec("AccountsWithChangesPush")
+	f.rec("AccountsForBellRefresh")
 	if a.RowCap != PushChangesSweepAccountCap {
 		return nil, errors.New("unexpected row cap")
 	}
@@ -475,7 +475,9 @@ func TestDispatchCriticalThroughResolve(t *testing.T) {
 	rig := newDispatchRig()
 	rig.critical42()
 	// Account 11 in range, 12 in range, 13 too far, 14 is the author, 15 has the
-	// switch off.
+	// stored switch off.
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box):
+	// the stored Critical switch no longer decides, so 15 is queued too.
 	rig.f.candidates = []sqlcgen.PushHomeCandidatesRow{
 		homeRowAt(11, dispLat, dispLon, 0, 5, true, false),
 		homeRowAt(12, dispLat, dispLon, 0, 5, true, false),
@@ -485,8 +487,8 @@ func TestDispatchCriticalThroughResolve(t *testing.T) {
 	}
 	rig.eval(t, 42, 0)
 
-	if got := rig.f.initialAccounts(); !dispatchInt64sEqual(got, []int64{11, 12}) {
-		t.Fatalf("queued accounts = %v, want [11 12]", got)
+	if got := rig.f.initialAccounts(); !dispatchInt64sEqual(got, []int64{11, 12, 15}) {
+		t.Fatalf("queued accounts = %v, want [11 12 15]", got)
 	}
 	for _, c := range rig.f.initialCalls {
 		if c.Kind != string(PushKindCritical) || c.ReportID != 42 {
@@ -721,28 +723,31 @@ func TestDispatchCriticalBeforeReliable(t *testing.T) {
 	rig := newDispatchRig()
 	rig.f.addReliableHistory(900)
 	rig.f.facts[42] = dispatchReport("critical", "clear")
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box):
+	// the stored switches no longer decide, so every reader in range gets the
+	// Critical push, and the Reliable branch refreshes nobody for a serious report
+	// because those neighbours already got the Critical push.
 	rig.f.candidates = []sqlcgen.PushHomeCandidatesRow{
 		homeRowAt(11, dispLat, dispLon, 0, 5, true, true),   // Critical and Reliable on: one critical push
-		homeRowAt(12, dispLat, dispLon, 0, 5, false, true),  // Critical off, Reliable on: the Reliable rule
-		homeRowAt(13, dispLat, dispLon, 0, 5, false, false), // both off
+		homeRowAt(12, dispLat, dispLon, 0, 5, false, true),  // stored Critical off: still one critical push
+		homeRowAt(13, dispLat, dispLon, 0, 5, false, false), // both off: still one critical push
 		homeRowAt(900, dispLat, dispLon, 0, 5, false, true), // the author
 	}
 	rig.eval(t, 42, 0)
 
-	if got := rig.f.initialAccounts(); !dispatchInt64sEqual(got, []int64{11}) {
-		t.Fatalf("critical rows = %v, want [11]", got)
+	if got := rig.f.initialAccounts(); !dispatchInt64sEqual(got, []int64{11, 12, 13}) {
+		t.Fatalf("critical rows = %v, want [11 12 13]", got)
 	}
-	if rig.f.initialCalls[0].Kind != "critical" {
-		t.Errorf("kind = %q", rig.f.initialCalls[0].Kind)
+	for _, c := range rig.f.initialCalls {
+		if c.Kind != "critical" {
+			t.Errorf("kind = %q", c.Kind)
+		}
 	}
-	if !dispatchInt64sEqual(rig.u.refreshed, []int64{12}) {
-		t.Errorf("refreshed = %v, want only the Critical-off Reliable-on reader [12]", rig.u.refreshed)
+	if len(rig.u.refreshed) != 0 {
+		t.Errorf("refreshed = %v, want nobody: a serious report is not a Reliable bell refresh", rig.u.refreshed)
 	}
-	if len(rig.f.reliableCalls) != 1 || rig.f.reliableCalls[0].ReportID != 42 {
-		t.Fatalf("reliable enqueue calls = %+v", rig.f.reliableCalls)
-	}
-	if rig.f.indexOf("EnqueueInitialPush") > rig.f.indexOf("EnqueueReliableFromUpdates") {
-		t.Errorf("Reliable was queued before Critical: %v", rig.f.calls)
+	if n := rig.f.names("EnqueueReliableFromUpdates"); n != 0 {
+		t.Errorf("a reliable enqueue ran %d times, want none (D3)", n)
 	}
 	// N4: a report fanned under Critical holds its one slot and takes no Reliable slot.
 	for _, c := range rig.f.countCalls {
@@ -760,25 +765,24 @@ func TestDispatchReliableUsesRefreshRows(t *testing.T) {
 		rig.f.candidates = []sqlcgen.PushHomeCandidatesRow{
 			homeRowAt(11, dispLat, dispLon, 0, 5, true, true),
 			homeRowAt(12, dispLat, dispLon, 1, 10, true, true),
-			homeRowAt(13, dispLat, dispLon, 0, 5, true, false), // Reliable off
+			homeRowAt(13, dispLat, dispLon, 0, 5, true, false), // stored Reliable off: still refreshed
 			homeRowAt(900, dispLat, dispLon, 0, 5, true, true), // the author
 			homeRowAt(15, dispLat, dispLon, 3, 5, true, true),  // too far
 		}
 		return rig
 	}
 
-	t.Run("refreshes each reader in range and pushes the rows the rule wrote", func(t *testing.T) {
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box):
+	// the branch refreshes every subscribed neighbour in range whatever the stored
+	// Reliable flag says, and queues no phone note.
+	t.Run("refreshes each reader in range and queues nothing", func(t *testing.T) {
 		rig := setup()
 		rig.eval(t, 42, 0)
-		if !dispatchInt64sEqual(rig.u.refreshed, []int64{11, 12}) {
-			t.Errorf("refreshed = %v, want [11 12] nearest first", rig.u.refreshed)
+		if !dispatchInt64sEqual(rig.u.refreshed, []int64{11, 13, 12}) {
+			t.Errorf("refreshed = %v, want [11 13 12] nearest first", rig.u.refreshed)
 		}
-		if len(rig.f.reliableCalls) != 1 {
-			t.Fatalf("reliable enqueues = %d, want 1", len(rig.f.reliableCalls))
-		}
-		rc := rig.f.reliableCalls[0]
-		if rc.ReportID != 42 || !rc.Now.Equal(pushFactsNow) || !rc.ExpiresAt.Equal(pushFactsNow.Add(PushOtherTTL)) {
-			t.Errorf("reliable enqueue = %+v", rc)
+		if n := rig.f.names("EnqueueReliableFromUpdates"); n != 0 {
+			t.Fatalf("reliable enqueues = %d, want none (D3)", n)
 		}
 		if len(rig.f.initialCalls) != 0 {
 			t.Errorf("a non critical report queued an initial alert directly: %v", rig.f.initialAccounts())
@@ -786,9 +790,8 @@ func TestDispatchReliableUsesRefreshRows(t *testing.T) {
 		if len(rig.f.reliableMarks) != 1 || rig.f.reliableMarks[0].State != "fanned" {
 			t.Errorf("reliable marks = %+v, want one fanned", rig.f.reliableMarks)
 		}
-		var refreshAt, enqueueAt = rig.f.indexOf("Refresh"), rig.f.indexOf("EnqueueReliableFromUpdates")
-		if refreshAt < 0 || refreshAt > enqueueAt {
-			t.Errorf("the rows were read before the rule ran: %v", rig.f.calls)
+		if rig.f.indexOf("Refresh") < 0 {
+			t.Errorf("the bell rows were never refreshed: %v", rig.f.calls)
 		}
 		if len(rig.f.criticalMarks) != 0 {
 			t.Errorf("a non critical report marked a critical fan out: %+v", rig.f.criticalMarks)
@@ -833,11 +836,11 @@ func TestDispatchReliableUsesRefreshRows(t *testing.T) {
 		rig := setup()
 		rig.u.errFor[11] = errors.New("boom")
 		rig.eval(t, 42, 0)
-		if !dispatchInt64sEqual(rig.u.refreshed, []int64{11, 12}) {
-			t.Errorf("refreshed = %v, want both tried", rig.u.refreshed)
+		if !dispatchInt64sEqual(rig.u.refreshed, []int64{11, 13, 12}) {
+			t.Errorf("refreshed = %v, want all tried", rig.u.refreshed)
 		}
-		if len(rig.f.reliableCalls) != 1 {
-			t.Errorf("reliable enqueues = %d, want 1", len(rig.f.reliableCalls))
+		if n := rig.f.names("EnqueueReliableFromUpdates"); n != 0 {
+			t.Errorf("reliable enqueues = %d, want none", n)
 		}
 	})
 
@@ -852,7 +855,7 @@ func TestDispatchReliableUsesRefreshRows(t *testing.T) {
 			t.Error("the sweep read the reporter history again")
 		}
 		rig.eval(t, 42, 77)
-		if !dispatchInt64sEqual(rig.u.refreshed, []int64{11, 12}) || len(rig.f.reliableCalls) != 1 {
+		if !dispatchInt64sEqual(rig.u.refreshed, []int64{11, 13, 12}) {
 			t.Errorf("a poke did not serve the readers again: refreshed %v", rig.u.refreshed)
 		}
 	})
@@ -871,12 +874,10 @@ func TestDispatchChangesSkipsVoter(t *testing.T) {
 	rig := newDispatchRig()
 	rig.f.facts[42] = dispatchReport("low", "clear")
 	rig.f.followers = []int64{77, 78, 79, 80}
-	rig.f.settings[78] = sqlcgen.GetPushKindSettingsRow{ChangesPushOn: true,
-		ChangesEnabledAt: pgtype.Timestamptz{Time: pushFactsNow.Add(-30 * time.Minute), Valid: true}}
-	rig.f.settings[79] = sqlcgen.GetPushKindSettingsRow{ChangesPushOn: true,
-		ChangesEnabledAt: pgtype.Timestamptz{Time: pushFactsNow.Add(-5 * time.Hour), Valid: true}}
-	rig.f.settings[80] = sqlcgen.GetPushKindSettingsRow{ChangesPushOn: true}
 
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box):
+	// change notes no longer reach a phone, so the branch refreshes the bells of
+	// the report's people and queues nothing, whatever any stored switch says.
 	rig.eval(t, 42, 77)
 
 	if !dispatchInt64sEqual(rig.f.followerCalls, []int64{42}) {
@@ -885,21 +886,11 @@ func TestDispatchChangesSkipsVoter(t *testing.T) {
 	if !dispatchInt64sEqual(rig.u.refreshed, []int64{78, 79, 80}) {
 		t.Errorf("refreshed = %v, want every follower except the voter", rig.u.refreshed)
 	}
-	if len(rig.f.changedCalls) != 3 {
-		t.Fatalf("changed enqueues = %d, want 3", len(rig.f.changedCalls))
+	if n := rig.f.names("EnqueueChangedFromUpdates"); n != 0 {
+		t.Fatalf("changed enqueues = %d, want none (D3)", n)
 	}
-	want := map[int64]time.Time{
-		78: pushFactsNow.Add(-30 * time.Minute),  // the later of enabled_at and now minus the window
-		79: pushFactsNow.Add(-PushChangedWindow), // enabled long ago: the window decides
-		80: pushFactsNow.Add(-PushChangedWindow), // no stamp: the window decides
-	}
-	for _, c := range rig.f.changedCalls {
-		if c.AccountID == 77 {
-			t.Error("the voter was queued a change about their own vote")
-		}
-		if !c.Since.Equal(want[c.AccountID]) || !c.Now.Equal(pushFactsNow) {
-			t.Errorf("changed enqueue %+v, want since %v", c, want[c.AccountID])
-		}
+	if n := rig.f.names("GetPushKindSettings"); n != 0 {
+		t.Errorf("the stored switches were read %d times, want none", n)
 	}
 
 	t.Run("a sweep poke with no actor reads no followers", func(t *testing.T) {
@@ -931,8 +922,8 @@ func TestDispatchChangesSkipsVoter(t *testing.T) {
 		if !dispatchInt64sEqual(r.u.refreshed, []int64{78, 79}) {
 			t.Errorf("refreshed = %v", r.u.refreshed)
 		}
-		if len(r.f.changedCalls) == 0 {
-			t.Error("the follower after the failed one was not queued")
+		if len(r.u.refreshed) != 2 {
+			t.Error("the follower after the failed one was not refreshed")
 		}
 	})
 }
@@ -1079,8 +1070,12 @@ func TestDispatchOneFanoutPerReport(t *testing.T) {
 		reliableReader(rig)
 		rig.f.counts["reliable"] = PushReliableReportsPerReporterPerHour // would block if it were counted
 		rig.eval(t, 42, 0)
-		if !dispatchInt64sEqual(rig.u.refreshed, []int64{12}) {
-			t.Errorf("refreshed = %v, want the Critical-off reader still served", rig.u.refreshed)
+		// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications
+		// box): the stored Critical switch no longer decides, so every neighbour
+		// of a serious report got the Critical push and the Reliable branch
+		// refreshes nobody.
+		if len(rig.u.refreshed) != 0 {
+			t.Errorf("refreshed = %v, want nobody for a serious report", rig.u.refreshed)
 		}
 		for _, c := range rig.f.countCalls {
 			if c.Kind == "reliable" {
@@ -1261,19 +1256,16 @@ func TestDispatchSweeps(t *testing.T) {
 		}
 	})
 
-	t.Run("the changes sweep refreshes and queues for each account", func(t *testing.T) {
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box):
+	// the sweep refreshes bells and queues no change note.
+	t.Run("the changes sweep refreshes each account and queues nothing", func(t *testing.T) {
 		r := newDispatchRig()
 		r.f.changeAccts = []int64{78, 79}
-		r.f.settings[78] = sqlcgen.GetPushKindSettingsRow{ChangesPushOn: true,
-			ChangesEnabledAt: pgtype.Timestamptz{Time: pushFactsNow.Add(-10 * time.Minute), Valid: true}}
 		if err := r.d.ChangesSweepOnce(context.Background()); err != nil {
 			t.Fatalf("ChangesSweepOnce: %v", err)
 		}
-		if !dispatchInt64sEqual(r.u.refreshed, []int64{78, 79}) || len(r.f.changedCalls) != 2 {
-			t.Errorf("refreshed %v, changed enqueues %d", r.u.refreshed, len(r.f.changedCalls))
-		}
-		if !r.f.changedCalls[0].Since.Equal(pushFactsNow.Add(-10 * time.Minute)) {
-			t.Errorf("since = %v", r.f.changedCalls[0].Since)
+		if !dispatchInt64sEqual(r.u.refreshed, []int64{78, 79}) || r.f.names("EnqueueChangedFromUpdates") != 0 {
+			t.Errorf("refreshed %v, changed enqueues %d", r.u.refreshed, r.f.names("EnqueueChangedFromUpdates"))
 		}
 	})
 
@@ -1357,7 +1349,7 @@ func TestDispatchRunSweepsAndHandlesPokes(t *testing.T) {
 	}
 	rig.f.mu.Lock()
 	defer rig.f.mu.Unlock()
-	if rig.f.names("AccountsWithChangesPush") < 1 {
+	if rig.f.names("AccountsForBellRefresh") < 1 {
 		t.Error("the boot sweep did not include the changes sweep")
 	}
 }

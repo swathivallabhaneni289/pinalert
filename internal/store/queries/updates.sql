@@ -392,7 +392,9 @@ WHERE account_id = sqlc.arg(account_id)::bigint;
 
 -- name: GetAlertSettings :one
 -- The account's alert switch and distance (D-26). No row means the defaults:
--- off, 5 km.
+-- off, 5 km. Owner decision 2026-11-03, quick 261103-jal: the switch column is
+-- kept and no longer decides anything; enabled_at can still move the start of
+-- the Reliable bell row later within ReliableBellLookBack (C1).
 SELECT reliable_alerts_on, alert_radius_km, enabled_at
 FROM account_alert_settings
 WHERE account_id = sqlc.arg(account_id)::bigint;
