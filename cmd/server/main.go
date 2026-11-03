@@ -493,7 +493,7 @@ func main() {
 	if pushOn {
 		pushUpdates = &lateUpdates{}
 		// The one geocode client is also the dispatcher's area namer (T-07-01).
-		pushDispatcher = service.NewPushDispatcher(queries, pushUpdates, geocodeClient, service.WithDispatchSignals(ratingService))
+		pushDispatcher = service.NewPushDispatcher(queries, pushUpdates, geocodeClient)
 		reportOpts = append(reportOpts, service.WithReportChangeNotifier(pushDispatcher))
 		voteOpts = append(voteOpts, service.WithVoteChangeNotifier(pushDispatcher))
 		commentOpts = append(commentOpts, service.WithCommentChangeNotifier(pushDispatcher))

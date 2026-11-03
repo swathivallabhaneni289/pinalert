@@ -45,7 +45,11 @@ func newReliableScene(t *testing.T) *reliableScene {
 	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
 	// D3): the dispatcher no longer queues a Reliable note, so the rows are
 	// queued by the query that is kept for them, the way a row queued before this
-	// change sits in the outbox. The dispatcher still wrote the bell rows.
+	// change sits in the outbox. The bell rows they read come from each reader's
+	// own bell poll (review WR-04: the dispatcher no longer writes them early).
+	for _, id := range []int64{s.muter, s.blocker, s.blocked, s.control} {
+		r.refresh(id, r.cur)
+	}
 	if _, err := r.q.EnqueueReliableFromUpdates(context.Background(), sqlcgen.EnqueueReliableFromUpdatesParams{
 		ExpiresAt: r.cur.Add(PushOtherTTL), Now: r.cur, ReportID: s.report,
 	}); err != nil {

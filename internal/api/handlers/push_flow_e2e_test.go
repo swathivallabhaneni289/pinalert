@@ -179,7 +179,7 @@ func pwSetup(t *testing.T) *pwWorld {
 		d.Reports = reports
 		d.Votes = service.NewVotingService(q, service.WithVoteChangeNotifier(w.notifier), service.WithVotingSignals(d.Ratings))
 		updates := service.NewUpdatesService(q, reports)
-		w.disp = service.NewPushDispatcher(q, updates, w.namer, service.WithDispatchSignals(d.Ratings))
+		w.disp = service.NewPushDispatcher(q, updates, w.namer)
 		w.worker = service.NewPushWorker(q, w.sender)
 	})
 	w.srv, w.mailer, w.pool = srv, mailer, pool
@@ -210,9 +210,6 @@ func (w *pwWorld) laterSweepsSendNothing(t *testing.T) {
 	before := w.sender.total()
 	if err := w.disp.SweepOnce(ctx); err != nil {
 		t.Fatalf("dispatcher sweep: %v", err)
-	}
-	if err := w.disp.ChangesSweepOnce(ctx); err != nil {
-		t.Fatalf("dispatcher changes sweep: %v", err)
 	}
 	if err := w.worker.SweepOnce(ctx); err != nil {
 		t.Fatalf("worker sweep: %v", err)
@@ -467,6 +464,12 @@ func TestPhoneAlertReliableAtPosting(t *testing.T) {
 
 	pwWantCount(t, w, a, 0)
 	pwWantCount(t, w, n, 0)
+	// Amended 2026-11-03 by quick 261103-jal (review WR-04): the dispatcher no
+	// longer refreshes bells for a Reliable report, so each reader's own bell poll
+	// (GET /api/updates) writes the row.
+	for name, p := range map[string]*pwReader{"flag stored on": a, "flag never set": n} {
+		p32uPoll(t, name, p.client, w.srv.URL)
+	}
 	for name, id := range map[string]int64{"flag stored on": a.id, "flag never set": n.id} {
 		if got := delCount(t, w.pool, `SELECT count(*) FROM updates WHERE account_id = $1 AND kind = 'reliable_nearby'`, id); got != 1 {
 			t.Errorf("%s: reliable_nearby bell rows = %d, want 1", name, got)

@@ -59,12 +59,13 @@ type AccountsForBellRefreshParams struct {
 	RowCap  int32
 }
 
-// Every account with a live device, for the sweep that refreshes bells early.
-// No stored switch is read and no phone note follows (owner decision
-// 2026-11-03, quick 261103-jal); the bell poll (GET /api/updates) stays the
-// producer for everyone else. Bounded by row_cap and served from after_id on,
-// so the caller can rotate through every account a page at a time instead of
-// always taking the same first row_cap (review S-04).
+// Every account with a live device. It has no caller since review WR-04 of
+// quick 261103-jal removed the changes sweep that refreshed bells early; it is
+// kept, with its store test, like the other unused queries (C6). No stored
+// switch is read. The bell poll (GET /api/updates) is the producer of the bell
+// rows. Bounded by row_cap and served from after_id on, so a caller can rotate
+// through every account a page at a time instead of always taking the same first
+// row_cap (review S-04).
 func (q *Queries) AccountsForBellRefresh(ctx context.Context, arg AccountsForBellRefreshParams) ([]int64, error) {
 	rows, err := q.db.Query(ctx, accountsForBellRefresh, arg.AfterID, arg.RowCap)
 	if err != nil {
@@ -1012,7 +1013,9 @@ type MarkReliableFanoutParams struct {
 	Now      time.Time
 }
 
-// The same for the Reliable reporter fan out.
+// The same for the Reliable reporter fan out. It has no caller since review WR-04
+// of quick 261103-jal removed the dispatcher's Reliable path; kept like the other
+// unused queries (C6), and the reliable_state column stays (D8).
 func (q *Queries) MarkReliableFanout(ctx context.Context, arg MarkReliableFanoutParams) error {
 	_, err := q.db.Exec(ctx, markReliableFanout, arg.ReportID, arg.State, arg.Now)
 	return err

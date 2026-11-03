@@ -78,15 +78,15 @@ func TestWorkerHiddenNeedsEarlierConfirmation(t *testing.T) {
 	}
 
 	// More than an hour later three other cells dispute both reports, so both are
-	// Hidden now. The change sweep refreshes the reporter and queues the pushes.
+	// Hidden now. The reporter's bell poll writes the rows.
 	for i, cell := range disputeCells {
 		at := r.base.Add(time.Duration(70+i) * time.Minute)
 		r.vote(reportA, voters[2+i], "content", "dispute", cell, at)
 		r.vote(reportB, voters[2+i], "content", "dispute", cell, at)
 	}
 	r.cur = r.base.Add(75 * time.Minute)
-	if err := r.d.ChangesSweepOnce(ctx); err != nil {
-		t.Fatalf("ChangesSweepOnce: %v", err)
+	if err := r.updates.Refresh(ctx, reporter); err != nil {
+		t.Fatalf("Refresh: %v", err)
 	}
 	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
 	// D3): the sweep refreshes the bell and queues no change note any more, so the

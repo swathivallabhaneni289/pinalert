@@ -87,9 +87,6 @@ const (
 	// not built; the lower 3.5 star Reliable bar of Phase 9 is a further reason
 	// to keep them. Recorded in docs/TRUST-MODEL.md.
 	PushCriticalReportsPerReporterPerHour = 3
-	// PushReliableReportsPerReporterPerHour is the same cap for Reliable
-	// reporter pushes.
-	PushReliableReportsPerReporterPerHour = 2
 	// PushRecipientsPerReport is the most people one report is pushed to.
 	PushRecipientsPerReport = 2000
 	// PushDevicesPerAccount is the most devices one account may subscribe.

@@ -42,12 +42,20 @@ func TestStoredReliableAndChangesFlagsNeverReachThePhone(t *testing.T) {
 	if rows := r.outbox(relReport)[reader]; len(rows) != 0 {
 		t.Fatalf("the reader holds %v for a Reliable report, want no phone row", rows)
 	}
-	if n := r.count(`SELECT COUNT(*) FROM updates WHERE account_id = $1 AND report_id = $2 AND kind = 'reliable_nearby'`, reader, relReport); n != 1 {
-		t.Fatalf("reliable_nearby bell rows = %d, want 1 (the early refresh still runs)", n)
+	// Amended 2026-11-03 by quick 261103-jal (review WR-04): the dispatcher no
+	// longer refreshes bells for a Reliable report, so the row exists only once
+	// the reader's own bell poll runs.
+	reliableRows := `SELECT COUNT(*) FROM updates WHERE account_id = $1 AND report_id = $2 AND kind = 'reliable_nearby'`
+	if n := r.count(reliableRows, reader, relReport); n != 0 {
+		t.Fatalf("reliable_nearby bell rows before the bell poll = %d, want 0 (no early refresh)", n)
+	}
+	r.refresh(reader, r.cur)
+	if n := r.count(reliableRows, reader, relReport); n != 1 {
+		t.Fatalf("reliable_nearby bell rows after the bell poll = %d, want 1", n)
 	}
 
 	// 2. Enqueue side, Changes: a vote changes a report the reader posted, then
-	// the changes sweep runs.
+	// the reader's bell poll runs.
 	own := r.report(readerSession, SeverityLow, r.base, "clear")
 	r.cur = r.base.Add(1 * time.Minute)
 	if err := r.updates.Refresh(ctx, reader); err != nil {
@@ -57,8 +65,8 @@ func TestStoredReliableAndChangesFlagsNeverReachThePhone(t *testing.T) {
 	r.vote(own, v2, "content", "confirm", "tdr1vc3", r.base.Add(4*time.Minute))
 	r.cur = r.base.Add(12 * time.Minute)
 	r.eval(own, v1)
-	if err := r.d.ChangesSweepOnce(ctx); err != nil {
-		t.Fatalf("ChangesSweepOnce: %v", err)
+	if err := r.updates.Refresh(ctx, reader); err != nil {
+		t.Fatalf("Refresh: %v", err)
 	}
 	if n := r.count(`SELECT COUNT(*) FROM push_outbox WHERE account_id = $1 AND kind = 'changed'`, reader); n != 0 {
 		t.Fatalf("changed phone rows = %d, want none", n)

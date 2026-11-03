@@ -55,7 +55,7 @@ func newFollowPushRig(t *testing.T) *followRig {
 	t.Helper()
 	r := newFollowRig(t)
 	clock := func() time.Time { return r.cur }
-	r.d = NewPushDispatcher(r.q, r.updates, r.namer, WithDispatchClock(clock), WithDispatchSignals(NewRatingService(r.q)))
+	r.d = NewPushDispatcher(r.q, r.updates, r.namer, WithDispatchClock(clock))
 	return r
 }
 
@@ -225,7 +225,7 @@ func TestFollowPushFannedAfterOnePass(t *testing.T) {
 	r := newFollowPushRig(t)
 	counter := &countingRefresher{inner: r.updates}
 	clock := func() time.Time { return r.cur }
-	r.d = NewPushDispatcher(r.q, counter, r.namer, WithDispatchClock(clock), WithDispatchSignals(NewRatingService(r.q)))
+	r.d = NewPushDispatcher(r.q, counter, r.namer, WithDispatchClock(clock))
 
 	person, session := r.person("push.pass")
 	loner, loneSession := r.person("push.lone")

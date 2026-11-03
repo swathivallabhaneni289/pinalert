@@ -28,7 +28,9 @@ var ratingsWiringCalls = []struct {
 			"WithVotingSignals(ratingService)",
 			"WithVotingRatePrompts(ratingService)",
 			"WithAuthSignals(ratingService)",
-			"WithDispatchSignals(ratingService)",
+			// Amended 2026-11-03 by quick 261103-jal (review WR-04): the dispatcher
+			// no longer reads a reporter tag (its Reliable path is gone), so
+			// WithDispatchSignals is removed and is no longer listed here.
 			"WithFollowSweepSignals(ratingService)",
 			// 2026-10-30, plan 09-26 (review W8): the push worker rechecks a follow
 			// note against the rated tag at send time.

@@ -362,8 +362,10 @@ func TestPushReliable(t *testing.T) {
 	reporter := testutil.SeedReliableReporter(t, r.pool, r.email("reliable"), reporterSession, r.base)
 	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box):
 	// a Reliable reporter note never reaches a phone, whatever the stored flags
-	// say. The dispatcher only refreshes the bell, so every subscribed reader in
-	// range holds the reliable_nearby bell row and no reader holds a reliable
+	// say. Amended 2026-11-03 by quick 261103-jal (review WR-04): the dispatcher
+	// does not even refresh the bell for a Reliable report now, so every reader in
+	// range holds the reliable_nearby bell row only once their own bell poll runs
+	// (which proves the poll is the producer), and no reader holds a reliable
 	// phone row. R1: Critical off, Reliable on. R2: both on. R3: Reliable off.
 	r1, _ := r.reader("r1", 0, 5, false, true, false)
 	r2, _ := r.reader("r2", 0, 5, true, true, false)
@@ -374,28 +376,33 @@ func TestPushReliable(t *testing.T) {
 	low := r.report(reporterSession, SeverityLow, r.base.Add(5*time.Minute), "clear")
 	r.eval(low, 0)
 
+	reliableRows := `SELECT COUNT(*) FROM updates WHERE account_id = $1 AND report_id = $2 AND kind = 'reliable_nearby'`
 	got := r.outbox(low)
 	for name, id := range map[string]int64{"R1": r1, "R2": r2, "R3": r3} {
 		if len(got[id]) != 0 {
 			t.Errorf("%s holds %v, want no phone row for a Reliable report", name, got[id])
 		}
-		// The early refresh wrote 3.2's own reliable_nearby row for every reader.
-		if n := r.count(`SELECT COUNT(*) FROM updates WHERE account_id = $1 AND report_id = $2 AND kind = 'reliable_nearby'`, id, low); n != 1 {
-			t.Errorf("3.2 reliable_nearby rows for %s = %d, want 1", name, n)
+		if n := r.count(reliableRows, id, low); n != 0 {
+			t.Errorf("reliable_nearby rows for %s before the bell poll = %d, want 0 (no early refresh)", name, n)
+		}
+		r.refresh(id, r.cur)
+		if n := r.count(reliableRows, id, low); n != 1 {
+			t.Errorf("reliable_nearby rows for %s after the bell poll = %d, want 1", name, n)
 		}
 	}
 
-	// A second evaluation (sweep or poke) adds nothing.
+	// A second evaluation (sweep or poke) adds nothing, and writes no Reliable
+	// fan out state.
 	r.eval(low, 0)
 	r.eval(low, 77)
 	if n := len(r.outbox(low)[r1]); n != 0 {
 		t.Errorf("R1 holds %d rows after repeat evaluations, want 0", n)
 	}
-	if n := r.count(`SELECT COUNT(*) FROM updates WHERE account_id = $1 AND report_id = $2 AND kind = 'reliable_nearby'`, r1, low); n != 1 {
-		t.Errorf("3.2 reliable_nearby rows for R1 after repeats = %d, want 1", n)
+	if n := r.count(reliableRows, r1, low); n != 1 {
+		t.Errorf("reliable_nearby rows for R1 after repeats = %d, want 1", n)
 	}
-	if _, rel := r.progress(low); rel != "fanned" {
-		t.Errorf("reliable_state = %q, want fanned", rel)
+	if _, rel := r.progress(low); rel != "" {
+		t.Errorf("reliable_state = %q, want none: the dispatcher writes no Reliable state", rel)
 	}
 
 	// A Critical report by the Reliable reporter goes out as Critical to all
@@ -553,8 +560,8 @@ func TestPushCaps(t *testing.T) {
 		r.cur = r.base.Add(50*time.Minute + time.Minute)
 		fourth := r.report(reporterSession, SeverityCritical, r.base.Add(50*time.Minute), "clear")
 		r.eval(fourth, 0)
-		if c, rel := r.progress(fourth); c != "capped" || rel != "capped" {
-			t.Errorf("fourth report states = %q and %q, want capped and capped", c, rel)
+		if c, rel := r.progress(fourth); c != "capped" || rel != "" {
+			t.Errorf("fourth report states = %q and %q, want capped and no Reliable state (WR-04: the dispatcher writes none)", c, rel)
 		}
 		got := r.outbox(fourth)
 		if len(got[x]) != 0 {

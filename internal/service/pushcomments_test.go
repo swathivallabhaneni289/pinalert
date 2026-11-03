@@ -483,10 +483,10 @@ func TestLikesNotifyNoPush(t *testing.T) {
 		t.Fatalf("Flag: %v", err)
 	}
 
-	// The sweep path of every account that could be told: nothing is new.
+	// The bell poll of every account that could be told: nothing is new.
 	for _, id := range r.followersOf(report) {
-		if err := r.d.changesFor(ctx, id, r.cur); err != nil {
-			t.Fatalf("changesFor(%d): %v", id, err)
+		if err := r.updates.Refresh(ctx, id); err != nil {
+			t.Fatalf("Refresh(%d): %v", id, err)
 		}
 	}
 	if got := r.count(`SELECT COUNT(*) FROM push_outbox`); got != before {
