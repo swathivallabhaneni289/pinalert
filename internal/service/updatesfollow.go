@@ -145,7 +145,7 @@ func (s *UpdatesService) refreshFollowedPosts(ctx context.Context, accountID int
 			ReportID:  v.ID,
 			Now:       now,
 			HourEdge:  windowStart,
-			Ceiling:   UpdatesHourlyCeiling,
+			Ceiling:   FollowHourlyCeiling,
 			State:     string(v.Visibility),
 		})
 		if err != nil {

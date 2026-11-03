@@ -328,7 +328,7 @@ func TestFollowBellOnlyAfterNotifyOn(t *testing.T) {
 }
 
 // TestFollowBellBounded: the step reads at most FollowedPostsCap reports, and
-// the hourly ceiling still stops the notes after UpdatesHourlyCeiling.
+// the follow cap still stops the notes after FollowHourlyCeiling.
 func TestFollowBellBounded(t *testing.T) {
 	r := newFollowRig(t)
 	person, session := r.person("bell.bounded")
@@ -358,8 +358,8 @@ func TestFollowBellBounded(t *testing.T) {
 	}
 
 	r.refresh(reader, first.Add(time.Hour))
-	if got := r.allNotes(reader); got != UpdatesHourlyCeiling {
-		t.Errorf("notes after one refresh = %d, want the hourly ceiling %d", got, UpdatesHourlyCeiling)
+	if got := r.allNotes(reader); got != FollowHourlyCeiling {
+		t.Errorf("notes after one refresh = %d, want the follow cap %d", got, FollowHourlyCeiling)
 	}
 }
 

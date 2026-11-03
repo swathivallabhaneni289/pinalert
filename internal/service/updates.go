@@ -124,6 +124,12 @@ const (
 	// so a busy hour of them never stops a follow note or rolls a change row up
 	// (review WR-01, quick 261103-jal). It starts at the same value as that one.
 	ReliableHourlyCeiling = 10
+	// FollowHourlyCeiling is how many follow rows one account gets per hour. It
+	// counts follow rows only, so a full hour of change or Reliable rows never
+	// holds a follow row, whose phone note is queued only from a written row
+	// (review follow up F2, quick 261103-jal). Change rows still count follow
+	// rows toward UpdatesHourlyCeiling. It starts at the same value as that one.
+	FollowHourlyCeiling = 10
 	// ReliableBellLookBack is how far back the Reliable reporter bell row looks,
 	// for every account with a home area. A stored enabled_at can only move the
 	// start later, so the bell never fills with old reports now that the switch

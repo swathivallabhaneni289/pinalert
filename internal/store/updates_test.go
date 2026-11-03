@@ -919,13 +919,24 @@ func TestFirstAlertIndexSharedByBothKinds(t *testing.T) {
 		t.Errorf("follow note cursor: found %v, state %q, want a provisional cursor", found, state)
 	}
 
-	// The note counts toward the hourly ceiling like the Reliable alert.
-	full := testutil.SeedReporterAccount(t, pool, "first-alert-full@example.com")
-	filler := updReport(t, pool, "sess-first-x", updNow.Add(5*time.Hour))
+	// The note has its own hourly cap like the Reliable alert. Amended 2026-11-03
+	// by quick 261103-jal (follow up F2): only followed_posted rows count toward
+	// it, so a full hour of change rows leaves it open and a full hour of follow
+	// rows holds it.
+	changeFull := testutil.SeedReporterAccount(t, pool, "first-alert-change-full@example.com")
+	changeFiller := updReport(t, pool, "sess-first-x", updNow.Add(5*time.Hour))
 	for i := 0; i < updCeiling; i++ {
-		updRow(t, pool, full, filler, "hidden", updNow.Add(-time.Duration(i+1)*time.Minute))
+		updRow(t, pool, changeFull, changeFiller, "hidden", updNow.Add(-time.Duration(i+1)*time.Minute))
+	}
+	if err := followed(changeFull); err != nil {
+		t.Errorf("follow note after a full hour of change rows: want written, got %v", err)
+	}
+	full := testutil.SeedReporterAccount(t, pool, "first-alert-full@example.com")
+	for i := 0; i < updCeiling; i++ {
+		filler := updReport(t, pool, "sess-first-x", updNow.Add(5*time.Hour))
+		updRow(t, pool, full, filler, "followed_posted", updNow.Add(-time.Duration(i+1)*time.Minute))
 	}
 	if err := followed(full); !errors.Is(err, pgx.ErrNoRows) {
-		t.Errorf("follow note over the ceiling: want pgx.ErrNoRows, got %v", err)
+		t.Errorf("follow note over the follow cap: want pgx.ErrNoRows, got %v", err)
 	}
 }

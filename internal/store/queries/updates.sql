@@ -236,8 +236,10 @@ SELECT id FROM ins;
 -- name: InsertFollowedPostedAlert :one
 -- The follow note (PROF-03, D-09): a person you follow with Notify me on posted
 -- a report. It is the sibling of InsertReliableAlert with the same arguments,
--- the same cursor seed and kind followed_posted, and the shared hourly ceiling
--- that leaves the Reliable reporter rows out of its count.
+-- the same cursor seed and kind followed_posted. Its hourly cap counts only
+-- followed_posted rows (quick 261103-jal, follow up F2): a full hour of change or
+-- Reliable rows never holds a follow row, because the phone note is queued only
+-- from a written follow row and a held one would be lost.
 -- The one first alert index uq_updates_first_alert covers both kinds, so a
 -- person who already got the Reliable reporter alert for this report gets no
 -- second note, and the reverse (D-09, Pitfall 5). The ON CONFLICT predicate is
@@ -252,7 +254,7 @@ WITH ins AS (
         SELECT COUNT(*)
         FROM updates u
         WHERE u.account_id = sqlc.arg(account_id)::bigint
-          AND u.kind NOT IN ('more', 'comment_on_yours', 'reply_to_yours', 'reliable_nearby')
+          AND u.kind = 'followed_posted'
           AND u.created_at > sqlc.arg(hour_edge)::timestamptz
     ) < sqlc.arg(ceiling)::bigint
     ON CONFLICT (account_id, report_id) WHERE kind IN ('reliable_nearby', 'followed_posted') DO NOTHING
