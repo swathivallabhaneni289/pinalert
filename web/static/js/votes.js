@@ -1998,10 +1998,6 @@
   // report id -> the box on this page, and the ids Skip was pressed for.
   var rateBoxes = {};
   var rateSkipped = {};
-  // report id -> a counter that each Undo of the resolve moves on. Since quick
-  // 261103-jal (D6) no offer waits for a pop-up, so nothing reads it any more; it
-  // stays as the place a later wait would take its number from (skeptic SK-I04).
-  var rateGeneration = {};
   // report id -> what stops the timers of that box when it leaves.
   var rateCleanups = {};
 
@@ -2023,9 +2019,7 @@
 
   // takeRateBoxBack is the Undo of a resolve: the box goes.
   function takeRateBoxBack(reportId) {
-    var key = String(reportId);
-    rateGeneration[key] = (rateGeneration[key] || 0) + 1;
-    removeRateBox(key);
+    removeRateBox(reportId);
   }
 
   // dismissHostedRateBoxes takes away every box that sits in the page host. The
