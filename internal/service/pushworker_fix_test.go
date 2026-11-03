@@ -17,8 +17,8 @@ import (
 	"pinalert/internal/testutil"
 )
 
-// reliableScene is a Reliable reporter, four readers who each have a device and
-// the Reliable alert on, and one low report whose Reliable notes are queued.
+// reliableScene is a Reliable reporter, four readers who each have a device, and
+// one low report whose Reliable notes are queued.
 type reliableScene struct {
 	r        *pushDBRig
 	reporter int64
@@ -29,7 +29,12 @@ type reliableScene struct {
 	control  int64
 }
 
-func newReliableScene(t *testing.T) *reliableScene {
+// newReliableScene builds the scene. With withRules the mute and the two blocks
+// are stored before any bell poll, so the Reliable bell row is written under
+// them (review IN-03, quick 261103-jal): a mute keeps the row away from its
+// reader, and the control reader's row proves the fixture does alert. Without
+// them all four readers hold a bell row and a queued Reliable note.
+func newReliableScene(t *testing.T, withRules bool) *reliableScene {
 	t.Helper()
 	r := newPushDBRig(t)
 	const session = "p9-fix-reliable-reporter"
@@ -42,6 +47,11 @@ func newReliableScene(t *testing.T) *reliableScene {
 	r.cur = r.base.Add(10 * time.Minute)
 	s.report = r.report(session, SeverityLow, r.base.Add(5*time.Minute), "clear")
 	r.eval(s.report, 0)
+	if withRules {
+		testutil.SeedMute(t, r.pool, s.muter, s.reporter)
+		testutil.SeedBlock(t, r.pool, s.blocker, s.reporter)
+		testutil.SeedBlock(t, r.pool, s.reporter, s.blocked)
+	}
 	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
 	// D3): the dispatcher no longer queues a Reliable note, so the rows are
 	// queued by the query that is kept for them, the way a row queued before this
@@ -56,11 +66,51 @@ func newReliableScene(t *testing.T) *reliableScene {
 		t.Fatalf("seeding the reliable rows: %v", err)
 	}
 	for name, id := range map[string]int64{"muter": s.muter, "blocker": s.blocker, "blocked": s.blocked, "control": s.control} {
+		if withRules && id == s.muter {
+			continue
+		}
 		if !outboxKindsEqual(r.outbox(s.report)[id], "reliable") {
 			t.Fatalf("%s: outbox = %v, want a queued reliable row (the fixture must alert)", name, r.outbox(s.report)[id])
 		}
 	}
 	return s
+}
+
+// bellRows counts the Reliable bell rows a reader holds about the scene's report.
+func (s *reliableScene) bellRows(id int64) int {
+	s.r.t.Helper()
+	return s.r.reliableNotes(id, s.report)
+}
+
+// wantPersonRules asks the worker's person check directly for each reader. It is
+// the defensive layer for a Reliable note queued before 2026-11-03: it answers no
+// for the muter and for either side of a block, and yes for the control reader,
+// so it fails when the mute or a block is absent, which a skip that every row
+// gets (kindSwitchOn) cannot tell.
+func (s *reliableScene) wantPersonRules(t *testing.T) {
+	t.Helper()
+	w := pwDBWorker(s.r, &pwSender{answers: map[string]pwAnswer{}})
+	for name, c := range map[string]struct {
+		id   int64
+		want bool
+	}{
+		"muter":   {s.muter, false},
+		"blocker": {s.blocker, false},
+		"blocked": {s.blocked, false},
+		"control": {s.control, true},
+	} {
+		run := &pushRowRun{
+			claim: sqlcgen.ClaimDuePushesRow{AccountID: c.id},
+			facts: pushReportFacts{ReporterAccountID: &s.reporter},
+		}
+		got, err := w.personNotMutedOrBlocked(context.Background(), run)
+		if err != nil {
+			t.Fatalf("%s: personNotMutedOrBlocked: %v", name, err)
+		}
+		if got != c.want {
+			t.Errorf("%s: personNotMutedOrBlocked = %v, want %v", name, got, c.want)
+		}
+	}
 }
 
 func (s *reliableScene) sweep(t *testing.T, sender *pwSender) {
@@ -75,17 +125,25 @@ func (s *reliableScene) sweep(t *testing.T, sender *pwSender) {
 // blocked the other, is skipped as not eligible at send time.
 //
 // Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D3):
-// a Reliable note is never sent now, so every row is skipped as not eligible,
-// with or without a mute or a block, and the control reader's row too.
+// a Reliable note is never sent now, so every queued row is skipped as not
+// eligible, the control reader's too, and that alone cannot tell a mute or a
+// block from the blanket skip. Review IN-03 therefore has the test check the
+// two places the mute and the block still act: the bell row (a muted reporter
+// raises none for its muter, the control reader does get one) and the worker's
+// person check, asked directly. It fails when the mute or a block is absent.
 func TestQueuedReliablePushStopsAfterMuteOrBlock(t *testing.T) {
-	s := newReliableScene(t)
-	testutil.SeedMute(t, s.r.pool, s.muter, s.reporter)
-	testutil.SeedBlock(t, s.r.pool, s.blocker, s.reporter)
-	testutil.SeedBlock(t, s.r.pool, s.reporter, s.blocked)
+	s := newReliableScene(t, true)
+	if n := s.bellRows(s.muter); n != 0 {
+		t.Errorf("muter: Reliable bell rows = %d, want 0 (a mute keeps the row away)", n)
+	}
+	if n := s.bellRows(s.control); n != 1 {
+		t.Errorf("control: Reliable bell rows = %d, want 1 (the fixture must alert)", n)
+	}
+	s.wantPersonRules(t)
 
 	sender := &pwSender{answers: map[string]pwAnswer{}}
 	s.sweep(t, sender)
-	for name, id := range map[string]int64{"muter": s.muter, "blocker": s.blocker, "blocked": s.blocked, "control": s.control} {
+	for name, id := range map[string]int64{"blocker": s.blocker, "blocked": s.blocked, "control": s.control} {
 		if state, skip, _ := pwOutboxRow(t, s.r, id, s.report, "reliable"); state != "skipped" || skip != "not_eligible" {
 			t.Errorf("%s: reliable row is %q (%q), want skipped as not_eligible", name, state, skip)
 		}
@@ -126,23 +184,27 @@ func (s *reliableScene) confirm(t *testing.T) {
 // the confirmed update of a Reliable note is never sent now, so every update is
 // skipped as not eligible, with or without a mute or a block. The Reliable notes
 // are marked sent by SQL, the way one sent before this change sits in the outbox.
+// Review IN-03: the mute and the blocks are stored first, so the muter raised no
+// Reliable row and so no confirmed update, and the worker's person check, asked
+// directly, still says no for each of them and yes for the control reader.
 func TestConfirmedUpdateOfReliablePushStopsAfterMuteOrBlock(t *testing.T) {
-	s := newReliableScene(t)
+	s := newReliableScene(t, true)
 	sender := &pwSender{answers: map[string]pwAnswer{}}
 	s.markReliableSentBeforeTheChange(t)
 
 	s.confirm(t)
-	for name, id := range map[string]int64{"muter": s.muter, "blocker": s.blocker, "blocked": s.blocked, "control": s.control} {
+	if got := s.r.outbox(s.report)[s.muter]; len(got) != 0 {
+		t.Errorf("muter: outbox = %v, want nothing (a mute keeps the Reliable row, and so its confirmed update, away)", got)
+	}
+	for name, id := range map[string]int64{"blocker": s.blocker, "blocked": s.blocked, "control": s.control} {
 		if !outboxKindsEqual(s.r.outbox(s.report)[id], "confirmed_update", "reliable") {
 			t.Fatalf("%s: outbox = %v, want a reliable row and a confirmed update", name, s.r.outbox(s.report)[id])
 		}
 	}
-	testutil.SeedMute(t, s.r.pool, s.muter, s.reporter)
-	testutil.SeedBlock(t, s.r.pool, s.blocker, s.reporter)
-	testutil.SeedBlock(t, s.r.pool, s.reporter, s.blocked)
+	s.wantPersonRules(t)
 
 	s.sweep(t, sender)
-	for name, id := range map[string]int64{"muter": s.muter, "blocker": s.blocker, "blocked": s.blocked, "control": s.control} {
+	for name, id := range map[string]int64{"blocker": s.blocker, "blocked": s.blocked, "control": s.control} {
 		if state, skip, _ := pwOutboxRow(t, s.r, id, s.report, "confirmed_update"); state != "skipped" || skip != "not_eligible" {
 			t.Errorf("%s: confirmed update is %q (%q), want skipped as not_eligible", name, state, skip)
 		}
@@ -157,7 +219,7 @@ func TestConfirmedUpdateOfReliablePushStopsAfterMuteOrBlock(t *testing.T) {
 // re-based on Critical or Reliable, which would skip the rechecks of the kind
 // it replaced.
 func TestConfirmedUpdateWithoutItsFirstRowIsSkipped(t *testing.T) {
-	s := newReliableScene(t)
+	s := newReliableScene(t, false)
 	sender := &pwSender{answers: map[string]pwAnswer{}}
 	s.markReliableSentBeforeTheChange(t)
 	s.confirm(t)
