@@ -15,8 +15,8 @@ import (
 // Phase 8, PAGE-02: commenting makes the user follow the report. commented is
 // the viewer_commented column of the one batched extras read, true only for a
 // clear comment that is not deleted (review W8), the same third arm as
-// FollowedOpenReports after plan 08-11 and FollowersForBellRefresh (was FollowersWithChangesPush) after plan
-// 08-15.
+// FollowedOpenReports after plan 08-11 and FollowersForBellRefresh (was
+// FollowersWithChangesPush) after plan 08-15.
 //
 // It is viewer specific and never says who else follows. A viewerAccountID of 0
 // is no identified viewer and follows nothing, because accounts.id starts at 1.
