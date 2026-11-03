@@ -250,7 +250,9 @@ type AlertSettingsResponse struct {
 // @Description reporter row in the bell. Whether a device gets notifications is decided only by that
 // @Description device's own registration, not by this call. Keys from earlier versions (the four
 // @Description on or off switches for the Reliable alert, Critical reports, changes and official alerts) are
-// @Description accepted and ignored. A body with no alert_radius_km is refused with the field body. The
+// @Description accepted and ignored: a body that carries only such keys changes nothing and answers 200
+// @Description with the stored settings. A body with neither alert_radius_km nor one of those keys set, such
+// @Description as {} or only nulls, is refused with the field body and the sentence Nothing to save. The
 // @Description answer is the stored distance and whether a home area is saved.
 // @Description Requires a session verified by email; an unverified caller receives 401.
 // @Tags me
