@@ -71,7 +71,8 @@ var UpdateEventKinds = []UpdateKind{UpdateReachedLive, UpdateHidden, UpdateResol
 // the rolled up marker. Comment rows never roll up into the marker and do not
 // count toward UpdatesHourlyCeiling: the unread unique index of migration
 // 00019 is their only cap (Phase 8 plan 11). The follow note is an ordinary
-// event for the ceiling, like the Reliable reporter alert (Phase 9, D-09).
+// event for the ceiling. The Reliable reporter alert is not: it has its own cap,
+// ReliableHourlyCeiling (review WR-01, quick 261103-jal).
 var UpdateKinds = []UpdateKind{UpdateReachedLive, UpdateHidden, UpdateResolved, UpdateFading, UpdateReliableNearby, UpdateCommentOnYours, UpdateReplyToYours, UpdateFollowedPosted, UpdateMore}
 
 // Valid reports whether k is one of the nine kinds. Comparison is exact.
@@ -118,6 +119,17 @@ const (
 	// ReliableAlertsPerReporterPerHour is the NOTIF-05 cap per reporter per
 	// recipient per hour. One constant, so the number is easy to change.
 	ReliableAlertsPerReporterPerHour = 1
+	// ReliableHourlyCeiling is how many Reliable reporter rows one account gets
+	// per hour. It is its own cap: those rows are left out of UpdatesHourlyCeiling
+	// so a busy hour of them never stops a follow note or rolls a change row up
+	// (review WR-01, quick 261103-jal). It starts at the same value as that one.
+	ReliableHourlyCeiling = 10
+	// FollowHourlyCeiling is how many follow rows one account gets per hour. It
+	// counts follow rows only, so a full hour of change or Reliable rows never
+	// holds a follow row, whose phone note is queued only from a written row
+	// (review follow up F2, quick 261103-jal). Change rows still count follow
+	// rows toward UpdatesHourlyCeiling. It starts at the same value as that one.
+	FollowHourlyCeiling = 10
 	// ReliableBellLookBack is how far back the Reliable reporter bell row looks,
 	// for every account with a home area. A stored enabled_at can only move the
 	// start later, so the bell never fills with old reports now that the switch

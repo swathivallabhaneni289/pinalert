@@ -31,9 +31,24 @@ type followedLiveReader interface {
 	FollowedLiveReports(ctx context.Context, q FollowedLiveQuery) ([]ReportView, error)
 }
 
-// refreshFollowedPosts writes the follow notes of one account and returns the
-// ids of the reports it actually wrote a note for, so the Reliable reporter step
-// that follows can skip exactly those (review W3). It does nothing, with no
+// followStep is what the follow note step hands to the Reliable reporter step
+// that follows it (review WR-02, quick 261103-jal). The follow note and the
+// Reliable row share one first alert slot per report, and the follow phone note
+// is queued only from a written follow row, so the Reliable step must never take
+// the slot of a report the follow step is responsible for.
+type followStep struct {
+	// notifying is each person the reader follows with Notify me on, whom the
+	// step can write for, with the time that bell went on. The Reliable step
+	// skips their reports posted after that time.
+	notifying map[int64]time.Time
+	// truncated is true when the read hit FollowedPostsCap, so some report of
+	// theirs may not have been seen this time.
+	truncated bool
+}
+
+// refreshFollowedPosts writes the follow notes of one account and returns whom
+// it covers, so the Reliable reporter step that follows can leave those people's
+// reports to it (review W3, WR-02). It does nothing, with no
 // error, when the reader has no Notify me follow or the service has no reports
 // reader of the right kind. It never stops the other updates: Refresh has
 // already written those (D-28).
@@ -55,24 +70,23 @@ type followedLiveReader interface {
 //
 // A note counts toward the hourly ceiling and seeds the reader's cursor in the
 // same statement, exactly as the Reliable reporter note does.
-func (s *UpdatesService) refreshFollowedPosts(ctx context.Context, accountID int64, now time.Time) (map[int64]struct{}, error) {
-	wrote := map[int64]struct{}{}
+func (s *UpdatesService) refreshFollowedPosts(ctx context.Context, accountID int64, now time.Time) (followStep, error) {
 	reader, ok := s.reports.(followedLiveReader)
 	if !ok {
-		return wrote, nil
+		return followStep{}, nil
 	}
 
 	follows, err := s.q.NotifyFollowsFor(ctx, sqlcgen.NotifyFollowsForParams{FollowerID: accountID, RowLimit: NotifyFollowsCap})
 	if err != nil {
-		return nil, fmt.Errorf("reading Notify me follows: %w", err)
+		return followStep{}, fmt.Errorf("reading Notify me follows: %w", err)
 	}
 	if len(follows) == 0 {
-		return wrote, nil
+		return followStep{}, nil
 	}
 
 	mutedIDs, err := s.q.MutedPeopleIDs(ctx, accountID)
 	if err != nil {
-		return nil, fmt.Errorf("reading muted people: %w", err)
+		return followStep{}, fmt.Errorf("reading muted people: %w", err)
 	}
 	muted := make(map[int64]bool, len(mutedIDs))
 	for _, id := range mutedIDs {
@@ -86,11 +100,11 @@ func (s *UpdatesService) refreshFollowedPosts(ctx context.Context, accountID int
 		}
 	}
 	if len(ids) == 0 {
-		return wrote, nil
+		return followStep{}, nil
 	}
 	standing, err := s.q.FolloweeStanding(ctx, ids)
 	if err != nil {
-		return nil, fmt.Errorf("reading followee standing: %w", err)
+		return followStep{}, fmt.Errorf("reading followee standing: %w", err)
 	}
 	followable := make(map[int64]bool, len(standing))
 	for _, row := range standing {
@@ -104,12 +118,12 @@ func (s *UpdatesService) refreshFollowedPosts(ctx context.Context, accountID int
 		since[f.FolloweeID] = f.NotifySince
 	}
 	if len(since) == 0 {
-		return wrote, nil
+		return followStep{}, nil
 	}
 
 	views, err := reader.FollowedLiveReports(ctx, FollowedLiveQuery{ViewerAccountID: accountID, Since: since, Now: now})
 	if err != nil {
-		return nil, fmt.Errorf("reading followed reports: %w", err)
+		return followStep{}, fmt.Errorf("reading followed reports: %w", err)
 	}
 
 	windowStart := now.Add(-updatesCeilingWindow)
@@ -131,16 +145,15 @@ func (s *UpdatesService) refreshFollowedPosts(ctx context.Context, accountID int
 			ReportID:  v.ID,
 			Now:       now,
 			HourEdge:  windowStart,
-			Ceiling:   UpdatesHourlyCeiling,
+			Ceiling:   FollowHourlyCeiling,
 			State:     string(v.Visibility),
 		})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				continue
 			}
-			return wrote, fmt.Errorf("writing follow note for report %d: %w", v.ID, err)
+			return followStep{notifying: since}, fmt.Errorf("writing follow note for report %d: %w", v.ID, err)
 		}
-		wrote[v.ID] = struct{}{}
 	}
-	return wrote, nil
+	return followStep{notifying: since, truncated: len(views) >= FollowedPostsCap}, nil
 }

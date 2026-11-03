@@ -389,19 +389,21 @@ func TestReliableAlertOncePerReport(t *testing.T) {
 		t.Errorf("reporter x in the last 6 hours = %d, want 2", got)
 	}
 
-	// Over the hourly ceiling nothing is written.
+	// Over the Reliable row's own hourly cap nothing is written. Amended
+	// 2026-11-03 by quick 261103-jal (review WR-01): only reliable_nearby rows
+	// count toward it, so the full hour is made of those.
 	full := testutil.SeedReporterAccount(t, pool, "alert-full@example.com")
-	rf := updReport(t, pool, "sess-x", updNow.Add(5*time.Hour))
 	for i := 0; i < updCeiling; i++ {
-		updRow(t, pool, full, rf, "hidden", updNow.Add(-time.Duration(i+1)*time.Minute))
+		rf := updReport(t, pool, "sess-x", updNow.Add(5*time.Hour))
+		updRow(t, pool, full, rf, "reliable_nearby", updNow.Add(-time.Duration(i+1)*time.Minute))
 	}
 	over := arg(ry, updNow)
 	over.AccountID = full
 	if _, err := q.InsertReliableAlert(ctx, over); !errors.Is(err, pgx.ErrNoRows) {
 		t.Errorf("alert over the ceiling: want pgx.ErrNoRows, got %v", err)
 	}
-	if n := updCount(t, pool, `SELECT count(*) FROM updates WHERE account_id = $1 AND kind = 'reliable_nearby'`, full); n != 0 {
-		t.Errorf("%d alert rows over the ceiling, want 0", n)
+	if n := updCount(t, pool, `SELECT count(*) FROM updates WHERE account_id = $1 AND kind = 'reliable_nearby'`, full); n != updCeiling {
+		t.Errorf("%d alert rows over the ceiling, want the %d already there", n, updCeiling)
 	}
 }
 
@@ -485,12 +487,14 @@ func TestReliableAlertSeedsTheCursor(t *testing.T) {
 		t.Errorf("%d cursors for the report, want 1", n)
 	}
 
-	// Over the hourly ceiling nothing is written, and no cursor is seeded.
+	// Over the Reliable row's own hourly cap nothing is written, and no cursor is
+	// seeded. Amended 2026-11-03 by quick 261103-jal (review WR-01): the full hour
+	// is made of reliable_nearby rows, the only kind that counts toward it.
 	full := testutil.SeedReporterAccount(t, pool, "seed-full@example.com")
-	rf := updReport(t, pool, "sess-seed-x", updNow.Add(5*time.Hour))
 	r3 := updReport(t, pool, "sess-seed-x", updNow.Add(5*time.Hour))
 	for i := 0; i < updCeiling; i++ {
-		updRow(t, pool, full, rf, "hidden", updNow.Add(-time.Duration(i+1)*time.Minute))
+		rf := updReport(t, pool, "sess-seed-x", updNow.Add(5*time.Hour))
+		updRow(t, pool, full, rf, "reliable_nearby", updNow.Add(-time.Duration(i+1)*time.Minute))
 	}
 	if _, err := q.InsertReliableAlert(ctx, arg(full, r3, "live", updNow)); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("alert over the ceiling: want pgx.ErrNoRows, got %v", err)
@@ -915,13 +919,24 @@ func TestFirstAlertIndexSharedByBothKinds(t *testing.T) {
 		t.Errorf("follow note cursor: found %v, state %q, want a provisional cursor", found, state)
 	}
 
-	// The note counts toward the hourly ceiling like the Reliable alert.
-	full := testutil.SeedReporterAccount(t, pool, "first-alert-full@example.com")
-	filler := updReport(t, pool, "sess-first-x", updNow.Add(5*time.Hour))
+	// The note has its own hourly cap like the Reliable alert. Amended 2026-11-03
+	// by quick 261103-jal (follow up F2): only followed_posted rows count toward
+	// it, so a full hour of change rows leaves it open and a full hour of follow
+	// rows holds it.
+	changeFull := testutil.SeedReporterAccount(t, pool, "first-alert-change-full@example.com")
+	changeFiller := updReport(t, pool, "sess-first-x", updNow.Add(5*time.Hour))
 	for i := 0; i < updCeiling; i++ {
-		updRow(t, pool, full, filler, "hidden", updNow.Add(-time.Duration(i+1)*time.Minute))
+		updRow(t, pool, changeFull, changeFiller, "hidden", updNow.Add(-time.Duration(i+1)*time.Minute))
+	}
+	if err := followed(changeFull); err != nil {
+		t.Errorf("follow note after a full hour of change rows: want written, got %v", err)
+	}
+	full := testutil.SeedReporterAccount(t, pool, "first-alert-full@example.com")
+	for i := 0; i < updCeiling; i++ {
+		filler := updReport(t, pool, "sess-first-x", updNow.Add(5*time.Hour))
+		updRow(t, pool, full, filler, "followed_posted", updNow.Add(-time.Duration(i+1)*time.Minute))
 	}
 	if err := followed(full); !errors.Is(err, pgx.ErrNoRows) {
-		t.Errorf("follow note over the ceiling: want pgx.ErrNoRows, got %v", err)
+		t.Errorf("follow note over the follow cap: want pgx.ErrNoRows, got %v", err)
 	}
 }

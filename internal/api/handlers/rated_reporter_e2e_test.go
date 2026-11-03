@@ -189,8 +189,9 @@ func p914Surfaces(t *testing.T, srv *httptest.Server, pool *pgxpool.Pool, rep p9
 
 	got["activity"] = p914ReporterOf(t, "activity", p914ActivityTrust(t, rater, srv.URL, rep.live))
 
-	// The dispatcher reads the tag through the same loader with the ratings
-	// source (reporterIsReliable), so the loader is the dispatcher's surface.
+	// The shared loader with the ratings source, read directly. The dispatcher no
+	// longer reads a tag (quick 261103-jal, review WR-04), so this stands for
+	// every other reader of the loader.
 	q := sqlcgen.New(pool)
 	sigs, err := service.LoadReporterSignals(context.Background(), q, service.NewRatingService(q), []int64{rep.id}, time.Now().UTC())
 	if err != nil {

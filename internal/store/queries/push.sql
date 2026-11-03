@@ -243,12 +243,13 @@ WHERE a.deleted_at IS NULL
 ORDER BY a.id;
 
 -- name: AccountsForBellRefresh :many
--- Every account with a live device, for the sweep that refreshes bells early.
--- No stored switch is read and no phone note follows (owner decision
--- 2026-11-03, quick 261103-jal); the bell poll (GET /api/updates) stays the
--- producer for everyone else. Bounded by row_cap and served from after_id on,
--- so the caller can rotate through every account a page at a time instead of
--- always taking the same first row_cap (review S-04).
+-- Every account with a live device. It has no caller since review WR-04 of
+-- quick 261103-jal removed the changes sweep that refreshed bells early; it is
+-- kept, with its store test, like the other unused queries (C6). No stored
+-- switch is read. The bell poll (GET /api/updates) is the producer of the bell
+-- rows. Bounded by row_cap and served from after_id on, so a caller can rotate
+-- through every account a page at a time instead of always taking the same first
+-- row_cap (review S-04).
 SELECT a.id AS account_id
 FROM accounts a
 WHERE a.deleted_at IS NULL
@@ -325,7 +326,9 @@ SET critical_state = EXCLUDED.critical_state,
 WHERE push_report_progress.critical_state IS NULL;
 
 -- name: MarkReliableFanout :exec
--- The same for the Reliable reporter fan out.
+-- The same for the Reliable reporter fan out. It has no caller since review WR-04
+-- of quick 261103-jal removed the dispatcher's Reliable path; kept like the other
+-- unused queries (C6), and the reliable_state column stays (D8).
 INSERT INTO push_report_progress (report_id, reliable_state, reliable_at)
 VALUES (sqlc.arg(report_id)::bigint, sqlc.arg(state)::text, sqlc.arg(now)::timestamptz)
 ON CONFLICT (report_id) DO UPDATE

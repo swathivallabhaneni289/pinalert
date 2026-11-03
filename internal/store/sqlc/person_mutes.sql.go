@@ -10,6 +10,42 @@ import (
 	"time"
 )
 
+const blockedEitherWayIDs = `-- name: BlockedEitherWayIDs :many
+SELECT blocked_id AS other_id
+FROM person_blocks
+WHERE blocker_id = $1::bigint
+UNION
+SELECT blocker_id AS other_id
+FROM person_blocks
+WHERE blocked_id = $1::bigint
+`
+
+// The account ids with a block between them and the reader in either direction
+// (the reader blocked them, or they blocked the reader), for the Reliable
+// reporter bell row to skip (quick 261103-jal, follow up F1). It matches the
+// worker's personNotMutedOrBlocked rule. A block never hides a report on a map,
+// list or feed; it only keeps this person level note away. Read once per
+// refresh, with no limit and no join.
+func (q *Queries) BlockedEitherWayIDs(ctx context.Context, accountID int64) ([]int64, error) {
+	rows, err := q.db.Query(ctx, blockedEitherWayIDs, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var other_id int64
+		if err := rows.Scan(&other_id); err != nil {
+			return nil, err
+		}
+		items = append(items, other_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countMutedPeople = `-- name: CountMutedPeople :one
 SELECT COUNT(*)::bigint
 FROM person_mutes m

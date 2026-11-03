@@ -139,7 +139,7 @@ func TestReliableAlertMutedReadFailure(t *testing.T) {
 	}
 	n := &fakeNearby{views: []ReportView{alertView(1, VisibilityLive, ReporterReliable, 30*time.Minute)}}
 	svc := NewUpdatesService(f, n, WithUpdatesClock(func() time.Time { return updatesNow }))
-	err := svc.refreshReliableAlerts(context.Background(), 5, updatesNow, nil)
+	err := svc.refreshReliableAlerts(context.Background(), 5, updatesNow, followStep{})
 	if !errors.Is(err, boom) {
 		t.Fatalf("refreshReliableAlerts = %v, want the read error", err)
 	}

@@ -90,7 +90,6 @@ func TestPushCapsAreNamed(t *testing.T) {
 	}{
 		{"PushPerAccountPerHour", PushPerAccountPerHour, 4},
 		{"PushCriticalReportsPerReporterPerHour", PushCriticalReportsPerReporterPerHour, 3},
-		{"PushReliableReportsPerReporterPerHour", PushReliableReportsPerReporterPerHour, 2},
 		{"PushRecipientsPerReport", PushRecipientsPerReport, 2000},
 		{"PushDevicesPerAccount", PushDevicesPerAccount, 8},
 		{"FollowFanoutCap", FollowFanoutCap, 500},

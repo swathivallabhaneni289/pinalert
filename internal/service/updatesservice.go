@@ -54,6 +54,10 @@ type UpdatesQuerier interface {
 	// D-12). The Reliable reporter alert skips their reports; nothing else reads
 	// it here.
 	MutedPeopleIDs(ctx context.Context, muterID int64) ([]int64, error)
+	// BlockedEitherWayIDs is the set of people with a block between them and the
+	// reader in either direction (quick 261103-jal, F1). The Reliable reporter
+	// alert skips their reports, the way the worker's person check does.
+	BlockedEitherWayIDs(ctx context.Context, accountID int64) ([]int64, error)
 	// The follow note (Phase 9 plan 22, D-09). NotifyFollowsFor lists the
 	// reader's Notify me follows, FolloweeStanding says who is still followable,
 	// InsertFollowedPostedAlert writes the note, and for the list
@@ -143,19 +147,23 @@ func (s *UpdatesService) Refresh(ctx context.Context, accountID int64) error {
 	// The follow note step (PROF-03, D-09) runs before the Reliable reporter step
 	// because follow wins the one first alert slot a report has per account: a
 	// person who follows a Reliable reporter with the bell on gets the follow
-	// note, never two. The step hands back the report ids it actually wrote, and
-	// the Reliable step skips exactly those (review W3), so a follow note that
-	// was not written, for example over the hourly ceiling, never costs the
-	// reader the Reliable alert. A failure here does not stop the Reliable step;
-	// the first error is the one returned.
-	followed, followErr := s.refreshFollowedPosts(ctx, accountID, now)
+	// note, never two. The follow phone note is queued only from a written follow
+	// row, so the Reliable row must never take that slot. The step hands back the
+	// people it covers, and the Reliable step skips their reports (review WR-02,
+	// which replaces W3: a follow note not written this time, for example over
+	// the hourly ceiling, is tried again on a later poll). When the follow step
+	// fails or hits its read cap it cannot say whom it covered, so the Reliable
+	// step waits for the next refresh. The first error is the one returned.
+	follow, followErr := s.refreshFollowedPosts(ctx, accountID, now)
 
 	// The Reliable reporter alert step (NOTIF-05, D-26) comes last, with the same
 	// now. It measures from the account's home area and writes only through
 	// MayNotifyAboutReport and InsertReliableAlert, and it ends quietly when the
-	// reader has not switched it on, so every update above works without it
-	// (D-28).
-	reliableErr := s.refreshReliableAlerts(ctx, accountID, now, followed)
+	// reader has no home area, so every update above works without it (D-28).
+	var reliableErr error
+	if followErr == nil && !follow.truncated {
+		reliableErr = s.refreshReliableAlerts(ctx, accountID, now, follow)
+	}
 	if followErr != nil {
 		return fmt.Errorf("service: Refresh: follow notes: %w", followErr)
 	}
