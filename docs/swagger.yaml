@@ -5,37 +5,13 @@ definitions:
       alert_radius_km:
         example: 5
         type: integer
-      changes_push:
-        example: false
-        type: boolean
-      critical_push:
-        example: true
-        type: boolean
-      official_push:
-        example: true
-        type: boolean
-      reliable_alerts:
-        example: true
-        type: boolean
     type: object
   handlers.AlertSettingsResponse:
     properties:
       alert_radius_km:
         example: 5
         type: integer
-      changes_push:
-        example: false
-        type: boolean
-      critical_push:
-        example: true
-        type: boolean
       has_home_area:
-        example: true
-        type: boolean
-      official_push:
-        example: true
-        type: boolean
-      reliable_alerts:
         example: true
         type: boolean
     type: object
@@ -2687,25 +2663,15 @@ paths:
       consumes:
       - application/json
       description: |-
-        Saves whether the signed in account wants an update when a Reliable reporter posts
-        near its home area, and how far away that may be: 1, 2, 5 or 10 km. A key left out
-        keeps what is stored. The alert is off until turned on and the distance is 5 km until
-        changed. The distance is measured from the middle of the saved home area, which is a
-        cell about 5 km across; no position is ever sent or stored for this. Turning the
-        alert on without a home area is refused with the field reliable_alerts, and removing
-        the home area turns the alert off. Only reports posted after the alert was turned on
-        can raise it.
-        Two more keys control the phone notifications: critical_push (Critical reports near the
-        home area, on until turned off, even for an account that never saved a choice) and
-        changes_push (changes to reports the account posted or voted on, off until turned on).
-        Turning critical_push on without a home area is refused with the field critical_push;
-        changes_push needs no home area, and turning either off never does. Removing the home
-        area keeps the stored critical_push value. No position is ever sent.
-        A fifth key, official_push, is the switch for Severe official alerts for the home area
-        (on until turned off, even for an account that never saved a choice). Turning
-        official_push on without a home area is refused with the field official_push; turning it
-        off never needs one, and removing the home area keeps the stored value. The answer is all
-        the settings as stored.
+        Saves the one alert setting of the signed in account: alert_radius_km, how far from the
+        home area alerts reach, 1, 2, 5 or 10 km (5 km until changed). It is measured from the
+        middle of the saved home area, which is a cell about 5 km across; no position is ever sent
+        or stored for this. It applies to Critical reports near the home area and to the Reliable
+        reporter row in the bell. Whether a device gets notifications is decided only by that
+        device's own registration, not by this call. Keys from earlier versions (the four
+        on or off switches for the Reliable alert, Critical reports, changes and official alerts) are
+        accepted and ignored. A body with no alert_radius_km is refused with the field body. The
+        answer is the stored distance and whether a home area is saved.
         Requires a session verified by email; an unverified caller receives 401.
       parameters:
       - description: The settings to change
@@ -2733,7 +2699,7 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
-      summary: Turn the Reliable reporter alert on or off and choose its distance
+      summary: Choose how far from the home area alerts reach
       tags:
       - me
   /me/blocked:

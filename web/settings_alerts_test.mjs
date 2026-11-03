@@ -108,7 +108,7 @@ class FakeEl {
 
 // The markup of settings.html.tmpl, as the ids and nesting settings-alerts.js
 // reads. withMarkup false builds a page that has none of the new rows.
-function buildPage({ count = 0, withMarkup = true, home = true, on = false, radius = 5, dialog = true, critical = false, changes = false, official = false, key = 'BPUBLICKEY' } = {}) {
+function buildPage({ count = 0, withMarkup = true, home = true, radius = 5, dialog = true, key = 'BPUBLICKEY' } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -201,10 +201,8 @@ function buildPage({ count = 0, withMarkup = true, home = true, on = false, radi
   //
   // Amended 2026-10-18 by Phase 3.3 plan 14 (D-12): the two boxes
   // settings-alerts-on and settings-alerts-off are gone. The section is one box
-  // of rows, and each row has its own variants. page.alertsOn and page.alertsOff
-  // now name the Reliable row's switch variant and its no home variant, which
-  // are what the old boxes drew for that row, so the plan 15 cases below keep
-  // their meaning. The distance row is page.radiusRow.
+  // of rows, and each row has its own variants. The distance row is
+  // page.radiusRow, with its Add a home area first button page.radiusNoHome.
   const device = make('div', 'settings-device-row', main);
   const deviceOn = make('label', 'settings-device-on', device);
   const deviceSwitch = make('input', 'settings-device-switch', deviceOn);
@@ -214,37 +212,16 @@ function buildPage({ count = 0, withMarkup = true, home = true, on = false, radi
   deviceBlocked.hidden = true;
   const deviceUnsupported = make('div', 'settings-device-unsupported', device);
   deviceUnsupported.hidden = true;
-  const criticalRow = make('div', 'settings-critical-row', main);
-  const criticalOn = make('label', 'settings-critical-on', criticalRow);
-  criticalOn.hidden = !home;
-  const criticalSwitch = make('input', 'settings-critical-switch', criticalOn);
-  criticalSwitch.checked = critical;
-  const criticalNoHome = make('button', 'settings-critical-nohome', criticalRow);
-  criticalNoHome.hidden = home;
-  // Amended 2026-10-29 by plan 05-14 (D-11): Phase 5 draws the official row
-  // between Critical and Changes. The fixture default is off, so every older case
-  // keeps its meaning; the new cases pass official: true.
-  const officialRow = make('div', 'settings-official-row', main);
-  const officialOn = make('label', 'settings-official-on', officialRow);
-  officialOn.hidden = !home;
-  const officialSwitch = make('input', 'settings-official-switch', officialOn);
-  officialSwitch.checked = official;
-  const officialNoHome = make('button', 'settings-official-nohome', officialRow);
-  officialNoHome.hidden = home;
-  const changesRow = make('label', 'settings-changes-row', main);
-  const changesSwitch = make('input', 'settings-changes-switch', changesRow);
-  changesSwitch.checked = changes;
-  const reliableWrap = make('div', 'settings-reliable-wrap', main);
-  const alertsOn = make('label', 'settings-reliable-row', reliableWrap);
-  alertsOn.hidden = !home;
-  const sw = make('input', 'settings-reliable-switch', alertsOn);
-  sw.checked = on;
-  const alertsOff = make('button', 'settings-reliable-nohome', reliableWrap);
-  alertsOff.hidden = home;
-  const radiusRow = make('div', 'settings-radius-row', main);
+  // Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D1,
+  // C9): the Critical, official, Changes and Reliable rows are gone. The distance
+  // wrapper holds the select row and the Add a home area first button.
+  const radiusWrap = make('div', 'settings-radius-wrap', main);
+  const radiusRow = make('div', 'settings-radius-row', radiusWrap);
   radiusRow.hidden = !home;
   const select = make('select', 'settings-radius-select', radiusRow);
   select.value = String(radius);
+  const radiusNoHome = make('button', 'settings-radius-nohome', radiusWrap);
+  radiusNoHome.hidden = home;
   make('p', 'settings-device-error', main).hidden = true;
   make('p', 'settings-alerts-error', main).hidden = true;
   const homeRow = make('button', 'settings-home-row', main);
@@ -264,8 +241,8 @@ function buildPage({ count = 0, withMarkup = true, home = true, on = false, radi
   make('button', 'device-guide-close', guideHead);
 
   return {
-    doc, bar, main, bottom, muted, logout, del, alertsOn, alertsOff, sw, select, homeRow, homeWin,
-    radiusRow, criticalOn, criticalNoHome, criticalSwitch, officialOn, officialNoHome, officialSwitch, changesSwitch, deviceOn, deviceSwitch,
+    doc, bar, main, bottom, muted, logout, del, select, homeRow, homeWin,
+    radiusRow, radiusNoHome, deviceOn, deviceSwitch,
     deviceInstall, deviceBlocked, deviceUnsupported, guide
   };
 }
@@ -823,37 +800,43 @@ test('Tab stays inside an open window', async () => {
 
 test('the script never asks for the device position and exposes its handles', () => {
   const page = loadAlerts();
-  // Amended 2026-10-18 by Phase 3.3 plan 14 (D-12): drawDevice and saveKind are
-  // exported too.
-  for (const name of ['openWindow', 'closeWindow', 'loadMuted', 'unmute', 'logOutAll', 'openDeleteConfirm', 'deleteAccount', 'saveAlerts', 'redrawAlerts', 'drawDevice', 'saveKind']) {
+  // Amended 2026-10-18 by Phase 3.3 plan 14 (D-12): drawDevice is exported too.
+  // Amended 2026-11-03 by quick 261103-jal (D1): saveKind left with the switches.
+  for (const name of ['openWindow', 'closeWindow', 'loadMuted', 'unmute', 'logOutAll', 'openDeleteConfirm', 'deleteAccount', 'saveAlerts', 'redrawAlerts', 'drawDevice']) {
     assert.equal(typeof page.api[name], 'function', name);
   }
 });
 
 // ---- Plan 15: the Notifications section (NOTIF-05, UI-SPEC E1) --------------
+//
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D1,
+// C9): the section has two rows. The Reliable switch tests of this block became
+// the same save, error, offline and next save cases on the distance select, and
+// the no home tests moved to the distance row's Add a home area first button
+// (settings-radius-nohome). The device row tests are below.
 
 const SAVE_FAILED = 'Couldn\'t save that. Try again.';
 const OFFLINE = 'You\'re offline, so this wasn\'t saved. Try again when you have a signal.';
 // Amended 2026-10-29 by Phase 7.1 plan 15 (D-15): a home area can no longer be
 // removed in Settings, so the status "Home area removed. Alerts near your home
 // area are off." (3.3 plan 14, UI-SPEC W2) is gone with the Remove home area
-// button. The no home rows stay as a defensive state for data repair: the tests
-// below that empty the Home area row's data-value now expect no status line.
+// button. The no home button stays as a defensive state for data repair: the
+// tests below that empty the Home area row's data-value expect no status line.
 
-const ok = (reliable, km) => ({ reliable_alerts: reliable, alert_radius_km: km, has_home_area: true });
+const ok = (km, home = true) => ({ alert_radius_km: km, has_home_area: home });
 const errorLine = (page) => byId(page, 'settings-alerts-error');
 const live = (page) => byId(page, 'notice-live');
 
-// turnOn flips the switch the way a tap does: the checkbox changes, then the
+// pick chooses a distance the way a tap does: the select changes, then the
 // change event fires.
-const turnSwitch = (page, state) => {
-  page.sw.checked = state;
-  fire(page.sw, 'change');
+const pick = (page, value) => {
+  page.select.value = String(value);
+  fire(page.select, 'change');
 };
 
-test('turning the switch on sends PATCH reliable_alerts, locks the switch and keeps the answer', async () => {
-  const page = loadAlerts();
-  turnSwitch(page, true);
+test('picking a distance sends PATCH alert_radius_km as a number, locks the select and keeps the answer', async () => {
+  const page = loadAlerts({ radius: 5 });
+  pick(page, 10);
   await flush();
 
   assert.equal(page.requests.length, 1);
@@ -862,130 +845,100 @@ test('turning the switch on sends PATCH reliable_alerts, locks the switch and ke
   assert.equal(req.init.method, 'PATCH');
   assert.equal(req.init.credentials, 'same-origin');
   assert.equal(req.init.headers['Content-Type'], 'application/json');
-  assert.equal(req.init.body, '{"reliable_alerts":true}');
-  assert.equal(page.sw.disabled, true, 'the sender is disabled while the save is in flight');
-  assert.equal(page.select.disabled, false);
+  assert.equal(req.init.body, '{"alert_radius_km":10}');
+  assert.equal(page.select.disabled, true, 'the sender is disabled while the save is in flight');
+  assert.equal(page.deviceSwitch.disabled, false);
 
-  answer(req, 200, ok(true, 5));
-  await flush();
-  assert.equal(page.sw.checked, true);
-  assert.equal(page.sw.disabled, false);
-  assert.equal(errorLine(page).hidden, true);
-});
-
-test('turning the switch off sends reliable_alerts false', async () => {
-  const page = loadAlerts({ on: true });
-  turnSwitch(page, false);
-  await flush();
-  assert.equal(page.requests[0].init.body, '{"reliable_alerts":false}');
-  answer(page.requests[0], 200, ok(false, 5));
-  await flush();
-  assert.equal(page.sw.checked, false);
-});
-
-test('a failed save puts the switch back and says so in one error line', async () => {
-  const page = loadAlerts();
-  turnSwitch(page, true);
-  await flush();
-  answer(page.requests[0], 500, { error: 'boom' });
-  await flush();
-  assert.equal(page.sw.checked, false);
-  assert.equal(page.sw.disabled, false);
-  assert.equal(errorLine(page).hidden, false);
-  assert.equal(errorLine(page).textContent, SAVE_FAILED);
-});
-
-test('a 400 puts the switch back with the same sentence', async () => {
-  const page = loadAlerts();
-  turnSwitch(page, true);
-  await flush();
-  answer(page.requests[0], 400, { field: 'reliable_alerts', error: 'Add a home area first.' });
-  await flush();
-  assert.equal(page.sw.checked, false);
-  assert.equal(errorLine(page).textContent, SAVE_FAILED);
-});
-
-test('a network failure puts the switch back with the same sentence', async () => {
-  const page = loadAlerts({ on: true });
-  turnSwitch(page, false);
-  await flush();
-  page.requests[0].reject(new Error('network down'));
-  await flush();
-  assert.equal(page.sw.checked, true);
-  assert.equal(errorLine(page).textContent, SAVE_FAILED);
-});
-
-test('a save that never answers ends in the same sentence', async () => {
-  const page = loadAlerts();
-  turnSwitch(page, true);
-  await flush();
-  page.advance(10001);
-  await flush();
-  assert.equal(page.sw.checked, false);
-  assert.equal(page.sw.disabled, false);
-  assert.equal(errorLine(page).textContent, SAVE_FAILED);
-});
-
-test('offline, nothing is sent and the offline sentence shows', async () => {
-  const page = loadAlerts();
-  page.sandbox.navigator.onLine = false;
-  turnSwitch(page, true);
-  await flush();
-  assert.equal(page.requests.length, 0);
-  assert.equal(page.sw.checked, false);
-  assert.equal(errorLine(page).hidden, false);
-  assert.equal(errorLine(page).textContent, OFFLINE);
-});
-
-test('the next save clears the earlier error line', async () => {
-  const page = loadAlerts();
-  turnSwitch(page, true);
-  await flush();
-  answer(page.requests[0], 500, {});
-  await flush();
-  assert.equal(errorLine(page).hidden, false);
-  turnSwitch(page, true);
-  await flush();
-  assert.equal(errorLine(page).hidden, true);
-  answer(page.requests[1], 200, ok(true, 5));
-  await flush();
-  assert.equal(errorLine(page).hidden, true);
-});
-
-test('picking a distance sends alert_radius_km as a number and keeps the answer', async () => {
-  const page = loadAlerts({ radius: 5 });
-  page.select.value = '10';
-  fire(page.select, 'change');
-  await flush();
-  assert.equal(page.requests.length, 1);
-  assert.equal(page.requests[0].init.method, 'PATCH');
-  assert.equal(page.requests[0].init.body, '{"alert_radius_km":10}');
-  assert.equal(page.select.disabled, true);
-  assert.equal(page.sw.disabled, false);
-  answer(page.requests[0], 200, ok(false, 10));
+  answer(req, 200, ok(10));
   await flush();
   assert.equal(page.select.value, '10');
   assert.equal(page.select.disabled, false);
   assert.equal(errorLine(page).hidden, true);
 });
 
+test('a failed save puts the distance back and says so in one error line', async () => {
+  const page = loadAlerts({ radius: 5 });
+  pick(page, 2);
+  await flush();
+  answer(page.requests[0], 500, { error: 'boom' });
+  await flush();
+  assert.equal(page.select.value, '5');
+  assert.equal(page.select.disabled, false);
+  assert.equal(errorLine(page).hidden, false);
+  assert.equal(errorLine(page).textContent, SAVE_FAILED);
+});
+
+test('a 400 puts the distance back with the same sentence', async () => {
+  const page = loadAlerts({ radius: 5 });
+  pick(page, 2);
+  await flush();
+  answer(page.requests[0], 400, { field: 'alert_radius_km', error: 'Choose 1, 2, 5 or 10 km.' });
+  await flush();
+  assert.equal(page.select.value, '5');
+  assert.equal(errorLine(page).textContent, SAVE_FAILED);
+});
+
+test('a network failure puts the distance back with the same sentence', async () => {
+  const page = loadAlerts({ radius: 10 });
+  pick(page, 1);
+  await flush();
+  page.requests[0].reject(new Error('network down'));
+  await flush();
+  assert.equal(page.select.value, '10');
+  assert.equal(errorLine(page).textContent, SAVE_FAILED);
+});
+
+test('a save that never answers ends in the same sentence', async () => {
+  const page = loadAlerts({ radius: 5 });
+  pick(page, 2);
+  await flush();
+  page.advance(10001);
+  await flush();
+  assert.equal(page.select.value, '5');
+  assert.equal(page.select.disabled, false);
+  assert.equal(errorLine(page).textContent, SAVE_FAILED);
+});
+
+test('offline, nothing is sent and the offline sentence shows', async () => {
+  const page = loadAlerts({ radius: 5 });
+  page.sandbox.navigator.onLine = false;
+  pick(page, 2);
+  await flush();
+  assert.equal(page.requests.length, 0);
+  assert.equal(page.select.value, '5');
+  assert.equal(errorLine(page).hidden, false);
+  assert.equal(errorLine(page).textContent, OFFLINE);
+});
+
+test('the next save clears the earlier error line', async () => {
+  const page = loadAlerts({ radius: 5 });
+  pick(page, 2);
+  await flush();
+  answer(page.requests[0], 500, {});
+  await flush();
+  assert.equal(errorLine(page).hidden, false);
+  pick(page, 2);
+  await flush();
+  assert.equal(errorLine(page).hidden, true);
+  answer(page.requests[1], 200, ok(2));
+  await flush();
+  assert.equal(errorLine(page).hidden, true);
+});
+
 test('a failed distance save puts the previous option back, and a second pick goes back to the last saved one', async () => {
   const page = loadAlerts({ radius: 5 });
-  page.select.value = '2';
-  fire(page.select, 'change');
+  pick(page, 2);
   await flush();
   answer(page.requests[0], 500, {});
   await flush();
   assert.equal(page.select.value, '5');
   assert.equal(errorLine(page).textContent, SAVE_FAILED);
 
-  page.select.value = '1';
-  fire(page.select, 'change');
+  pick(page, 1);
   await flush();
-  answer(page.requests[1], 200, ok(false, 1));
+  answer(page.requests[1], 200, ok(1));
   await flush();
-  page.select.value = '10';
-  fire(page.select, 'change');
+  pick(page, 10);
   await flush();
   page.requests[2].reject(new Error('down'));
   await flush();
@@ -1001,17 +954,18 @@ test('a distance that is not a whole number is never sent', async () => {
   assert.equal(page.select.value, '5');
 });
 
-test('the Add a home area first row opens the Home area window', async () => {
+test('the Add a home area first button opens the Home area window', async () => {
   const page = loadAlerts({ home: false });
-  fire(byId(page, 'settings-reliable-nohome'), 'click');
+  fire(page.radiusNoHome, 'click');
   assert.deepEqual(page.opened, ['home']);
+  assert.equal(page.requests.length, 0);
 });
 
-test('closing the Home area window after saving one shows the switch and focuses it', async () => {
+test('closing the Home area window after saving one shows the select and focuses it', async () => {
   const page = loadAlerts({ home: false });
-  assert.equal(page.alertsOn.hidden, true);
-  assert.equal(page.alertsOff.hidden, false);
-  fire(byId(page, 'settings-reliable-nohome'), 'click');
+  assert.equal(page.radiusRow.hidden, true);
+  assert.equal(page.radiusNoHome.hidden, false);
+  fire(page.radiusNoHome, 'click');
   page.homeWin.hidden = false;
   await flush();
 
@@ -1022,25 +976,23 @@ test('closing the Home area window after saving one shows the switch and focuses
   page.homeRow.focus();
   await flush();
 
-  assert.equal(page.alertsOn.hidden, false);
-  assert.equal(page.alertsOff.hidden, true);
-  assert.equal(page.sw.checked, false, 'a new home area does not switch the alert on');
-  assert.equal(page.doc.activeElement, page.sw);
+  assert.equal(page.radiusRow.hidden, false);
+  assert.equal(page.radiusNoHome.hidden, true);
+  assert.equal(page.doc.activeElement, page.select);
   assert.equal(page.requests.length, 0);
 });
 
-test('closing the Home area window with no home area puts focus back on the row that opened it', async () => {
+test('closing the Home area window with no home area puts focus back on the button that opened it', async () => {
   const page = loadAlerts({ home: false });
-  const nohome = byId(page, 'settings-reliable-nohome');
-  fire(nohome, 'click');
+  fire(page.radiusNoHome, 'click');
   page.homeWin.hidden = false;
   await flush();
   page.homeWin.hidden = true;
   page.homeRow.focus();
   await flush();
-  assert.equal(page.alertsOn.hidden, true);
-  assert.equal(page.alertsOff.hidden, false);
-  assert.equal(page.doc.activeElement, nohome);
+  assert.equal(page.radiusRow.hidden, true);
+  assert.equal(page.radiusNoHome.hidden, false);
+  assert.equal(page.doc.activeElement, page.radiusNoHome);
 });
 
 test('a Home area window opened from the Home area row keeps focus where settings.js put it', async () => {
@@ -1051,81 +1003,81 @@ test('a Home area window opened from the Home area row keeps focus where setting
   page.homeWin.hidden = true;
   page.homeRow.focus();
   await flush();
-  assert.equal(page.alertsOn.hidden, false);
+  assert.equal(page.radiusRow.hidden, false);
   assert.equal(page.doc.activeElement, page.homeRow);
 });
 
-test('a home area that goes empty (data repair) turns the switch off, says nothing and sends nothing', async () => {
-  const page = loadAlerts({ home: true, on: true });
+test('a home area that goes empty (data repair) shows the button, says nothing and sends nothing', async () => {
+  const page = loadAlerts({ home: true, radius: 10 });
   page.homeRow.setAttribute('data-value', '');
   await flush();
 
-  assert.equal(page.alertsOn.hidden, true);
-  assert.equal(page.alertsOff.hidden, false);
-  assert.equal(page.sw.checked, false);
+  assert.equal(page.radiusRow.hidden, true);
+  assert.equal(page.radiusNoHome.hidden, false);
   assert.equal(live(page).textContent, '', 'nothing is announced: a home area is never removed in Settings');
   assert.equal(page.requests.length, 0);
 });
 
-test('a home area that goes empty while the alert is off redraws without a status line', async () => {
-  const page = loadAlerts({ home: true, on: false });
-  page.homeRow.setAttribute('data-value', '');
-  await flush();
-  assert.equal(page.alertsOn.hidden, true);
-  assert.equal(page.alertsOff.hidden, false);
-  assert.equal(live(page).textContent, '');
-});
-
 test('changing the home area to another place changes nothing in the section', async () => {
-  const page = loadAlerts({ home: true, on: true, radius: 10 });
+  const page = loadAlerts({ home: true, radius: 10 });
   page.homeRow.setAttribute('data-value', 'Thrissur');
   await flush();
-  assert.equal(page.alertsOn.hidden, false);
-  assert.equal(page.alertsOff.hidden, true);
-  assert.equal(page.sw.checked, true);
+  assert.equal(page.radiusRow.hidden, false);
+  assert.equal(page.radiusNoHome.hidden, true);
   assert.equal(page.select.value, '10');
   assert.equal(live(page).textContent, '');
 });
 
-test('a failed switch save after the home area was removed leaves the switch off', async () => {
-  const page = loadAlerts({ home: true, on: true });
-  turnSwitch(page, false);
+test('a failed distance save after the home area was removed still puts the old distance back', async () => {
+  const page = loadAlerts({ home: true, radius: 5 });
+  pick(page, 2);
   await flush();
   page.homeRow.setAttribute('data-value', '');
   await flush();
   page.requests[0].reject(new Error('down'));
   await flush();
-  assert.equal(page.sw.checked, false);
+  assert.equal(page.select.value, '5');
 });
 
 test('saveAlerts and redrawAlerts are the same paths the controls use', async () => {
   const page = loadAlerts({ home: false });
   page.api.redrawAlerts(true);
-  assert.equal(page.alertsOn.hidden, false);
-  assert.equal(page.alertsOff.hidden, true);
+  assert.equal(page.radiusRow.hidden, false);
+  assert.equal(page.radiusNoHome.hidden, true);
   page.api.redrawAlerts(false);
-  assert.equal(page.alertsOn.hidden, true);
-  assert.equal(page.alertsOff.hidden, false);
+  assert.equal(page.radiusRow.hidden, true);
+  assert.equal(page.radiusNoHome.hidden, false);
 
   const pending = page.api.saveAlerts({ alert_radius_km: 2 });
   await flush();
   assert.equal(page.requests[0].init.body, '{"alert_radius_km":2}');
-  answer(page.requests[0], 200, ok(false, 2));
+  answer(page.requests[0], 200, ok(2));
   assert.equal(await pending, true);
   assert.equal(page.select.value, '2');
 });
 
-test('every alert string reaches the page as text', async () => {
+test('saveAlerts sends the distance alone and ignores any other key', async () => {
   const page = loadAlerts();
+  assert.equal(await page.api.saveAlerts({ critical_push: true }), false);
+  assert.equal(page.requests.length, 0);
+  const pending = page.api.saveAlerts({ alert_radius_km: 1, reliable_alerts: true });
+  await flush();
+  assert.equal(page.requests[0].init.body, '{"alert_radius_km":1}');
+  answer(page.requests[0], 200, ok(1));
+  assert.equal(await pending, true);
+});
+
+test('every alert string reaches the page as text', async () => {
+  const page = loadAlerts({ radius: 5 });
   // innerHTML and outerHTML throw in the fake element, so a markup sink would fail here.
-  turnSwitch(page, true);
+  pick(page, 2);
   await flush();
   answer(page.requests[0], 500, { error: '<b>bad</b>' });
   await flush();
   assert.equal(errorLine(page).textContent, SAVE_FAILED);
 });
 
-// ---- Phase 3.3 plan 14: the device row and the kind switches (PWA-03, PWA-06) ----
+// ---- Phase 3.3 plan 14: the device row (PWA-03, PWA-06) ----
 //
 // The UI-SPEC strings, written out here so a change to the script's words fails.
 const DEVICE_ON = 'Alerts are on for this device.';
@@ -1135,10 +1087,6 @@ const TURN_OFF_FAILED = 'Couldn\'t turn this off. Try again.';
 
 const deviceError = (page) => byId(page, 'settings-device-error');
 const shownVariant = (page) => ['deviceOn', 'deviceInstall', 'deviceBlocked', 'deviceUnsupported'].filter((n) => page[n].hidden === false);
-const kinds = (page) => ({
-  critical: { saved: page.criticalSwitch, field: 'critical_push' },
-  changes: { saved: page.changesSwitch, field: 'changes_push' }
-});
 
 // tapDevice flips the device switch the way a tap does: the checkbox changes,
 // then the change event fires, with nothing awaited in between.
@@ -1310,12 +1258,10 @@ test('turning On this device off calls disable, says off and keeps every other r
   assert.equal(page.deviceSwitch.disabled, false);
   assert.equal(live(page).textContent, DEVICE_OFF);
   // Nothing is hidden or greyed when the device is off (ROADMAP criterion 5).
-  for (const el of [page.criticalOn, byId(page, 'settings-changes-row'), page.alertsOn, page.radiusRow]) {
-    assert.equal(el.hidden, false);
-  }
-  for (const el of [page.criticalSwitch, page.changesSwitch, page.sw, page.select]) {
-    assert.equal(el.disabled, false);
-  }
+  // Amended 2026-11-03 by quick 261103-jal (D1): the distance row is the only
+  // other row.
+  assert.equal(page.radiusRow.hidden, false);
+  assert.equal(page.select.disabled, false);
 });
 
 test('a failed turn off puts the switch back on with its sentence', async () => {
@@ -1382,82 +1328,11 @@ test('Escape closes the guide window and a click on the window itself closes not
   assert.equal(page.doc.activeElement, page.deviceInstall);
 });
 
-test('the Critical switch sends critical_push, locks itself and keeps the answer', async () => {
-  const page = loadAlerts();
-  page.criticalSwitch.checked = true;
-  fire(page.criticalSwitch, 'change');
-  await flush();
-  assert.equal(page.requests.length, 1);
-  assert.match(page.requests[0].url, /\/api\/me\/alerts$/);
-  assert.equal(page.requests[0].init.method, 'PATCH');
-  assert.equal(page.requests[0].init.body, '{"critical_push":true}');
-  assert.equal(page.criticalSwitch.disabled, true);
-  assert.equal(page.changesSwitch.disabled, false);
-  answer(page.requests[0], 200, { ...ok(false, 5), critical_push: true, changes_push: false });
-  await flush();
-  assert.equal(page.criticalSwitch.checked, true);
-  assert.equal(page.criticalSwitch.disabled, false);
-  assert.equal(errorLine(page).hidden, true);
-});
-
-test('the Changes switch sends changes_push and works without a home area', async () => {
-  const page = loadAlerts({ home: false });
-  page.changesSwitch.checked = true;
-  fire(page.changesSwitch, 'change');
-  await flush();
-  assert.equal(page.requests[0].init.body, '{"changes_push":true}');
-  answer(page.requests[0], 200, { reliable_alerts: false, alert_radius_km: 5, has_home_area: false, critical_push: true, changes_push: true });
-  await flush();
-  assert.equal(page.changesSwitch.checked, true);
-});
-
-for (const kind of ['critical', 'changes']) {
-  test('a failed ' + kind + ' save puts the old value back with the save sentence', async () => {
-    const page = loadAlerts({ critical: true, changes: true });
-    const sw = kinds(page)[kind].saved;
-    sw.checked = false;
-    fire(sw, 'change');
-    await flush();
-    answer(page.requests[0], 500, {});
-    await flush();
-    assert.equal(sw.checked, true);
-    assert.equal(sw.disabled, false);
-    assert.equal(errorLine(page).textContent, SAVE_FAILED);
-  });
-
-  test('a ' + kind + ' save that is refused with a 400 puts the old value back', async () => {
-    const page = loadAlerts();
-    const sw = kinds(page)[kind].saved;
-    sw.checked = true;
-    fire(sw, 'change');
-    await flush();
-    answer(page.requests[0], 400, { field: kinds(page)[kind].field, error: 'Add a home area first.' });
-    await flush();
-    assert.equal(sw.checked, false);
-    assert.equal(errorLine(page).textContent, SAVE_FAILED);
-  });
-
-  test('a ' + kind + ' save offline sends nothing and shows the offline sentence', async () => {
-    const page = loadAlerts();
-    page.sandbox.navigator.onLine = false;
-    const sw = kinds(page)[kind].saved;
-    sw.checked = true;
-    fire(sw, 'change');
-    await flush();
-    assert.equal(page.requests.length, 0);
-    assert.equal(sw.checked, false);
-    assert.equal(errorLine(page).textContent, OFFLINE);
-  });
-}
-
-test('saveKind is the path the kind switches use', async () => {
-  const page = loadAlerts();
-  const pending = page.api.saveKind('critical_push', true, page.criticalSwitch);
-  await flush();
-  assert.equal(page.requests[0].init.body, '{"critical_push":true}');
-  answer(page.requests[0], 200, { ...ok(false, 5), critical_push: true, changes_push: false });
-  assert.equal(await pending, true);
-});
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D1):
+// the Critical, Changes and official switch tests (the save, the failed save, the
+// 400, the offline save, saveKind, the no home rows and the home area redraws of
+// each) are gone with the switches. The distance row's own cases are above; the
+// device row cases stay.
 
 test('drawDevice draws each variant', () => {
   const page = loadAlerts();
@@ -1468,178 +1343,14 @@ test('drawDevice draws each variant', () => {
   }
 });
 
-test('the Critical no home row opens the Home area window, and a saved area shows the switch with its stored value', async () => {
-  const page = loadAlerts({ home: false, critical: true });
-  assert.equal(page.criticalOn.hidden, true);
-  assert.equal(page.criticalNoHome.hidden, false);
-  fire(page.criticalNoHome, 'click');
-  assert.deepEqual(page.opened, ['home']);
-  page.homeWin.hidden = false;
-  await flush();
-  page.homeRow.setAttribute('data-value', 'Kochi');
-  page.homeWin.hidden = true;
-  page.homeRow.focus();
-  await flush();
-  assert.equal(page.criticalOn.hidden, false);
-  assert.equal(page.criticalNoHome.hidden, true);
-  assert.equal(page.criticalSwitch.checked, true, 'the stored value comes back');
-  assert.equal(page.doc.activeElement, page.criticalSwitch);
-  assert.equal(page.requests.length, 0);
-});
-
-test('closing the Home area window opened from the Critical row with no area puts focus back on that row', async () => {
-  const page = loadAlerts({ home: false });
-  fire(page.criticalNoHome, 'click');
-  page.homeWin.hidden = false;
-  await flush();
-  page.homeWin.hidden = true;
-  await flush();
-  assert.equal(page.doc.activeElement, page.criticalNoHome);
-});
-
-test('a home area that goes empty keeps the Critical value, shows the no home rows and says nothing', async () => {
-  const page = loadAlerts({ home: true, critical: true, on: true });
-  page.homeRow.setAttribute('data-value', '');
-  await flush();
-  assert.equal(page.criticalOn.hidden, true);
-  assert.equal(page.criticalNoHome.hidden, false);
-  assert.equal(page.alertsOn.hidden, true);
-  assert.equal(page.alertsOff.hidden, false);
-  assert.equal(page.radiusRow.hidden, true);
-  assert.equal(page.criticalSwitch.checked, true, 'the stored Critical value is not touched');
-  assert.equal(page.sw.checked, false, 'Reliable turns off');
-  assert.equal(live(page).textContent, '', 'nothing is announced: a home area is never removed in Settings');
-  assert.equal(page.requests.length, 0);
-});
-
-test('a home area that goes empty with only Critical on says nothing', async () => {
-  const page = loadAlerts({ home: true, critical: true, on: false });
-  page.homeRow.setAttribute('data-value', '');
-  await flush();
-  assert.equal(live(page).textContent, '', 'nothing is announced: a home area is never removed in Settings');
-});
-
-test('a home area that goes empty with Critical and Reliable off says nothing', async () => {
-  const page = loadAlerts({ home: true, critical: false, on: false });
-  page.homeRow.setAttribute('data-value', '');
-  await flush();
-  assert.equal(live(page).textContent, '');
-});
-
-test('the Changes switch is never hidden by the home area', async () => {
-  const page = loadAlerts({ home: true, changes: true });
-  page.homeRow.setAttribute('data-value', '');
-  await flush();
-  assert.equal(byId(page, 'settings-changes-row').hidden, false);
-  assert.equal(page.changesSwitch.checked, true);
-});
-
-// ---- Plan 05-14 (D-11, UI-SPEC 6a): Severe official alerts for my area ----
-
-test('the official switch sends official_push at once, locks itself and keeps the answer', async () => {
-  const page = loadAlerts({ official: true });
-  page.officialSwitch.checked = false;
-  fire(page.officialSwitch, 'change');
-  await flush();
-  assert.equal(page.requests.length, 1);
-  assert.match(page.requests[0].url, /\/api\/me\/alerts$/);
-  assert.equal(page.requests[0].init.method, 'PATCH');
-  assert.equal(page.requests[0].init.body, '{"official_push":false}');
-  assert.equal(page.officialSwitch.disabled, true);
-  assert.equal(page.criticalSwitch.disabled, false);
-  answer(page.requests[0], 200, { ...ok(false, 5), critical_push: false, changes_push: false, official_push: false });
-  await flush();
-  assert.equal(page.officialSwitch.checked, false);
-  assert.equal(page.officialSwitch.disabled, false);
-  assert.equal(errorLine(page).hidden, true);
-});
-
-test('a failed official save puts the old value back with the save sentence', async () => {
-  const page = loadAlerts({ official: true });
-  page.officialSwitch.checked = false;
-  fire(page.officialSwitch, 'change');
-  await flush();
-  answer(page.requests[0], 500, {});
-  await flush();
-  assert.equal(page.officialSwitch.checked, true);
-  assert.equal(page.officialSwitch.disabled, false);
-  assert.equal(errorLine(page).textContent, SAVE_FAILED);
-});
-
-test('an official save refused with a 400 puts the old value back', async () => {
+test('the device switch is the only switch the script wires: no kind switch path is left', async () => {
   const page = loadAlerts();
-  page.officialSwitch.checked = true;
-  fire(page.officialSwitch, 'change');
-  await flush();
-  answer(page.requests[0], 400, { field: 'official_push', error: 'Add a home area first.' });
-  await flush();
-  assert.equal(page.officialSwitch.checked, false);
-  assert.equal(errorLine(page).textContent, SAVE_FAILED);
-});
-
-test('an official save offline sends nothing and shows the offline sentence', async () => {
-  const page = loadAlerts({ official: true });
-  page.sandbox.navigator.onLine = false;
-  page.officialSwitch.checked = false;
-  fire(page.officialSwitch, 'change');
+  assert.equal(page.api.saveKind, undefined);
+  // A change event on the device switch never reaches the alerts route.
+  tapDevice(page, true);
   await flush();
   assert.equal(page.requests.length, 0);
-  assert.equal(page.officialSwitch.checked, true);
-  assert.equal(errorLine(page).textContent, OFFLINE);
-});
-
-test('saveKind carries official_push too', async () => {
-  const page = loadAlerts();
-  const pending = page.api.saveKind('official_push', false, page.officialSwitch);
-  await flush();
-  assert.equal(page.requests[0].init.body, '{"official_push":false}');
-  answer(page.requests[0], 200, { ...ok(false, 5), critical_push: true, changes_push: false, official_push: false });
-  assert.equal(await pending, true);
-});
-
-test('with no home area the official no home row shows and opens the Home area window', async () => {
-  const page = loadAlerts({ home: false, official: true });
-  assert.equal(page.officialOn.hidden, true);
-  assert.equal(page.officialNoHome.hidden, false);
-  fire(page.officialNoHome, 'click');
-  assert.deepEqual(page.opened, ['home']);
-  assert.equal(page.requests.length, 0);
-});
-
-test('after a home area is saved the official switch shows with its stored value', async () => {
-  const page = loadAlerts({ home: false, official: true });
-  fire(page.officialNoHome, 'click');
-  page.homeWin.hidden = false;
-  await flush();
-  page.homeRow.setAttribute('data-value', 'Kochi');
-  page.homeWin.hidden = true;
-  await flush();
-  assert.equal(page.officialOn.hidden, false);
-  assert.equal(page.officialNoHome.hidden, true);
-  assert.equal(page.officialSwitch.checked, true, 'the stored value comes back');
-  assert.equal(page.doc.activeElement, page.officialSwitch);
-  assert.equal(page.requests.length, 0);
-});
-
-test('closing the Home area window opened from the official row with no area puts focus back on that row', async () => {
-  const page = loadAlerts({ home: false });
-  fire(page.officialNoHome, 'click');
-  page.homeWin.hidden = false;
-  await flush();
-  page.homeWin.hidden = true;
-  await flush();
-  assert.equal(page.doc.activeElement, page.officialNoHome);
-});
-
-test('a home area that goes empty keeps the official value, shows the no home row and says nothing', async () => {
-  const page = loadAlerts({ home: true, official: true });
-  page.homeRow.setAttribute('data-value', '');
-  await flush();
-  assert.equal(page.officialOn.hidden, true);
-  assert.equal(page.officialNoHome.hidden, false);
-  assert.equal(page.officialSwitch.checked, true, 'the stored official value is not touched');
-  assert.equal(live(page).textContent, '', 'nothing is announced: a home area is never removed in Settings');
-  assert.equal(page.requests.length, 0);
+  assert.equal(page.notify.enables.length, 1);
 });
 
 test('every device string reaches the page as text', async () => {

@@ -45,29 +45,19 @@ type settingsViewModel struct {
 	// MutedCount is how many reports the account muted. It is drawn by plan 12's
 	// Muted reports row in the Notifications section (Phase 3.2).
 	MutedCount int
-	// AlertsOn, AlertRadiusKm, HasHomeArea and AlertRadii are the Reliable
-	// reporter alert of NOTIF-05 (Phase 3.2, plan 13). Plan 15 draws the two
-	// Phone notifications rows from them: the switch, the distance picker over
-	// AlertRadii, and the "Add a home area first." state when HasHomeArea is
-	// false. The home area cell never enters the page, only this boolean.
-	AlertsOn      bool
+	// AlertRadiusKm, HasHomeArea and AlertRadii draw the distance row of the
+	// Notifications box (quick 261103-jal, owner decision 2026-11-03): the
+	// distance picker over AlertRadii, and the "Add a home area first" button
+	// when HasHomeArea is false. The home area cell never enters the page, only
+	// this boolean. The four switches that used to sit above it are gone: the
+	// device switch is the only way to stop phone notes.
 	AlertRadiusKm int
 	HasHomeArea   bool
 	AlertRadii    []int
-	// CriticalPushOn and ChangesPushOn are the two phone switches of Phase 3.3
-	// (PWA-03, PWA-06): Critical reports near the home area (on by default) and
-	// changes to reports the person posted or voted on (off by default). PushPublicKey
-	// is the VAPID public key. Plan 14 draws the rows from these and renders the key
-	// as data-push-key. The key is public by design; the home cell and every
-	// coordinate stay out of this model (T-03.2-14). There is no value here for
-	// Someone I follow posts (Phase 9).
-	//
-	// OfficialPushOn is Phase 5's switch "Severe official alerts for my area"
-	// (D-11), on by default; a boolean only, like the two above.
-	CriticalPushOn bool
-	ChangesPushOn  bool
-	OfficialPushOn bool
-	PushPublicKey  string
+	// PushPublicKey is the VAPID public key. The device row renders it as
+	// data-push-key. The key is public by design; the home cell and every
+	// coordinate stay out of this model (T-03.2-14).
+	PushPublicKey string
 	// ProfilePublic, FollowingCount, FollowersCount, BlockedCount and MyUsername are
 	// Phase 9 plan 12 (D-04): the Let others follow me switch state, the three counts
 	// of the People and reports rows, and the caller's own username, which the
@@ -146,9 +136,7 @@ func SettingsPage(tmpl *template.Template, accounts *service.AccountService, mut
 			}
 		}
 
-		// The alert switch and distance. A failed read is a logged 500 like the
-		// profile read: a switch drawn off when it is on would let the person
-		// believe they are not being alerted.
+		// The alert distance. A failed read is a logged 500 like the profile read.
 		alerts, err := accounts.AlertSettings(r.Context(), acc.ID)
 		if err != nil {
 			log.Printf("handlers: SettingsPage: %v", err)
@@ -158,7 +146,6 @@ func SettingsPage(tmpl *template.Template, accounts *service.AccountService, mut
 
 		chrome := cfg.Chrome.withDefaults()
 		vm := settingsViewModel{
-			AlertsOn:         alerts.ReliableAlertsOn,
 			AlertRadiusKm:    alerts.AlertRadiusKm,
 			HasHomeArea:      alerts.HasHomeArea,
 			AlertRadii:       service.AlertRadii,
@@ -169,18 +156,13 @@ func SettingsPage(tmpl *template.Template, accounts *service.AccountService, mut
 			FollowersCount:   counts.Followers,
 			BlockedCount:     counts.Blocked,
 			MutedPeopleCount: mutedPeopleCount,
-			// Plan 14 draws these; see the field comments. Booleans and the public
-			// key only.
-			CriticalPushOn: alerts.CriticalPushOn,
-			ChangesPushOn:  alerts.ChangesPushOn,
-			OfficialPushOn: alerts.OfficialPushOn,
-			PushPublicKey:  cfg.PushPublicKey,
-			AssetVersion:   cfg.AssetVersion,
-			Chrome:         chrome,
-			AccountID:      acc.ID,
-			Nav:            navFor(NavSettings, navTitle("Settings"), navBack("/")),
-			Profile:        profile,
-			Legal:          legalTextFor(chrome),
+			PushPublicKey:    cfg.PushPublicKey,
+			AssetVersion:     cfg.AssetVersion,
+			Chrome:           chrome,
+			AccountID:        acc.ID,
+			Nav:              navFor(NavSettings, navTitle("Settings"), navBack("/")),
+			Profile:          profile,
+			Legal:            legalTextFor(chrome),
 		}
 		if profile.DisplayName != nil {
 			vm.DisplayName = *profile.DisplayName

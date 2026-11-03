@@ -207,6 +207,12 @@ func TestAlertsNeverSaysNoAlerts(t *testing.T) {
 // "Following", "Followers" and "Blocked people" left this list, because Settings
 // and the person menu draw them now. The list is empty and stays as the place a
 // later phase adds a label that waits; the loop below still runs over it.
+//
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D1):
+// "Critical reports near my home area", "Severe official alerts for my area",
+// "Changes and comments on reports I posted, voted on or commented on" and "A
+// Reliable reporter posts near me" left Settings for good on 2026-11-03. They are
+// not waiting for a later phase, so the list stays empty and does not take them.
 var waitingSettingsLabels = []string{}
 
 // TestSettingsShowsOnlyExistingRows pins D-25 and D-26: Settings holds the
@@ -269,8 +275,13 @@ func TestSettingsShowsOnlyExistingRows(t *testing.T) {
 	//
 	// Amended 2026-10-29 by Phase 9 plan 20 (D-12, UI-SPEC Defaults 7): the Muted
 	// people row opens the same list window, so eighteen.
-	if got := strings.Count(page, "app-icon--chevron-right"); got != 18 {
-		t.Errorf("settings.html.tmpl draws %d chevrons, want one on each of the eighteen rows that open something", got)
+	//
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+	// D1, C9): the Critical, official and Reliable "Add a home area first" rows are
+	// gone and the distance row has its own "Add a home area first" button, so
+	// three chevrons left and one came: sixteen.
+	if got := strings.Count(page, "app-icon--chevron-right"); got != 16 {
+		t.Errorf("settings.html.tmpl draws %d chevrons, want one on each of the sixteen rows that open something", got)
 	}
 	header := p421ReadTemplate(t, "account_header.html.tmpl")
 	for _, label := range waitingSettingsLabels {

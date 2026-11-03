@@ -376,10 +376,17 @@ func TestSettingsAlertsScriptContract(t *testing.T) {
 
 // Phase 3.2 plan 15: the Notifications section of Settings (NOTIF-05, D-23,
 // D-26, LAYOUT-06, UI-SPEC Surface E1, owner decision Q4 of 2026-10-18).
+//
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D1,
+// C9): the section holds two rows, Alerts on this device (the only switch) and
+// How far from my home area (the select, or an Add a home area first button).
+// The Critical, official, Changes and Reliable rows are gone from the template,
+// the script and the view model, and the tests below pin the two rows and the
+// absence of the four.
 
 // TestPhoneNotificationsSection pins the section's title and line, the two
-// rows' exact words (no second line under the switch), the four distances
-// built from the view model, the native switch and the Q4 template comment.
+// rows' exact words, the four distances built from the view model, the native
+// switch and the Q4 template comment.
 //
 // Amended 2026-10-22 when Phase 3.4 met Phase 3.2: the owner said "too much
 // details under the heading for each section" on the phone, then with the
@@ -391,21 +398,18 @@ func TestSettingsAlertsScriptContract(t *testing.T) {
 // Amended 2026-10-18 by Phase 3.3 plan 14 (D-12, UI-SPEC N1): the section line
 // is "Choose what Pinalert tells you about." in place of 3.2's P32-C21 line
 // (which must now be absent), because the section covers more than Reliable
-// reporters and "hear" implies sound. The reliable row is hidden by its own
-// attribute when there is no home area, so its opening tag carries the
-// conditional; the two boxes became one box with per row variants, so the
-// classless wrapper now holds the one box and the two error lines.
+// reporters and "hear" implies sound. The classless wrapper holds the one box
+// and the two error lines.
 func TestPhoneNotificationsSection(t *testing.T) {
 	page := p421ReadTemplate(t, "settings.html.tmpl")
 	region := settingsSectionRegion(t, page, "settings-phone-title")
 	for _, want := range []string{
 		`id="settings-phone-title">Notifications</h2>`,
 		`<p class="place-section__line">Choose what Pinalert tells you about.</p>`,
-		`<span class="place-row__label">A Reliable reporter posts near me</span>`,
+		`<span class="place-row__label">Alerts on this device</span>`,
+		`<span class="place-row__sub">Critical reports and severe official alerts near your home area, and posts by people you follow.</span>`,
 		`<span class="place-row__label">How far from my home area</span>`,
-		`<input class="place-switch" type="checkbox" role="switch" id="settings-reliable-switch"`,
-		`{{if .AlertsOn}} checked{{end}}`,
-		`<label class="place-row place-row--switch" id="settings-reliable-row" for="settings-reliable-switch"{{if not .HasHomeArea}} hidden{{end}}>`,
+		`<input class="place-switch" type="checkbox" role="switch" id="settings-device-switch" name="device_alerts">`,
 		`<label class="place-row__text" for="settings-radius-select">`,
 		`<select class="place-select" id="settings-radius-select"`,
 		`{{- range .AlertRadii}}`,
@@ -436,10 +440,11 @@ func TestPhoneNotificationsSection(t *testing.T) {
 			t.Errorf("the Notifications section types %q into the template; the options come from .AlertRadii", banned)
 		}
 	}
-	// The switch row has no second line: a simple option carries no hint text.
-	switchRow := region[strings.Index(region, `id="settings-reliable-row"`):strings.Index(region, `id="settings-reliable-nohome"`)]
-	if strings.Contains(switchRow, "place-row__sub") {
-		t.Errorf("the switch row carries a second line")
+	// The distance select row has no second line: a simple option carries no
+	// hint text. Only the device row and the no home button carry one.
+	selectRow := region[strings.Index(region, `id="settings-radius-row"`):strings.Index(region, `id="settings-radius-nohome"`)]
+	if strings.Contains(selectRow, "place-row__sub") {
+		t.Errorf("the distance select row carries a second line")
 	}
 	// Owner decision Q4 (2026-10-18): the name, and no line about the app being open.
 	const comment = `{{/* Owner 2026-10-18 (Q4): the section is called Notifications, with no extra line about the app being open; Phase 3.3 adds its phone rows to this same section. */}}`
@@ -463,31 +468,24 @@ func TestPhoneNotificationsSection(t *testing.T) {
 }
 
 // TestPhoneNotificationsRowsNeedAHomeArea pins UI-SPEC E1 and orchestrator
-// decision 2: without a home area the alert row reads Add a home area first and
-// opens the Home area window, and the distance row is not drawn.
+// decision 2: without a home area the distance row reads Add a home area first
+// and opens the Home area window, and the select is not drawn.
 //
-// Amended 2026-10-18 by Phase 3.3 plan 14 (D-12, UI-SPEC 2b and E1): the two
-// boxes became per row variants. The Critical and Reliable rows each draw a
-// switch variant and a no home variant, one of them hidden by its own hidden
-// attribute, and the distance row is hidden by its own attribute without a home
-// area. A row may now carry the hidden attribute because places.css guards the
-// .place-row display rule with :not([hidden]); that guard is pinned here in
-// place of the old "never on a .place-row" ban. Add a home area first appears
-// twice (Critical and Reliable). The Home area note (W1) shows only with a home
-// area and Critical or Reliable on.
+// Amended 2026-10-18 by Phase 3.3 plan 14 (D-12, UI-SPEC 2b and E1): the rows
+// are per row variants, one of them hidden by its own hidden attribute. A row
+// may carry the hidden attribute because places.css guards the .place-row
+// display rule with :not([hidden]); that guard is pinned here in place of the
+// old "never on a .place-row" ban.
+//
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D1,
+// C9): the only row with a no home variant is the distance row, so Add a home
+// area first appears once, as a classless wrapper's second variant.
 func TestPhoneNotificationsRowsNeedAHomeArea(t *testing.T) {
 	page := p421ReadTemplate(t, "settings.html.tmpl")
 	region := settingsSectionRegion(t, page, "settings-phone-title")
 	for _, w := range []struct{ id, hiddenWhen string }{
-		{"settings-reliable-row", `{{if not .HasHomeArea}} hidden{{end}}`},
-		{"settings-reliable-nohome", `{{if .HasHomeArea}} hidden{{end}}`},
-		{"settings-critical-on", `{{if not .HasHomeArea}} hidden{{end}}`},
-		{"settings-critical-nohome", `{{if .HasHomeArea}} hidden{{end}}`},
-		// Amended 2026-10-29 by plan 05-14 (D-11): Phase 5 draws the official row
-		// with the same two variants as Critical.
-		{"settings-official-on", `{{if not .HasHomeArea}} hidden{{end}}`},
-		{"settings-official-nohome", `{{if .HasHomeArea}} hidden{{end}}`},
 		{"settings-radius-row", `{{if not .HasHomeArea}} hidden{{end}}`},
+		{"settings-radius-nohome", `{{if .HasHomeArea}} hidden{{end}}`},
 	} {
 		at := strings.Index(region, `id="`+w.id+`"`)
 		if at == -1 {
@@ -500,7 +498,7 @@ func TestPhoneNotificationsRowsNeedAHomeArea(t *testing.T) {
 	}
 	// The wrappers are never hidden themselves, so the box always draws a
 	// hairline between visible rows.
-	for _, id := range []string{"settings-device-row", "settings-critical-row", "settings-official-row", "settings-reliable-wrap"} {
+	for _, id := range []string{"settings-device-row", "settings-radius-wrap"} {
 		at := strings.Index(region, `id="`+id+`"`)
 		if at == -1 {
 			t.Fatalf("the Notifications section has no wrapper %s", id)
@@ -510,12 +508,8 @@ func TestPhoneNotificationsRowsNeedAHomeArea(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		`<button type="button" class="place-row" id="settings-reliable-nohome" aria-haspopup="dialog"{{if .HasHomeArea}} hidden{{end}}>`,
-		`<button type="button" class="place-row" id="settings-critical-nohome" aria-haspopup="dialog"{{if .HasHomeArea}} hidden{{end}}>`,
-		`<button type="button" class="place-row" id="settings-official-nohome" aria-haspopup="dialog"{{if .HasHomeArea}} hidden{{end}}>`,
-		`<span class="place-row__label">A Reliable reporter posts near me</span>`,
-		`<span class="place-row__label">Critical reports near my home area</span>`,
-		`<span class="place-row__label">Severe official alerts for my area</span>`,
+		`<button type="button" class="place-row" id="settings-radius-nohome" aria-haspopup="dialog"{{if .HasHomeArea}} hidden{{end}}>`,
+		`<span class="place-row__label">How far from my home area</span>`,
 		`<span class="place-row__sub">Add a home area first</span>`,
 		"app-icon--chevron-right",
 	} {
@@ -523,10 +517,8 @@ func TestPhoneNotificationsRowsNeedAHomeArea(t *testing.T) {
 			t.Errorf("the Notifications section lacks %q", want)
 		}
 	}
-	// Amended 2026-10-29 by plan 05-14 (D-11): Phase 5 draws the official row, whose
-	// no home variant says Add a home area first too, so three times.
-	if got := strings.Count(page, "Add a home area first"); got != 3 {
-		t.Errorf("Add a home area first appears %d times, want 3 (Critical, official and Reliable)", got)
+	if got := strings.Count(page, "Add a home area first"); got != 1 {
+		t.Errorf("Add a home area first appears %d times, want 1 (the distance row's button)", got)
 	}
 	// A hidden row only disappears because places.css guards the display rule.
 	css := stripCSSComments(p421ReadStatic(t, "css/places.css"))
@@ -543,20 +535,25 @@ func TestPhoneNotificationsRowsNeedAHomeArea(t *testing.T) {
 }
 
 // TestSettingsAlertsSavesAtOnce pins UI-SPEC E1 and P32-C22 and C23 on
-// settings-alerts.js: each change goes to PATCH /api/me/alerts with the two
-// field names the route takes, a failure puts the old value back with the fixed
+// settings-alerts.js: the distance goes to PATCH /api/me/alerts with the one
+// field name the route takes, a failure puts the old value back with the fixed
 // sentences, the section follows the Home area row through a MutationObserver
 // (settings.js is not edited), and every string is written as text.
 //
 // Amended 2026-10-18 by Phase 3.3 plan 14 (D-12, UI-SPEC 2a, 2e, W2): the file
-// also saves critical_push and changes_push, calls notify.js to turn this device
-// on and off, says the two device sentences and the two turn failed sentences,
-// and its home removed status is W2 in place of P32-C23's second string.
+// also calls notify.js to turn this device on and off, says the two device
+// sentences and the two turn failed sentences, and its home removed status is W2
+// in place of P32-C23's second string.
+//
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D1):
+// the file saves the distance alone. The four switch field names and saveKind
+// are gone from it, and the Add a home area first button opens the Home area
+// window.
 func TestSettingsAlertsSavesAtOnce(t *testing.T) {
 	raw := p421ReadStatic(t, "js/settings-alerts.js")
 	js := stripJSComments(raw)
 	for _, want := range []string{
-		"/api/me/alerts", "'PATCH'", "reliable_alerts", "alert_radius_km", "MutationObserver",
+		"/api/me/alerts", "'PATCH'", "alert_radius_km", "MutationObserver",
 		"'data-value'", "attributeFilter",
 		// P32-C22
 		`Couldn\'t save that. Try again.`,
@@ -565,11 +562,9 @@ func TestSettingsAlertsSavesAtOnce(t *testing.T) {
 		// is gone with the Remove home area button; the absence is pinned below.
 		"navigator.onLine === false",
 		"saveAlerts: saveAlerts", "redrawAlerts: redrawAlerts",
-		"openWindow('home')",
+		"openWindow('home')", "settings-radius-nohome",
 		// Phase 3.3 plan 14
-		"critical_push", "changes_push", "saveKind: saveKind", "drawDevice: drawDevice",
-		// Plan 05-14 (D-11)
-		"official_push",
+		"drawDevice: drawDevice",
 		"PinalertNotify.enable(", "PinalertNotify.disable(", "PinalertNotify.reconcile(", "PinalertNotify.baseState(",
 		"Alerts are on for this device.", "Alerts are off for this device.",
 		`Couldn\'t turn this on. Try again.`, `Couldn\'t turn this off. Try again.`,
@@ -577,6 +572,14 @@ func TestSettingsAlertsSavesAtOnce(t *testing.T) {
 	} {
 		if !strings.Contains(js, want) {
 			t.Errorf("settings-alerts.js lacks %q", want)
+		}
+	}
+	for _, banned := range []string{
+		"reliable_alerts", "critical_push", "changes_push", "official_push", "saveKind",
+		"settings-reliable", "settings-critical", "settings-official", "settings-changes",
+	} {
+		if strings.Contains(js, banned) {
+			t.Errorf("settings-alerts.js still names %q; the four switches left Settings on 2026-11-03", banned)
 		}
 	}
 	// Nothing is stored in the browser and no coordinate is read or sent; the
@@ -607,67 +610,55 @@ func openingTagOf(t *testing.T, region, id string) string {
 	return region[start : at+strings.Index(region[at:], ">")+1]
 }
 
-// TestNotificationsSectionRows pins the five rows in the owner's order with
-// their exact words, each switch a native checkbox with role switch, and the
-// install guide window with one close control and the shared partial.
+// TestNotificationsSectionRows pins the two rows with their exact words, the
+// device switch a native checkbox with role switch, the install guide window
+// with one close control and the shared partial, and the absence of the four
+// removed rows.
+//
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D1):
+// it pinned five rows in the owner's order (device, Critical, official, Changes,
+// Reliable, then the distance); it now pins the device row and the distance
+// wrapper, in that order.
 func TestNotificationsSectionRows(t *testing.T) {
 	page := p421ReadTemplate(t, "settings.html.tmpl")
 	region := settingsSectionRegion(t, page, "settings-phone-title")
 	p421InOrder(t, "the Notifications rows", region,
 		`id="settings-device-row"`,
-		`id="settings-critical-row"`,
-		// Amended 2026-10-29 by plan 05-14 (D-11): Phase 5 draws the official row
-		// directly under Critical and above Changes.
-		`id="settings-official-row"`,
-		`id="settings-changes-row"`,
-		`id="settings-reliable-wrap"`,
+		`id="settings-radius-wrap"`,
 		`id="settings-radius-row"`,
+		`id="settings-radius-nohome"`,
 	)
 	for _, want := range []string{
-		`<span class="place-row__label">On this device</span>`,
-		`<span class="place-row__label">Critical reports near my home area</span>`,
-		`<span class="place-row__label">Severe official alerts for my area</span>`,
-		`{{if .OfficialPushOn}} checked{{end}}`,
-		// Amended 2026-10-29 by Phase 8 plan 15 (D-16, UI-SPEC P8-C17): the Changes
-		// switch also covers comments, because commenting makes you follow the
-		// report. Every other pinned line is unchanged.
-		`<span class="place-row__label">Changes and comments on reports I posted, voted on or commented on</span>`,
-		`<span class="place-row__label">A Reliable reporter posts near me</span>`,
+		`<span class="place-row__label">Alerts on this device</span>`,
 		`<span class="place-row__label">How far from my home area</span>`,
-		`{{if .CriticalPushOn}} checked{{end}}`,
-		`{{if .ChangesPushOn}} checked{{end}}`,
-		`{{if .AlertsOn}} checked{{end}}`,
 	} {
 		if !strings.Contains(region, want) {
 			t.Errorf("the Notifications section lacks %q", want)
 		}
 	}
-	// Each kind switch is a native checkbox with role switch, the whole row a label.
-	for _, w := range []struct{ row, input, name string }{
-		{"settings-device-on", "settings-device-switch", "device_alerts"},
-		{"settings-critical-on", "settings-critical-switch", "critical_push"},
-		{"settings-official-on", "settings-official-switch", "official_push"},
-		{"settings-changes-row", "settings-changes-switch", "changes_push"},
-		{"settings-reliable-row", "settings-reliable-switch", "reliable_alerts"},
+	for _, gone := range []string{
+		"On this device</span>", "Critical reports near my home area", "Severe official alerts for my area",
+		"Changes and comments on reports I posted", "A Reliable reporter posts near me",
+		"settings-critical", "settings-official", "settings-changes", "settings-reliable",
+		"{{if .AlertsOn}}", "{{if .CriticalPushOn}}", "{{if .ChangesPushOn}}", "{{if .OfficialPushOn}}",
 	} {
-		if tag := openingTagOf(t, region, w.row); !strings.HasPrefix(tag, `<label class="place-row place-row--switch"`) || !strings.Contains(tag, `for="`+w.input+`"`) {
-			t.Errorf("%s is not a switch row label for %s: %s", w.row, w.input, tag)
-		}
-		tag := openingTagOf(t, region, w.input)
-		for _, want := range []string{`<input class="place-switch"`, `type="checkbox"`, `role="switch"`, `name="` + w.name + `"`} {
-			if !strings.Contains(tag, want) {
-				t.Errorf("%s lacks %s: %s", w.input, want, tag)
-			}
+		if strings.Contains(region, gone) {
+			t.Errorf("the Notifications section still holds %q; the row left on 2026-11-03", gone)
 		}
 	}
-	// No hint line under a simple switch: only the no home and device variants
-	// carry a second line.
-	for _, id := range []string{"settings-device-on", "settings-critical-on", "settings-official-on", "settings-changes-row", "settings-reliable-row"} {
-		at := strings.Index(region, `id="`+id+`"`)
-		end := at + strings.Index(region[at:], "</label>")
-		if strings.Contains(region[at:end], "place-row__sub") {
-			t.Errorf("%s carries a second line; a simple switch has no hint text", id)
+	// The device switch is a native checkbox with role switch, the whole row a label.
+	if tag := openingTagOf(t, region, "settings-device-on"); !strings.HasPrefix(tag, `<label class="place-row place-row--switch"`) || !strings.Contains(tag, `for="settings-device-switch"`) {
+		t.Errorf("settings-device-on is not a switch row label for settings-device-switch: %s", tag)
+	}
+	tag := openingTagOf(t, region, "settings-device-switch")
+	for _, want := range []string{`<input class="place-switch"`, `type="checkbox"`, `role="switch"`, `name="device_alerts"`} {
+		if !strings.Contains(tag, want) {
+			t.Errorf("settings-device-switch lacks %s: %s", want, tag)
 		}
+	}
+	// Exactly one native switch is left in the box.
+	if got := strings.Count(region, `role="switch"`); got != 1 {
+		t.Errorf("the Notifications section holds %d switches, want 1 (the device switch)", got)
 	}
 	// The key the script hands to notify.js, and the two error lines.
 	if !strings.Contains(page, `data-push-key="{{.PushPublicKey}}"`) {
@@ -731,8 +722,8 @@ func TestNotificationsSectionRows(t *testing.T) {
 	}
 }
 
-// TestNotificationsDeviceStates pins the four variants of the On this device
-// row: the switch, the install button, and the two plain sentences.
+// TestNotificationsDeviceStates pins the four variants of the Alerts on this
+// device row: the switch, the install button, and the two plain sentences.
 func TestNotificationsDeviceStates(t *testing.T) {
 	page := p421ReadTemplate(t, "settings.html.tmpl")
 	region := settingsSectionRegion(t, page, "settings-phone-title")
@@ -756,7 +747,7 @@ func TestNotificationsDeviceStates(t *testing.T) {
 		}
 	}
 	// Slice each variant out of the device wrapper.
-	wrapper := region[strings.Index(region, `id="settings-device-row"`):strings.Index(region, `id="settings-critical-row"`)]
+	wrapper := region[strings.Index(region, `id="settings-device-row"`):strings.Index(region, `id="settings-radius-wrap"`)]
 	variant := func(id, next string) string {
 		from := strings.Index(wrapper, `id="`+id+`"`)
 		to := len(wrapper)
@@ -765,9 +756,20 @@ func TestNotificationsDeviceStates(t *testing.T) {
 		}
 		return wrapper[from:to]
 	}
+	switchBody := variant("settings-device-on", "settings-device-install")
 	installBody := variant("settings-device-install", "settings-device-blocked")
 	blockedBody := variant("settings-device-blocked", "settings-device-unsupported")
 	unsupportedBody := variant("settings-device-unsupported", "")
+	// All four variants read Alerts on this device; the switch row has the one
+	// sub line of the box and each other variant its own.
+	for name, body := range map[string]string{"switch": switchBody, "install": installBody, "blocked": blockedBody, "unsupported": unsupportedBody} {
+		if !strings.Contains(body, `<span class="place-row__label">Alerts on this device</span>`) {
+			t.Errorf("the %s variant does not read Alerts on this device", name)
+		}
+	}
+	if !strings.Contains(switchBody, `<span class="place-row__sub">Critical reports and severe official alerts near your home area, and posts by people you follow.</span>`) {
+		t.Errorf("the switch variant lacks its sub line")
+	}
 	if !strings.Contains(installBody, `<span class="place-row__sub">Add Pinalert to your Home Screen first</span>`) || !strings.Contains(installBody, "app-icon--chevron-right") {
 		t.Errorf("the needs install row lacks its sub line or its chevron")
 	}
@@ -787,15 +789,13 @@ func TestNotificationsDeviceStates(t *testing.T) {
 }
 
 // TestNotificationsNoFollowOrOfficialRow pins decision 12 (owner amendment
-// 2026-10-18): no row for Severe official alerts (Phase 5's slot, not drawn)
-// and none for Someone I follow posts (Phase 9 puts a Notify me bell on a
-// profile). The scan covers the raw template, comments included.
+// 2026-10-18): no row for Someone I follow posts (Phase 9 puts a Notify me bell
+// on a profile). The scan covers the raw template, comments included.
 //
-// Amended 2026-10-29 by plan 05-14 (D-11): Phase 5 draws the official row, so
-// the two Severe official alerts strings left the banned list (the row is pinned
-// by TestNotificationsOfficialRow, and the welcome banned list keeps the words).
-// The name stays so other plans' references hold; the follow absence is kept as
-// it was.
+// Amended 2026-10-29 by plan 05-14 (D-11): Phase 5 drew the official row, so
+// the two Severe official alerts strings left the banned list. The name stays so
+// other plans' references hold; the follow absence is kept as it was. The
+// official row left again on 2026-11-03; see TestNotificationsOfficialRow.
 func TestNotificationsNoFollowOrOfficialRow(t *testing.T) {
 	page := p421ReadTemplate(t, "settings.html.tmpl")
 	for _, banned := range []string{"Someone I follow posts"} {
@@ -805,59 +805,29 @@ func TestNotificationsNoFollowOrOfficialRow(t *testing.T) {
 	}
 }
 
-// TestNotificationsOfficialRow pins plan 05-14 (D-11, UI-SPEC 6a, P5-C21): the
-// row "Severe official alerts for my area" sits between Critical and Changes,
-// its switch is a native checkbox with role switch, on only when the server says
-// so, with no second line in the working state; its no home variant is a button
-// with the sub line "Add a home area first" and a chevron; no word promises
-// noise.
+// TestNotificationsOfficialRow pinned plan 05-14 (D-11, UI-SPEC 6a, P5-C21): the
+// row "Severe official alerts for my area" between Critical and Changes.
+//
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D1,
+// D2): the row left Settings. Severe official alerts reach every device that has
+// Alerts on this device on, and no switch for them remains in the template, the
+// script or the view model. The name stays so other plans' references hold.
 func TestNotificationsOfficialRow(t *testing.T) {
 	page := p421ReadTemplate(t, "settings.html.tmpl")
-	region := settingsSectionRegion(t, page, "settings-phone-title")
-	p421InOrder(t, "the Notifications rows", region,
-		`id="settings-device-row"`,
-		`id="settings-critical-row"`,
-		`id="settings-official-row"`,
-		`id="settings-changes-row"`,
-		`id="settings-reliable-wrap"`,
-		`id="settings-radius-row"`,
-	)
-	if got := strings.Count(page, "Severe official alerts for my area"); got != 2 {
-		t.Errorf("the label appears %d times, want 2 (the switch row and the no home row)", got)
-	}
-	wrapper := region[strings.Index(region, `id="settings-official-row"`):strings.Index(region, `id="settings-changes-row"`)]
-	split := strings.Index(wrapper, `<button type="button" class="place-row" id="settings-official-nohome"`)
-	if split == -1 {
-		t.Fatalf("the official row has no no home button")
-	}
-	on, noHome := wrapper[:split], wrapper[split:]
-	for _, want := range []string{
-		`<label class="place-row place-row--switch" id="settings-official-on" for="settings-official-switch"{{if not .HasHomeArea}} hidden{{end}}>`,
-		`<span class="place-row__label">Severe official alerts for my area</span>`,
-		`<input class="place-switch" type="checkbox" role="switch" id="settings-official-switch" name="official_push"{{if .OfficialPushOn}} checked{{end}}>`,
+	js := stripJSComments(p421ReadStatic(t, "js/settings-alerts.js"))
+	for _, banned := range []string{
+		"settings-official", "official_push", "OfficialPushOn", `name="official_push"`,
 	} {
-		if !strings.Contains(on, want) {
-			t.Errorf("the official switch row lacks %q", want)
+		if strings.Contains(page, banned) || strings.Contains(js, banned) {
+			t.Errorf("the template or the script still names %q; the official row left Settings", banned)
 		}
 	}
-	if strings.Contains(on, "place-row__sub") {
-		t.Errorf("the official switch row carries a second line; a simple switch has no hint text")
+	if strings.Contains(page, "Severe official alerts for my area") {
+		t.Errorf("settings.html.tmpl still holds the official row label")
 	}
-	for _, want := range []string{
-		`<button type="button" class="place-row" id="settings-official-nohome" aria-haspopup="dialog"{{if .HasHomeArea}} hidden{{end}}>`,
-		`<span class="place-row__label">Severe official alerts for my area</span>`,
-		`<span class="place-row__sub">Add a home area first</span>`,
-		"app-icon--chevron-right",
-	} {
-		if !strings.Contains(noHome, want) {
-			t.Errorf("the official no home row lacks %q", want)
-		}
-	}
-	// D-16 explains nothing in Settings, and the row promises no noise.
-	for _, banned := range []string{"Cyclone, very heavy rain, river flood", "buzz", "vibrat", "ring", "sound"} {
-		if strings.Contains(strings.ToLower(wrapper), strings.ToLower(banned)) {
-			t.Errorf("the official row holds %q", banned)
-		}
+	// The device row's sub line says what the one switch covers.
+	if !strings.Contains(page, "Critical reports and severe official alerts near your home area, and posts by people you follow.") {
+		t.Errorf("the device row does not say that severe official alerts are covered")
 	}
 }
 
@@ -1028,8 +998,11 @@ func TestSettingsHomeAreaCannotBeRemoved(t *testing.T) {
 	if !strings.Contains(page, `<label class="app-window__label" for="settings-name-input">Name</label>`) {
 		t.Errorf("the Name window label does not read Name")
 	}
-	// The Critical, official and Reliable no home rows stay as a defensive state.
-	if got := strings.Count(page, "Add a home area first"); got != 3 {
-		t.Errorf("Add a home area first appears %d times, want 3", got)
+	// The no home row stays as a defensive state.
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+	// D1): the Critical, official and Reliable no home rows are gone, so the
+	// distance row's button is the one left.
+	if got := strings.Count(page, "Add a home area first"); got != 1 {
+		t.Errorf("Add a home area first appears %d times, want 1", got)
 	}
 }

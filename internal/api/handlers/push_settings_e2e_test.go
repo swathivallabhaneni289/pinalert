@@ -1,27 +1,24 @@
-// push_settings_e2e_test.go proves the Critical and Changes phone switches of
+// push_settings_e2e_test.go proved the Critical and Changes phone switches of
 // plan 03.3-12 (PWA-03, PWA-06, D-08, D-21, decision 12) end to end over the real
-// router and a real Postgres: they ride PATCH /api/me/alerts next to 3.2's two
-// keys. Every package level identifier here carries the p12pk prefix.
+// router and a real Postgres. Every package level identifier here carries the
+// p12pk prefix.
+//
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D2,
+// D3, D7, D8): the two switches left the API. critical_push and changes_push are
+// accepted and ignored by PATCH /api/me/alerts, the stored columns keep their
+// defaults and their values, and nothing in the answer names them. The test now
+// proves exactly that, reading the stored columns back by SQL.
 package handlers_test
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-// p12pkResponse is the answer of PATCH /api/me/alerts with the two new keys.
-type p12pkResponse struct {
-	ReliableAlerts bool `json:"reliable_alerts"`
-	AlertRadiusKm  int  `json:"alert_radius_km"`
-	HasHomeArea    bool `json:"has_home_area"`
-	CriticalPush   bool `json:"critical_push"`
-	ChangesPush    bool `json:"changes_push"`
-}
 
 // p12pkRow is the stored push columns, found false when the account has no
 // settings row.
@@ -49,15 +46,6 @@ func p12pkRead(t *testing.T, pool *pgxpool.Pool, email string) p12pkRow {
 	return r
 }
 
-func p12pkDecode(t *testing.T, body string) p12pkResponse {
-	t.Helper()
-	var out p12pkResponse
-	if err := json.Unmarshal([]byte(body), &out); err != nil {
-		t.Fatalf("decoding the alert settings %q: %v", body, err)
-	}
-	return out
-}
-
 func TestPushKindSettingsRoute(t *testing.T) {
 	srv, mailer, pool := newPushServer(t)
 	alerts := srv.URL + "/api/me/alerts"
@@ -76,18 +64,30 @@ func TestPushKindSettingsRoute(t *testing.T) {
 	// The Settings page builds with the push key configured and no row.
 	meWant(t, "GET /settings", meSend(t, a, http.MethodGet, srv.URL+"/settings", ""), http.StatusOK)
 
-	// Defaults: a radius only PATCH on a new account answers Critical on and
-	// Changes off (decision 12), and does not write the push columns away from
-	// their defaults.
-	got := p12pkDecode(t, meWant(t, "defaults", meSend(t, a, http.MethodPatch, alerts, `{"alert_radius_km":2}`), http.StatusOK))
-	if !got.CriticalPush || got.ChangesPush || got.ReliableAlerts || got.AlertRadiusKm != 2 || got.HasHomeArea {
-		t.Errorf("defaults = %+v, want Critical on, Changes off, Reliable off, 2 km, no home area", got)
+	// A body with only the old phone switch keys answers 200 with the stored
+	// settings, names neither key, and stores nothing.
+	for _, legacy := range []string{`{"critical_push":false}`, `{"changes_push":true}`, `{"critical_push":true,"changes_push":true}`} {
+		raw := meWant(t, "ignored "+legacy, meSend(t, a, http.MethodPatch, alerts, legacy), http.StatusOK)
+		got := p13alDecode(t, raw)
+		if got.AlertRadiusKm != 5 || got.HasHomeArea {
+			t.Errorf("%s: answer = %+v, want 5 km and no home area", legacy, got)
+		}
+		if strings.Contains(raw, "critical_push") || strings.Contains(raw, "changes_push") {
+			t.Errorf("%s: the answer names an old key: %s", legacy, raw)
+		}
 	}
-	if r := p12pkRead(t, pool, emailA); !r.found || !r.critical || r.changes {
-		t.Errorf("stored after a radius only edit = %+v, want a row with Critical on, Changes off", r)
+	if r := p12pkRead(t, pool, emailA); r.found {
+		t.Fatalf("a request with only old keys stored a row: %+v", r)
 	}
 
-	// Strict decoding and the body rules still hold with the new keys.
+	// A distance only edit writes the row and leaves the push columns at their
+	// defaults (decision 12: Critical on, Changes off).
+	meWant(t, "radius", meSend(t, a, http.MethodPatch, alerts, `{"alert_radius_km":2}`), http.StatusOK)
+	if r := p12pkRead(t, pool, emailA); !r.found || !r.critical || r.changes || r.reliable {
+		t.Errorf("stored after a distance only edit = %+v, want a row with Critical on, Changes off, Reliable off", r)
+	}
+
+	// Strict decoding and the body rules still hold.
 	for _, c := range []struct{ name, body, field string }{
 		{"an unknown field", `{"critical_push":true,"severe_official":true}`, "body"},
 		{"a wrong type", `{"changes_push":"yes"}`, "body"},
@@ -99,93 +99,26 @@ func TestPushKindSettingsRoute(t *testing.T) {
 		}
 	}
 
-	// Changes needs no home area.
-	got = p12pkDecode(t, meWant(t, "changes on", meSend(t, a, http.MethodPatch, alerts, `{"changes_push":true}`), http.StatusOK))
-	if !got.ChangesPush || !got.CriticalPush || got.HasHomeArea {
-		t.Errorf("after Changes on = %+v, want Changes on, Critical still on, no home area", got)
-	}
-	if r := p12pkRead(t, pool, emailA); !r.changes || !r.critical {
-		t.Errorf("stored after Changes on = %+v", r)
-	}
-
-	// Turning Critical off needs no home area either.
-	got = p12pkDecode(t, meWant(t, "critical off", meSend(t, a, http.MethodPatch, alerts, `{"critical_push":false}`), http.StatusOK))
-	if got.CriticalPush || !got.ChangesPush {
-		t.Errorf("after Critical off = %+v, want Critical off, Changes on", got)
-	}
-
-	// Turning Critical on without a home area is refused with field critical_push,
-	// and nothing changes.
-	body := meWant(t, "critical on without area", meSend(t, a, http.MethodPatch, alerts, `{"critical_push":true}`), http.StatusBadRequest)
-	if field, msg := p13alErrorField(t, body); field != "critical_push" || msg != "Add a home area first." {
-		t.Errorf("error = %q, %q; want critical_push, Add a home area first.", field, msg)
-	}
-	if r := p12pkRead(t, pool, emailA); r.critical {
-		t.Errorf("a refused request changed Critical: %+v", r)
-	}
-
-	// With a home area, Critical goes off and on and is stored.
-	meWant(t, "set home area", meSend(t, a, http.MethodPatch, profile,
-		`{"home_area":{"name":"Indiranagar, Bengaluru","lat":12.9784,"lon":77.6408}}`), http.StatusOK)
-	got = p12pkDecode(t, meWant(t, "critical on", meSend(t, a, http.MethodPatch, alerts, `{"critical_push":true}`), http.StatusOK))
-	if !got.CriticalPush || !got.HasHomeArea {
-		t.Errorf("after Critical on = %+v, want Critical on with a home area", got)
-	}
-	if r := p12pkRead(t, pool, emailA); !r.critical {
-		t.Errorf("stored after Critical on = %+v", r)
-	}
-	got = p12pkDecode(t, meWant(t, "critical off again", meSend(t, a, http.MethodPatch, alerts, `{"critical_push":false}`), http.StatusOK))
-	if got.CriticalPush {
-		t.Errorf("after Critical off = %+v", got)
-	}
-	if r := p12pkRead(t, pool, emailA); r.critical {
-		t.Errorf("stored after Critical off = %+v", r)
-	}
-
-	// Clearing the home area keeps the stored Critical value and turns 3.2's
-	// Reliable switch off. Turn Critical on and Reliable on first.
-	meWant(t, "both on", meSend(t, a, http.MethodPatch, alerts, `{"critical_push":true,"reliable_alerts":true}`), http.StatusOK)
-	if r := p12pkRead(t, pool, emailA); !r.critical || !r.reliable || !r.changes {
-		t.Fatalf("stored before clearing = %+v, want Critical, Reliable and Changes on", r)
-	}
-	// Amended 2026-10-29 by Phase 7.1 plan 06 (D-15): the route now refuses to
-	// clear the home area (400, nothing changes). The "no home area, Reliable
-	// off" state is then set directly in the database, as it is for an account
-	// from before step 4 was required; the assertions below are unchanged.
-	meWant(t, "clear home area", meSend(t, a, http.MethodPatch, profile, `{"home_area":null}`), http.StatusBadRequest)
-	if r := p12pkRead(t, pool, emailA); !r.critical || !r.reliable || !r.changes {
-		t.Fatalf("a refused clear changed the switches: %+v", r)
-	}
-	meRemoveHomeArea(t, pool, emailA)
-	if r := p12pkRead(t, pool, emailA); !r.critical || r.reliable || !r.changes {
-		t.Errorf("stored after clearing the area = %+v, want Critical kept on, Reliable off, Changes kept on", r)
-	}
-	// The page and the settings answer both still build, and Critical reads on
-	// as stored while no home area exists.
-	meWant(t, "GET /settings after clearing", meSend(t, a, http.MethodGet, srv.URL+"/settings", ""), http.StatusOK)
-	got = p12pkDecode(t, meWant(t, "radius after clearing", meSend(t, a, http.MethodPatch, alerts, `{"alert_radius_km":5}`), http.StatusOK))
-	if !got.CriticalPush || got.HasHomeArea || got.ReliableAlerts {
-		t.Errorf("after clearing = %+v, want Critical on as stored, no home area, Reliable off", got)
-	}
-	// Setting an area again brings Critical back as it was, without any edit.
-	meWant(t, "set home area again", meSend(t, a, http.MethodPatch, profile,
-		`{"home_area":{"name":"Indiranagar, Bengaluru","lat":12.9784,"lon":77.6408}}`), http.StatusOK)
-	got = p12pkDecode(t, meWant(t, "radius after setting", meSend(t, a, http.MethodPatch, alerts, `{"alert_radius_km":5}`), http.StatusOK))
-	if !got.CriticalPush || !got.HasHomeArea {
-		t.Errorf("after setting the area again = %+v, want Critical on and a home area", got)
+	// The old keys sent beside the distance change none of the stored switches,
+	// with or without a home area.
+	for _, withHome := range []bool{false, true} {
+		if withHome {
+			meWant(t, "set home area", meSend(t, a, http.MethodPatch, profile,
+				`{"home_area":{"name":"Indiranagar, Bengaluru","lat":12.9784,"lon":77.6408}}`), http.StatusOK)
+		}
+		got := p13alDecode(t, meWant(t, "ignored beside the distance", meSend(t, a, http.MethodPatch, alerts,
+			`{"alert_radius_km":5,"critical_push":false,"changes_push":true,"reliable_alerts":true}`), http.StatusOK))
+		if got.AlertRadiusKm != 5 || got.HasHomeArea != withHome {
+			t.Errorf("answer = %+v, want 5 km and home area %v", got, withHome)
+		}
+		if r := p12pkRead(t, pool, emailA); !r.critical || r.changes || r.reliable {
+			t.Errorf("stored after the ignored keys (home %v) = %+v, want Critical on, Changes off, Reliable off as before", withHome, r)
+		}
 	}
 
 	// B never changed through all of A's edits, and has no row at all.
 	if r := p12pkRead(t, pool, emailB); r.found {
 		t.Errorf("another account has a row: %+v", r)
-	}
-	// B edits its own switches without disturbing A.
-	meWant(t, "B changes on", meSend(t, b, http.MethodPatch, alerts, `{"changes_push":true,"critical_push":false}`), http.StatusOK)
-	if r := p12pkRead(t, pool, emailB); !r.found || r.critical || !r.changes {
-		t.Errorf("B stored = %+v, want Critical off, Changes on", r)
-	}
-	if r := p12pkRead(t, pool, emailA); !r.critical || !r.changes {
-		t.Errorf("A changed when B saved: %+v", r)
 	}
 
 	// The Settings page builds for both.

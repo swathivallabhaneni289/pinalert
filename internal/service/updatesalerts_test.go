@@ -603,14 +603,17 @@ func TestReliableAlertsOnRealHistory(t *testing.T) {
 		}
 	}
 
-	// A report posted before the switch was turned on never alerts.
+	// A report posted before the look back never alerts. Amended 2026-11-03 by
+	// quick 261103-jal (owner, two row notifications box, D4): there is no switch,
+	// so "before the switch" is "more than ReliableBellLookBack before the
+	// refresh", and the distance is the only thing saved.
 	cur = base.Add(-10 * time.Minute)
-	earlier := insertReport(SeverityLow, base.Add(-30*time.Minute))
+	earlier := insertReport(SeverityLow, base.Add(-90*time.Minute))
 
-	// Turn the switch on at base.
+	// Save the distance at base.
 	cur = base
-	if _, err := accounts.UpdateAlertSettings(ctx, recipient, AlertSettingsUpdate{ReliableAlerts: boolPtrForAlerts(true)}); err != nil {
-		t.Fatalf("turning the alert on: %v", err)
+	if _, err := accounts.UpdateAlertSettings(ctx, recipient, AlertSettingsUpdate{AlertRadiusKm: intPtrForAlerts(5)}); err != nil {
+		t.Fatalf("saving the distance: %v", err)
 	}
 
 	// A critical report nobody confirmed: it alerts once, from posting.
@@ -685,7 +688,7 @@ func TestReliableAlertsOnRealHistory(t *testing.T) {
 	}
 }
 
-func boolPtrForAlerts(b bool) *bool { return &b }
+func intPtrForAlerts(n int) *int { return &n }
 
 // TestReliableNoteCountsTowardTheHourGap is the W3 sequence on a real database
 // (D-12, one update per report per hour): a Reliable reporter posts, the
@@ -723,9 +726,11 @@ func TestReliableNoteCountsTowardTheHourGap(t *testing.T) {
 	}
 	spotLat, spotLon, _ := HomeAreaAnchor(cell)
 
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+	// D4): the Reliable bell row has no switch, so only the distance is saved.
 	cur = base
-	if _, err := accounts.UpdateAlertSettings(ctx, reader, AlertSettingsUpdate{ReliableAlerts: boolPtrForAlerts(true)}); err != nil {
-		t.Fatalf("turning the alert on: %v", err)
+	if _, err := accounts.UpdateAlertSettings(ctx, reader, AlertSettingsUpdate{AlertRadiusKm: intPtrForAlerts(5)}); err != nil {
+		t.Fatalf("saving the distance: %v", err)
 	}
 
 	// A low report is Provisional until two people at different spots confirm it.
