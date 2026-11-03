@@ -781,9 +781,6 @@ func NewRouter(deps Deps) *chi.Mux {
 	// Nearby and the Low data view start at the account's home area cell centre
 	// when the device location is not available (plan 03.4-33).
 	page.HomeCentre = accounts
-	// Nearby and the Low data view read the Changes switch to decide whether to
-	// render the first post or vote pop-up (plan 03.3-21).
-	page.AlertSettings = accounts
 	// Nearby reads the home area name for the installed app alerts ask
 	// (plan 07.1-13c).
 	page.Profiles = accounts

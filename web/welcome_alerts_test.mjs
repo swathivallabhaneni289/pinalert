@@ -24,12 +24,12 @@
 //   - (plan 03.3-19, the 03.3-UAT gap for test 4, owner 2026-10-27) the pop-up now
 //     names the home area in its title, asks for the home area first when none is
 //     stored or saved at step 4 (the step 4 place search, a picked place only,
-//     Allow disabled until one is picked), and offers an unticked Reliable
-//     reporter tick box. Allow calls enable first, then saves the picked home
-//     area, then the Reliable switch if ticked, then first-run-done, and every
-//     failure still reaches first-run-done. Not now and Escape save nothing. A
-//     Mac Dock app never gets the pop-up. The cases that cover this start with
-//     "named pop-up: ".
+//     Allow disabled until one is picked). Allow calls enable first, then saves
+//     the picked home area, then first-run-done, and every failure still reaches
+//     first-run-done. Not now and Escape save nothing. A Mac Dock app never gets
+//     the pop-up. Amended 2026-11-03 by quick 261103-jal (D5): the pop-up no
+//     longer offers a Reliable tick box and sends no alerts request. The cases
+//     that cover this start with "named pop-up: ".
 //   - Amended 2026-10-29 by Phase 7.1 plan 13b (D-17, D-18): an iPhone or iPad
 //     Safari tab (needs-install) now gets the install pop-up, not the alerts
 //     pop-up, when the page draws it (install: true in buildPage): once per
@@ -235,15 +235,14 @@ function buildPage({ start = 1, name = '', home = '', username = '', key = KEY, 
   const askTitle = make('h2', 'welcome-alerts-ask-title', dialog, 'logout-confirm__title');
   askTitle.setAttribute('tabindex', '-1');
   askTitle.textContent = 'Get alerts for critical reports near ' + (askHome || 'your home area') + '?';
-  // The home area search block, hidden when an area is stored, and the Reliable
-  // tick box (unticked).
+  // The home area search block, hidden when an area is stored. Amended
+  // 2026-11-03 by quick 261103-jal (D5): the Reliable tick box is gone.
   const askHomeBlock = make('div', 'welcome-alerts-home', dialog, 'welcome-ask__home');
   if (askHome) { askHomeBlock.hidden = true; }
   const askForm = make('form', 'welcome-alerts-home-form', askHomeBlock);
   make('input', 'welcome-alerts-home-input', askForm);
   make('p', 'welcome-alerts-home-status', askHomeBlock).hidden = true;
   make('ul', 'welcome-alerts-home-results', askHomeBlock).hidden = true;
-  make('input', 'welcome-alerts-reliable', dialog).checked = false;
   if (askErrorLine) {
     make('p', 'welcome-alerts-ask-error', dialog, 'inline-error').hidden = true;
   }
@@ -771,8 +770,14 @@ test('the flow has four steps: ?step=5 falls back to the start step and Back exi
   assert.equal(agreed.requests.length, 0, 'looking at a step records nothing');
 });
 
-// ---- Plan 03.3-19: the pop-up names the home area, asks for it when it is
-// missing, and offers the Reliable reporter tick box (03.3-UAT gap for test 4) ----
+// ---- Plan 03.3-19: the pop-up names the home area and asks for it when it is
+// missing (03.3-UAT gap for test 4) ----
+//
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D5,
+// D9 f): the Reliable reporter tick box is gone from the pop-up, and Allow no
+// longer sends a request to the alerts address. The cases that ticked the box and
+// expected the Reliable request now expect the order enable, the home area save
+// when one was picked, then first-run-done, and no alerts request at all.
 
 const AREA_URL = '/api/geocode/place?kind=area&q=';
 const ALERTS_ADDRESS = '/api/me/alerts';
@@ -784,7 +789,7 @@ const HEBBAL = { name: 'Hebbal', display_name: 'Hebbal, Bengaluru, Karnataka', l
 
 const askTitleText = (page) => byId(page, 'welcome-alerts-ask-title').textContent;
 const askHomeBlock = (page) => byId(page, 'welcome-alerts-home');
-const reliableBox = (page) => byId(page, 'welcome-alerts-reliable');
+const alertsRequests = (page) => page.requests.filter((r) => r.url === ALERTS_ADDRESS);
 const bodyOf = (req) => JSON.parse(req.init.body);
 const sent = (page) => page.requests.map((r) => (r.init.method || 'GET') + ' ' + r.url);
 
@@ -809,14 +814,14 @@ async function pickAtStep4(page, text = 'Hebbal', place = HEBBAL) {
   fire(byId(page, 'welcome-home-results').children[0].children[0], 'click');
 }
 
-test('named pop-up: a stored home area is named in the title, the search is hidden, Allow is on, the box is unticked', () => {
+test('named pop-up: a stored home area is named in the title, the search is hidden, Allow is on, and there is no tick box', () => {
   const page = atStep4({ askHome: 'Benz Circle' });
   click(page, 'welcome-continue-4');
   assertAskOpen(page);
   assert.equal(askTitleText(page), titleFor('Benz Circle'));
   assert.equal(askHomeBlock(page).hidden, true);
   assert.equal(byId(page, 'welcome-alerts-allow').disabled, false);
-  assert.equal(reliableBox(page).checked, false);
+  assert.ok(!byId(page, 'welcome-alerts-reliable'), 'the Reliable tick box is gone');
   assert.ok(page.doc.activeElement === byId(page, 'welcome-alerts-ask-title'), 'the title has focus');
 });
 
@@ -861,45 +866,38 @@ test('named pop-up: with no home area the pop-up asks for one first and Allow wa
   assert.equal(page.notify.calls.enable.length, 0);
 });
 
-test('named pop-up: Allow with the box ticked calls enable in the tick, then sends one Reliable request, then first-run-done', async () => {
+test('named pop-up: Allow calls enable in the tick, then sends one first-run-done and no alerts request', async () => {
   const notify = makeNotify({ mode: 'pending' });
   const page = atStep4({ notify });
   click(page, 'welcome-continue-4');
-  reliableBox(page).checked = true;
   click(page, 'welcome-alerts-allow');
   assert.deepEqual(notify.calls.enable, [KEY], 'enable is called in the same tick, with the page key');
   assert.equal(page.requests.length, 0, 'no request before enable settles');
-  assert.equal(reliableBox(page).disabled, true);
   assert.equal(page.dialog.getAttribute('aria-busy'), 'true');
 
   notify.waiting.enable.resolve({ ok: true, state: 'on' });
   await flush();
-  assert.deepEqual(sent(page), ['PATCH ' + ALERTS_ADDRESS]);
-  assert.deepEqual(bodyOf(page.requests[0]), { reliable_alerts: true });
-  assert.equal(page.requests[0].init.headers['Content-Type'], 'application/json');
-  answer(page.requests[0], 200);
-  await flush();
-  assert.deepEqual(sent(page), ['PATCH ' + ALERTS_ADDRESS, 'POST ' + DONE_ADDRESS]);
-  answer(page.requests[1], 204);
+  assert.deepEqual(sent(page), ['POST ' + DONE_ADDRESS]);
+  assert.equal(alertsRequests(page).length, 0, 'no request goes to the alerts address');
+  answer(page.requests[0], 204);
   await flush();
   assert.deepEqual(page.replaced, ['/']);
 });
 
-test('named pop-up: Allow with the box unticked sends no alerts request and one first-run-done', async () => {
+test('named pop-up: Allow with a home area stored sends no alerts request and one first-run-done', async () => {
   const page = atStep4();
   click(page, 'welcome-continue-4');
   click(page, 'welcome-alerts-allow');
   await flush();
   assert.deepEqual(sent(page), ['POST ' + DONE_ADDRESS]);
   assert.equal(page.notify.calls.enable.length, 1);
-  assert.equal(page.requests.filter((r) => r.url === ALERTS_ADDRESS).length, 0);
+  assert.equal(alertsRequests(page).length, 0);
 });
 
-test('named pop-up: Allow after a pick saves the home area, then Reliable, then first-run-done, in that order after enable', async () => {
+test('named pop-up: Allow after a pick saves the home area, then first-run-done, in that order after enable', async () => {
   const page = atStep4({ askHome: '' });
   click(page, 'welcome-continue-4');
   await pickInAsk(page);
-  reliableBox(page).checked = true;
   const before = page.requests.length;
   click(page, 'welcome-alerts-allow');
   assert.deepEqual(page.notify.calls.enable, [KEY]);
@@ -912,15 +910,12 @@ test('named pop-up: Allow after a pick saves the home area, then Reliable, then 
   assert.equal(page.requests.length, before + 1, 'one request at a time');
   answer(profile, 200, {});
   await flush();
-  assert.equal(page.requests[before + 1].url, ALERTS_ADDRESS);
-  assert.deepEqual(bodyOf(page.requests[before + 1]), { reliable_alerts: true });
-  answer(page.requests[before + 1], 200);
-  await flush();
-  assert.equal(page.requests[before + 2].url, DONE_ADDRESS);
-  assert.equal(page.requests.length, before + 3);
+  assert.equal(page.requests[before + 1].url, DONE_ADDRESS);
+  assert.equal(page.requests.length, before + 2);
+  assert.equal(alertsRequests(page).length, 0);
 });
 
-test('named pop-up: Allow after a pick with the box unticked saves only the home area', async () => {
+test('named pop-up: Allow after a pick saves only the home area before first-run-done', async () => {
   const page = atStep4({ askHome: '' });
   click(page, 'welcome-continue-4');
   await pickInAsk(page);
@@ -939,19 +934,18 @@ for (const [label, fail] of [
 ]) {
   // WR-05 (03.3-REVIEW): a home area that was not saved is said in the pop-up,
   // which stays open. Allow tries the save again without a second enable, and
-  // Not now still finishes sign up. Reliable is saved only after the home area.
-  test('named pop-up: when the home area save fails (' + label + ') the pop-up stays open with one error line, and no Reliable or first-run-done request goes out', async () => {
+  // Not now still finishes sign up.
+  test('named pop-up: when the home area save fails (' + label + ') the pop-up stays open with one error line, and no first-run-done request goes out', async () => {
     const page = atStep4({ askHome: '' });
     click(page, 'welcome-continue-4');
     await pickInAsk(page);
-    reliableBox(page).checked = true;
     const before = page.requests.length;
     click(page, 'welcome-alerts-allow');
     await flush();
     fail(page.requests[before]);
     await flush();
     assert.equal(page.requests.length, before + 1, 'nothing more is sent');
-    assert.equal(page.requests.filter((r) => r.url === ALERTS_ADDRESS).length, 0);
+    assert.equal(alertsRequests(page).length, 0);
     assert.equal(doneRequests(page).length, 0);
     assert.equal(page.dialog.open, true, 'the pop-up stays open');
     const line = byId(page, 'welcome-alerts-ask-error');
@@ -960,15 +954,13 @@ for (const [label, fail] of [
     assert.equal(page.dialog.getAttribute('aria-busy'), null);
     assert.equal(byId(page, 'welcome-alerts-allow').disabled, false, 'Allow can try again');
     assert.equal(byId(page, 'welcome-alerts-later').disabled, false);
-    assert.equal(reliableBox(page).checked, true, 'the tick is kept for the next try');
     assert.deepEqual(page.replaced, []);
   });
 
-  test('named pop-up: after a failed home area save (' + label + ') Allow saves it again without a second enable, then Reliable, then first-run-done', async () => {
+  test('named pop-up: after a failed home area save (' + label + ') Allow saves it again without a second enable, then first-run-done', async () => {
     const page = atStep4({ askHome: '' });
     click(page, 'welcome-continue-4');
     await pickInAsk(page);
-    reliableBox(page).checked = true;
     const before = page.requests.length;
     click(page, 'welcome-alerts-allow');
     await flush();
@@ -983,9 +975,7 @@ for (const [label, fail] of [
     assert.deepEqual(bodyOf(page.requests[before + 1]), { home_area: { name: 'Hebbal', lat: 13.0358, lon: 77.597 } });
     answer(page.requests[before + 1], 200);
     await flush();
-    assert.deepEqual(sent(page).slice(before), ['PATCH ' + PROFILE_ADDRESS, 'PATCH ' + PROFILE_ADDRESS, 'PATCH ' + ALERTS_ADDRESS]);
-    answer(page.requests[before + 2], 200);
-    await flush();
+    assert.deepEqual(sent(page).slice(before), ['PATCH ' + PROFILE_ADDRESS, 'PATCH ' + PROFILE_ADDRESS, 'POST ' + DONE_ADDRESS]);
     assert.equal(doneRequests(page).length, 1);
     answer(doneRequests(page)[0], 204);
     await flush();
@@ -996,7 +986,6 @@ for (const [label, fail] of [
     const page = atStep4({ askHome: '' });
     click(page, 'welcome-continue-4');
     await pickInAsk(page);
-    reliableBox(page).checked = true;
     const before = page.requests.length;
     click(page, 'welcome-alerts-allow');
     await flush();
@@ -1011,34 +1000,17 @@ for (const [label, fail] of [
     assert.deepEqual(page.replaced, ['/']);
   });
 
-  test('named pop-up: a page without the error line (' + label + ') finishes as before, with no Reliable request', async () => {
+  test('named pop-up: a page without the error line (' + label + ') finishes as before, with no alerts request', async () => {
     const page = atStep4({ askHome: '', askErrorLine: false });
     click(page, 'welcome-continue-4');
     await pickInAsk(page);
-    reliableBox(page).checked = true;
     const before = page.requests.length;
     click(page, 'welcome-alerts-allow');
     await flush();
     fail(page.requests[before]);
     await flush();
-    assert.equal(page.requests.filter((r) => r.url === ALERTS_ADDRESS).length, 0);
+    assert.equal(alertsRequests(page).length, 0);
     assert.equal(doneRequests(page).length, 1);
-  });
-
-  test('named pop-up: when the Reliable save fails (' + label + ') first-run-done still goes out once', async () => {
-    const page = atStep4();
-    click(page, 'welcome-continue-4');
-    reliableBox(page).checked = true;
-    click(page, 'welcome-alerts-allow');
-    await flush();
-    assert.equal(page.requests[0].url, ALERTS_ADDRESS);
-    fail(page.requests[0]);
-    await flush();
-    assert.equal(doneRequests(page).length, 1);
-    assert.equal(page.requests.length, 2);
-    answer(page.requests[1], 204);
-    await flush();
-    assert.deepEqual(page.replaced, ['/']);
   });
 }
 
@@ -1048,17 +1020,15 @@ for (const mode of ENABLE_MODES) {
     const page = atStep4({ notify, askHome: '' });
     click(page, 'welcome-continue-4');
     await pickInAsk(page);
-    reliableBox(page).checked = true;
     const before = page.requests.length;
     click(page, 'welcome-alerts-allow');
     await flush();
     answer(page.requests[before], 200);
     await flush();
-    answer(page.requests[before + 1], 200);
-    await flush();
-    assert.deepEqual(sent(page).slice(before), ['PATCH ' + PROFILE_ADDRESS, 'PATCH ' + ALERTS_ADDRESS, 'POST ' + DONE_ADDRESS]);
+    assert.deepEqual(sent(page).slice(before), ['PATCH ' + PROFILE_ADDRESS, 'POST ' + DONE_ADDRESS]);
     assert.equal(notify.calls.enable.length, 1);
     assert.equal(doneRequests(page).length, 1);
+    assert.equal(alertsRequests(page).length, 0);
   });
 }
 
@@ -1066,11 +1036,10 @@ for (const [label, leave] of [
   ['Not now', (page) => click(page, 'welcome-alerts-later')],
   ['Escape', (page) => fire(page.dialog, 'cancel')]
 ]) {
-  test('named pop-up: ' + label + ' after a pick and a ticked box saves nothing and never calls enable', async () => {
+  test('named pop-up: ' + label + ' after a pick saves nothing and never calls enable', async () => {
     const page = atStep4({ askHome: '' });
     click(page, 'welcome-continue-4');
     await pickInAsk(page);
-    reliableBox(page).checked = true;
     const before = page.requests.length;
     leave(page);
     await flush();
@@ -1106,7 +1075,6 @@ test('named pop-up: after a failed first-run-done the pop-up frees Allow by the 
   await flush();
   assert.equal(page.dialog.open, false);
   assert.equal(byId(page, 'welcome-alerts-allow').disabled, false, 'a place is known, so Allow is on');
-  assert.equal(reliableBox(page).disabled, false);
   assert.equal(byId(page, 'welcome-error-4').textContent, SAVE_FAILED);
 });
 
@@ -1123,7 +1091,6 @@ for (const [label, fail] of [
     const page = atStep4({ askHome: '' });
     click(page, 'welcome-continue-4');
     await pickInAsk(page);
-    reliableBox(page).checked = true;
     const before = page.requests.length;
     click(page, 'welcome-alerts-allow');
     await flush();
@@ -1131,7 +1098,7 @@ for (const [label, fail] of [
     fail(page.requests[before]);
     await flush();
     assert.equal(byId(page, 'welcome-alerts-ask-error').hidden, true, 'nothing is written into a closed dialog');
-    assert.equal(page.requests.filter((r) => r.url === ALERTS_ADDRESS).length, 0, 'no Reliable request without a saved home area');
+    assert.equal(alertsRequests(page).length, 0, 'no alerts request');
     assert.equal(doneRequests(page).length, 1, 'sign up finishes');
     answer(doneRequests(page)[0], 500);
     await flush();

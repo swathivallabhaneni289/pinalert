@@ -63,6 +63,10 @@ import (
 // bytes); budget 779264. A page that shows the pop-up adds changes-ask.js and
 // the partial, about 12 KB, inside the budget.
 //
+// Removed 2026-11-03 by quick 261103-jal (owner, two row notifications box, D6):
+// the changes script and its pop-up are gone, so the page only got smaller; the
+// figures above are history and the budget stands.
+//
 // To change the budget after an intended change: re-measure with
 // go test ./web/ -run TestLowDataByteBudget -v, set both constants together in
 // one commit and update the Low data view size budget section of

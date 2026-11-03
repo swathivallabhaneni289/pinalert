@@ -43,10 +43,6 @@ type lowViewModel struct {
 	// (03.3-UAT test 7). Public by design; empty when push is off.
 	PushPublicKey string
 	Chrome        Chrome
-	// ChangesAsk true renders the first post or vote pop-up (the changes_ask
-	// partial). It is false when the Changes switch is already on, when push is
-	// off, or when the settings read failed.
-	ChangesAsk bool
 	// Demo is read by the shared report form and is always false here: only the
 	// Demo page sets it (plan 05-17, T-05-95).
 	Demo bool
@@ -116,7 +112,6 @@ func LowPage(tmpl *template.Template, cfg PageConfig) http.HandlerFunc {
 			AccountID:       acc.ID,
 			PushPublicKey:   cfg.PushPublicKey,
 			Chrome:          chrome,
-			ChangesAsk:      changesAskFor(r.Context(), cfg, acc.ID),
 		}
 		setLowDataCookie(w, r)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

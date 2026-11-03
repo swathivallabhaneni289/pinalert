@@ -176,9 +176,11 @@ func TestLowDataAssetPolicy(t *testing.T) {
 		}
 		index[s] = i
 	}
-	// Amended 2026-10-28 by Phase 3.3 plan 21 (03.3-UAT gap for test 4): changes-ask.js
-	// asks about changes after a first post or vote.
-	later := map[string]bool{"/static/js/queue.js": true, "/static/js/flag.js": true, "/static/js/report-form.js": true, "/static/js/changes-ask.js": true}
+	// Amended 2026-10-28 by Phase 3.3 plan 21 (03.3-UAT gap for test 4): the script
+	// that asked about changes after a first post or vote was allowed here.
+	// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box,
+	// D6): that script was removed with its pop-up, so it left the map.
+	later := map[string]bool{"/static/js/queue.js": true, "/static/js/flag.js": true, "/static/js/report-form.js": true}
 	for _, s := range bodyScripts {
 		isCanonical := false
 		for _, c := range canonicalScripts {
@@ -191,13 +193,6 @@ func TestLowDataAssetPolicy(t *testing.T) {
 		}
 		if !later[s] {
 			t.Errorf("script %s is not allowed on the Low data page", s)
-			continue
-		}
-		// Amended by the 03.3-REVIEW fix WR-03: changes-ask.js sits inside the
-		// {{if .ChangesAsk}} block with its pop-up, before the other body
-		// scripts, so only an account that can see the pop-up loads it. Its
-		// place is pinned by TestChangesAskOnLowDataContract.
-		if s == "/static/js/changes-ask.js" {
 			continue
 		}
 		if index[s] < index["/static/js/trust.js"] || index[s] > index["/static/js/low.js"] {

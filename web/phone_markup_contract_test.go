@@ -80,19 +80,11 @@ func phoneExpandTemplate(t *testing.T, name string) string {
 				}
 				body, _, _ := strings.Cut(rest, "{{end}}")
 				return body
-			// Amended 2026-10-28 by Phase 3.3 plan 21: changes_ask is a defined block
-			// inside changes_ask.html.tmpl, so a call expands to that block.
-			case "changes_ask":
-				whole := p13ReadTemplate(t, "changes_ask.html.tmpl")
-				_, rest, ok := strings.Cut(whole, `{{define "changes_ask"}}`)
-				if !ok {
-					t.Fatalf("changes_ask.html.tmpl defines no changes_ask")
-				}
-				body, _, _ := strings.Cut(rest, "{{end}}")
-				return body
+			// Amended 2026-11-03 by quick 261103-jal (D6): the changes pop-up partial
+			// was removed, so its case is gone.
 			// Amended 2026-10-29 by Phase 7.1 plan 13c: installed_alerts_ask is a
 			// defined block inside installed_alerts_ask.html.tmpl, so a call
-			// expands to that block, as changes_ask does.
+			// expands to that block.
 			case "installed_alerts_ask":
 				whole := p13ReadTemplate(t, "installed_alerts_ask.html.tmpl")
 				_, rest, ok := strings.Cut(whole, `{{define "installed_alerts_ask"}}`)
@@ -103,7 +95,7 @@ func phoneExpandTemplate(t *testing.T, name string) string {
 				return body
 			// Amended 2026-10-29 by Phase 8 plan 17 (D-14): comment_delete_confirm
 			// is a defined block inside comment_delete_confirm.html.tmpl, so a
-			// call expands to that block, as changes_ask does.
+			// call expands to that block, as installed_alerts_ask does.
 			case "comment_delete_confirm":
 				whole := p13ReadTemplate(t, "comment_delete_confirm.html.tmpl")
 				_, rest, ok := strings.Cut(whole, `{{define "comment_delete_confirm"}}`)

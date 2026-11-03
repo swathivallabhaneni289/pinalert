@@ -43,12 +43,9 @@ const (
 // Owner decision 2026-11-03, quick 261103-jal (D8, C10): the four columns
 // reliable_alerts_on, critical_push_on, changes_push_on and official_push_on are
 // kept in the database and no longer decide delivery, so they leave this struct.
-// ChangesPushOn is the one exception until the changes pop-up is removed in the
-// same quick task: changesAskFor still reads it.
 type AlertSettings struct {
 	AlertRadiusKm int
 	HasHomeArea   bool
-	ChangesPushOn bool
 }
 
 // AlertSettingsUpdate is one edit. A nil field leaves that part as stored.
@@ -106,18 +103,9 @@ func (s *AccountService) HomeAreaCell(ctx context.Context, accountID int64) (cel
 
 // AlertSettings reads the account's alert distance. An account that never saved
 // a choice reads DefaultAlertRadiusKm. Owner decision 2026-11-03, quick
-// 261103-jal: the stored switches are not read; ChangesPushOn is read only for
-// the changes pop-up that the same quick task removes.
+// 261103-jal: the stored switches are not read.
 func (s *AccountService) AlertSettings(ctx context.Context, accountID int64) (AlertSettings, error) {
-	out := AlertSettings{AlertRadiusKm: DefaultAlertRadiusKm, ChangesPushOn: DefaultChangesPushOn}
-	switch push, err := s.q.GetPushKindSettings(ctx, accountID); {
-	case err == nil:
-		out.ChangesPushOn = push.ChangesPushOn
-	case errors.Is(err, pgx.ErrNoRows):
-		// No such account row: the default.
-	default:
-		return AlertSettings{}, fmt.Errorf("service: reading push switches: %w", err)
-	}
+	out := AlertSettings{AlertRadiusKm: DefaultAlertRadiusKm}
 	row, err := s.q.GetAlertSettings(ctx, accountID)
 	switch {
 	case err == nil:

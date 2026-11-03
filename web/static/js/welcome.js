@@ -56,8 +56,8 @@
 // instead, which holds the install guide and one button, Not now. It never calls
 // enable and never asks the browser for anything. It shows once per account on a
 // browser: the browser key pinalert.installAsked holds a small JSON list of the
-// last 8 account ids (the format of pinalert.changesAsked in changes-ask.js), the
-// id is added just before the box opens, and the box does not open again while the
+// last 8 account ids (a JSON list of id strings, the same shape as the other
+// asked lists of the app), the id is added just before the box opens, and the box does not open again while the
 // list holds it. A key that cannot be read or written does not stop the box. Not
 // now and Escape close it and then record the flow as done; a box that will not
 // open records it at once. The alerts pop-up needs maybe or ready and this one
@@ -66,11 +66,14 @@
 // Plan 03.3-19 (the 03.3-UAT gap for test 4, owner, 2026-10-27): the pop-up
 // names the home area in its title, asks for it when none is known (the step 4
 // place search, a picked place only, never the device fix; Allow stays off until
-// one is picked) and offers an unticked Reliable reporter tick box. After Allow
-// calls enable, the saves run one after another: the home area picked in the
-// pop-up, then the Reliable switch if it was ticked and a home area exists, then
-// first-run-done; any failure still reaches first-run-done. Not now and Escape
-// save nothing. The pop-up never opens inside a Mac Dock app.
+// one is picked). After Allow calls enable, the saves run one after another: the
+// home area picked in the pop-up, then first-run-done; any failure still reaches
+// first-run-done. Not now and Escape save nothing. The pop-up never opens inside
+// a Mac Dock app.
+//
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D5):
+// the pop-up has no tick box and sends no request to the alerts address. Allow
+// still turns this device on and saves a missing home area.
 //
 // What it never does:
 //   - It never runs the browser's notification prompt except from the Allow
@@ -99,7 +102,6 @@
   var CONSENT_URL = '/api/me/consent';
   var PROFILE_URL = '/api/me/profile';
   var DONE_URL = '/api/me/first-run-done';
-  var ALERTS_URL = '/api/me/alerts';
   // The pop-up title is these three pieces, written with textContent: the words,
   // the home area (the stored one, the one saved at step 4 or the one picked in the
   // pop-up) or ASK_TITLE_NO_HOME, and the question mark. ASK_TITLE_START is the
@@ -116,7 +118,7 @@
   // under this key (Phase 7.1 plan 13c, D-18), written when the pop-up opens.
   var ALERTS_ASKED_KEY = 'pinalert.alertsAsked';
   // How many account ids the list keeps on one browser, and the shape of an id
-  // (the one notify.js and changes-ask.js use).
+  // (the one notify.js uses).
   var INSTALL_ASKED_KEEP = 8;
   var ACCOUNT_ID_PATTERN = /^[1-9][0-9]{0,18}$/;
   // Step 4 uses the place search of Settings, asking for areas only (kind=area:
@@ -213,15 +215,13 @@
   var askAllow = el('welcome-alerts-allow');
   var askLater = el('welcome-alerts-later');
   // The home area search block of the pop-up (the step 4 search, shown only when
-  // no home area is known) and the Reliable tick box. Each is read once; a page
-  // without them (an older page, a test fake) gets the pop-up as it was before
-  // plan 03.3-19.
+  // no home area is known). Each is read once; a page without them (an older
+  // page, a test fake) gets the pop-up as it was before plan 03.3-19.
   var askHome = el('welcome-alerts-home');
   var askForm = el('welcome-alerts-home-form');
   var askInput = el('welcome-alerts-home-input');
   var askStatus = el('welcome-alerts-home-status');
   var askResults = el('welcome-alerts-home-results');
-  var askReliable = el('welcome-alerts-reliable');
   // The pop-up's error line: the home area picked in it was not saved (WR-05).
   var askError = el('welcome-alerts-ask-error');
   var pushKey = root.getAttribute('data-push-key') || '';
@@ -1283,9 +1283,6 @@
     if (askInput) {
       askInput.disabled = on;
     }
-    if (askReliable) {
-      askReliable.disabled = on;
-    }
     if (on) {
       askAllow.disabled = true;
       askDialog.setAttribute('aria-busy', 'true');
@@ -1339,7 +1336,7 @@
 
   // installAskedList reads the account ids that were shown the box on this
   // browser, as text. Nothing stored is an empty list, one plain id is a list of
-  // one (the older format of changes-ask.js), a JSON list keeps only its id
+  // one (the older plain id format), a JSON list keeps only its id
   // strings, and a value that is neither is an empty list too (not shown). The
   // caller holds the try: a storage that cannot be read throws.
   function installAskedList() {
@@ -1527,8 +1524,8 @@
 
   // saveAskHome saves the place picked in the pop-up as the home area (the same
   // request step 4 sends). It always resolves: to '' on an ok answer, when the
-  // pop-up's home area becomes that place, so the Reliable save below knows one
-  // exists; otherwise to the one line the pop-up shows (WR-05): the server's own
+  // pop-up's home area becomes that place; otherwise to the one line the pop-up
+  // shows (WR-05): the server's own
   // sentence for a 400, the session line for a 401, else MESSAGE_HOME_NOT_SAVED.
   function saveAskHome(place) {
     return request(PROFILE_URL, {
@@ -1559,33 +1556,19 @@
     showLine(askError, message);
   }
 
-  // saveReliable is the one place the Reliable reporter request is built: a PATCH
-  // to the alerts address that turns the Reliable switch on, bounded by
-  // SAVE_TIMEOUT_MS. It always resolves, whatever the answer. Phase 7.1 plan 13c
-  // copies this request and the tick box words.
-  function saveReliable() {
-    return request(ALERTS_URL, {
-      method: 'PATCH',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reliable_alerts: true })
-    }, SAVE_TIMEOUT_MS).promise.then(function () {}, function () {});
-  }
-
   // onAskAllow is the only place the browser's notification prompt can run.
   // enable is the first real statement of the click (after the checks that
   // send nothing), before anything is awaited, so the browser counts the tap as
   // the person's own. Then, whatever enable answers (a refusal, an offline answer,
   // a failure, a rejection or a throw), the saves run one after another: the home
-  // area picked in the pop-up, then the Reliable switch if it was ticked and a
-  // home area exists, then the flow is recorded as done.
+  // area picked in the pop-up, then the flow is recorded as done. No request goes
+  // to the alerts address (quick 261103-jal, D5).
   //
-  // A home area that was not saved stops the chain before Reliable (WR-05): the
+  // A home area that was not saved stops the chain (WR-05): the
   // pop-up stays open with one error line, Allow tries the save again without a
   // second enable (enable runs once per visit, so the prompt is never asked in
   // a loop), and Not now still finishes sign up. A page without the error line,
-  // or a pop-up the browser has already closed by itself, finishes as before. The Reliable save swallows its own failure; Settings
-  // shows the result.
+  // or a pop-up the browser has already closed by itself, finishes as before.
   function onAskAllow() {
     if (askBusy) {
       return;
@@ -1603,7 +1586,6 @@
       askEnabled = true;
     }
     var place = askPick;
-    var wantReliable = !!(askReliable && askReliable.checked);
     asked = true;
     askBusy = true;
     setAskDisabled(true);
@@ -1617,7 +1599,7 @@
         homeNotSaved(problem);
         return false;
       }
-      return wantReliable && homeName !== '' ? saveReliable() : null;
+      return null;
     }).then(function (go) {
       if (go !== false) {
         postDone();

@@ -27,17 +27,17 @@
 //     WR-B05). An installed app's first Nearby load asks for the location, so
 //     the alerts ask waits for the next load, and the key is not written;
 //   - then, at the moment it would open, no other dialog is open and the page
-//     root carries no data-modal-open. Nearby can hold three small dialogs: this
-//     ask (on load), the first post or vote pop-up of Phase 3.3 (after a post or
-//     a vote) and the star box of Phase 9 (after Yes, mark resolved). changes-ask.js
-//     makes the same check, so no two of these boxes ever stack. When this
-//     check skips, the key is not written.
+//     root carries no data-modal-open. Nearby can hold two small dialogs: this
+//     ask (on load) and the star box of Phase 9 (after Yes, mark resolved). The
+//     star box makes the same check, so the two boxes never stack. When this
+//     check skips, the key is not written. (The first post or vote pop-up of
+//     Phase 3.3 was removed on 2026-11-03, quick 261103-jal.)
 // The Low data view and the Demo never load this script. Any probe that throws
 // counts as "do not open".
 //
 // ONCE PER DEVICE AND ACCOUNT (D-18). The key pinalert.alertsAsked holds a small
 // JSON list of account ids, the last 8, so a shared phone does not ask account A
-// again after B. One plain id (the older format of pinalert.changesAsked) reads
+// again after B. One plain id (the older plain id format) reads
 // as a list of one. The id is added just before the dialog opens, so a tab closed
 // mid-question does not ask again, and when deviceState answers 'on' (review fix
 // IN-B01), so a device already on is not asked about again on every load. The sign up alerts pop-up writes the same key
@@ -48,17 +48,15 @@
 // ALLOW. The first real statement of the tap calls PinalertNotify.enable with the
 // dialog's key, before anything is read or awaited, so the browser counts the tap
 // as the person's own. Whatever enable answers (a refusal, a rejection, a throw),
-// the Reliable switch is then saved only when the box is ticked, with the same
-// request the sign up pop-up uses, and the dialog closes. Not now and Escape close
-// it and never call enable or send a request. Settings is the way to change your
-// mind afterwards. No message is shown after an answer.
+// the dialog then closes. Allow sends no request: the box has no tick box and
+// nothing is saved (owner decision 2026-11-03, quick 261103-jal, D5). Not now and
+// Escape close it and never call enable. Settings is the way to change your mind
+// afterwards. No message is shown after an answer.
 (function () {
   'use strict';
 
   var ASKED_KEY = 'pinalert.alertsAsked';
-  var ALERTS_URL = '/api/me/alerts';
-  var REQUEST_TIMEOUT_MS = 10000;
-  // The shape of an account id, the one notify.js and changes-ask.js use.
+  // The shape of an account id, the one notify.js uses.
   var ACCOUNT_ID_PATTERN = /^[1-9][0-9]{0,18}$/;
   // How many account ids the asked list keeps on one device.
   var ASKED_KEEP = 8;
@@ -169,43 +167,9 @@
       !!(root && typeof root.hasAttribute === 'function' && root.hasAttribute('data-modal-open'));
   }
 
-  // saveReliable is the one place the Reliable reporter request is built: the
-  // same PATCH the sign up pop-up sends. It always resolves, whatever the answer.
-  function saveReliable(fetchFn) {
-    return new Promise(function (resolve) {
-      var timer = null;
-      var controller = typeof AbortController === 'function' ? new AbortController() : null;
-      function done() {
-        if (timer !== null && typeof clearTimeout === 'function') {
-          clearTimeout(timer);
-        }
-        resolve();
-      }
-      try {
-        var init = {
-          method: 'PATCH',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reliable_alerts: true })
-        };
-        if (controller) {
-          init.signal = controller.signal;
-          if (typeof setTimeout === 'function') {
-            timer = setTimeout(function () {
-              controller.abort();
-            }, REQUEST_TIMEOUT_MS);
-          }
-        }
-        Promise.resolve(fetchFn(ALERTS_URL, init)).then(done, done);
-      } catch (err) {
-        done();
-      }
-    });
-  }
-
   // wire attaches the four listeners of an opened dialog and returns nothing; the
   // closures below hold the state of this one ask.
-  function wire(parts, notify, fetchFn) {
+  function wire(parts, notify) {
     var dialog = parts.dialog;
     var busy = false;
     var finished = false;
@@ -214,9 +178,6 @@
     function setBusy(on) {
       parts.allow.disabled = on;
       parts.later.disabled = on;
-      if (parts.reliable) {
-        parts.reliable.disabled = on;
-      }
       if (on) {
         dialog.setAttribute('aria-busy', 'true');
       } else {
@@ -258,22 +219,11 @@
         pending = null;
       }
       busy = true;
-      var wantReliable = !!(parts.reliable && parts.reliable.checked);
       setBusy(true);
-      function save() {
-        if (!wantReliable) {
-          return Promise.resolve();
-        }
-        try {
-          return saveReliable(fetchFn);
-        } catch (err) {
-          return Promise.resolve();
-        }
-      }
       function done() {
         finish();
       }
-      Promise.resolve(pending).then(save, save).then(done, done);
+      Promise.resolve(pending).then(done, done);
     }
 
     function onLater() {
@@ -314,9 +264,6 @@
   function start(o) {
     var doc = o.doc || (typeof document !== 'undefined' ? document : null);
     var notify = o.notify || (typeof window !== 'undefined' ? window.PinalertNotify : null);
-    var fetchFn = o.fetchFn || function (target, init) {
-      return fetch(target, init);
-    };
     var storage = o.storage;
     if (storage === undefined) {
       try {
@@ -333,7 +280,6 @@
       var title = doc.getElementById('installed-alerts-ask-title');
       var later = doc.getElementById('installed-alerts-ask-later');
       var allow = doc.getElementById('installed-alerts-ask-allow');
-      var reliable = doc.getElementById('installed-alerts-ask-reliable');
       if (!dialog || !title || !later || !allow || typeof dialog.showModal !== 'function') {
         return Promise.resolve('skipped');
       }
@@ -354,7 +300,7 @@
       if (asked === null || asked.indexOf(account) !== -1) {
         return Promise.resolve('skipped');
       }
-      var parts = { doc: doc, dialog: dialog, title: title, later: later, allow: allow, reliable: reliable, key: key };
+      var parts = { doc: doc, dialog: dialog, title: title, later: later, allow: allow, key: key };
       return Promise.resolve(notify.deviceState(key)).then(function (state) {
         if (state === 'on') {
           // Already on: as good as asked (review fix IN-B01), so later loads do
@@ -385,7 +331,7 @@
         list.push(account);
         storage.setItem(ASKED_KEY, JSON.stringify(list.slice(-ASKED_KEEP)));
         try {
-          wire(parts, notify, fetchFn)();
+          wire(parts, notify)();
         } catch (err) {
           // The box never opened, so it does not count as asked (IN-B06).
           forget(storage, account);
@@ -401,7 +347,7 @@
   }
 
   // run starts the ask once per page load; a second call returns the first run.
-  // The options are for tests: { doc, notify, storage, fetchFn, position, setTimer }.
+  // The options are for tests: { doc, notify, storage, position, setTimer }.
   function run(options) {
     if (current === null) {
       current = start(options || {});

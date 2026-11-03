@@ -13,7 +13,8 @@
 //     "You rated {username} 4 stars.";
 //   - an Undo of the resolve, in the card or in the toast, removes it;
 //   - a report the resolve closed (its popup gone after the refetch) gets none;
-//   - the first post or vote pop-up is waited for when it is on the page;
+//   - the box mounts at once (Amended 2026-11-03 by quick 261103-jal: the first
+//     post or vote pop-up it used to wait for was removed);
 //   - every string goes in by textContent.
 //
 // Run it with: node --test web/votes_stars_test.mjs
@@ -166,7 +167,7 @@ function fire(el, type = 'click') {
 // load evaluates stars.js (unless withStars is false) and votes.js on a small
 // page. answers maps a request tail to { status, body }; a resolve answers with
 // the prompt it is given.
-function load({ prompt, withStars = true, changesAsk = null, onRefetch = null, resolveBody = null, withHost = false, withObserver = false } = {}) {
+function load({ prompt, withStars = true, onRefetch = null, resolveBody = null, withHost = false, withObserver = false } = {}) {
   const doc = new FakeDoc();
   const calls = [];
   // 2026-10-30 (skeptic SK-W01): a fake MutationObserver that records what it
@@ -249,7 +250,6 @@ function load({ prompt, withStars = true, changesAsk = null, onRefetch = null, r
       disconnect() { this.live = false; }
     };
   }
-  if (changesAsk) { sandbox.PinalertChangesAsk = changesAsk; }
   vm.createContext(sandbox);
   if (withStars) { vm.runInContext(starsSource, sandbox); }
   vm.runInContext(votesSource, sandbox);
@@ -496,25 +496,6 @@ test(NAME + 'a closing popup that is still attached for its fade gets no box', a
   assert.equal(boxesIn(m.doc.body).length, 0);
 });
 
-test(NAME + 'with the first post or vote pop-up on the page, the box waits until it is answered', async () => {
-  let release = null;
-  const pending = new Promise((resolveIt) => { release = resolveIt; });
-  const m = load({ prompt: PROMPT, changesAsk: { offer() { return Promise.resolve(); }, settled() { return pending; } } });
-  const card = buildCard(m);
-  await resolve(card);
-  assert.equal(boxesIn(m.doc.body).length, 0, 'not while the pop-up is open');
-  release();
-  await settle();
-  assert.equal(boxesIn(m.doc.body).length, 1);
-});
-
-test(NAME + 'a pop-up that is already settled lets the box mount', async () => {
-  const m = load({ prompt: PROMPT, changesAsk: { offer() { return Promise.resolve(); }, settled() { return Promise.resolve(); } } });
-  const card = buildCard(m);
-  await resolve(card);
-  assert.equal(boxesIn(m.doc.body).length, 1);
-});
-
 test(NAME + 'review M6: resolving in the laptop bubble and then entering the panel leaves exactly one box, inside the moved card', async () => {
   const m = load({ prompt: PROMPT });
   const card = buildCard(m);
@@ -698,22 +679,6 @@ test(NAME + 'K2: a 404 on a rating in the host removes the box and hands focus t
   assert.equal(m.doc.activeElement, undo);
 });
 
-test(NAME + 'K2: with the first post or vote pop-up on the page the host box waits too', async () => {
-  let release = null;
-  const pending = new Promise((resolveIt) => { release = resolveIt; });
-  const holder = { card: null };
-  const m = load({
-    prompt: PROMPT, withHost: true, resolveBody: CLOSED, onRefetch: closeOnRefetch(holder),
-    changesAsk: { offer() { return Promise.resolve(); }, settled() { return pending; } }
-  });
-  holder.card = buildCard(m);
-  await resolve(holder.card);
-  assert.equal(boxesIn(m.doc.body).length, 0);
-  release();
-  await settle();
-  assert.equal(boxesIn(m.host).length, 1);
-});
-
 // 2026-10-30 (skeptic SK-W01): the box in the page host must never cover a
 // control. It leaves when another report opens (map.js calls
 // dismissHostedRateBoxes on every popup open), when any window opens (a watch
@@ -823,38 +788,16 @@ test(NAME + 'SK-W01: Skip stops the end timer', async () => {
   assert.equal(m.timers.filter((t) => t.live && t.ms === 30000).length, 0);
 });
 
-// 2026-10-30 (skeptic SK-I04): an Undo that lands while the first pop-up is
-// still open must stop the box that is waiting for it.
-test(NAME + 'SK-I04: a toast Undo taken while the pop-up is open means no hosted box after it', async () => {
-  let release = null;
-  const pending = new Promise((resolveIt) => { release = resolveIt; });
-  const holder = { card: null };
-  const m = load({
-    prompt: PROMPT, withHost: true, resolveBody: CLOSED, onRefetch: closeOnRefetch(holder),
-    changesAsk: { offer() { return Promise.resolve(); }, settled() { return pending; } }
-  });
-  holder.card = buildCard(m);
-  await resolve(holder.card);
-  assert.equal(boxesIn(m.doc.body).length, 0, 'waiting for the pop-up');
-  await m.toasts[0].action.onClick();
-  release();
-  await settle();
-  assert.equal(boxesIn(m.doc.body).length, 0, 'no box for a resolve that no longer stands');
-});
-
-test(NAME + 'SK-I04: a card Undo taken while the pop-up is open means no box after it, and a later resolve is offered one', async () => {
-  let release = null;
-  const pending = new Promise((resolveIt) => { release = resolveIt; });
-  const m = load({
-    prompt: PROMPT, withHost: true,
-    changesAsk: { offer() { return Promise.resolve(); }, settled() { return pending; } }
-  });
+// Amended 2026-11-03 by quick 261103-jal (owner, two row notifications box, D6):
+// the box no longer waits for the first post or vote pop-up, which was removed,
+// so the SK-I04 cases that held an Undo while the pop-up was open became this
+// one: a card Undo takes the box away, and the next resolve is offered one.
+test(NAME + 'SK-I04: a card Undo means no box after it, and a later resolve is offered one', async () => {
+  const m = load({ prompt: PROMPT, withHost: true });
   const card = buildCard(m);
   await resolve(card);
-  assert.equal(boxesIn(m.doc.body).length, 0, 'waiting for the pop-up');
+  assert.equal(boxesIn(m.doc.body).length, 1, 'the box mounts at once');
   fire(card.block.controls.querySelector('.vote-btn--takeback'));
-  await settle();
-  release();
   await settle();
   assert.equal(boxesIn(m.doc.body).length, 0, 'no box for a resolve that was taken back');
   await resolve(card);
