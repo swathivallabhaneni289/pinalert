@@ -19,9 +19,10 @@ status: all_fixed
 - Findings in scope: 8 (WR-01 to WR-04, IN-01, IN-02, IN-03, IN-07), plus IN-04 settled by WR-04
 - Fixed: 8
 - Skipped: 0
+- Follow up fixes after the first report: F1 and F2 (below)
 - Left as they are on instruction: IN-05, IN-06, and the Settings line "Choose what Pinalert tells you about."
 
-Final gate on the scratch database q_notif2_fix (dropped afterwards): `go build ./...` and `go vet ./...` clean; `go test ./... -p 1 -count=1 -v` gave 6811 `--- PASS` lines (subtests included), 0 `--- FAIL`, every package `ok`, and exactly three skips, TestGeocodeLive, TestOfficialLive and TestScreeningFixture; `node --test web/*.mjs` gave 1596 pass, 0 fail.
+Gate after the first eight fixes, on the scratch database q_notif2_fix (dropped afterwards; the gate after F1 and F2 is under "Follow up fixes"): `go build ./...` and `go vet ./...` clean; `go test ./... -p 1 -count=1 -v` gave 6811 `--- PASS` lines (subtests included), 0 `--- FAIL`, every package `ok`, and exactly three skips, TestGeocodeLive, TestOfficialLive and TestScreeningFixture; `node --test web/*.mjs` gave 1596 pass, 0 fail.
 
 ## Fixed Issues
 
@@ -77,7 +78,7 @@ Final gate on the scratch database q_notif2_fix (dropped afterwards): `go build 
 **Files modified:** `internal/service/pushworker_fix_test.go`, `docs/TRUST-MODEL.md`
 **Commit:** a4e7c5f9
 **Applied fix:** `TestQueuedReliablePushStopsAfterMuteOrBlock` and `TestConfirmedUpdateOfReliablePushStopsAfterMuteOrBlock` now store the mute and the two blocks before the readers' bell polls. They assert the muter holds no Reliable bell row (and so no confirmed update), the control reader does, and the worker's `personNotMutedOrBlocked`, asked directly, says no for the muter and for each side of a block and yes for the control reader. Flip check: deleting the mute seed fails both tests (bell row 1, check true); deleting the block seed fails both (check true). Names kept. TRUST-MODEL line 786 now reads like PUSH.md line 94: a Reliable note queued before 2026-11-03 is skipped whatever a mute or block says, the check stays behind that as a second layer, and the mute still acts earlier because a muted reporter raises no Reliable bell row for its muter. Cited test names were kept and the doc tests pass.
-**Real gap found, not changed:** a block does not stop the Reliable bell row. The bell step reads `person_mutes` only, and TRUST-MODEL says a block "does not hide their reports anywhere". The block half of the old tests only ever covered the phone path, which is now skipped for every Reliable row. So the block is asserted through the worker check, not the bell. If the owner wants a block to also keep a Reliable row away, that is a behaviour change for the bell step and is not made here.
+**Real gap found, closed by follow up F1 below:** a block did not stop the Reliable bell row. The bell step reads `person_mutes` only, and TRUST-MODEL says a block "does not hide their reports anywhere". The block half of the old tests only ever covered the phone path, which is now skipped for every Reliable row. So the block is asserted through the worker check, not the bell. If the owner wants a block to also keep a Reliable row away, that is a behaviour change for the bell step and is not made here.
 
 ### IN-07: small leftovers
 
@@ -85,13 +86,33 @@ Final gate on the scratch database q_notif2_fix (dropped afterwards): `go build 
 **Commit:** 1868fa47 (follow.go), b213c508 (`changesFor`)
 **Applied fix:** `changesFor` always returned nil, so it and the dead `errs`/`errors.Join` in `changesBranch` went with WR-04. The long comment line in `follow.go` is wrapped. The first bullet of IN-07 (the Settings line) was left unchanged on instruction.
 
+## Follow up fixes
+
+Requested by the coordinator after the first report.
+
+### F1: a block keeps a Reliable bell row away
+
+**Files modified:** `internal/store/queries/person_mutes.sql`, `internal/store/sqlc/person_mutes.sql.go`, `internal/service/updatesservice.go`, `internal/service/updatesalerts.go`, `internal/service/updatesservice_test.go`, `internal/service/pushworker_fix_test.go`, `docs/TRUST-MODEL.md`
+**Commit:** ae763ac8
+**Applied fix:** A new query `BlockedEitherWayIDs` (the people with a block between them and the reader, either direction) is read once per refresh next to `MutedPeopleIDs`, and `refreshReliableAlerts` skips their reports, the same rule as the worker's `personNotMutedOrBlocked`. Reports still show on Nearby and everywhere else. No migration. `docs/TRUST-MODEL.md` has one dated sentence in the Block paragraph, and the IN-03 sentence in the send time paragraph now names blocks as well as the mute. No test pins either sentence.
+**Tests:** the two IN-03 tests now prove the block through the bell row itself (`wantBellRows`: muter, blocker and blocked hold 0 Reliable bell rows, the control reader 1, and the three get no confirmed update either), beside the direct worker check. Flip check: deleting the reader-blocks-reporter seed fails both tests (bell row 1, outbox holds a confirmed update, check true), and so does deleting the reporter-blocks-reader seed.
+
+### F2: change rows never hold a follow row
+
+**Files modified:** `internal/store/queries/updates.sql`, `internal/store/sqlc/updates.sql.go`, `internal/service/updates.go`, `internal/service/updatesfollow.go`, `internal/service/updatesfollow_test.go`, `internal/service/updatesfollow_slot_db_test.go`, `internal/service/followpush_ceiling_db_test.go` (new), `internal/store/updates_test.go`, `docs/TRUST-MODEL.md`
+**Commit:** 52f2436f
+**Applied fix:** `InsertFollowedPostedAlert` now counts only `followed_posted` rows against its cap, a new named constant `FollowHourlyCeiling = 10` (same value as the shared ceiling). Change rows still count follow rows toward `UpdatesHourlyCeiling`, as before. This closes the leftover noted in the first report. `make sqlc` touched only `updates.sql.go`. No migration.
+**Tests:** `TestChangeRowsNeverHoldAFollowRow` (an account with a full hour of change rows still gets the follow row, and its follow phone note is queued; the follow cap itself still holds after `FollowHourlyCeiling` follow rows). Checked against the old SQL: it failed (follow rows 0). Amended with dated lines: `TestReliableRowNeverTakesTheFollowSlot` (its fixture now fills the follow cap with follow rows), `TestFollowBellBounded` and the store test `TestFirstAlertIndexSharedByBothKinds` (a full hour of change rows leaves the follow note open, a full hour of follow rows holds it).
+
+**Gate after F1 and F2**, on the scratch database q_notif2_fix2 (dropped afterwards): `go build ./...` and `go vet ./...` clean; `go test ./... -p 1 -count=1 -v` gave 6812 `--- PASS`, 0 `--- FAIL`, every package `ok`, skips only TestGeocodeLive, TestOfficialLive and TestScreeningFixture; `node --test web/*.mjs` gave 1596 pass, 0 fail.
+
 ## Skipped Issues
 
 None.
 
 ## Noted, out of scope
 
-- `followBranch` still marks a report fanned after one pass. A follow note held back by the shared hourly ceiling (after WR-01 that means change rows only) is written on a later poll but never reaches the phone, because the phone note is queued only during the pass. Pre-existing and out of scope here.
+- `followBranch` still marks a report fanned after one pass. A follow note held back by the follow cap (after F2 that means ten follow rows in the hour) is written on a later poll but never reaches the phone, because the phone note is queued only during the pass. Pre-existing and out of scope here.
 - IN-05 and IN-06 were left as they are.
 
 ---
