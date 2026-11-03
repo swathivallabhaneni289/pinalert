@@ -60,7 +60,7 @@ WITH moved AS (
     SELECT COUNT(*)::bigint AS n
     FROM updates
     WHERE account_id = $3::bigint
-      AND kind NOT IN ('more', 'comment_on_yours', 'reply_to_yours')
+      AND kind NOT IN ('more', 'comment_on_yours', 'reply_to_yours', 'reliable_nearby')
       AND created_at > $7::timestamptz
 ), ins AS (
     INSERT INTO updates (account_id, report_id, kind, created_at)
@@ -102,7 +102,8 @@ type AdvanceCursorAndInsertUpdateParams struct {
 // stored and the last update for this pair must be older than gap_edge, the one
 // per report per hour rule), so of two concurrent callers the second waits for
 // the row lock, re-reads the new state and moves nothing. recent counts the
-// account's stored updates after hour_edge, not counting the rolled up kind.
+// account's stored updates after hour_edge, not counting the rolled up kind and
+// the Reliable reporter row, which has its own cap (WR-01, quick 261103-jal).
 // Under the ceiling one normal row is inserted. At or over it the event is
 // rolled into one row per account per clock hour (bucket_start) whose count
 // grows and which becomes unread again, so a blocked event is never announced
@@ -360,7 +361,7 @@ WITH ins AS (
         SELECT COUNT(*)
         FROM updates u
         WHERE u.account_id = $1::bigint
-          AND u.kind NOT IN ('more', 'comment_on_yours', 'reply_to_yours')
+          AND u.kind NOT IN ('more', 'comment_on_yours', 'reply_to_yours', 'reliable_nearby')
           AND u.created_at > $4::timestamptz
     ) < $5::bigint
     ON CONFLICT (account_id, report_id) WHERE kind IN ('reliable_nearby', 'followed_posted') DO NOTHING
@@ -385,7 +386,8 @@ type InsertFollowedPostedAlertParams struct {
 
 // The follow note (PROF-03, D-09): a person you follow with Notify me on posted
 // a report. It is the sibling of InsertReliableAlert with the same arguments,
-// the same hourly ceiling and the same cursor seed, and kind followed_posted.
+// the same cursor seed and kind followed_posted, and the shared hourly ceiling
+// that leaves the Reliable reporter rows out of its count.
 // The one first alert index uq_updates_first_alert covers both kinds, so a
 // person who already got the Reliable reporter alert for this report gets no
 // second note, and the reverse (D-09, Pitfall 5). The ON CONFLICT predicate is
@@ -415,7 +417,7 @@ WITH ins AS (
         SELECT COUNT(*)
         FROM updates u
         WHERE u.account_id = $1::bigint
-          AND u.kind NOT IN ('more', 'comment_on_yours', 'reply_to_yours')
+          AND u.kind = 'reliable_nearby'
           AND u.created_at > $4::timestamptz
     ) < $5::bigint
     ON CONFLICT (account_id, report_id) WHERE kind IN ('reliable_nearby', 'followed_posted') DO NOTHING
@@ -441,8 +443,11 @@ type InsertReliableAlertParams struct {
 // A trusted reporter alert (NOTIF-05, D-26), once per account per report: the
 // partial unique index uq_updates_first_alert (shared with the follow note kind
 // of InsertFollowedPostedAlert, D-09) turns a repeat into a no-op.
-// Written only while the account is under the hourly ceiling; over it nothing is
-// written and the next poll tries again while the report is still unexpired.
+// Written only while the account is under its own hourly cap for this kind (WR-01,
+// quick 261103-jal): only reliable_nearby rows count here, and they count toward
+// no other kind's ceiling, so a busy hour of Reliable rows never stops a follow
+// note or a change row. Over the cap nothing is written and the next poll tries
+// again while the report is still unexpired.
 //
 // The note counts toward the one update per report per hour (D-12, W3). In the
 // same statement, and only when the note row is actually inserted, the reader's
@@ -482,7 +487,7 @@ WITH moved AS (
     SELECT COUNT(*)::bigint AS n
     FROM updates
     WHERE account_id = $3::bigint
-      AND kind NOT IN ('more', 'comment_on_yours', 'reply_to_yours')
+      AND kind NOT IN ('more', 'comment_on_yours', 'reply_to_yours', 'reliable_nearby')
       AND created_at > $6::timestamptz
 ), existing AS (
     SELECT id

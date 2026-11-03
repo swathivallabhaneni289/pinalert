@@ -291,7 +291,7 @@ func TestReliableAlerts(t *testing.T) {
 		t.Errorf("reporter read over %v, want the candidates [1 2 13]", ids)
 	}
 	for i, p := range f.inserted {
-		if p.AccountID != acct || !p.Now.Equal(updatesNow) || !p.HourEdge.Equal(updatesNow.Add(-time.Hour)) || p.Ceiling != UpdatesHourlyCeiling {
+		if p.AccountID != acct || !p.Now.Equal(updatesNow) || !p.HourEdge.Equal(updatesNow.Add(-time.Hour)) || p.Ceiling != ReliableHourlyCeiling {
 			t.Errorf("insert %d params = %+v", i, p)
 		}
 	}

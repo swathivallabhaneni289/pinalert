@@ -216,7 +216,7 @@ func (s *UpdatesService) refreshReliableAlerts(ctx context.Context, accountID in
 			ReportID:  v.ID,
 			Now:       now,
 			HourEdge:  windowStart,
-			Ceiling:   UpdatesHourlyCeiling,
+			Ceiling:   ReliableHourlyCeiling,
 			State:     string(v.Visibility),
 		})
 		if err != nil {
