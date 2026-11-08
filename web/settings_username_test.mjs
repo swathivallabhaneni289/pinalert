@@ -804,6 +804,57 @@ test('IN-03: a locked opening shows the name the server last confirmed, and a li
   assertLocked(third, 'You can change your username again in 4 days.', 'row.shows');
 });
 
+// ---- Review fix IN-06: two branches that had no node test ----------------------
+
+test('IN-06: a save sent from an earlier opening that lands while the window is open again locks that window', async () => {
+  const page = loadSettings({ username: 'ravi.k' });
+  open(page);
+  await typeName(page, 'ravi.kumar');
+  fire(byId(page, 'settings-username-form'), 'submit');
+  assert.equal(page.saves().length, 1);
+  fire(byId(page, 'settings-username-close'), 'click');
+
+  open(page);
+  assertNormal(page);
+  const before = page.checks().length;
+  answer(page.saves()[0], 200, { username: 'ravi.kumar', display_name: null, home_area_name: null });
+  await flush();
+  assertLocked(page, SEVEN, 'ravi.kumar');
+  assert.equal(byId(page, 'settings-username-value').textContent, 'ravi.kumar');
+  page.advance(2000);
+  await flush();
+  assert.equal(page.checks().length, before, 'no check is sent for the locked window');
+  assert.equal(page.saves().length, 1, 'nothing more is saved');
+
+  fire(okButton(page), 'click');
+  assert.equal(page.usernameWin.hidden, true);
+  assert.equal(page.doc.activeElement, byId(page, 'settings-username-row'));
+});
+
+test('IN-06: a first username saved from an earlier opening does not lock the window open now', async () => {
+  const page = loadSettings({});
+  open(page);
+  await typeName(page, 'ravi.k');
+  fire(byId(page, 'settings-username-form'), 'submit');
+  fire(byId(page, 'settings-username-close'), 'click');
+  open(page);
+  answer(page.saves()[0], 200, { username: 'ravi.k', display_name: null, home_area_name: null });
+  await flush();
+  assertNormal(page);
+  assert.equal(input(page).value, 'ravi.k', 'the untouched field takes the saved name');
+});
+
+test('IN-06: Enter on OK is left to the button, which closes the window by its own click', () => {
+  const page = loadSettings({ username: 'ravi.k', waitIn: 7 * DAY });
+  open(page);
+  const event = fire(page.usernameWin, 'keydown', { key: 'Enter', target: okButton(page) });
+  assert.equal(event.prevented, false, 'the key is not taken, so the browser clicks OK');
+  assert.equal(page.usernameWin.hidden, false, 'the key handler itself closes nothing');
+  fire(okButton(page), 'click');
+  assert.equal(page.usernameWin.hidden, true);
+  assert.equal(page.doc.activeElement, byId(page, 'settings-username-row'));
+});
+
 test('WR-02: the fake clock really drives Date.now() inside settings.js', () => {
   const page = loadSettings({ username: 'ravi.k', waitIn: 3 * DAY });
   open(page);
