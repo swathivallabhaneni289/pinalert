@@ -89,15 +89,6 @@
     return Math.max(1, Math.floor((left + DAY_MS - 1) / DAY_MS));
   }
 
-  // daysInSentence reads the day count out of a wait sentence of the server's
-  // words; any other text answers the whole gap.
-  function daysInSentence(sentence) {
-    if (sentence.indexOf(WAIT_PREFIX) !== 0) {
-      return WAIT_GAP_DAYS;
-    }
-    var days = parseInt(sentence.slice(WAIT_PREFIX.length), 10);
-    return days >= 1 ? days : WAIT_GAP_DAYS;
-  }
 
   // Phase 7.1 plan 15 (D-07, UI-SPEC Surface 8): the Username window. Every
   // piece is optional here, so a page drawn without it (and the older test
@@ -611,11 +602,13 @@
   // with the server's own sentence. Every state still redraws Save username.
   function onUsernameChange(state, ctl) {
     if (state === 'wait' && !usernameLocked && current === 'username') {
-      // The server's own sentence locks the window now, and its day count sets the
-      // deadline for the next openings (rounded up, so it is never early).
+      // The server's own sentence locks the window open now and nothing else: its
+      // day count is rounded up, so it is no deadline, and a lock on it could outlast
+      // the real wait. The next opening follows the deadline the page holds; if the
+      // wait is not there, the live check answers wait again and locks with a fresh
+      // count (review fix WR-02, second commit).
       var sentence = String(usernameStatus.textContent || '');
       if (sentence !== '') {
-        waitUntil = Date.now() + daysInSentence(sentence) * DAY_MS;
         lockUsername(sentence, storedValue(usernameRow));
       }
     }

@@ -551,8 +551,8 @@ test('the Username window is not a login field: no autocomplete value, no passwo
 // sentence, and every opening works out the days left from it against the clock
 // the sandbox gives settings.js (page.clock.ms). The tests below that used
 // waitMessage and waitAfterChange use waitIn: 7 * DAY, or nothing, to the same
-// effect; the D11 test is unchanged because a live wait answer keeps a deadline
-// from its own day count.
+// effect. The D11 test keeps its first half; its reopen half changed (a live wait
+// answer locks only the window open now, see the Amended line on that test).
 
 const DAY = 24 * 60 * 60 * 1000;
 const SEVEN = 'You can change your username again in 7 days.';
@@ -624,6 +624,11 @@ test('an input event on the read only field sends no check and leaves the senten
   assert.equal(line(page).textContent, SEVEN);
 });
 
+// Amended 2026-11-08 (review fix WR-02, second commit): a live wait answer locks
+// the window open now and sets no deadline in the page, because its day count is
+// rounded up and a lock on it could outlast the real wait with nothing to correct
+// it. The reopen half used to expect a locked window; it now expects the usual
+// window, whose live check answers wait again and locks with a fresh count.
 test('D11: a wait answer to a typed name locks the window with the server sentence and puts the stored name back', async () => {
   const page = loadSettings({ username: 'ravi.k' });
   open(page);
@@ -633,7 +638,13 @@ test('D11: a wait answer to a typed name locks the window with the server senten
   assertLocked(page, sentence, 'ravi.k');
   fire(okButton(page), 'click');
   open(page);
-  assertLocked(page, sentence, 'ravi.k');
+  assertNormal(page);
+  assert.equal(input(page).value, 'ravi.k');
+  const checksBefore = page.checks().length;
+  page.advance(300);
+  assert.equal(page.checks().length, checksBefore + 1, 'the live check judges the stored name on the reopening');
+  await typeName(page, 'ravi.kumar', 'wait', 'You can change your username again in 3 days.');
+  assertLocked(page, 'You can change your username again in 3 days.', 'ravi.k');
 });
 
 test('C9: a change saved in the page locks the next opening with the whole gap sentence, and sends no check', async () => {
@@ -947,20 +958,25 @@ test('WR-02: a window locked at load unlocks on the first opening after the wait
   assert.equal(hasClass(line(page), 'username-status--warn'), false);
 });
 
-test('WR-02: a lock from a live wait answer keeps that answer\'s day count as its deadline, so it counts down and ends', async () => {
-  const page = loadSettings({ username: 'ravi.k' });
-  open(page);
-  await typeName(page, 'ravi.kumar', 'wait', 'You can change your username again in 4 days.');
-  fire(okButton(page), 'click');
-
-  page.clock.ms += 2.5 * DAY;
-  open(page);
-  assertLocked(page, 'You can change your username again in 2 days.', 'ravi.k');
-  fire(okButton(page), 'click');
-
-  page.clock.ms += 2 * DAY;
+test('WR-02: a live wait answer sets no deadline, so a device clock a little fast cannot leave a lock past the real end', async () => {
+  // The page deadline is 10 minutes away; the device clock is 15 minutes ahead,
+  // so the window opens as usual. The server still says 1 day (rounded up from
+  // the few minutes left). That locks the window open now only.
+  const page = loadSettings({ username: 'ravi.k', waitIn: 10 * 60 * 1000 });
+  page.clock.ms += 15 * 60 * 1000;
   open(page);
   assertNormal(page);
+  await typeName(page, 'ravi.kumar', 'wait', 'You can change your username again in 1 day.');
+  assertLocked(page, 'You can change your username again in 1 day.', 'ravi.k');
+  fire(okButton(page), 'click');
+
+  // An hour on, the wait is over by any clock; the window opens as usual.
+  page.clock.ms += 60 * 60 * 1000;
+  open(page);
+  assertNormal(page);
+  const before = page.checks().length;
+  page.advance(300);
+  assert.equal(page.checks().length, before + 1, 'a check is sent, so the server can correct the page');
 });
 
 test('WR-02: a window unlocked after the wait can type, check and enable Save username again', async () => {
