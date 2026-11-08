@@ -43,6 +43,8 @@
     {{else}}
     {{if not .BlockedByYou}}
     <header id="person-header" class="person-header">
+      {{/* Quick 261108-fku (owner decision 2026-11-08): the band across the top on the laptop. On the phone this wrapper and the record wrapper take display contents, so the column is what it was. The DOM keeps the phone's reading order: identity, record, counts, actions, rating, error line. */}}
+      <div id="person-band" class="person-band">
       <div class="person-ident">
         <span id="person-disc" class="person-disc" aria-hidden="true">{{.Profile.Initial}}</span>
         <div class="person-ident__text">
@@ -52,6 +54,7 @@
           {{if .Profile.Name}}<p id="person-name" class="person-name">{{.Profile.Name}}</p>{{end}}
         </div>
       </div>
+      <div id="person-record" class="person-record">
       {{if .Profile.StarsNumber}}
       <div id="person-stars" class="person-stars" role="group" aria-label="{{.Profile.StarsLabel}}">
         <span class="person-stars__icon" aria-hidden="true"></span>
@@ -69,6 +72,7 @@
       {{if .Profile.HomeAreaName}}
       <p id="person-home-area" class="person-meta person-meta--area"><span class="app-icon app-icon--map-pin person-meta__icon" aria-hidden="true"></span><span>{{.Profile.HomeAreaName}}</span></p>
       {{end}}
+      </div>
       <div class="person-counts">
         <button type="button" id="person-followers-button" class="person-count" aria-haspopup="dialog" aria-label="{{.Profile.FollowersText}}"><span id="person-followers-count" class="person-count__number">{{.Profile.FollowersCount}}</span> <span id="person-followers-word" class="person-count__word">{{.Profile.FollowersWord}}</span></button>
         <button type="button" id="person-following-button" class="person-count" aria-haspopup="dialog" aria-label="{{.Profile.FollowingText}}"><span id="person-following-count" class="person-count__number">{{.Profile.FollowingCount}}</span> <span id="person-following-word" class="person-count__word">{{.Profile.FollowingWord}}</span></button>
@@ -77,7 +81,6 @@
       <div id="person-actions" class="person-actions">
         <a id="person-edit" class="btn" href="/settings">Edit in Settings</a>
       </div>
-      <p id="person-state-line" class="person-state-line" role="status">{{.Profile.StateLine}}</p>
       {{else}}
       {{/* Follow and Following are both drawn and the server hides the one that does not apply, so the script only toggles the hidden flags and moves no markup. */}}
       <div id="person-actions" class="person-actions">
@@ -99,6 +102,11 @@
       {{end}}
       {{end}}
       <p id="person-action-error" class="inline-error" role="alert" hidden></p>
+      </div>
+      {{if .Profile.IsSelf}}
+      {{/* Quick 261108-fku (owner decision 2026-11-08, D5): the state line sits directly under the band, outside it. */}}
+      <p id="person-state-line" class="person-state-line" role="status">{{.Profile.StateLine}}</p>
+      {{end}}
     </header>
 
     <section id="person-reports-section" class="person-reports" aria-labelledby="person-reports-title">

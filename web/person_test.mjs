@@ -104,12 +104,18 @@ function load({ route, online = true, dialogSupport = true, followsYou = true, r
   add('notice-live');
   const header = add('person-header');
   add('person-reports-section');
+  // Amended 2026-11-08 by quick 261108-fku (owner decision 2026-11-08): the
+  // action error line and the rating box sit in the band inside the header, as
+  // the page now draws them, so the band is their parent and not the header.
+  const bandNode = add('person-band');
+  header.children.push(bandNode);
+  bandNode.parentNode = header;
   const actionError = add('person-action-error', { hidden: true });
-  header.children.push(actionError);
-  actionError.parentNode = header;
+  bandNode.children.push(actionError);
+  actionError.parentNode = bandNode;
   if (rating) {
     const box = add('person-rating', { attrs: { 'data-your-rating': String(rating.yours) } });
-    header.insertBefore(box, actionError);
+    bandNode.insertBefore(box, actionError);
   }
   // The stars group and the tag group sit in a body of their own (not in the
   // header), as the page draws them. A group built by the script is found by
@@ -501,7 +507,9 @@ test('the star control mounts when the server drew the rating box, with the serv
 test('no rating box from the server means no control and nothing explaining why', () => {
   const m = load({ route: RATE_ROUTE(PROFILE_FOLLOWING) });
   assert.equal(m.els['person-rating'], undefined);
-  assert.equal(m.els['person-header'].children.length, 1, 'only the action error line is in the header');
+  // Amended 2026-11-08 by quick 261108-fku (owner decision 2026-11-08): the band
+  // holds the action error line now, so its children are counted.
+  assert.equal(m.els['person-band'].children.length, 1, 'only the action error line is in the band');
   assert.equal(m.els['person-action-error'].hidden, true);
 });
 
@@ -573,11 +581,14 @@ test('a refetch that turns may_rate true on a page with no box builds the box ab
   const m = load({ route: FOLLOW_ROUTE({ ...PROFILE_FOLLOWING, may_rate: true, your_rating: 0 }) });
   m.click('person-follow');
   await flush();
-  const header = m.els['person-header'];
-  assert.equal(header.children.length, 2);
-  const host = header.children[0];
+  // Amended 2026-11-08 by quick 261108-fku (owner decision 2026-11-08): the box
+  // is built in the band, right before the action error line, not in the header.
+  const band = m.els['person-band'];
+  assert.equal(band.children.length, 2);
+  const host = band.children[0];
   assert.equal(host.id, 'person-rating');
-  assert.equal(header.children[1], m.els['person-action-error']);
+  assert.equal(band.children[1], m.els['person-action-error']);
+  assert.equal(m.els['person-header'].children.length, 1, 'the header holds only the band');
   assert.equal(host.children[0].id, 'fieldset');
 });
 

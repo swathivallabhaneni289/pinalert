@@ -447,3 +447,78 @@ func TestPersonPageServerErrorIsAFramedState(t *testing.T) {
 		}
 	}
 }
+
+// fkuDivBlock returns the element opened by the div with this id, cut out by
+// counting nested div tags from its opening tag to the matching close, and the
+// rest of the page after it.
+func fkuDivBlock(t *testing.T, body, id string) (string, string) {
+	t.Helper()
+	open := strings.Index(body, `<div id="`+id+`"`)
+	if open < 0 {
+		t.Fatalf("no div with id %s on the page", id)
+	}
+	depth := 0
+	re := regexp.MustCompile(`<div[\s>]|</div>`)
+	for _, loc := range re.FindAllStringIndex(body[open:], -1) {
+		if body[open+loc[0]:open+loc[0]+2] == "</" {
+			depth--
+		} else {
+			depth++
+		}
+		if depth == 0 {
+			end := open + loc[1]
+			return body[open:end], body[end:]
+		}
+	}
+	t.Fatalf("the div %s is never closed", id)
+	return "", ""
+}
+
+// TestPersonPageBand pins Quick 261108-fku (owner decision 2026-11-08): the
+// header holds one band with the identity, the record, the counts, the actions
+// and the action error line; on your own page the state line is after the band
+// and before the closing header tag, never inside it.
+func TestPersonPageBand(t *testing.T) {
+	srv, mailer, pool := p907Server(t)
+	viewer, _ := p907Person(t, srv, mailer, pool, "fku-band-viewer@example.com", "band_viewer", false)
+	owner, _ := p907Reporter(t, srv, mailer, pool, "fku-band-owner@example.com", "band_owner")
+
+	common := []string{
+		`id="person-disc"`, `<h1 id="person-username"`, `id="person-record"`,
+		`id="person-followers-button"`, `id="person-following-button"`,
+		`id="person-actions"`, `id="person-action-error"`,
+	}
+
+	status, other, _ := p907Do(t, viewer, http.MethodGet, srv.URL+"/u/band_owner", "")
+	if status != http.StatusOK {
+		t.Fatalf("GET /u/band_owner: status = %d, body %s", status, other)
+	}
+	band, _ := fkuDivBlock(t, other, "person-band")
+	for _, want := range append(append([]string{}, common...), `id="person-follow"`, `id="person-more-menu"`) {
+		if !strings.Contains(band, want) {
+			t.Errorf("someone else's page: the band lacks %s", want)
+		}
+	}
+	if strings.Contains(band, `id="person-state-line"`) {
+		t.Errorf("someone else's page draws the state line")
+	}
+
+	status, own, _ := p907Do(t, owner, http.MethodGet, srv.URL+"/u/band_owner", "")
+	if status != http.StatusOK {
+		t.Fatalf("GET own /u/band_owner: status = %d, body %s", status, own)
+	}
+	band, after := fkuDivBlock(t, own, "person-band")
+	for _, want := range append(append([]string{}, common...), `id="person-edit"`) {
+		if !strings.Contains(band, want) {
+			t.Errorf("your own page: the band lacks %s", want)
+		}
+	}
+	if strings.Contains(band, `id="person-state-line"`) {
+		t.Errorf("your own page draws the state line inside the band")
+	}
+	stateAt := strings.Index(after, `id="person-state-line"`)
+	headerEnd := strings.Index(after, "</header>")
+	if stateAt < 0 || headerEnd < 0 || stateAt > headerEnd {
+		t.Errorf("your own page: the state line is not after the band and before the closing header tag (state %d, header end %d)", stateAt, headerEnd)
+	}
+}

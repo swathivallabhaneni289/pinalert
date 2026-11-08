@@ -279,11 +279,13 @@ window.PinalertPerson = (function () {
       control.set(yours);
       return;
     }
-    if (!els.rating && els.header && els.error) {
+    // Quick 261108-fku (owner decision 2026-11-08): the error line now sits in the
+    // band, not straight in the header, so the box goes in beside it wherever it is.
+    if (!els.rating && els.error && els.error.parentNode) {
       var host = document.createElement('div');
       host.id = 'person-rating';
       host.className = 'person-rating';
-      els.header.insertBefore(host, els.error);
+      els.error.parentNode.insertBefore(host, els.error);
       els.rating = host;
     }
     mountRating(yours);
