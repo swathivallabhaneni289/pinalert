@@ -144,6 +144,7 @@
   // usernameLocked is true while the window is drawn locked (read only, the wait
   // sentence, OK in place of Save username).
   var usernameLocked = false;
+  var lockedSentence = '';
 
   var nameRow = el('settings-name-row');
   var nameValue = el('settings-name-value');
@@ -486,6 +487,11 @@
     }
     target.win.hidden = false;
     lockPage(target.win);
+    if (which === 'username' && usernameLocked) {
+      // Review fix WR-01: the sentence goes in after the window is shown, so the
+      // status line announces it, and before focus reaches OK, which it describes.
+      showWaitSentence(lockedSentence);
+    }
     var focusTarget = which === 'username' ? usernameInput : (which === 'name' ? nameInput : homeInput);
     // A locked Username window puts focus on OK, the one action (Quick 261108-fku).
     if (which === 'username' && usernameLocked && usernameOk) {
@@ -608,31 +614,47 @@
     updateUsernameSave(state, ctl);
   }
 
+  // showWaitSentence writes the wait sentence into the status line with the wait
+  // look. It is written through the check (hold) so the status line's classes stay
+  // owned by username-check.js.
+  function showWaitSentence(sentence) {
+    if (usernameCheck !== null && typeof usernameCheck.hold === 'function') {
+      usernameCheck.hold(sentence);
+    } else {
+      setText(usernameStatus, sentence);
+    }
+  }
+
   // lockUsername draws the window for the rename wait: the stored name in a read
-  // only field, the server's sentence in the status line with the wait look, the
-  // help line as it is, Save username hidden and one OK button. The field is made
-  // read only before the live check is attached, so the check never judges it, and
-  // the sentence is written through the check (hold) so the status line's classes
-  // stay owned by username-check.js. Nothing is saved from this state.
+  // only field, the sentence in the status line with the wait look, the help line
+  // as it is, Save username hidden and one OK button. The field is made read only
+  // before the live check is attached, so the check never judges it. Nothing is
+  // saved from this state.
+  // Review fix WR-01: a screen reader does not announce a live region that changes
+  // while its window is hidden. So on an opening (the window still hidden) the
+  // status line is cleared here and openWindow writes the sentence once the window
+  // is shown; a window already open (a wait answer while it is open) gets the
+  // sentence at once.
   function lockUsername(sentence) {
     usernameLocked = true;
+    lockedSentence = sentence;
     usernameFilled = storedValue(usernameRow);
     usernameInput.value = usernameFilled;
     usernameInput.setAttribute('readonly', '');
     usernameInput.setAttribute('aria-readonly', 'true');
     attachUsernameCheck();
-    if (usernameCheck !== null && typeof usernameCheck.hold === 'function') {
-      usernameCheck.hold(sentence);
+    if (usernameWin.hidden) {
+      setText(usernameStatus, '');
     } else {
-      setText(usernameStatus, sentence);
+      showWaitSentence(sentence);
     }
     usernameSave.hidden = true;
     if (usernameOk) {
       usernameOk.hidden = false;
     }
     hideLine(usernameError);
-    // A window already open (a wait answer while it is open) moves focus to OK;
-    // an opening focuses it once the window is shown.
+    // A window already open moves focus to OK; an opening focuses it once the
+    // window is shown.
     if (!usernameWin.hidden) {
       (usernameOk || usernameInput).focus();
     }

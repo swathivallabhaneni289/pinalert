@@ -703,6 +703,56 @@ function assertNormal(page) {
   assert.equal(page.doc.activeElement, input(page));
 }
 
+// ---- Review fix WR-01: a locked opening says the wait sentence out loud ------
+
+// watchAnnounce records what the status line held the moment the window was
+// shown, and every write to it with whether the window was hidden at the time.
+function watchAnnounce(page) {
+  const win = page.usernameWin;
+  const seen = { atShow: [], writes: [] };
+  const hiddenDesc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(win), 'hidden');
+  Object.defineProperty(win, 'hidden', {
+    get() { return hiddenDesc.get.call(this); },
+    set(v) {
+      if (!v) { seen.atShow.push(line(page).textContent); }
+      hiddenDesc.set.call(this, v);
+    }
+  });
+  const status = line(page);
+  const textDesc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(status), 'textContent');
+  Object.defineProperty(status, 'textContent', {
+    get() { return textDesc.get.call(this); },
+    set(v) { seen.writes.push({ text: String(v), winHidden: win.hidden }); textDesc.set.call(this, v); }
+  });
+  return seen;
+}
+
+test('WR-01: when the window opens locked the wait sentence is written after it is shown, never while it is hidden', () => {
+  const page = loadSettings({ username: 'ravi.k', waitIn: 7 * DAY });
+  const seen = watchAnnounce(page);
+  for (let opening = 1; opening <= 3; opening++) {
+    seen.atShow.length = 0;
+    seen.writes.length = 0;
+    open(page);
+    assertLocked(page, SEVEN, 'ravi.k');
+    assert.deepEqual(seen.atShow, [''], 'opening ' + opening + ': the line is empty at the moment the window is shown, so writing the sentence is a change');
+    const sentenceWrites = seen.writes.filter((w) => w.text === SEVEN);
+    assert.ok(sentenceWrites.length >= 1, 'opening ' + opening + ': the sentence is written');
+    assert.ok(sentenceWrites.every((w) => w.winHidden === false), 'opening ' + opening + ': the sentence is never written into a hidden window');
+    fire(okButton(page), 'click');
+  }
+});
+
+test('WR-01: a wait answer while the window is open writes the sentence at once, and the normal opening is unchanged', async () => {
+  const page = loadSettings({ username: 'ravi.k' });
+  const seen = watchAnnounce(page);
+  open(page);
+  assert.equal(seen.writes.some((w) => w.text === SEVEN), false);
+  await typeName(page, 'ravi.kumar', 'wait', 'You can change your username again in 4 days.');
+  const write = seen.writes.filter((w) => w.text === 'You can change your username again in 4 days.');
+  assert.ok(write.length >= 1 && write.every((w) => w.winHidden === false));
+});
+
 test('WR-02: the fake clock really drives Date.now() inside settings.js', () => {
   const page = loadSettings({ username: 'ravi.k', waitIn: 3 * DAY });
   open(page);

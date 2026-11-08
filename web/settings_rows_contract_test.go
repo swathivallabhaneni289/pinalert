@@ -918,7 +918,9 @@ func TestSettingsUsernameRow(t *testing.T) {
 	}
 	// OK: one hidden primary button after Save username, in the actions.
 	okTag := openingTagOf(t, page, "settings-username-ok")
-	for _, want := range []string{`type="button"`, `class="btn btn--primary"`, ` hidden`} {
+	// Review fix WR-01: focus lands on OK when the window opens locked, so OK is
+	// described by the status line that holds the wait sentence.
+	for _, want := range []string{`type="button"`, `class="btn btn--primary"`, ` hidden`, `aria-describedby="settings-username-status"`} {
 		if !strings.Contains(okTag, want) {
 			t.Errorf("the OK button lacks %s: %s", want, okTag)
 		}
