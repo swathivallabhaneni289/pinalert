@@ -753,6 +753,27 @@ test('WR-01: a wait answer while the window is open writes the sentence at once,
   assert.ok(write.length >= 1 && write.every((w) => w.winHidden === false));
 });
 
+// ---- Review fix IN-02: a lock with no sentence does nothing ------------------
+
+test('IN-02: a wait answer that leaves the status line empty does not half lock the window', async () => {
+  const page = loadSettings({ username: 'ravi.k' });
+  let onChange = null;
+  const ctl = { isGood: () => false, state: () => 'wait', refresh() {}, cancel() {}, hold() { throw new Error('hold must not run'); }, name: () => '' };
+  page.sandbox.PinalertUsernameCheck = { attach(inputEl, lineEl, options) { onChange = options.onChange; return ctl; } };
+  open(page);
+  assertNormal(page);
+  assert.equal(line(page).textContent, '');
+  onChange('wait', ctl);
+  assertNormal(page);
+  assert.equal(isReadOnly(page), false);
+  assert.equal(isOff(page), true, 'Save username is drawn off, as for any wait answer');
+  fire(page.usernameWin, 'keydown', { key: 'Enter', target: input(page) });
+  assert.equal(page.usernameWin.hidden, false, 'Enter is not taken as a locked window Enter');
+  fire(byId(page, 'settings-username-close'), 'click');
+  open(page);
+  assertNormal(page);
+});
+
 test('WR-02: the fake clock really drives Date.now() inside settings.js', () => {
   const page = loadSettings({ username: 'ravi.k', waitIn: 3 * DAY });
   open(page);

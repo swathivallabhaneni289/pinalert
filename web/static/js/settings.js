@@ -608,8 +608,10 @@
       // The server's own sentence locks the window now, and its day count sets the
       // deadline for the next openings (rounded up, so it is never early).
       var sentence = String(usernameStatus.textContent || '');
-      waitUntil = Date.now() + daysInSentence(sentence) * DAY_MS;
-      lockUsername(sentence);
+      if (sentence !== '') {
+        waitUntil = Date.now() + daysInSentence(sentence) * DAY_MS;
+        lockUsername(sentence);
+      }
     }
     updateUsernameSave(state, ctl);
   }
@@ -636,6 +638,12 @@
   // is shown; a window already open (a wait answer while it is open) gets the
   // sentence at once.
   function lockUsername(sentence) {
+    // Review fix IN-02: a lock with no sentence is a no-op, so the window is never
+    // left half locked (read only, no Save, no way to say why). The live check
+    // never shows an empty wait line, so this is a guard, not a path.
+    if (sentence === '') {
+      return;
+    }
     usernameLocked = true;
     lockedSentence = sentence;
     usernameFilled = storedValue(usernameRow);
