@@ -876,8 +876,12 @@ func TestSettingsUsernameRow(t *testing.T) {
 	}
 
 	win := settingsWindowRegion(t, page, "settings-username-window")
-	if !strings.Contains(page, `id="settings-username-window" hidden>`) {
-		t.Errorf("the Username window is not hidden at load")
+	// Amended 2026-11-08 by quick 261108-fku (owner decision 2026-11-08): the
+	// window's opening tag ends with hidden and then the server's wait sentence
+	// (only inside the 7 day rename gap) and the whole gap sentence the page uses
+	// after a change saved in it.
+	if !strings.Contains(page, `id="settings-username-window" hidden{{if .UsernameWait}} data-wait-message="{{.UsernameWait}}"{{end}} data-wait-after-change="{{.UsernameWaitAfterChange}}">`) {
+		t.Errorf("the Username window is not hidden at load, or lacks the conditional data-wait-message and the data-wait-after-change attributes after hidden")
 	}
 	for _, want := range []string{
 		`role="dialog"`, `aria-modal="true"`, `aria-labelledby="settings-username-title"`, `class="app-window__title"`, ">Username</h2>",
@@ -896,11 +900,28 @@ func TestSettingsUsernameRow(t *testing.T) {
 		t.Errorf("the Username window has %d controls named Close, want exactly 1 (the X)", got)
 	}
 	lower := strings.ToLower(win)
+	// Amended 2026-11-08 by quick 261108-fku (owner decision 2026-11-08): the X is
+	// the only way to close outside the rename wait; inside the wait the window
+	// opens read only with one OK button that closes it like the X.
 	for _, banned := range []string{">cancel<", ">done<", "backdrop", "autofocus"} {
 		if strings.Contains(lower, banned) {
-			t.Errorf("the Username window holds %q; the X is the only way to close", banned)
+			t.Errorf("the Username window holds %q; the X is the only way to close outside the wait and OK closes inside it", banned)
 		}
 	}
+	// OK: one hidden primary button after Save username, in the actions.
+	okTag := openingTagOf(t, page, "settings-username-ok")
+	for _, want := range []string{`type="button"`, `class="btn btn--primary"`, ` hidden`} {
+		if !strings.Contains(okTag, want) {
+			t.Errorf("the OK button lacks %s: %s", want, okTag)
+		}
+	}
+	if got := strings.Count(win, `id="settings-username-ok"`); got != 1 {
+		t.Errorf("the Username window has %d OK buttons, want 1", got)
+	}
+	if got := strings.Count(win, ">OK</button>"); got != 1 {
+		t.Errorf("the Username window has %d buttons reading OK, want 1", got)
+	}
+	p421InOrder(t, "Username window actions", win, `id="settings-username-save"`, `id="settings-username-ok"`)
 
 	// Save username: switched off by aria-disabled and btn--off, not by disabled.
 	saveTag := openingTagOf(t, page, "settings-username-save")

@@ -79,6 +79,10 @@ function setup(options = {}) {
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox, { filename: 'username-check.js' });
   const input = new FakeInput();
+  // Amended 2026-11-08 by quick 261108-fku (owner decision 2026-11-08): a test may
+  // draw the field read only before the script attaches, as the locked Settings
+  // window does.
+  if (options.readonly) { input.setAttribute('readonly', ''); }
   const line = new FakeLine();
   const requests = [];
   const changes = [];
@@ -548,4 +552,60 @@ test('WR-B03: a check that never settles ends as failed after 10 s; one answered
   await flush();
   assert.equal(quick.control.state(), 'available', 'no leftover limit marks a good answer failed');
   assert.equal(quick.timers.size, 0);
+});
+
+// Quick 261108-fku (owner decision 2026-11-08): the locked Username window of
+// Settings. hold(message) shows a wait sentence the page already has and drops
+// anything due; a read only field is never judged.
+test('hold shows the sentence in the wait look, drops a check that is due and never counts as good', async () => {
+  const page = setup({ mode: 'settings' });
+  page.input.type('ravi.kumar');
+  assert.equal(page.control.state(), 'checking');
+  const sentence = 'You can change your username again in 7 days.';
+  page.control.hold(sentence);
+  page.advance(1000);
+  await flush();
+  assert.equal(page.requests.length, 0, 'the check that was due is dropped');
+  assert.equal(page.line.textContent, sentence);
+  assert.equal(page.line.hasClass('username-status--warn'), true);
+  assert.equal(page.control.state(), 'wait');
+  assert.equal(page.control.isGood(), false);
+  assert.equal(page.changes[page.changes.length - 1], 'wait', 'the page is told');
+});
+
+test('hold drops an answer that is still out', async () => {
+  const page = setup({ mode: 'settings' });
+  page.input.type('ravi.kumar');
+  page.advance(300);
+  assert.equal(page.requests.length, 1);
+  page.control.hold('You can change your username again in 3 days.');
+  reply(page.requests[0], 200, { state: 'available', message: 'ravi.kumar is available.' });
+  await flush();
+  assert.equal(page.control.state(), 'wait');
+  assert.equal(page.control.isGood(), false);
+  assert.equal(page.line.textContent, 'You can change your username again in 3 days.');
+});
+
+test('a read only field is not judged at attach and an input event on it sends nothing', async () => {
+  const page = setup({ mode: 'settings', readonly: true });
+  assert.equal(page.line.textContent, '', 'attach leaves the line alone');
+  assert.equal(page.changes.length, 0);
+  page.input.type('ravi.kumar');
+  page.advance(1000);
+  await flush();
+  assert.equal(page.requests.length, 0);
+  assert.equal(page.line.textContent, '');
+  assert.equal(page.timers.size, 0);
+});
+
+test('a paste into a read only field is left to the browser', () => {
+  const page = setup({ mode: 'settings', readonly: true });
+  let prevented = false;
+  (page.input.handlers.paste || []).forEach((h) => h({
+    clipboardData: { getData: () => 'ravi.k' },
+    preventDefault() { prevented = true; }
+  }));
+  assert.equal(prevented, false);
+  assert.equal(page.input.value, '');
+  assert.equal(page.requests.length, 0);
 });

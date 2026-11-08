@@ -39,6 +39,15 @@ type settingsViewModel struct {
 	// the Settings page shows it and offers the change window, drawn by plan
 	// 15. html/template escapes it.
 	Username string
+	// UsernameWait is the server's wait sentence while this account is inside the
+	// 7 day rename gap, and empty outside it. The Username window opens read only
+	// with this sentence and one OK button when it is set. It carries only a day
+	// count, never the change time. Quick 261108-fku (owner decision 2026-11-08).
+	UsernameWait string
+	// UsernameWaitAfterChange is the sentence for the whole gap. The window uses it
+	// to lock on the next opening after a change saved in the page, with no
+	// reload. Quick 261108-fku (owner decision 2026-11-08).
+	UsernameWaitAfterChange string
 	// Legal is the text of the in app reader window opened from the About
 	// Pinalert rows (D-31). It holds nothing about the account (R-07).
 	Legal LegalText
@@ -173,6 +182,10 @@ func SettingsPage(tmpl *template.Template, accounts *service.AccountService, mut
 		if profile.Username != nil {
 			vm.Username = *profile.Username
 		}
+		// Quick 261108-fku (owner decision 2026-11-08): the rename wait, from the
+		// profile already read, on the service clock. No new read.
+		vm.UsernameWait = accounts.UsernameWaitLine(profile)
+		vm.UsernameWaitAfterChange = service.UsernameWaitAfterChangeMessage()
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")

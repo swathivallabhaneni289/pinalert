@@ -502,3 +502,32 @@ func TestUsernamesFor(t *testing.T) {
 		}
 	})
 }
+
+// TestUsernameWaitLine pins Quick 261108-fku (owner decision 2026-11-08): the
+// wait sentence the Settings page renders for the caller's own account, read on
+// the service clock with no store read. It is empty outside the rename gap, and
+// the day count rounds up the way the live check and the save path round it.
+func TestUsernameWaitLine(t *testing.T) {
+	svc := service.NewAccountService(nil, service.WithAccountClock(func() time.Time { return usernameNow }))
+	ago := func(d time.Duration) *time.Time { at := usernameNow.Add(-d); return &at }
+	cases := []struct {
+		name string
+		p    service.AccountProfile
+		want string
+	}{
+		{"changed an hour ago", service.AccountProfile{Username: strp("ravi.k"), UsernameChangedAt: ago(time.Hour)}, "You can change your username again in 7 days."},
+		{"changed 6 days and an hour ago", service.AccountProfile{Username: strp("ravi.k"), UsernameChangedAt: ago(6*24*time.Hour + time.Hour)}, "You can change your username again in 1 day."},
+		{"changed exactly 7 days ago", service.AccountProfile{Username: strp("ravi.k"), UsernameChangedAt: ago(7 * 24 * time.Hour)}, ""},
+		{"changed 8 days ago", service.AccountProfile{Username: strp("ravi.k"), UsernameChangedAt: ago(8 * 24 * time.Hour)}, ""},
+		{"no change time", service.AccountProfile{Username: strp("ravi.k")}, ""},
+		{"no username even with a change time", service.AccountProfile{UsernameChangedAt: ago(time.Hour)}, ""},
+	}
+	for _, c := range cases {
+		if got := svc.UsernameWaitLine(c.p); got != c.want {
+			t.Errorf("%s: UsernameWaitLine = %q, want %q", c.name, got, c.want)
+		}
+	}
+	if got := service.UsernameWaitAfterChangeMessage(); got != "You can change your username again in 7 days." {
+		t.Errorf("UsernameWaitAfterChangeMessage = %q", got)
+	}
+}

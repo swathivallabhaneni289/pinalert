@@ -23,6 +23,11 @@
 //                         with the stored name; step 4 is drawn with one).
 //   cancel()              stops a check that is due and drops one still out
 //                         (Settings calls it when its window shuts).
+//   hold(message)         shows a wait sentence the page already has and drops
+//                         anything due or still out; isGood() is false and
+//                         state() is wait. The input of a read only field is
+//                         never judged (Quick 261108-fku, owner decision
+//                         2026-11-08: the Settings window inside the rename wait).
 //
 // options: {mode: 'signup' | 'settings' (default 'signup'), debounceMs (300),
 // onChange(state, controller), setTimer, clearTimer, fetchFn}. The timers and the
@@ -261,6 +266,12 @@
       });
     }
 
+    // isReadOnly is true while the field carries the readonly attribute. It is read
+    // through getAttribute, which the test fakes and every browser answer.
+    function isReadOnly() {
+      return typeof input.getAttribute === 'function' && input.getAttribute('readonly') !== null;
+    }
+
     // caretOf is where the caret is while the person is in the input, or null
     // (not focused, or a browser that does not say).
     function caretOf() {
@@ -285,6 +296,10 @@
     // text loses its own spaces round it and its leading @, goes where the caret
     // is, and the whole value is folded, cut and judged (review fix IN-B04).
     function onPaste(e) {
+      // Quick 261108-fku (owner decision 2026-11-08): a read only field takes no paste.
+      if (isReadOnly()) {
+        return;
+      }
       var data = e && e.clipboardData;
       var pasted = data && typeof data.getData === 'function' ? data.getData('text') : '';
       if (!pasted) {
@@ -312,6 +327,12 @@
     // judge looks at the value in the input: folds it, shows the local rule, or
     // shows Checking and starts the pause before the request.
     function judge() {
+      // Quick 261108-fku (owner decision 2026-11-08): the input of a read only field
+      // (the Settings window inside the rename wait) is never judged, so no check is
+      // sent and the line the page wrote stays.
+      if (isReadOnly()) {
+        return;
+      }
       seq += 1;
       retries = 0;
       cancelPending();
@@ -370,6 +391,16 @@
         show('refused', String(message === null || message === undefined ? '' : message));
       },
       refresh: judge,
+      // hold shows a wait sentence the page already has (Quick 261108-fku, owner
+      // decision 2026-11-08) in the wait look and drops anything due or still out,
+      // so isGood() is false and state() is wait. The status line's classes stay
+      // owned by this script.
+      hold: function (message) {
+        seq += 1;
+        retries = 0;
+        cancelPending();
+        show('wait', String(message === null || message === undefined ? '' : message));
+      },
       // cancel stops a check that is due and drops the answer of one still out,
       // so a shut window spends none of the account's allowance (review fix
       // IN-B05). The line keeps what it shows; the next refresh judges again.
