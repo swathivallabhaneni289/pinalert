@@ -145,6 +145,12 @@
   // sentence, OK in place of Save username).
   var usernameLocked = false;
   var lockedSentence = '';
+  // usernameConfirmed is the username the server last confirmed: the name the page
+  // was drawn with, then the name a save in this page came back with (review fix
+  // IN-03). A locked opening shows it. A lock that comes from a live wait answer
+  // keeps what the row shows instead, because the answer says nothing new about
+  // the name.
+  var usernameConfirmed = hasUsername ? storedValue(usernameRow) : '';
 
   var nameRow = el('settings-name-row');
   var nameValue = el('settings-name-value');
@@ -453,7 +459,7 @@
       var daysLeft = waitDaysLeft();
       if (daysLeft > 0) {
         // Inside the rename wait: read only, the sentence for the days left, OK.
-        lockUsername(waitSentence(daysLeft));
+        lockUsername(waitSentence(daysLeft), usernameConfirmed);
       } else {
         if (usernameLocked) {
           // The wait ended since the window last opened: the usual window again.
@@ -610,7 +616,7 @@
       var sentence = String(usernameStatus.textContent || '');
       if (sentence !== '') {
         waitUntil = Date.now() + daysInSentence(sentence) * DAY_MS;
-        lockUsername(sentence);
+        lockUsername(sentence, storedValue(usernameRow));
       }
     }
     updateUsernameSave(state, ctl);
@@ -637,7 +643,7 @@
   // status line is cleared here and openWindow writes the sentence once the window
   // is shown; a window already open (a wait answer while it is open) gets the
   // sentence at once.
-  function lockUsername(sentence) {
+  function lockUsername(sentence, name) {
     // Review fix IN-02: a lock with no sentence is a no-op, so the window is never
     // left half locked (read only, no Save, no way to say why). The live check
     // never shows an empty wait line, so this is a guard, not a path.
@@ -646,7 +652,7 @@
     }
     usernameLocked = true;
     lockedSentence = sentence;
-    usernameFilled = storedValue(usernameRow);
+    usernameFilled = name;
     usernameInput.value = usernameFilled;
     usernameInput.setAttribute('readonly', '');
     usernameInput.setAttribute('aria-readonly', 'true');
@@ -752,6 +758,7 @@
       var stored = answer.body && typeof answer.body.username === 'string' && answer.body.username !== '' ? answer.body.username : wanted;
       var before = storedValue(usernameRow);
       setRow(usernameRow, usernameValue, stored);
+      usernameConfirmed = stored;
       // Quick 261108-fku (owner decision 2026-11-08, C9; review fix WR-02): a name
       // that replaced an earlier one starts the wait, so the deadline in the page
       // is now plus the whole gap and the next opening is locked without a reload.
@@ -764,7 +771,7 @@
         closeWindow('username', true);
       } else if (current === 'username' && waitDaysLeft() > 0) {
         // A save from an earlier opening landed in the window open now: it locks.
-        lockUsername(waitSentence(waitDaysLeft()));
+        lockUsername(waitSentence(waitDaysLeft()), stored);
       } else if (current === 'username' && usernameInput.value === usernameFilled) {
         // A save from an earlier opening landed in the window open now: the
         // untouched field takes the saved name (like the Name window).

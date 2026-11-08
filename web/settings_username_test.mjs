@@ -774,6 +774,36 @@ test('IN-02: a wait answer that leaves the status line empty does not half lock 
   assertNormal(page);
 });
 
+// ---- Review fix IN-03: which name a locked field shows ------------------------
+
+test('IN-03: a locked opening shows the name the server last confirmed, and a live wait answer keeps what the row shows', async () => {
+  // At load the confirmed name is the one the page was drawn with.
+  const page = loadSettings({ username: 'ravi.k', waitIn: 7 * DAY });
+  byId(page, 'settings-username-row').setAttribute('data-value', 'drifted.row');
+  open(page);
+  assert.equal(input(page).value, 'ravi.k', 'the page was drawn with ravi.k, whatever the row attribute says now');
+  fire(okButton(page), 'click');
+
+  // After a save in the page the confirmed name is the saved one.
+  const second = loadSettings({ username: 'ravi.k' });
+  open(second);
+  await typeName(second, 'ravi.kumar');
+  fire(byId(second, 'settings-username-form'), 'submit');
+  answer(second.saves()[0], 200, { username: 'ravi.kumar', display_name: null, home_area_name: null });
+  await flush();
+  byId(second, 'settings-username-row').setAttribute('data-value', 'drifted.row');
+  open(second);
+  assertLocked(second, SEVEN, 'ravi.kumar');
+  fire(okButton(second), 'click');
+
+  // A lock from a live wait answer keeps what the row shows.
+  const third = loadSettings({ username: 'ravi.k' });
+  open(third);
+  byId(third, 'settings-username-row').setAttribute('data-value', 'row.shows');
+  await typeName(third, 'ravi.kumar', 'wait', 'You can change your username again in 4 days.');
+  assertLocked(third, 'You can change your username again in 4 days.', 'row.shows');
+});
+
 test('WR-02: the fake clock really drives Date.now() inside settings.js', () => {
   const page = loadSettings({ username: 'ravi.k', waitIn: 3 * DAY });
   open(page);
