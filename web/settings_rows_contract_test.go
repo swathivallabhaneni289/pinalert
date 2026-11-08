@@ -880,8 +880,16 @@ func TestSettingsUsernameRow(t *testing.T) {
 	// window's opening tag ends with hidden and then the server's wait sentence
 	// (only inside the 7 day rename gap) and the whole gap sentence the page uses
 	// after a change saved in it.
-	if !strings.Contains(page, `id="settings-username-window" hidden{{if .UsernameWait}} data-wait-message="{{.UsernameWait}}"{{end}} data-wait-after-change="{{.UsernameWaitAfterChange}}">`) {
-		t.Errorf("the Username window is not hidden at load, or lacks the conditional data-wait-message and the data-wait-after-change attributes after hidden")
+	// Amended again 2026-11-08 by the review fix WR-02: the tag ends with hidden and
+	// then the moment the wait ends (data-wait-until, only inside the gap); the two
+	// sentence attributes are gone because the page works the days left out itself.
+	if !strings.Contains(page, `id="settings-username-window" hidden{{if .UsernameWaitUntil}} data-wait-until="{{.UsernameWaitUntil}}"{{end}}>`) {
+		t.Errorf("the Username window is not hidden at load, or lacks the conditional data-wait-until attribute after hidden")
+	}
+	for _, gone := range []string{"data-wait-message", "data-wait-after-change", ".UsernameWait}}", ".UsernameWaitAfterChange"} {
+		if strings.Contains(page, gone) {
+			t.Errorf("settings.html.tmpl still holds %s, which the deadline replaced", gone)
+		}
 	}
 	for _, want := range []string{
 		`role="dialog"`, `aria-modal="true"`, `aria-labelledby="settings-username-title"`, `class="app-window__title"`, ">Username</h2>",

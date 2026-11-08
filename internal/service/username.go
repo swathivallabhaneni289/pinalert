@@ -45,14 +45,6 @@ func UsernameWaitMessage(days int) string {
 	return fmt.Sprintf("You can change your username again in %d %s.", days, unit)
 }
 
-// UsernameWaitAfterChangeMessage is the wait sentence for the whole rename gap,
-// in days. The Settings page carries it so the Username window can lock on the
-// next opening after a change saved in the page, with no reload: a change just
-// made starts a full gap. Quick 261108-fku (owner decision 2026-11-08).
-func UsernameWaitAfterChangeMessage() string {
-	return UsernameWaitMessage(int(UsernameRenameGap / (24 * time.Hour)))
-}
-
 // UsernameClass is how ClassifyUsername judges a typed username.
 type UsernameClass int
 

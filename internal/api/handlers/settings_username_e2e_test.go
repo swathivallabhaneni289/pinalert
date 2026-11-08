@@ -1,16 +1,23 @@
 // settings_username_e2e_test.go: Quick 261108-fku (owner decision 2026-11-08).
-// The Settings page carries the server's rename wait sentence on the Username
-// window while the signed in account is inside the 7 day gap, so the window can
-// open read only with one OK button. It runs through the real router over a real
-// Postgres (the disposable database the e2e harness opens).
+// The Settings page carries the moment the signed in account's 7 day rename wait
+// ends (data-wait-until on the Username window), so the window can follow the
+// real deadline and open read only with one OK button. It runs through the real
+// router over a real Postgres (the disposable database the e2e harness opens).
+//
+// Amended 2026-11-08 (review fix WR-02): the page carries the end of the wait as
+// an RFC 3339 UTC time in place of the data-wait-message and data-wait-after-change
+// sentences, so TestSettingsUsernameWaitLine became TestSettingsUsernameWaitUntil.
 package handlers_test
 
 import (
+	"context"
 	"net/http"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
+	"pinalert/internal/service"
 	"pinalert/internal/testutil"
 )
 
@@ -24,52 +31,80 @@ func fkuWindowTag(t *testing.T, body string) string {
 	return tag
 }
 
-// TestSettingsUsernameWaitLine: a first username starts no wait (no
-// data-wait-message) and the window always carries data-wait-after-change with
-// the whole gap sentence; a changed username puts the 7 days sentence on the
-// window; the day count follows the clock; the attribute goes once the gap ends.
-func TestSettingsUsernameWaitLine(t *testing.T) {
+// fkuWaitUntil returns the data-wait-until value of the window, and whether the
+// attribute is there at all.
+func fkuWaitUntil(t *testing.T, body string) (string, bool) {
+	t.Helper()
+	m := regexp.MustCompile(`data-wait-until="([^"]*)"`).FindStringSubmatch(fkuWindowTag(t, body))
+	if m == nil {
+		return "", false
+	}
+	return m[1], true
+}
+
+// TestSettingsUsernameWaitUntil: a first username starts no wait, so the window
+// carries no data-wait-until; a changed username puts the end of the wait on it,
+// which is the stored change time plus the 7 day gap as RFC 3339 UTC rounded up
+// to the second; the value follows the stored time; and the attribute is gone
+// once the gap ends. The old sentence attributes are not drawn any more.
+func TestSettingsUsernameWaitUntil(t *testing.T) {
 	srv, mailer, pool := newE2EServer(t)
 	email := "fku-wait-line@example.com"
 	client := newVerifiedClient(t, srv, mailer, email)
-	const seven = "You can change your username again in 7 days."
 
-	_, body := getPlacePage(t, client, srv.URL, "/settings")
-	tag := fkuWindowTag(t, body)
-	if strings.Contains(tag, "data-wait-message") {
-		t.Errorf("an account with no username has a wait on the window: %s", tag)
+	// wantUntil reads the stored change time and checks the page against it.
+	wantUntil := func(label string) {
+		t.Helper()
+		_, body := getPlacePage(t, client, srv.URL, "/settings")
+		got, ok := fkuWaitUntil(t, body)
+		if !ok {
+			t.Errorf("%s: the window lacks data-wait-until: %s", label, fkuWindowTag(t, body))
+			return
+		}
+		var changed time.Time
+		if err := pool.QueryRow(context.Background(), `SELECT username_changed_at FROM accounts WHERE email = $1`, email).Scan(&changed); err != nil {
+			t.Fatalf("%s: reading username_changed_at: %v", label, err)
+		}
+		want := changed.Add(service.UsernameRenameGap).UTC()
+		if want.Nanosecond() != 0 {
+			want = want.Truncate(time.Second).Add(time.Second)
+		}
+		if got != want.Format(time.RFC3339) {
+			t.Errorf("%s: data-wait-until = %q, want %q", label, got, want.Format(time.RFC3339))
+		}
+		if !strings.HasSuffix(got, "Z") {
+			t.Errorf("%s: data-wait-until %q is not UTC", label, got)
+		}
 	}
-	if !strings.Contains(tag, `data-wait-after-change="`+seven+`"`) {
-		t.Errorf("the window lacks data-wait-after-change with the 7 days sentence: %s", tag)
+	noWait := func(label string) {
+		t.Helper()
+		_, body := getPlacePage(t, client, srv.URL, "/settings")
+		if tag := fkuWindowTag(t, body); strings.Contains(tag, "data-wait") {
+			t.Errorf("%s: the window carries a wait: %s", label, tag)
+		}
 	}
+
+	noWait("an account with no username")
 
 	// A first username is free and starts no wait.
 	meWant(t, "PATCH first username", meSend(t, client, http.MethodPatch, srv.URL+"/api/me/profile",
 		`{"username":"wait_one"}`), http.StatusOK)
-	_, body = getPlacePage(t, client, srv.URL, "/settings")
-	if tag = fkuWindowTag(t, body); strings.Contains(tag, "data-wait-message") {
-		t.Errorf("a first username started a wait: %s", tag)
-	}
+	noWait("a first username")
 
 	// A different username is a change, and the wait starts.
 	meWant(t, "PATCH second username", meSend(t, client, http.MethodPatch, srv.URL+"/api/me/profile",
 		`{"username":"wait_two"}`), http.StatusOK)
-	_, body = getPlacePage(t, client, srv.URL, "/settings")
-	if tag = fkuWindowTag(t, body); !strings.Contains(tag, `data-wait-message="`+seven+`"`) {
-		t.Errorf("after a change the window lacks the 7 days wait sentence: %s", tag)
+	wantUntil("after a change")
+	_, body := getPlacePage(t, client, srv.URL, "/settings")
+	if tag := fkuWindowTag(t, body); strings.Contains(tag, "data-wait-message") || strings.Contains(tag, "data-wait-after-change") {
+		t.Errorf("the window still carries the old sentence attributes: %s", tag)
 	}
 
-	// The day count follows the stored time: 6 days and an hour ago is 1 day left.
+	// The value follows the stored time: 6 days and an hour ago.
 	testutil.MustExec(t, pool, `UPDATE accounts SET username_changed_at = now() - interval '6 days 1 hour' WHERE email = $1`, email)
-	_, body = getPlacePage(t, client, srv.URL, "/settings")
-	if tag = fkuWindowTag(t, body); !strings.Contains(tag, `data-wait-message="You can change your username again in 1 day."`) {
-		t.Errorf("6 days and an hour after the change the window lacks the 1 day sentence: %s", tag)
-	}
+	wantUntil("6 days and an hour after the change")
 
 	// Past the gap the attribute is gone.
 	testutil.MustExec(t, pool, `UPDATE accounts SET username_changed_at = now() - interval '7 days 1 minute' WHERE email = $1`, email)
-	_, body = getPlacePage(t, client, srv.URL, "/settings")
-	if tag = fkuWindowTag(t, body); strings.Contains(tag, "data-wait-message") {
-		t.Errorf("after the gap the window still carries a wait: %s", tag)
-	}
+	noWait("after the gap")
 }

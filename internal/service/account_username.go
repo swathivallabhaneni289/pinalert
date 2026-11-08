@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -37,21 +38,28 @@ const (
 // UsernameRefusedMessage.
 var ErrUsernameRefused = errors.New("service: username rejected by the text screening")
 
-// UsernameWaitLine is the caller's own wait sentence for the Settings page: the
-// rename gap sentence with the days left while the account is inside the gap,
-// and empty otherwise (no username, no recorded change, or the gap is over). It
-// reads the profile the page already has on the service clock and asks the store
-// for nothing. The save path still decides (saveUsername); this only lets the
-// Username window open locked. Quick 261108-fku (owner decision 2026-11-08).
-func (s *AccountService) UsernameWaitLine(p AccountProfile) string {
+// UsernameWaitUntil is the moment the caller's own rename wait ends, for the
+// Settings page: the last change time plus UsernameRenameGap as an RFC 3339 UTC
+// time, rounded up to the whole second so the page never opens the window before
+// the server would take a change. It is empty outside the wait (no username, no
+// recorded change, or the gap is over, decided by the same rule as
+// usernameWaitDays). It reads the profile the page already has on the service
+// clock and asks the store for nothing. The page works out the days left from it
+// on each opening; the save path still decides (saveUsername). Quick 261108-fku
+// (owner decision 2026-11-08; review fix WR-02: the lock follows the deadline).
+func (s *AccountService) UsernameWaitUntil(p AccountProfile) string {
 	if p.Username == nil || p.UsernameChangedAt == nil {
 		return ""
 	}
 	changed := pgtype.Timestamptz{Time: *p.UsernameChangedAt, Valid: true}
-	if days, wait := usernameWaitDays(changed, s.now().UTC()); wait {
-		return UsernameWaitMessage(days)
+	if _, wait := usernameWaitDays(changed, s.now().UTC()); !wait {
+		return ""
 	}
-	return ""
+	until := p.UsernameChangedAt.Add(UsernameRenameGap).UTC()
+	if until.Nanosecond() != 0 {
+		until = until.Truncate(time.Second).Add(time.Second)
+	}
+	return until.Format(time.RFC3339)
 }
 
 // UsernameCheck is the answer of the live check. Name is the normalised name

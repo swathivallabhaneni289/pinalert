@@ -73,6 +73,32 @@
     return document.getElementById(id);
   }
 
+  // waitSentence is the wait sentence for a number of days, the server's words.
+  function waitSentence(days) {
+    return WAIT_PREFIX + days + (days === 1 ? WAIT_ONE_DAY : WAIT_MANY_DAYS);
+  }
+
+  // waitDaysLeft is the whole days left until the deadline, rounded up the way
+  // usernameWaitDays rounds them and at least 1 while any time is left; 0 means
+  // the wait is over (or there is none).
+  function waitDaysLeft() {
+    var left = waitUntil - Date.now();
+    if (waitUntil <= 0 || left <= 0) {
+      return 0;
+    }
+    return Math.max(1, Math.floor((left + DAY_MS - 1) / DAY_MS));
+  }
+
+  // daysInSentence reads the day count out of a wait sentence of the server's
+  // words; any other text answers the whole gap.
+  function daysInSentence(sentence) {
+    if (sentence.indexOf(WAIT_PREFIX) !== 0) {
+      return WAIT_GAP_DAYS;
+    }
+    var days = parseInt(sentence.slice(WAIT_PREFIX.length), 10);
+    return days >= 1 ? days : WAIT_GAP_DAYS;
+  }
+
   // Phase 7.1 plan 15 (D-07, UI-SPEC Surface 8): the Username window. Every
   // piece is optional here, so a page drawn without it (and the older test
   // pages) keeps the Name and Home area windows working. The live check is the
@@ -92,16 +118,32 @@
   var usernameCheck = null;
   var savingUsername = false;
   var usernameFilled = '';
-  // Quick 261108-fku (owner decision 2026-11-08): the rename wait. The OK button is
-  // optional, so an older hand built page keeps working. data-wait-message is the
-  // server's sentence while the account is inside the gap (read once at load; a
-  // non empty value opens the window locked). data-wait-after-change is the whole
-  // gap sentence, kept as the lock after a change saved in this page. The server
-  // still decides on save; a page left open past the end of the wait may show the
-  // locked state until it is reloaded.
+  // Quick 261108-fku (owner decision 2026-11-08, review fix WR-02): the rename wait.
+  // The OK button is optional, so an older hand built page keeps working. The lock
+  // follows a deadline, not a sentence drawn once: data-wait-until is the moment the
+  // wait ends (an RFC 3339 UTC time the server writes only inside the gap). On each
+  // opening the days left are worked out from it, rounded up the way the server
+  // rounds them (usernameWaitDays): none left opens the window as usual, otherwise
+  // it opens locked with the sentence for that number of days. A change saved in
+  // this page sets the deadline to now plus the whole gap. The server still decides
+  // on save. The clock is the device's own.
   var usernameOk = el('settings-username-ok');
-  var usernameLock = hasUsername ? (usernameWin.getAttribute('data-wait-message') || '') : '';
-  var waitAfterChange = hasUsername ? (usernameWin.getAttribute('data-wait-after-change') || '') : '';
+  var DAY_MS = 24 * 60 * 60 * 1000;
+  // WAIT_GAP_DAYS is service.UsernameRenameGap in days, and the sentence parts are
+  // service.UsernameWaitMessage word for word. web/settings_username_wait_contract_test.go
+  // pins them.
+  var WAIT_GAP_DAYS = 7;
+  var WAIT_PREFIX = 'You can change your username again in ';
+  var WAIT_ONE_DAY = ' day.';
+  var WAIT_MANY_DAYS = ' days.';
+  var waitUntil = 0;
+  if (hasUsername) {
+    var deadline = Date.parse(usernameWin.getAttribute('data-wait-until') || '');
+    waitUntil = deadline > 0 ? deadline : 0;
+  }
+  // usernameLocked is true while the window is drawn locked (read only, the wait
+  // sentence, OK in place of Save username).
+  var usernameLocked = false;
 
   var nameRow = el('settings-name-row');
   var nameValue = el('settings-name-value');
@@ -407,10 +449,15 @@
     session += 1;
     if (which === 'username') {
       hideLine(usernameError);
-      if (usernameLock !== '') {
-        // Inside the rename wait: read only, the server's sentence, OK.
-        lockUsername(usernameLock);
+      var daysLeft = waitDaysLeft();
+      if (daysLeft > 0) {
+        // Inside the rename wait: read only, the sentence for the days left, OK.
+        lockUsername(waitSentence(daysLeft));
       } else {
+        if (usernameLocked) {
+          // The wait ended since the window last opened: the usual window again.
+          unlockUsername();
+        }
         usernameFilled = storedValue(usernameRow);
         usernameInput.value = usernameFilled;
         if (usernameCheck === null) {
@@ -441,11 +488,11 @@
     lockPage(target.win);
     var focusTarget = which === 'username' ? usernameInput : (which === 'name' ? nameInput : homeInput);
     // A locked Username window puts focus on OK, the one action (Quick 261108-fku).
-    if (which === 'username' && usernameLock !== '' && usernameOk) {
+    if (which === 'username' && usernameLocked && usernameOk) {
       focusTarget = usernameOk;
     }
     focusTarget.focus();
-    if (which === 'username' && usernameLock === '' && typeof usernameInput.select === 'function') {
+    if (which === 'username' && !usernameLocked && typeof usernameInput.select === 'function') {
       usernameInput.select();
     }
   }
@@ -483,7 +530,7 @@
     // closes the window like OK does (Quick 261108-fku, owner decision
     // 2026-11-08). It is caught here, so it works whether or not the browser
     // would submit a form from a read only field; on OK the click closes.
-    if (e.key === 'Enter' && which === 'username' && usernameLock !== '') {
+    if (e.key === 'Enter' && which === 'username' && usernameLocked) {
       if (usernameOk && e.target === usernameOk) {
         return;
       }
@@ -551,9 +598,12 @@
   // state (the change was made in another tab) switches it to the locked state
   // with the server's own sentence. Every state still redraws Save username.
   function onUsernameChange(state, ctl) {
-    if (state === 'wait' && usernameLock === '' && current === 'username') {
+    if (state === 'wait' && !usernameLocked && current === 'username') {
+      // The server's own sentence locks the window now, and its day count sets the
+      // deadline for the next openings (rounded up, so it is never early).
       var sentence = String(usernameStatus.textContent || '');
-      lockUsername(sentence !== '' ? sentence : waitAfterChange);
+      waitUntil = Date.now() + daysInSentence(sentence) * DAY_MS;
+      lockUsername(sentence);
     }
     updateUsernameSave(state, ctl);
   }
@@ -565,7 +615,7 @@
   // the sentence is written through the check (hold) so the status line's classes
   // stay owned by username-check.js. Nothing is saved from this state.
   function lockUsername(sentence) {
-    usernameLock = sentence;
+    usernameLocked = true;
     usernameFilled = storedValue(usernameRow);
     usernameInput.value = usernameFilled;
     usernameInput.setAttribute('readonly', '');
@@ -585,6 +635,19 @@
     // an opening focuses it once the window is shown.
     if (!usernameWin.hidden) {
       (usernameOk || usernameInput).focus();
+    }
+  }
+
+  // unlockUsername draws the usual window again once the wait is over: the field
+  // editable, Save username shown, OK hidden. readonly goes first, so the live
+  // check judges the stored name again.
+  function unlockUsername() {
+    usernameLocked = false;
+    usernameInput.removeAttribute('readonly');
+    usernameInput.removeAttribute('aria-readonly');
+    usernameSave.hidden = false;
+    if (usernameOk) {
+      usernameOk.hidden = true;
     }
   }
 
@@ -659,18 +722,19 @@
       var stored = answer.body && typeof answer.body.username === 'string' && answer.body.username !== '' ? answer.body.username : wanted;
       var before = storedValue(usernameRow);
       setRow(usernameRow, usernameValue, stored);
-      // Quick 261108-fku (owner decision 2026-11-08, C9): a name that replaced an
-      // earlier one starts the wait, so the next opening is locked with the whole
-      // gap sentence without a reload. A first username saved from Not set starts
-      // no wait (the server keeps the change time empty on a first set).
-      if (before !== '' && before !== stored && waitAfterChange !== '') {
-        usernameLock = waitAfterChange;
+      // Quick 261108-fku (owner decision 2026-11-08, C9; review fix WR-02): a name
+      // that replaced an earlier one starts the wait, so the deadline in the page
+      // is now plus the whole gap and the next opening is locked without a reload.
+      // A first username saved from Not set starts no wait (the server keeps the
+      // change time empty on a first set).
+      if (before !== '' && before !== stored) {
+        waitUntil = Date.now() + WAIT_GAP_DAYS * DAY_MS;
       }
       if (sameWindow) {
         closeWindow('username', true);
-      } else if (current === 'username' && usernameLock !== '') {
+      } else if (current === 'username' && waitDaysLeft() > 0) {
         // A save from an earlier opening landed in the window open now: it locks.
-        lockUsername(usernameLock);
+        lockUsername(waitSentence(waitDaysLeft()));
       } else if (current === 'username' && usernameInput.value === usernameFilled) {
         // A save from an earlier opening landed in the window open now: the
         // untouched field takes the saved name (like the Name window).
@@ -1067,7 +1131,7 @@
     usernameForm.addEventListener('submit', function (e) {
       e.preventDefault();
       // Inside the rename wait a submit closes the window like OK (Quick 261108-fku).
-      if (usernameLock !== '') {
+      if (usernameLocked) {
         closeWindow('username', true);
         return;
       }

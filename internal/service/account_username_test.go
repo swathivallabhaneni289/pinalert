@@ -503,31 +503,36 @@ func TestUsernamesFor(t *testing.T) {
 	})
 }
 
-// TestUsernameWaitLine pins Quick 261108-fku (owner decision 2026-11-08): the
-// wait sentence the Settings page renders for the caller's own account, read on
-// the service clock with no store read. It is empty outside the rename gap, and
-// the day count rounds up the way the live check and the save path round it.
-func TestUsernameWaitLine(t *testing.T) {
+// TestUsernameWaitUntil pins Quick 261108-fku (owner decision 2026-11-08, review
+// fix WR-02): the moment the caller's own rename wait ends, which the Settings
+// page renders so the Username window can follow the real deadline. It is read
+// on the service clock with no store read, is the last change time plus the gap
+// as RFC 3339 UTC rounded up to the whole second, and is empty outside the gap
+// by the same rule the live check and the save path use.
+// Amended 2026-11-08 (review fix WR-02): this replaces TestUsernameWaitLine,
+// which pinned the wait sentence the page used to carry.
+func TestUsernameWaitUntil(t *testing.T) {
 	svc := service.NewAccountService(nil, service.WithAccountClock(func() time.Time { return usernameNow }))
 	ago := func(d time.Duration) *time.Time { at := usernameNow.Add(-d); return &at }
+	at := func(t time.Time) *time.Time { return &t }
 	cases := []struct {
 		name string
 		p    service.AccountProfile
 		want string
 	}{
-		{"changed an hour ago", service.AccountProfile{Username: strp("ravi.k"), UsernameChangedAt: ago(time.Hour)}, "You can change your username again in 7 days."},
-		{"changed 6 days and an hour ago", service.AccountProfile{Username: strp("ravi.k"), UsernameChangedAt: ago(6*24*time.Hour + time.Hour)}, "You can change your username again in 1 day."},
+		{"changed an hour ago", service.AccountProfile{Username: strp("ravi.k"), UsernameChangedAt: ago(time.Hour)}, "2026-11-05T08:00:00Z"},
+		{"changed 6 days and an hour ago", service.AccountProfile{Username: strp("ravi.k"), UsernameChangedAt: ago(6*24*time.Hour + time.Hour)}, "2026-10-30T08:00:00Z"},
+		{"changed a second under 7 days ago", service.AccountProfile{Username: strp("ravi.k"), UsernameChangedAt: ago(7*24*time.Hour - time.Second)}, "2026-10-29T09:00:01Z"},
 		{"changed exactly 7 days ago", service.AccountProfile{Username: strp("ravi.k"), UsernameChangedAt: ago(7 * 24 * time.Hour)}, ""},
 		{"changed 8 days ago", service.AccountProfile{Username: strp("ravi.k"), UsernameChangedAt: ago(8 * 24 * time.Hour)}, ""},
 		{"no change time", service.AccountProfile{Username: strp("ravi.k")}, ""},
 		{"no username even with a change time", service.AccountProfile{UsernameChangedAt: ago(time.Hour)}, ""},
+		{"a change time with microseconds rounds up", service.AccountProfile{Username: strp("ravi.k"), UsernameChangedAt: at(usernameNow.Add(-time.Hour).Add(1500 * time.Microsecond))}, "2026-11-05T08:00:01Z"},
+		{"a local zone change time is written in UTC", service.AccountProfile{Username: strp("ravi.k"), UsernameChangedAt: at(usernameNow.Add(-time.Hour).In(time.FixedZone("IST", 5*3600+1800)))}, "2026-11-05T08:00:00Z"},
 	}
 	for _, c := range cases {
-		if got := svc.UsernameWaitLine(c.p); got != c.want {
-			t.Errorf("%s: UsernameWaitLine = %q, want %q", c.name, got, c.want)
+		if got := svc.UsernameWaitUntil(c.p); got != c.want {
+			t.Errorf("%s: UsernameWaitUntil = %q, want %q", c.name, got, c.want)
 		}
-	}
-	if got := service.UsernameWaitAfterChangeMessage(); got != "You can change your username again in 7 days." {
-		t.Errorf("UsernameWaitAfterChangeMessage = %q", got)
 	}
 }
