@@ -36,6 +36,19 @@ func fkuLaptop(rules []p16CSSRule) []p16CSSRule {
 	return out
 }
 
+// fkuForced keeps the rules inside a forced-colors block (review fix IN-05), so
+// the three forced colours pins below cannot be met by a rule in the base or the
+// laptop block.
+func fkuForced(rules []p16CSSRule) []p16CSSRule {
+	var out []p16CSSRule
+	for _, r := range rules {
+		if strings.Contains(r.Media, "forced-colors") {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // fkuDecl returns the value of prop in the first rule of rules whose head has
 // the exact selector part, with every run of white space collapsed to one
 // space, and whether it was declared.
@@ -113,7 +126,7 @@ func TestPersonProfileBand(t *testing.T) {
 	rules := p26Rules(t, "person.css")
 	base := fkuBase(rules)
 	laptop := fkuLaptop(rules)
-	forced := p26Find(rules, "forced-colors", ".person-band")
+	forced := fkuForced(rules)
 	if len(laptop) == 0 {
 		t.Fatalf("person.css has no min-width: 900px block")
 	}
@@ -185,11 +198,11 @@ func TestPersonProfileBand(t *testing.T) {
 
 	// C7: forced colours keeps the edges of the band, the line and the state box.
 	if len(forced) == 0 {
-		t.Errorf("no forced colours rule names .person-band")
+		t.Errorf("person.css has no forced-colors block")
 	}
-	fkuWant(t, "forced band", rules, ".person-band", "border-color", "CanvasText")
-	fkuWant(t, "forced record", rules, ".person-record", "border-top-color", "CanvasText")
-	fkuWant(t, "forced state", rules, ".person-reports__state", "border-color", "CanvasText")
+	fkuWant(t, "forced band", forced, ".person-band", "border-color", "CanvasText")
+	fkuWant(t, "forced record", forced, ".person-record", "border-top-color", "CanvasText")
+	fkuWant(t, "forced state", forced, ".person-reports__state", "border-color", "CanvasText")
 
 	// Whole file: no CSS order property, no hex colour in the new rules, no new
 	// custom property (D7, D8). A property is matched by its exact name, never

@@ -499,7 +499,9 @@ func TestPersonPageBand(t *testing.T) {
 			t.Errorf("someone else's page: the band lacks %s", want)
 		}
 	}
-	if strings.Contains(band, `id="person-state-line"`) {
+	// Review fix IN-04: the state line sits after the band on your own page, so the
+	// check on someone else's page searches the whole page, not only the band.
+	if strings.Contains(other, `id="person-state-line"`) {
 		t.Errorf("someone else's page draws the state line")
 	}
 

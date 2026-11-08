@@ -285,8 +285,8 @@
   {{/* Phase 9 plan 12 (D-04): the shared list window of Following, Followers, Muted people and Blocked people, opened from the four rows by settings-people.js. It must sit at the body level. */}}
   {{template "people_list_window" .}}
 
-  {{/* Phase 7.1 plan 15 (D-07, UI-SPEC Surface 8): the Username window is the built edit window. The field, the live line and the small line are step 4's (username-check.js). The input is named handle with autocomplete off, so a password manager never takes it for the login (T-07.1-30). Save username starts switched off with aria-disabled and the btn--off look, never the disabled attribute. Quick 261108-fku (owner decision 2026-11-08): inside the 7 day rename wait the server writes its sentence into data-wait-message and the window opens read only with that sentence and one OK button, in place of Save username; data-wait-after-change is the whole gap sentence, used for the next opening after a change saved in the page. */}}
-  <div class="app-window app-window--edit" id="settings-username-window" hidden{{if .UsernameWait}} data-wait-message="{{.UsernameWait}}"{{end}} data-wait-after-change="{{.UsernameWaitAfterChange}}">
+  {{/* Phase 7.1 plan 15 (D-07, UI-SPEC Surface 8): the Username window is the built edit window. The field, the live line and the small line are step 4's (username-check.js). The input is named handle with autocomplete off, so a password manager never takes it for the login (T-07.1-30). Save username starts switched off with aria-disabled and the btn--off look, never the disabled attribute. Quick 261108-fku (owner decision 2026-11-08): inside the 7 day rename wait the server writes the moment the wait ends into data-wait-until (an RFC 3339 UTC time, and nothing outside the wait); on each opening settings.js works out the days left from it, and the window opens read only with the wait sentence and one OK button, in place of Save username, or opens as usual when none are left. Review fix WR-02. */}}
+  <div class="app-window app-window--edit" id="settings-username-window" hidden{{if .UsernameWaitUntil}} data-wait-until="{{.UsernameWaitUntil}}"{{end}}>
     <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="settings-username-title">
       <div class="app-window__head">
         <h2 class="app-window__title" id="settings-username-title">Username</h2>
@@ -303,7 +303,7 @@
         <p class="inline-error" id="settings-username-error" role="alert" hidden></p>
         <div class="app-window__actions">
           <button type="submit" class="btn btn--off" id="settings-username-save" aria-disabled="true">Save username</button>
-          <button type="button" class="btn btn--primary" id="settings-username-ok" hidden>OK</button>
+          <button type="button" class="btn btn--primary" id="settings-username-ok" aria-describedby="settings-username-status" hidden>OK</button>
         </div>
       </form>
     </div>

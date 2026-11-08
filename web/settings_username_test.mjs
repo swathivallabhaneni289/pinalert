@@ -93,10 +93,13 @@ class FakeEl {
 
 // The markup of settings.html.tmpl, as the ids and nesting settings.js reads.
 // Amended 2026-11-08 by quick 261108-fku (owner decision 2026-11-08): the page
-// can carry the server's wait sentence (waitMessage, only inside the rename gap)
-// and the whole gap sentence (waitAfterChange, always) on the Username window,
-// and draws the hidden OK button after Save username.
-function buildPage({ username = '', name = '', home = '', waitMessage = '', waitAfterChange = '', withOk = true } = {}) {
+// can carry the moment the rename wait ends on the Username window, and draws the
+// hidden OK button after Save username. Amended again 2026-11-08 by the review fix
+// WR-02: the page option is waitIn (milliseconds from the fake clock's start to the
+// end of the wait; a negative number is a wait that is over; null draws no
+// attribute, as outside the gap), written as data-wait-until in RFC 3339 UTC, or
+// waitRaw for any other attribute text. It replaces waitMessage and waitAfterChange.
+function buildPage({ username = '', name = '', home = '', waitIn = null, waitRaw = null, startMs = 0, withOk = true } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -130,8 +133,8 @@ function buildPage({ username = '', name = '', home = '', waitMessage = '', wait
 
   const usernameWin = make('div', 'settings-username-window', doc.body);
   usernameWin.hidden = true;
-  if (waitMessage !== '') { usernameWin.setAttribute('data-wait-message', waitMessage); }
-  if (waitAfterChange !== '') { usernameWin.setAttribute('data-wait-after-change', waitAfterChange); }
+  if (waitIn !== null) { usernameWin.setAttribute('data-wait-until', new Date(startMs + waitIn).toISOString()); }
+  if (waitRaw !== null) { usernameWin.setAttribute('data-wait-until', waitRaw); }
   const usernamePanel = make('div', '', usernameWin);
   make('button', 'settings-username-close', usernamePanel);
   const usernameForm = make('form', 'settings-username-form', usernamePanel);
@@ -177,7 +180,10 @@ function buildPage({ username = '', name = '', home = '', waitMessage = '', wait
 // One fetch keeps every call (the live check and the save) for the test to
 // answer; one set of fake timers is moved by hand.
 function loadSettings(options) {
-  const page = buildPage(options);
+  // Amended 2026-11-08 (review fix WR-02): the page reads the clock, so the sandbox
+  // gets a Date whose now() is the hand moved clock.ms. It starts at a fixed time.
+  const clock = { ms: Date.UTC(2026, 10, 8, 10, 0, 0) };
+  const page = buildPage({ ...options, startMs: clock.ms });
   const requests = [];
   let now = 0;
   let nextId = 1;
@@ -211,6 +217,7 @@ function loadSettings(options) {
     setTimeout(fn, ms) { const id = nextId++; timers.set(id, { fn, at: now + ms }); return id; },
     clearTimeout(id) { timers.delete(id); },
     AbortController: FakeAbortController,
+    Date: class FakeDate extends Date { static now() { return clock.ms; } },
     navigator: {
       get geolocation() { throw new Error('settings.js asked for the device position'); }
     },
@@ -222,7 +229,7 @@ function loadSettings(options) {
   vm.runInContext(settingsSource, sandbox, { filename: 'settings.js' });
   const checks = () => requests.filter((r) => r.url.startsWith('/api/username/check'));
   const saves = () => requests.filter((r) => r.url === '/api/me/profile');
-  return { ...page, api: sandbox.PinalertSettings, requests, checks, saves, advance, sandbox };
+  return { ...page, api: sandbox.PinalertSettings, requests, checks, saves, advance, sandbox, clock };
 }
 
 const flush = async () => { for (let i = 0; i < 8; i++) { await new Promise((r) => setImmediate(r)); } };
@@ -538,7 +545,16 @@ test('the Username window is not a login field: no autocomplete value, no passwo
 // ---- Quick 261108-fku (owner decision 2026-11-08): the window during the 7 day
 // rename wait. It opens read only with the server's sentence in the wait look
 // and one OK button instead of Save username. ------------------------------------
+//
+// Amended 2026-11-08 by the review fix WR-02: the page now carries the moment the
+// wait ends (data-wait-until, drawn here by the waitIn option) instead of a
+// sentence, and every opening works out the days left from it against the clock
+// the sandbox gives settings.js (page.clock.ms). The tests below that used
+// waitMessage and waitAfterChange use waitIn: 7 * DAY, or nothing, to the same
+// effect. The D11 test keeps its first half; its reopen half changed (a live wait
+// answer locks only the window open now, see the Amended line on that test).
 
+const DAY = 24 * 60 * 60 * 1000;
 const SEVEN = 'You can change your username again in 7 days.';
 const okButton = (page) => byId(page, 'settings-username-ok');
 const hasClass = (el, name) => el.className.split(/\s+/).includes(name);
@@ -558,7 +574,7 @@ function assertLocked(page, sentence, stored) {
 }
 
 test('inside the wait the window opens locked: read only name, the server sentence, OK, no Save, no check sent', async () => {
-  const page = loadSettings({ username: 'ravi.k', waitMessage: SEVEN, waitAfterChange: SEVEN });
+  const page = loadSettings({ username: 'ravi.k', waitIn: 7 * DAY });
   open(page);
   assertLocked(page, SEVEN, 'ravi.k');
   assert.equal(page.main.inert, true, 'the page behind is still locked');
@@ -569,7 +585,7 @@ test('inside the wait the window opens locked: read only name, the server senten
 });
 
 test('OK closes the locked window like the X, sends nothing and saves nothing', async () => {
-  const page = loadSettings({ username: 'ravi.k', waitMessage: SEVEN });
+  const page = loadSettings({ username: 'ravi.k', waitIn: 7 * DAY });
   open(page);
   fire(okButton(page), 'click');
   assert.equal(page.usernameWin.hidden, true);
@@ -583,7 +599,7 @@ test('OK closes the locked window like the X, sends nothing and saves nothing', 
 
 test('Enter in the locked window, a submit and Escape all close it and save nothing', async () => {
   for (const how of ['enter', 'submit', 'escape']) {
-    const page = loadSettings({ username: 'ravi.k', waitMessage: SEVEN });
+    const page = loadSettings({ username: 'ravi.k', waitIn: 7 * DAY });
     open(page);
     let event = null;
     if (how === 'enter') { event = fire(page.usernameWin, 'keydown', { key: 'Enter', target: input(page) }); }
@@ -598,7 +614,7 @@ test('Enter in the locked window, a submit and Escape all close it and save noth
 });
 
 test('an input event on the read only field sends no check and leaves the sentence', async () => {
-  const page = loadSettings({ username: 'ravi.k', waitMessage: SEVEN });
+  const page = loadSettings({ username: 'ravi.k', waitIn: 7 * DAY });
   open(page);
   input(page).value = 'ravi.kumar';
   fire(input(page), 'input');
@@ -608,6 +624,11 @@ test('an input event on the read only field sends no check and leaves the senten
   assert.equal(line(page).textContent, SEVEN);
 });
 
+// Amended 2026-11-08 (review fix WR-02, second commit): a live wait answer locks
+// the window open now and sets no deadline in the page, because its day count is
+// rounded up and a lock on it could outlast the real wait with nothing to correct
+// it. The reopen half used to expect a locked window; it now expects the usual
+// window, whose live check answers wait again and locks with a fresh count.
 test('D11: a wait answer to a typed name locks the window with the server sentence and puts the stored name back', async () => {
   const page = loadSettings({ username: 'ravi.k' });
   open(page);
@@ -617,11 +638,17 @@ test('D11: a wait answer to a typed name locks the window with the server senten
   assertLocked(page, sentence, 'ravi.k');
   fire(okButton(page), 'click');
   open(page);
-  assertLocked(page, sentence, 'ravi.k');
+  assertNormal(page);
+  assert.equal(input(page).value, 'ravi.k');
+  const checksBefore = page.checks().length;
+  page.advance(300);
+  assert.equal(page.checks().length, checksBefore + 1, 'the live check judges the stored name on the reopening');
+  await typeName(page, 'ravi.kumar', 'wait', 'You can change your username again in 3 days.');
+  assertLocked(page, 'You can change your username again in 3 days.', 'ravi.k');
 });
 
 test('C9: a change saved in the page locks the next opening with the whole gap sentence, and sends no check', async () => {
-  const page = loadSettings({ username: 'ravi.k', waitAfterChange: SEVEN });
+  const page = loadSettings({ username: 'ravi.k' });
   open(page);
   await typeName(page, 'ravi.kumar');
   fire(byId(page, 'settings-username-form'), 'submit');
@@ -637,7 +664,7 @@ test('C9: a change saved in the page locks the next opening with the whole gap s
 });
 
 test('C9: a first username saved from Not set starts no wait, so the next opening is normal', async () => {
-  const page = loadSettings({ waitAfterChange: SEVEN });
+  const page = loadSettings({});
   open(page);
   await typeName(page, 'ravi.k');
   fire(byId(page, 'settings-username-form'), 'submit');
@@ -655,7 +682,7 @@ test('C9: a first username saved from Not set starts no wait, so the next openin
 });
 
 test('D12: with no wait on the page the window opens exactly as before', () => {
-  const page = loadSettings({ username: 'ravi.k', waitAfterChange: SEVEN });
+  const page = loadSettings({ username: 'ravi.k' });
   open(page);
   assert.equal(input(page).getAttribute('readonly'), null);
   assert.equal(input(page).getAttribute('aria-readonly'), null);
@@ -668,10 +695,300 @@ test('D12: with no wait on the page the window opens exactly as before', () => {
 });
 
 test('C12: a page drawn without the OK button still locks: read only, the sentence, Save hidden', () => {
-  const page = loadSettings({ username: 'ravi.k', waitMessage: SEVEN, withOk: false });
+  const page = loadSettings({ username: 'ravi.k', waitIn: 7 * DAY, withOk: false });
   open(page);
   assert.equal(isReadOnly(page), true);
   assert.equal(line(page).textContent, SEVEN);
   assert.equal(save(page).hidden, true);
   assert.equal(page.doc.activeElement, input(page));
+});
+
+// ---- Review fix WR-02: the lock follows the real deadline ---------------------
+
+function assertNormal(page) {
+  assert.equal(page.usernameWin.hidden, false);
+  assert.equal(input(page).getAttribute('readonly'), null, 'the field is editable');
+  assert.equal(input(page).getAttribute('aria-readonly'), null);
+  assert.equal(save(page).hidden, false, 'Save username is shown');
+  assert.equal(okButton(page).hidden, true, 'OK is hidden');
+  assert.equal(page.doc.activeElement, input(page));
+}
+
+// ---- Review fix WR-01: a locked opening says the wait sentence out loud ------
+
+// watchAnnounce records what the status line held the moment the window was
+// shown, and every write to it with whether the window was hidden at the time.
+function watchAnnounce(page) {
+  const win = page.usernameWin;
+  const seen = { atShow: [], writes: [] };
+  const hiddenDesc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(win), 'hidden');
+  Object.defineProperty(win, 'hidden', {
+    get() { return hiddenDesc.get.call(this); },
+    set(v) {
+      if (!v) { seen.atShow.push(line(page).textContent); }
+      hiddenDesc.set.call(this, v);
+    }
+  });
+  const status = line(page);
+  const textDesc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(status), 'textContent');
+  Object.defineProperty(status, 'textContent', {
+    get() { return textDesc.get.call(this); },
+    set(v) { seen.writes.push({ text: String(v), winHidden: win.hidden }); textDesc.set.call(this, v); }
+  });
+  return seen;
+}
+
+test('WR-01: when the window opens locked the wait sentence is written after it is shown, never while it is hidden', () => {
+  const page = loadSettings({ username: 'ravi.k', waitIn: 7 * DAY });
+  const seen = watchAnnounce(page);
+  for (let opening = 1; opening <= 3; opening++) {
+    seen.atShow.length = 0;
+    seen.writes.length = 0;
+    open(page);
+    assertLocked(page, SEVEN, 'ravi.k');
+    assert.deepEqual(seen.atShow, [''], 'opening ' + opening + ': the line is empty at the moment the window is shown, so writing the sentence is a change');
+    const sentenceWrites = seen.writes.filter((w) => w.text === SEVEN);
+    assert.ok(sentenceWrites.length >= 1, 'opening ' + opening + ': the sentence is written');
+    assert.ok(sentenceWrites.every((w) => w.winHidden === false), 'opening ' + opening + ': the sentence is never written into a hidden window');
+    fire(okButton(page), 'click');
+  }
+});
+
+test('WR-01: a wait answer while the window is open writes the sentence at once, and the normal opening is unchanged', async () => {
+  const page = loadSettings({ username: 'ravi.k' });
+  const seen = watchAnnounce(page);
+  open(page);
+  assert.equal(seen.writes.some((w) => w.text === SEVEN), false);
+  await typeName(page, 'ravi.kumar', 'wait', 'You can change your username again in 4 days.');
+  const write = seen.writes.filter((w) => w.text === 'You can change your username again in 4 days.');
+  assert.ok(write.length >= 1 && write.every((w) => w.winHidden === false));
+});
+
+// ---- Review fix IN-02: a lock with no sentence does nothing ------------------
+
+test('IN-02: a wait answer that leaves the status line empty does not half lock the window', async () => {
+  const page = loadSettings({ username: 'ravi.k' });
+  let onChange = null;
+  const ctl = { isGood: () => false, state: () => 'wait', refresh() {}, cancel() {}, hold() { throw new Error('hold must not run'); }, name: () => '' };
+  page.sandbox.PinalertUsernameCheck = { attach(inputEl, lineEl, options) { onChange = options.onChange; return ctl; } };
+  open(page);
+  assertNormal(page);
+  assert.equal(line(page).textContent, '');
+  onChange('wait', ctl);
+  assertNormal(page);
+  assert.equal(isReadOnly(page), false);
+  assert.equal(isOff(page), true, 'Save username is drawn off, as for any wait answer');
+  fire(page.usernameWin, 'keydown', { key: 'Enter', target: input(page) });
+  assert.equal(page.usernameWin.hidden, false, 'Enter is not taken as a locked window Enter');
+  fire(byId(page, 'settings-username-close'), 'click');
+  open(page);
+  assertNormal(page);
+});
+
+// ---- Review fix IN-03: which name a locked field shows ------------------------
+
+test('IN-03: a locked opening shows the name the server last confirmed, and a live wait answer keeps what the row shows', async () => {
+  // At load the confirmed name is the one the page was drawn with.
+  const page = loadSettings({ username: 'ravi.k', waitIn: 7 * DAY });
+  byId(page, 'settings-username-row').setAttribute('data-value', 'drifted.row');
+  open(page);
+  assert.equal(input(page).value, 'ravi.k', 'the page was drawn with ravi.k, whatever the row attribute says now');
+  fire(okButton(page), 'click');
+
+  // After a save in the page the confirmed name is the saved one.
+  const second = loadSettings({ username: 'ravi.k' });
+  open(second);
+  await typeName(second, 'ravi.kumar');
+  fire(byId(second, 'settings-username-form'), 'submit');
+  answer(second.saves()[0], 200, { username: 'ravi.kumar', display_name: null, home_area_name: null });
+  await flush();
+  byId(second, 'settings-username-row').setAttribute('data-value', 'drifted.row');
+  open(second);
+  assertLocked(second, SEVEN, 'ravi.kumar');
+  fire(okButton(second), 'click');
+
+  // A lock from a live wait answer keeps what the row shows.
+  const third = loadSettings({ username: 'ravi.k' });
+  open(third);
+  byId(third, 'settings-username-row').setAttribute('data-value', 'row.shows');
+  await typeName(third, 'ravi.kumar', 'wait', 'You can change your username again in 4 days.');
+  assertLocked(third, 'You can change your username again in 4 days.', 'row.shows');
+});
+
+// ---- Review fix IN-06: two branches that had no node test ----------------------
+
+test('IN-06: a save sent from an earlier opening that lands while the window is open again locks that window', async () => {
+  const page = loadSettings({ username: 'ravi.k' });
+  open(page);
+  await typeName(page, 'ravi.kumar');
+  fire(byId(page, 'settings-username-form'), 'submit');
+  assert.equal(page.saves().length, 1);
+  fire(byId(page, 'settings-username-close'), 'click');
+
+  open(page);
+  assertNormal(page);
+  const before = page.checks().length;
+  answer(page.saves()[0], 200, { username: 'ravi.kumar', display_name: null, home_area_name: null });
+  await flush();
+  assertLocked(page, SEVEN, 'ravi.kumar');
+  assert.equal(byId(page, 'settings-username-value').textContent, 'ravi.kumar');
+  page.advance(2000);
+  await flush();
+  assert.equal(page.checks().length, before, 'no check is sent for the locked window');
+  assert.equal(page.saves().length, 1, 'nothing more is saved');
+
+  fire(okButton(page), 'click');
+  assert.equal(page.usernameWin.hidden, true);
+  assert.equal(page.doc.activeElement, byId(page, 'settings-username-row'));
+});
+
+test('IN-06: a first username saved from an earlier opening does not lock the window open now', async () => {
+  const page = loadSettings({});
+  open(page);
+  await typeName(page, 'ravi.k');
+  fire(byId(page, 'settings-username-form'), 'submit');
+  fire(byId(page, 'settings-username-close'), 'click');
+  open(page);
+  answer(page.saves()[0], 200, { username: 'ravi.k', display_name: null, home_area_name: null });
+  await flush();
+  assertNormal(page);
+  assert.equal(input(page).value, 'ravi.k', 'the untouched field takes the saved name');
+});
+
+test('IN-06: Enter on OK is left to the button, which closes the window by its own click', () => {
+  const page = loadSettings({ username: 'ravi.k', waitIn: 7 * DAY });
+  open(page);
+  const event = fire(page.usernameWin, 'keydown', { key: 'Enter', target: okButton(page) });
+  assert.equal(event.prevented, false, 'the key is not taken, so the browser clicks OK');
+  assert.equal(page.usernameWin.hidden, false, 'the key handler itself closes nothing');
+  fire(okButton(page), 'click');
+  assert.equal(page.usernameWin.hidden, true);
+  assert.equal(page.doc.activeElement, byId(page, 'settings-username-row'));
+});
+
+test('WR-02: the fake clock really drives Date.now() inside settings.js', () => {
+  const page = loadSettings({ username: 'ravi.k', waitIn: 3 * DAY });
+  open(page);
+  assert.equal(line(page).textContent, 'You can change your username again in 3 days.');
+  page.clock.ms += DAY;
+  fire(byId(page, 'settings-username-close'), 'click');
+  open(page);
+  assert.equal(line(page).textContent, 'You can change your username again in 2 days.');
+});
+
+test('WR-02: a deadline in the past opens the window normally and the live check runs', () => {
+  for (const waitIn of [-DAY, 0, -1]) {
+    const page = loadSettings({ username: 'ravi.k', waitIn });
+    open(page);
+    assertNormal(page);
+    assert.equal(input(page).selected, true);
+    page.advance(300);
+    assert.equal(page.checks().length, 1, 'a check is sent for the stored name');
+  }
+});
+
+test('WR-02: 1.5 days left reads 2 days, and a few seconds past a whole day rounds up too', () => {
+  for (const [waitIn, text] of [
+    [1.5 * DAY, 'You can change your username again in 2 days.'],
+    [DAY, 'You can change your username again in 1 day.'],
+    [DAY + 1000, 'You can change your username again in 2 days.'],
+    [1000, 'You can change your username again in 1 day.'],
+    [7 * DAY, SEVEN]
+  ]) {
+    const page = loadSettings({ username: 'ravi.k', waitIn });
+    open(page);
+    assertLocked(page, text, 'ravi.k');
+  }
+});
+
+test('WR-02: no attribute, or one that is not a time, opens the window normally', () => {
+  for (const options of [{}, { waitRaw: '' }, { waitRaw: 'soon' }]) {
+    const page = loadSettings({ username: 'ravi.k', ...options });
+    open(page);
+    assertNormal(page);
+  }
+});
+
+test('WR-02: a change saved in the page locks the next opening with 7 days, and 7 days later it opens normally', async () => {
+  const page = loadSettings({ username: 'ravi.k' });
+  open(page);
+  await typeName(page, 'ravi.kumar');
+  fire(byId(page, 'settings-username-form'), 'submit');
+  answer(page.saves()[0], 200, { username: 'ravi.kumar', display_name: null, home_area_name: null });
+  await flush();
+  open(page);
+  assertLocked(page, SEVEN, 'ravi.kumar');
+  fire(okButton(page), 'click');
+
+  page.clock.ms += 3.5 * DAY;
+  open(page);
+  assertLocked(page, 'You can change your username again in 4 days.', 'ravi.kumar');
+  fire(okButton(page), 'click');
+
+  page.clock.ms += 3.5 * DAY;
+  const before = page.checks().length;
+  open(page);
+  assertNormal(page);
+  assert.equal(input(page).value, 'ravi.kumar', 'the field holds the name saved in the page');
+  page.advance(300);
+  assert.equal(page.checks().length, before + 1, 'the live check judges the stored name again');
+});
+
+test('WR-02: a window locked at load unlocks on the first opening after the wait ends, and the sentence follows the days', () => {
+  const page = loadSettings({ username: 'ravi.k', waitIn: 2.5 * DAY });
+  open(page);
+  assertLocked(page, 'You can change your username again in 3 days.', 'ravi.k');
+  fire(okButton(page), 'click');
+
+  page.clock.ms += DAY;
+  open(page);
+  assertLocked(page, 'You can change your username again in 2 days.', 'ravi.k');
+  fire(okButton(page), 'click');
+
+  page.clock.ms += 0.6 * DAY;
+  open(page);
+  assertLocked(page, 'You can change your username again in 1 day.', 'ravi.k');
+  fire(okButton(page), 'click');
+
+  page.clock.ms += DAY;
+  open(page);
+  assertNormal(page);
+  assert.equal(isReadOnly(page), false);
+  assert.equal(line(page).textContent, 'Checking…', 'the stored name is judged again, no wait sentence left');
+  assert.equal(hasClass(line(page), 'username-status--warn'), false);
+});
+
+test('WR-02: a live wait answer sets no deadline, so a device clock a little fast cannot leave a lock past the real end', async () => {
+  // The page deadline is 10 minutes away; the device clock is 15 minutes ahead,
+  // so the window opens as usual. The server still says 1 day (rounded up from
+  // the few minutes left). That locks the window open now only.
+  const page = loadSettings({ username: 'ravi.k', waitIn: 10 * 60 * 1000 });
+  page.clock.ms += 15 * 60 * 1000;
+  open(page);
+  assertNormal(page);
+  await typeName(page, 'ravi.kumar', 'wait', 'You can change your username again in 1 day.');
+  assertLocked(page, 'You can change your username again in 1 day.', 'ravi.k');
+  fire(okButton(page), 'click');
+
+  // An hour on, the wait is over by any clock; the window opens as usual.
+  page.clock.ms += 60 * 60 * 1000;
+  open(page);
+  assertNormal(page);
+  const before = page.checks().length;
+  page.advance(300);
+  assert.equal(page.checks().length, before + 1, 'a check is sent, so the server can correct the page');
+});
+
+test('WR-02: a window unlocked after the wait can type, check and enable Save username again', async () => {
+  const page = loadSettings({ username: 'ravi.k', waitIn: DAY });
+  open(page);
+  fire(okButton(page), 'click');
+  page.clock.ms += 2 * DAY;
+  open(page);
+  assertNormal(page);
+  await typeName(page, 'ravi.kumar');
+  assert.equal(isOn(page), true);
+  fire(byId(page, 'settings-username-form'), 'submit');
+  assert.equal(page.saves().length, 1);
+  assert.deepEqual(JSON.parse(page.saves()[0].init.body), { username: 'ravi.kumar' });
 });
