@@ -18,11 +18,16 @@ import (
 // buttons and the actions, in that order.
 func TestPersonPageHeaderOrder(t *testing.T) {
 	tmpl := p421ReadTemplate(t, "person.html.tmpl")
+	// Amended 2026-11-08 by quick 261108-fku (owner decision 2026-11-08): the
+	// band and the record wrapper are in their places, and the own page state
+	// line is after the action error line, outside the band.
 	p421InOrder(t, "the profile header order", tmpl,
 		`id="person-header"`,
+		`id="person-band"`,
 		`id="person-disc"`,
 		`<h1 id="person-username"`,
 		`id="person-name"`,
+		`id="person-record"`,
 		`id="person-stars"`,
 		`id="person-tag"`,
 		`id="person-tag-sentence"`,
@@ -32,12 +37,12 @@ func TestPersonPageHeaderOrder(t *testing.T) {
 		`id="person-following-button"`,
 		`id="person-actions"`,
 		`id="person-edit"`,
-		`id="person-state-line"`,
 		`id="person-follow"`,
 		`id="person-unfollow"`,
 		`id="person-more"`,
 		`id="person-more-menu"`,
 		`id="person-action-error"`,
+		`id="person-state-line"`,
 		`id="person-reports-section"`,
 		`id="person-blocked"`,
 		`id="person-confirm"`,

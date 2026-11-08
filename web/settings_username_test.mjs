@@ -92,7 +92,11 @@ class FakeEl {
 }
 
 // The markup of settings.html.tmpl, as the ids and nesting settings.js reads.
-function buildPage({ username = '', name = '', home = '' } = {}) {
+// Amended 2026-11-08 by quick 261108-fku (owner decision 2026-11-08): the page
+// can carry the server's wait sentence (waitMessage, only inside the rename gap)
+// and the whole gap sentence (waitAfterChange, always) on the Username window,
+// and draws the hidden OK button after Save username.
+function buildPage({ username = '', name = '', home = '', waitMessage = '', waitAfterChange = '', withOk = true } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -126,6 +130,8 @@ function buildPage({ username = '', name = '', home = '' } = {}) {
 
   const usernameWin = make('div', 'settings-username-window', doc.body);
   usernameWin.hidden = true;
+  if (waitMessage !== '') { usernameWin.setAttribute('data-wait-message', waitMessage); }
+  if (waitAfterChange !== '') { usernameWin.setAttribute('data-wait-after-change', waitAfterChange); }
   const usernamePanel = make('div', '', usernameWin);
   make('button', 'settings-username-close', usernamePanel);
   const usernameForm = make('form', 'settings-username-form', usernamePanel);
@@ -138,6 +144,11 @@ function buildPage({ username = '', name = '', home = '' } = {}) {
   const save = make('button', 'settings-username-save', usernameForm);
   save.className = 'btn btn--off';
   save.setAttribute('aria-disabled', 'true');
+  if (withOk) {
+    const ok = make('button', 'settings-username-ok', usernameForm);
+    ok.className = 'btn btn--primary';
+    ok.hidden = true;
+  }
 
   const nameWin = make('div', 'settings-name-window', doc.body);
   nameWin.hidden = true;
@@ -522,4 +533,145 @@ test('the Username window is not a login field: no autocomplete value, no passwo
   const settings = settingsSource;
   assert.equal(/autocomplete/i.test(settings), false);
   assert.equal(/innerHTML|outerHTML|insertAdjacentHTML/.test(settings), false);
+});
+
+// ---- Quick 261108-fku (owner decision 2026-11-08): the window during the 7 day
+// rename wait. It opens read only with the server's sentence in the wait look
+// and one OK button instead of Save username. ------------------------------------
+
+const SEVEN = 'You can change your username again in 7 days.';
+const okButton = (page) => byId(page, 'settings-username-ok');
+const hasClass = (el, name) => el.className.split(/\s+/).includes(name);
+const isReadOnly = (page) => input(page).getAttribute('readonly') !== null && input(page).getAttribute('aria-readonly') === 'true';
+
+function assertLocked(page, sentence, stored) {
+  assert.equal(page.usernameWin.hidden, false);
+  assert.equal(input(page).value, stored, 'the field holds the stored name');
+  assert.equal(isReadOnly(page), true, 'readonly and aria-readonly true');
+  assert.equal(line(page).textContent, sentence);
+  assert.equal(hasClass(line(page), 'username-status--warn'), true, 'the wait look');
+  assert.equal(save(page).hidden, true, 'Save username is not shown');
+  assert.equal(okButton(page).hidden, false, 'OK is shown');
+  assert.equal(hasClass(okButton(page), 'btn--primary'), true);
+  assert.equal(page.doc.activeElement, okButton(page), 'focus is on OK');
+  assert.equal(errorLine(page).hidden, true);
+}
+
+test('inside the wait the window opens locked: read only name, the server sentence, OK, no Save, no check sent', async () => {
+  const page = loadSettings({ username: 'ravi.k', waitMessage: SEVEN, waitAfterChange: SEVEN });
+  open(page);
+  assertLocked(page, SEVEN, 'ravi.k');
+  assert.equal(page.main.inert, true, 'the page behind is still locked');
+  page.advance(2000);
+  await flush();
+  assert.equal(page.checks().length, 0, 'no live check is sent');
+  assert.equal(byId(page, 'settings-username-help').getAttribute('hidden'), null, 'the help line stays');
+});
+
+test('OK closes the locked window like the X, sends nothing and saves nothing', async () => {
+  const page = loadSettings({ username: 'ravi.k', waitMessage: SEVEN });
+  open(page);
+  fire(okButton(page), 'click');
+  assert.equal(page.usernameWin.hidden, true);
+  assert.equal(page.main.inert, false);
+  assert.equal(page.doc.activeElement, byId(page, 'settings-username-row'));
+  page.advance(2000);
+  await flush();
+  assert.equal(page.requests.length, 0);
+  assert.equal(byId(page, 'settings-username-value').textContent, 'ravi.k');
+});
+
+test('Enter in the locked window, a submit and Escape all close it and save nothing', async () => {
+  for (const how of ['enter', 'submit', 'escape']) {
+    const page = loadSettings({ username: 'ravi.k', waitMessage: SEVEN });
+    open(page);
+    let event = null;
+    if (how === 'enter') { event = fire(page.usernameWin, 'keydown', { key: 'Enter', target: input(page) }); }
+    if (how === 'submit') { event = fire(byId(page, 'settings-username-form'), 'submit'); }
+    if (how === 'escape') { event = fire(page.usernameWin, 'keydown', { key: 'Escape' }); }
+    if (how !== 'escape') { assert.equal(event.prevented, true, how + ' is prevented'); }
+    assert.equal(page.usernameWin.hidden, true, how + ' closes the window');
+    assert.equal(page.doc.activeElement, byId(page, 'settings-username-row'), how + ' returns focus to the row');
+    await flush();
+    assert.equal(page.requests.length, 0, how + ' sends nothing');
+  }
+});
+
+test('an input event on the read only field sends no check and leaves the sentence', async () => {
+  const page = loadSettings({ username: 'ravi.k', waitMessage: SEVEN });
+  open(page);
+  input(page).value = 'ravi.kumar';
+  fire(input(page), 'input');
+  page.advance(2000);
+  await flush();
+  assert.equal(page.checks().length, 0);
+  assert.equal(line(page).textContent, SEVEN);
+});
+
+test('D11: a wait answer to a typed name locks the window with the server sentence and puts the stored name back', async () => {
+  const page = loadSettings({ username: 'ravi.k' });
+  open(page);
+  assert.equal(isReadOnly(page), false);
+  const sentence = 'You can change your username again in 4 days.';
+  await typeName(page, 'ravi.kumar', 'wait', sentence);
+  assertLocked(page, sentence, 'ravi.k');
+  fire(okButton(page), 'click');
+  open(page);
+  assertLocked(page, sentence, 'ravi.k');
+});
+
+test('C9: a change saved in the page locks the next opening with the whole gap sentence, and sends no check', async () => {
+  const page = loadSettings({ username: 'ravi.k', waitAfterChange: SEVEN });
+  open(page);
+  await typeName(page, 'ravi.kumar');
+  fire(byId(page, 'settings-username-form'), 'submit');
+  answer(page.saves()[0], 200, { username: 'ravi.kumar', display_name: null, home_area_name: null });
+  await flush();
+  assert.equal(page.usernameWin.hidden, true);
+  const before = page.checks().length;
+  open(page);
+  assertLocked(page, SEVEN, 'ravi.kumar');
+  page.advance(2000);
+  await flush();
+  assert.equal(page.checks().length, before, 'no check on the locked opening');
+});
+
+test('C9: a first username saved from Not set starts no wait, so the next opening is normal', async () => {
+  const page = loadSettings({ waitAfterChange: SEVEN });
+  open(page);
+  await typeName(page, 'ravi.k');
+  fire(byId(page, 'settings-username-form'), 'submit');
+  answer(page.saves()[0], 200, { username: 'ravi.k', display_name: null, home_area_name: null });
+  await flush();
+  assert.equal(page.usernameWin.hidden, true);
+  open(page);
+  assert.equal(isReadOnly(page), false);
+  assert.equal(input(page).getAttribute('readonly'), null);
+  assert.equal(save(page).hidden, false);
+  assert.equal(okButton(page).hidden, true);
+  const before = page.checks().length;
+  page.advance(300);
+  assert.equal(page.checks().length, before + 1, 'the live check judges the stored name as before');
+});
+
+test('D12: with no wait on the page the window opens exactly as before', () => {
+  const page = loadSettings({ username: 'ravi.k', waitAfterChange: SEVEN });
+  open(page);
+  assert.equal(input(page).getAttribute('readonly'), null);
+  assert.equal(input(page).getAttribute('aria-readonly'), null);
+  assert.equal(save(page).hidden, false);
+  assert.equal(okButton(page).hidden, true);
+  assert.equal(page.doc.activeElement, input(page));
+  assert.equal(input(page).selected, true);
+  page.advance(300);
+  assert.equal(page.checks().length, 1, 'a check is sent');
+});
+
+test('C12: a page drawn without the OK button still locks: read only, the sentence, Save hidden', () => {
+  const page = loadSettings({ username: 'ravi.k', waitMessage: SEVEN, withOk: false });
+  open(page);
+  assert.equal(isReadOnly(page), true);
+  assert.equal(line(page).textContent, SEVEN);
+  assert.equal(save(page).hidden, true);
+  assert.equal(page.doc.activeElement, input(page));
 });

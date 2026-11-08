@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // The states of the live check, as the browser reads them.
@@ -35,6 +36,23 @@ const (
 // rejected the username. Nothing was stored. The handler answers it with
 // UsernameRefusedMessage.
 var ErrUsernameRefused = errors.New("service: username rejected by the text screening")
+
+// UsernameWaitLine is the caller's own wait sentence for the Settings page: the
+// rename gap sentence with the days left while the account is inside the gap,
+// and empty otherwise (no username, no recorded change, or the gap is over). It
+// reads the profile the page already has on the service clock and asks the store
+// for nothing. The save path still decides (saveUsername); this only lets the
+// Username window open locked. Quick 261108-fku (owner decision 2026-11-08).
+func (s *AccountService) UsernameWaitLine(p AccountProfile) string {
+	if p.Username == nil || p.UsernameChangedAt == nil {
+		return ""
+	}
+	changed := pgtype.Timestamptz{Time: *p.UsernameChangedAt, Valid: true}
+	if days, wait := usernameWaitDays(changed, s.now().UTC()); wait {
+		return UsernameWaitMessage(days)
+	}
+	return ""
+}
 
 // UsernameCheck is the answer of the live check. Name is the normalised name
 // that was judged. Message is the sentence to show. Days is set only for the

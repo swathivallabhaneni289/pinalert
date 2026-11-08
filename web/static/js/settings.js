@@ -17,7 +17,10 @@
 //     names from the geocoder included, reaches the page through textContent
 //     (T-34-26).
 //   - It never closes a window except through the X or Escape (D-02): there is
-//     no backdrop handler, no Cancel and no Done.
+//     no backdrop handler, no Cancel and no Done. One exception (Quick 261108-fku,
+//     owner decision 2026-11-08): inside the 7 day rename wait the Username window
+//     opens read only with the server's sentence and one OK button, and OK, Enter
+//     and a submit close it the way the X does, since nothing can be saved there.
 (function () {
   'use strict';
 
@@ -89,6 +92,16 @@
   var usernameCheck = null;
   var savingUsername = false;
   var usernameFilled = '';
+  // Quick 261108-fku (owner decision 2026-11-08): the rename wait. The OK button is
+  // optional, so an older hand built page keeps working. data-wait-message is the
+  // server's sentence while the account is inside the gap (read once at load; a
+  // non empty value opens the window locked). data-wait-after-change is the whole
+  // gap sentence, kept as the lock after a change saved in this page. The server
+  // still decides on save; a page left open past the end of the wait may show the
+  // locked state until it is reloaded.
+  var usernameOk = el('settings-username-ok');
+  var usernameLock = hasUsername ? (usernameWin.getAttribute('data-wait-message') || '') : '';
+  var waitAfterChange = hasUsername ? (usernameWin.getAttribute('data-wait-after-change') || '') : '';
 
   var nameRow = el('settings-name-row');
   var nameValue = el('settings-name-value');
@@ -394,14 +407,19 @@
     session += 1;
     if (which === 'username') {
       hideLine(usernameError);
-      usernameFilled = storedValue(usernameRow);
-      usernameInput.value = usernameFilled;
-      if (usernameCheck === null && window.PinalertUsernameCheck && typeof window.PinalertUsernameCheck.attach === 'function') {
-        usernameCheck = window.PinalertUsernameCheck.attach(usernameInput, usernameStatus, { mode: 'settings', onChange: updateUsernameSave });
-      } else if (usernameCheck !== null) {
-        usernameCheck.refresh();
+      if (usernameLock !== '') {
+        // Inside the rename wait: read only, the server's sentence, OK.
+        lockUsername(usernameLock);
+      } else {
+        usernameFilled = storedValue(usernameRow);
+        usernameInput.value = usernameFilled;
+        if (usernameCheck === null) {
+          attachUsernameCheck();
+        } else {
+          usernameCheck.refresh();
+        }
+        updateUsernameSave();
       }
-      updateUsernameSave();
     } else if (which === 'name') {
       hideLine(nameError);
       nameFilled = storedValue(nameRow);
@@ -422,14 +440,19 @@
     target.win.hidden = false;
     lockPage(target.win);
     var focusTarget = which === 'username' ? usernameInput : (which === 'name' ? nameInput : homeInput);
+    // A locked Username window puts focus on OK, the one action (Quick 261108-fku).
+    if (which === 'username' && usernameLock !== '' && usernameOk) {
+      focusTarget = usernameOk;
+    }
     focusTarget.focus();
-    if (which === 'username' && typeof usernameInput.select === 'function') {
+    if (which === 'username' && usernameLock === '' && typeof usernameInput.select === 'function') {
       usernameInput.select();
     }
   }
 
-  // closeWindow is reached from the X and Escape only. restoreFocus puts focus
-  // back on the row that opened the window.
+  // closeWindow is reached from the X and Escape, and from OK and Enter inside
+  // the rename wait (Quick 261108-fku, owner decision 2026-11-08). restoreFocus
+  // puts focus back on the row that opened the window.
   function closeWindow(which, restoreFocus) {
     var target = windows[which || current];
     if (!target || current === null || (which && which !== current)) {
@@ -454,6 +477,18 @@
   function onWindowKeydown(which, e) {
     if (e.key === 'Escape') {
       closeWindow(which, true);
+      return;
+    }
+    // Inside the rename wait nothing can be saved, so Enter anywhere but on OK
+    // closes the window like OK does (Quick 261108-fku, owner decision
+    // 2026-11-08). It is caught here, so it works whether or not the browser
+    // would submit a form from a read only field; on OK the click closes.
+    if (e.key === 'Enter' && which === 'username' && usernameLock !== '') {
+      if (usernameOk && e.target === usernameOk) {
+        return;
+      }
+      e.preventDefault();
+      closeWindow('username', true);
       return;
     }
     if (e.key !== 'Tab') {
@@ -502,6 +537,56 @@
   }
 
   // ---- Username -------------------------------------------------------------
+
+  // attachUsernameCheck wires the shared live check the first time it is needed.
+  // It judges the field at once, as step 4 does.
+  function attachUsernameCheck() {
+    if (usernameCheck === null && window.PinalertUsernameCheck && typeof window.PinalertUsernameCheck.attach === 'function') {
+      usernameCheck = window.PinalertUsernameCheck.attach(usernameInput, usernameStatus, { mode: 'settings', onChange: onUsernameChange });
+    }
+  }
+
+  // onUsernameChange is the live check's change hook. Quick 261108-fku (owner
+  // decision 2026-11-08, D11): a wait answer while the window is in its normal
+  // state (the change was made in another tab) switches it to the locked state
+  // with the server's own sentence. Every state still redraws Save username.
+  function onUsernameChange(state, ctl) {
+    if (state === 'wait' && usernameLock === '' && current === 'username') {
+      var sentence = String(usernameStatus.textContent || '');
+      lockUsername(sentence !== '' ? sentence : waitAfterChange);
+    }
+    updateUsernameSave(state, ctl);
+  }
+
+  // lockUsername draws the window for the rename wait: the stored name in a read
+  // only field, the server's sentence in the status line with the wait look, the
+  // help line as it is, Save username hidden and one OK button. The field is made
+  // read only before the live check is attached, so the check never judges it, and
+  // the sentence is written through the check (hold) so the status line's classes
+  // stay owned by username-check.js. Nothing is saved from this state.
+  function lockUsername(sentence) {
+    usernameLock = sentence;
+    usernameFilled = storedValue(usernameRow);
+    usernameInput.value = usernameFilled;
+    usernameInput.setAttribute('readonly', '');
+    usernameInput.setAttribute('aria-readonly', 'true');
+    attachUsernameCheck();
+    if (usernameCheck !== null && typeof usernameCheck.hold === 'function') {
+      usernameCheck.hold(sentence);
+    } else {
+      setText(usernameStatus, sentence);
+    }
+    usernameSave.hidden = true;
+    if (usernameOk) {
+      usernameOk.hidden = false;
+    }
+    hideLine(usernameError);
+    // A window already open (a wait answer while it is open) moves focus to OK;
+    // an opening focuses it once the window is shown.
+    if (!usernameWin.hidden) {
+      (usernameOk || usernameInput).focus();
+    }
+  }
 
   // swapClass puts one class in place of another on a node, keeping the rest.
   function swapClass(node, remove, add) {
@@ -572,9 +657,20 @@
         return;
       }
       var stored = answer.body && typeof answer.body.username === 'string' && answer.body.username !== '' ? answer.body.username : wanted;
+      var before = storedValue(usernameRow);
       setRow(usernameRow, usernameValue, stored);
+      // Quick 261108-fku (owner decision 2026-11-08, C9): a name that replaced an
+      // earlier one starts the wait, so the next opening is locked with the whole
+      // gap sentence without a reload. A first username saved from Not set starts
+      // no wait (the server keeps the change time empty on a first set).
+      if (before !== '' && before !== stored && waitAfterChange !== '') {
+        usernameLock = waitAfterChange;
+      }
       if (sameWindow) {
         closeWindow('username', true);
+      } else if (current === 'username' && usernameLock !== '') {
+        // A save from an earlier opening landed in the window open now: it locks.
+        lockUsername(usernameLock);
       } else if (current === 'username' && usernameInput.value === usernameFilled) {
         // A save from an earlier opening landed in the window open now: the
         // untouched field takes the saved name (like the Name window).
@@ -965,8 +1061,16 @@
     usernameRow.addEventListener('click', function () { openWindow('username'); });
     usernameClose.addEventListener('click', function () { closeWindow('username', true); });
     usernameWin.addEventListener('keydown', function (e) { onWindowKeydown('username', e); });
+    if (usernameOk) {
+      usernameOk.addEventListener('click', function () { closeWindow('username', true); });
+    }
     usernameForm.addEventListener('submit', function (e) {
       e.preventDefault();
+      // Inside the rename wait a submit closes the window like OK (Quick 261108-fku).
+      if (usernameLock !== '') {
+        closeWindow('username', true);
+        return;
+      }
       if (usernameSave.getAttribute('aria-disabled') === 'true') {
         // Review fix WR-B03: a check that failed is asked again by the press,
         // so the person is never left with nothing to press. Nothing is saved.
