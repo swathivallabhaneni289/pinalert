@@ -518,6 +518,19 @@ func TestPersonPageBand(t *testing.T) {
 	if strings.Contains(band, `id="person-state-line"`) {
 		t.Errorf("your own page draws the state line inside the band")
 	}
+	// Quick 261108-hm7 (owner decision 2026-11-08, all beside your letter): the
+	// laptop moves the parts with the grid areas only, so the markup keeps the
+	// phone's reading order: the letter, the username, the record, the counts, then
+	// the action row. The action row is drawn next to the username on the laptop,
+	// but it must stay after the counts here (no markup moved for the laptop).
+	last := -1
+	for _, id := range []string{`id="person-disc"`, `<h1 id="person-username"`, `id="person-record"`, `id="person-followers-button"`, `id="person-following-button"`, `id="person-actions"`, `id="person-action-error"`} {
+		at := strings.Index(band, id)
+		if at < 0 || at < last {
+			t.Errorf("your own page: %s is missing or out of the phone's reading order in the band", id)
+		}
+		last = at
+	}
 	stateAt := strings.Index(after, `id="person-state-line"`)
 	headerEnd := strings.Index(after, "</header>")
 	if stateAt < 0 || headerEnd < 0 || stateAt > headerEnd {

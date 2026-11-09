@@ -6,8 +6,11 @@
  * new token. Written mobile first: the phone stack is the base, and the laptop
  * layout sits in the one min-width 900px block at the end. Quick 261108-fku
  * (owner decision 2026-11-08, the band drawn by the owner): from 900px the
- * header is one band across the top, then the Recent reports at full width; the
- * phone is the column it always was. The same features and words show on both
+ * header is one full width box, then the Recent reports at full width; the
+ * phone is the column it always was. Quick 261108-hm7 (owner decision
+ * 2026-11-08, all beside your letter): inside that box every part sits close
+ * beside the letter disc, with the action row right after the username. The
+ * same features and words show on both
  * sizes; nothing here hides a control on one size.
  *
  * Muted text appears on --color-bg only. The letter disc, the tag chip and the
@@ -769,20 +772,32 @@ a.person-report__body:hover .person-report__label {
     padding: var(--space-lg);
   }
 
-  /* The band: one box with a top part (who, the counts over the action row, right
-     aligned) and a lower part (the record) under a line. The DOM stays in the
-     phone's reading order; the grid areas only place the counts and the actions
-     top right, so Tab runs Followers, Following, the action row, then the rating
-     control, never back up. The rating mount and the action error line are not
-     named in the areas: they take the full width after the record. The band never
-     sets overflow, so the More menu is not clipped. */
+  /* Quick 261108-hm7 (owner decision 2026-11-08, all beside your letter): the
+     band is one box with the letter disc in the first column and everything else
+     in the second, close together and left aligned, top to bottom: the username
+     with the action row right after it on the same line, the name, the counts,
+     the record (stars, tag with its sentence, Member since with the home area),
+     then the rating and the action error line. Nothing is pushed to the far
+     right and no line crosses the box. The identity wrappers take display
+     contents, so the disc, the h1 and the name are items of this grid. The DOM
+     keeps the phone's reading order (identity, record, counts, actions, rating,
+     error line), and the grid areas only move things, so on the laptop Tab
+     reaches Followers and Following before the action row that sits next to the
+     username. That is a known conflict with WCAG 2.4.3, accepted because it is
+     the owner's drawing: every control is still reachable, and the order runs
+     top to bottom except for the action row. No CSS order property is used.
+     The rating mount and the action error line are not named in the areas: they
+     take the second column in the rows after the record, and an empty or hidden
+     one adds no row and no gap. The band never sets overflow, so the More menu
+     is not clipped. */
   .person-band {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto auto minmax(0, 1fr);
     grid-template-areas:
-      "ident counts"
-      "ident actions"
-      "record record";
+      "disc user actions"
+      "disc name name"
+      "disc counts counts"
+      "disc record record";
     column-gap: var(--space-md);
     row-gap: var(--space-sm);
     align-items: start;
@@ -794,37 +809,48 @@ a.person-report__body:hover .person-report__label {
     background: var(--color-bg);
   }
 
-  .person-band .person-ident {
-    grid-area: ident;
+  .person-band .person-ident,
+  .person-band .person-ident__text {
+    display: contents;
+  }
+
+  .person-band .person-disc {
+    grid-area: disc;
+    align-self: start;
+  }
+
+  .person-band h1.person-username {
+    grid-area: user;
     align-self: center;
   }
 
+  .person-band .person-name {
+    grid-area: name;
+  }
+
+  /* The count buttons keep their padding and their transparent edge, so the
+     first one is pulled back by exactly that much and its words line up with the
+     username's left edge. */
   .person-band .person-counts {
     grid-area: counts;
-    justify-self: end;
-    justify-content: flex-end;
+    justify-self: start;
+    margin-inline-start: calc((var(--space-12) + 1px) * -1);
   }
 
   .person-band .person-actions {
     grid-area: actions;
-    justify-self: end;
-    justify-content: flex-end;
+    align-self: center;
+    justify-self: start;
   }
 
-  /* The line across the band is the record's top border, run edge to edge with
-     negative inline margins and matching padding. The top part sits 24px above
-     it (the row gap plus the margin), the content 24px under it. The record is a
-     wrapping row: the stars and the tag take a full row each, Member since and
-     the home area share one. */
+  /* The record is a wrapping row: the stars and the tag take a full row each,
+     Member since and the home area share one. There is no line across the box. */
   .person-record {
     grid-area: record;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-12) var(--space-lg);
-    margin: calc(var(--space-lg) - var(--space-sm)) calc(var(--space-lg) * -1) 0;
-    padding: var(--space-lg) var(--space-lg) 0;
-    border-top: 1px solid var(--color-border);
   }
 
   .person-record > .person-stars,
@@ -845,10 +871,11 @@ a.person-report__body:hover .person-report__label {
     min-width: 0;
   }
 
-  /* The rating and the action error line, after the details. */
+  /* The rating and the action error line, after the details, in the second
+     column. */
   .person-band .person-rating,
   .person-band .inline-error {
-    grid-column: 1 / -1;
+    grid-column: 2 / -1;
     margin-top: var(--space-sm);
   }
 
@@ -859,8 +886,8 @@ a.person-report__body:hover .person-report__label {
     border-color: transparent;
   }
 
-  /* The row is right aligned, so the menu hangs from its right edge and never
-     leaves the screen. */
+  /* The action row sits right after the username and is only as wide as its
+     buttons, so the menu hangs from the row's right edge, under More. */
   .person-band .person-menu:not([hidden]) {
     right: 0;
     left: auto;
@@ -971,16 +998,13 @@ a.person-report__body:hover .person-report__label {
     border: 1px solid CanvasText;
   }
 
-  /* Quick 261108-fku (owner decision 2026-11-08): the band, its line and the
-     state box keep their edges in a forced colours theme. These set only
-     colours, so they draw nothing on the phone, where no border style is set. */
+  /* Quick 261108-fku (owner decision 2026-11-08): the band and the state box
+     keep their edges in a forced colours theme. These set only colours, so they
+     draw nothing on the phone, where no border style is set. Quick 261108-hm7:
+     the line across the band is gone, so the record has no edge to keep. */
   .person-band,
   .person-reports__state {
     border-color: CanvasText;
-  }
-
-  .person-record {
-    border-top-color: CanvasText;
   }
 
   /* Plan 09-24 (UI-SPEC 1d): the chosen bell adds a Highlight border. */
