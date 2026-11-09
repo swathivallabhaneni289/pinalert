@@ -67,3 +67,19 @@ func TestSettingsUsernameWaitWords(t *testing.T) {
 		}
 	}
 }
+
+// TestUsernameFieldReadOnlyLook pins the owner finding of 2026-11-09 (07.1 test
+// 5): the locked Username box looks locked. While its input is read only the box
+// takes the surface fill and the quiet border, keeps the body text colour (muted
+// text is kept for --color-bg), and shows no text cursor.
+func TestUsernameFieldReadOnlyLook(t *testing.T) {
+	css := stripCSSComments(p421ReadStatic(t, "css/chrome.css"))
+	rule := regexp.MustCompile(`(?s)\.username-field:has\(\.username-field__input\[readonly\]\)\s*\{([^}]*)\}`).FindStringSubmatch(css)
+	if rule == nil {
+		t.Fatalf("chrome.css has no rule for the box of a read only Username input")
+	}
+	p13MustContain(t, "read only box", rule[1],
+		"border-color: var(--color-border);", "background: var(--color-surface);", "cursor: default;")
+	p13MustNotContain(t, "read only box", rule[1], "color-text-muted", "!important", "opacity")
+	p13MustContain(t, "chrome.css", css, ".username-field__input[readonly] {")
+}

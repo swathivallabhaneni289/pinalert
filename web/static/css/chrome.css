@@ -750,6 +750,21 @@ html[data-modal-open] .notice-card {
   outline: none;
 }
 
+/* Owner finding 2026-11-09 (07.1 test 5): the Username window locked during the
+   7 day wait (quick 261108-fku) makes the input read only, and a box that cannot
+   be typed in must look it. The box takes the surface fill and the quiet border;
+   the name keeps --color-text, so it stays readable on the fill. Step 4 never
+   makes the input read only, so it never draws this. */
+.username-field:has(.username-field__input[readonly]) {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  cursor: default;
+}
+
+.username-field__input[readonly] {
+  cursor: default;
+}
+
 /* The text colour is its own rule, ahead of the tone rules below, so a tone class
    (one class) wins over it by order and not by weight. */
 .username-status {
