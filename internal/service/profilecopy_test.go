@@ -74,8 +74,10 @@ func TestProfileCopy(t *testing.T) {
 	t.Run("own_state_line", func(t *testing.T) {
 		eq(t, "on and reliable", service.OwnStateLine(true, true), "People can follow you while you hold the Reliable reporter tag.")
 		eq(t, "on not reliable", service.OwnStateLine(true, false), "People can follow you once you hold the Reliable reporter tag.")
-		eq(t, "off", service.OwnStateLine(false, true), "Only you can see this page. Turn on Let others follow me in Settings.")
-		eq(t, "off not reliable", service.OwnStateLine(false, false), "Only you can see this page. Turn on Let others follow me in Settings.")
+		// Amended 2026-11-09 (quick 261109-n25, fewer words): the private line no
+		// longer adds "Turn on Let others follow me in Settings."
+		eq(t, "off", service.OwnStateLine(false, true), "Only you can see this page.")
+		eq(t, "off not reliable", service.OwnStateLine(false, false), "Only you can see this page.")
 	})
 
 	t.Run("sentences", func(t *testing.T) {

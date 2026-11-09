@@ -151,7 +151,7 @@ func TestProfileOwnPageStates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Profile (off): %v", err)
 	}
-	if !got.IsSelf || got.ProfilePublic || got.Username != "own.off" || got.StateLine != "Only you can see this page. Turn on Let others follow me in Settings." {
+	if !got.IsSelf || got.ProfilePublic || got.Username != "own.off" || got.StateLine != "Only you can see this page." { // Amended 2026-11-09 (quick 261109-n25): the short private line.
 		t.Errorf("off: %+v", got)
 	}
 	// Someone else still gets not found for the same page.

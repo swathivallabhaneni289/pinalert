@@ -139,9 +139,20 @@ func TestPersonProfileBand(t *testing.T) {
 		t.Errorf("the laptop .person-page is still a grid")
 	}
 	fkuWant(t, "band", laptop, ".person-band", "display", "grid")
-	fkuWant(t, "band", laptop, ".person-band", "border", "1px solid var(--color-border)")
-	fkuWant(t, "band", laptop, ".person-band", "border-radius", "12px")
-	fkuWant(t, "band", laptop, ".person-band", "padding", "var(--space-lg)")
+	// Amended 2026-11-09 (quick 261109-n25, "these boxes make it look really
+	// empty"): the fku pins for the band's border, radius and padding are replaced.
+	// The band draws no box on the laptop: no border, no radius, no padding and no
+	// background, and the phone base never had them either.
+	for _, prop := range []string{"border", "border-width", "border-style", "border-color", "border-radius", "padding", "background", "background-color"} {
+		if v, ok := fkuDecl(laptop, ".person-band", prop); ok {
+			t.Errorf("the laptop .person-band declares %s: %s (no box around the band)", prop, v)
+		}
+		if v, ok := fkuDecl(base, ".person-band", prop); ok {
+			t.Errorf("the phone .person-band declares %s: %s", prop, v)
+		}
+	}
+	// The header, the state line and Recent reports stay apart by the page gap.
+	fkuWant(t, "page gap", laptop, ".person-page", "gap", "var(--space-xl)")
 	// Quick 261108-hm7 (owner decision 2026-11-08, all beside your letter; amended
 	// 2026-11-08): the disc takes the first column and every other part the second,
 	// so the areas are a disc column beside user and actions, name, counts, record.
@@ -199,9 +210,43 @@ func TestPersonProfileBand(t *testing.T) {
 	// The rating and the error line take the second column after the record.
 	fkuWant(t, "rating", laptop, ".person-band .person-rating", "grid-column", "2 / -1")
 	fkuWant(t, "tag row", laptop, ".person-tag-group", "flex-direction", "row")
-	// D6: the empty and error states sit in a box like the rows box.
-	fkuWant(t, "state box", laptop, ".person-reports__state", "border", "1px solid var(--color-border)")
-	fkuWant(t, "state box", laptop, ".person-reports__state", "border-radius", "12px")
+	// Amended 2026-11-09 (quick 261109-n25): the fku D6 pins (a bordered, rounded
+	// box with centred text) are replaced. The empty and error states have no
+	// border and no padding on the laptop, sit left aligned, and the heading is
+	// muted body text. The rows box with real rows is unchanged.
+	for _, prop := range []string{"border", "border-radius", "border-width", "border-color"} {
+		if v, ok := fkuDecl(laptop, ".person-reports__state", prop); ok {
+			t.Errorf("the laptop .person-reports__state declares %s: %s (no box around the empty and error states)", prop, v)
+		}
+	}
+	fkuWant(t, "state", laptop, ".person-reports__state", "padding", "0")
+	fkuWant(t, "state", laptop, ".person-reports__state", "text-align", "left")
+	fkuWant(t, "state", laptop, ".person-reports__state", "align-items", "flex-start")
+	fkuWant(t, "state heading", laptop, ".person-reports__state h3", "color", "var(--color-text-muted)")
+	fkuWant(t, "state heading", laptop, ".person-reports__state h3", "font-size", "var(--font-size-body)")
+	fkuWant(t, "state heading", laptop, ".person-reports__state h3", "font-weight", "var(--font-weight-regular)")
+	fkuWant(t, "rows box", laptop, ".person-report-box", "border", "1px solid var(--color-border)")
+	fkuWant(t, "rows box", laptop, ".person-report-box", "border-radius", "12px")
+	// Small action buttons: 32px tall, label font size, compact inline padding, the
+	// radius of .btn left alone (WCAG 2.5.8 asks for 24px). The bell matches. The
+	// counts keep their 44px hit area (the phone base rule is not overridden).
+	fkuWant(t, "small buttons", laptop, ".person-band .person-actions .btn", "min-height", "32px")
+	fkuWant(t, "small buttons", laptop, ".person-band .person-actions .btn", "padding", "0 var(--space-12)")
+	fkuWant(t, "small buttons", laptop, ".person-band .person-actions .btn", "font-size", "var(--font-size-label)")
+	if v, ok := fkuDecl(laptop, ".person-band .person-actions .btn", "border-radius"); ok {
+		t.Errorf("the small buttons change the radius: %s", v)
+	}
+	for _, prop := range []string{"width", "height", "min-width", "min-height"} {
+		fkuWant(t, "small bell", laptop, ".person-band .person-bell:not([hidden])", prop, "32px")
+	}
+	if v, ok := fkuDecl(laptop, ".person-count", "min-height"); ok {
+		t.Errorf("the laptop shrinks the counts' hit area: %s", v)
+	}
+	if v, ok := fkuDecl(laptop, ".person-band .person-count", "min-height"); ok {
+		t.Errorf("the laptop shrinks the counts' hit area: %s", v)
+	}
+	fkuWant(t, "phone buttons", base, ".person-bell:not([hidden])", "width", "var(--touch-target-min)")
+	fkuWant(t, "phone buttons", base, ".person-count", "min-height", "var(--touch-target-min)")
 	// C4: the menu hangs from the right edge of the action row.
 	fkuWant(t, "menu", laptop, ".person-band .person-menu:not([hidden])", "right", "0")
 
@@ -244,13 +289,22 @@ func TestPersonProfileBand(t *testing.T) {
 	if len(forced) == 0 {
 		t.Errorf("person.css has no forced-colors block")
 	}
-	fkuWant(t, "forced band", forced, ".person-band", "border-color", "CanvasText")
+	// Amended 2026-11-09 (quick 261109-n25): the band and the state box draw no edge,
+	// so their forced colours edge rules are gone; the small action buttons and the
+	// bell keep a visible border instead.
+	if v, ok := fkuDecl(forced, ".person-band", "border-color"); ok {
+		t.Errorf("the forced colours block still keeps a band edge: %s", v)
+	}
+	fkuWant(t, "forced buttons", forced, ".person-actions .btn", "border", "1px solid ButtonText")
+	fkuWant(t, "forced bell", forced, ".person-bell", "border", "1px solid ButtonText")
 	// Amended 2026-11-08 (261108-hm7): the line across the band is gone, so the
 	// record has no edge to keep in a forced colours theme.
 	if v, ok := fkuDecl(forced, ".person-record", "border-top-color"); ok {
 		t.Errorf("the forced colours block still colours a record line: %s", v)
 	}
-	fkuWant(t, "forced state", forced, ".person-reports__state", "border-color", "CanvasText")
+	if v, ok := fkuDecl(forced, ".person-reports__state", "border-color"); ok {
+		t.Errorf("the forced colours block still keeps a state box edge: %s", v)
+	}
 
 	// Whole file: no CSS order property, no hex colour in the new rules, no new
 	// custom property (D7, D8). A property is matched by its exact name, never

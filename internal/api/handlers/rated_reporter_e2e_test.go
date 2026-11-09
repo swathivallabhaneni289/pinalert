@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -237,6 +238,21 @@ func p914AssertProfile(t *testing.T, label string, reader *http.Client, base, us
 	}
 	if p.StarsFromReports != fromReports || p.StarsFromRatings != fromRatings {
 		t.Errorf("%s: profile parts read %q and %q, want %q and %q", label, p.StarsFromReports, p.StarsFromRatings, fromReports, fromRatings)
+	}
+	// Quick 261109-n25 (owner decision 2026-11-09, fewer words): the JSON route
+	// above still carries the two parts, and the profile page draws the stars
+	// total alone. The group keeps the parts in its accessible name.
+	page := string(p914Get(t, reader, base+"/u/"+username))
+	for _, banned := range []string{"person-stars-from-reports", "person-stars-from-ratings", "person-stars__part"} {
+		if strings.Contains(page, banned) {
+			t.Errorf("%s: the profile page draws %q, want the stars total alone", label, banned)
+		}
+	}
+	if !strings.Contains(page, `class="person-stars__number">`+p.StarsNumber+`</span>`) {
+		t.Errorf("%s: the profile page does not draw the stars total %q", label, p.StarsNumber)
+	}
+	if fromReports != "" && !strings.Contains(page, fromReports) {
+		t.Errorf("%s: the stars group's accessible name lost the part %q", label, fromReports)
 	}
 }
 

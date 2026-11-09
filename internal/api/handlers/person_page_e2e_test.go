@@ -8,6 +8,7 @@ package handlers_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math"
 	"net/http"
@@ -325,10 +326,90 @@ func TestPersonPageRecentReports(t *testing.T) {
 	if finished != 6 {
 		t.Errorf("finished rows = %d, want 6 (the report from 40 days ago must be absent)", finished)
 	}
-	for _, want := range []string{"Recent reports", "Reports from the last 30 days, newest first.", ">Report<", ">Status<", ">When<", ">Distance<"} {
+	// Amended 2026-11-09 (quick 261109-n25, fewer words): the line under the title
+	// is cut, a Distance cell starts empty, and a finished row's foot starts hidden.
+	for _, want := range []string{"Recent reports", ">Report<", ">Status<", ">When<", ">Distance<"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the section lacks %q", want)
 		}
+	}
+	for _, banned := range []string{"Reports from the last 30 days, newest first.", "person-reports__line", ">Unknown<"} {
+		if strings.Contains(body, banned) {
+			t.Errorf("the section still holds %q", banned)
+		}
+	}
+	for _, row := range rows {
+		finishedRow := strings.Contains(row, "person-report--finished")
+		hiddenFoot := strings.Contains(row, `<span class="person-report__foot" hidden>`)
+		if finishedRow != hiddenFoot {
+			t.Errorf("a row's foot starts hidden exactly for a finished row (finished %v, hidden %v): %s", finishedRow, hiddenFoot, row)
+		}
+	}
+}
+
+// TestPersonPageFewerWords pins quick 261109-n25 (owner decision 2026-11-09,
+// fewer words) on the page and the JSON route: your own private page reads
+// "Only you can see this page." alone, a New reporter reads "Not rated yet."
+// alone (the shared trust sentence is untouched), the empty state keeps its
+// heading and nothing else, and the line under Recent reports is gone.
+func TestPersonPageFewerWords(t *testing.T) {
+	srv, mailer, pool := p907Server(t)
+	own, _ := p907Person(t, srv, mailer, pool, "n25-own@example.com", "n25_own", false)
+	viewer, _ := p907Person(t, srv, mailer, pool, "n25-viewer@example.com", "n25_viewer", false)
+	p907Person(t, srv, mailer, pool, "n25-other@example.com", "n25_other", true)
+
+	status, page, _ := p907Do(t, own, http.MethodGet, srv.URL+"/u/n25_own", "")
+	if status != http.StatusOK {
+		t.Fatalf("GET own /u/n25_own: status = %d, body %s", status, page)
+	}
+	for _, want := range []string{
+		`<p id="person-state-line" class="person-state-line" role="status">Only you can see this page.</p>`,
+		`<p id="person-tag-sentence" class="person-tag-sentence">Not rated yet.</p>`,
+		`<h3>No reports in the last 30 days</h3>`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("your own private page lacks %q", want)
+		}
+	}
+	for _, banned := range []string{
+		"Turn on Let others follow me", "It needs", "Reports you post will show here.",
+		"Reports from the last 30 days", "person-reports__line", "person-stars-from",
+	} {
+		if strings.Contains(page, banned) {
+			t.Errorf("your own private page still holds %q", banned)
+		}
+	}
+	empty := page[strings.Index(page, `id="person-reports-empty"`):]
+	empty = empty[:strings.Index(empty, "</div>")]
+	if strings.Contains(empty, "<p") {
+		t.Errorf("the empty state holds a paragraph: %s", empty)
+	}
+
+	// The JSON route carries the same short lines, and the fields it always had.
+	status, raw, _ := p907Do(t, own, http.MethodGet, srv.URL+"/api/people/n25_own", "")
+	if status != http.StatusOK {
+		t.Fatalf("GET /api/people/n25_own: status = %d, body %s", status, raw)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal([]byte(raw), &wire); err != nil {
+		t.Fatalf("decoding the profile: %v: %s", err, raw)
+	}
+	if wire["state_line"] != "Only you can see this page." || wire["tag_sentence"] != "Not rated yet." {
+		t.Errorf("JSON state_line %q and tag_sentence %q, want the short lines", wire["state_line"], wire["tag_sentence"])
+	}
+	for _, key := range []string{"stars_from_reports", "stars_from_ratings", "tag_sentence", "state_line", "stars_label"} {
+		if _, ok := wire[key]; !ok {
+			t.Errorf("the JSON route lost the field %q", key)
+		}
+	}
+
+	// Someone else's page with no reports: the heading alone, no sentence naming them.
+	status, other, _ := p907Do(t, viewer, http.MethodGet, srv.URL+"/u/n25_other", "")
+	if status != http.StatusOK {
+		t.Fatalf("GET /u/n25_other: status = %d, body %s", status, other)
+	}
+	if !strings.Contains(other, `<h3>No reports in the last 30 days</h3>`) || strings.Contains(other, "Nothing from n25_other") {
+		t.Errorf("another person's empty state must hold the heading alone")
 	}
 }
 

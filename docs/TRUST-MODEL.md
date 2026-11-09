@@ -352,6 +352,8 @@ The templates, in the server's exact words:
 
 C is the number of corroborated reports, J the number of judged reports, MIN the judged minimum and SCORE the integer score. The score sentence exists only when the score is not null.
 
+Amended 2026-11-09 (quick 261109-n25, owner decision: fewer words on the profile page): the profile page, and the profile JSON route that feeds it, show the short line `Not rated yet.` beside the New reporter tag, and the page draws the stars total alone, without the "from reports" and "from ratings" parts (those two stay in the JSON route and in the stars group's accessible name). The shared New reporter sentence above is unchanged everywhere else, including the report popups, the feed panel and My activity.
+
 The copy lives in `trustcopy.go` and reaches the browser as plain strings on the trust object's `reporter` key: the tag, the score, the label, the sentence, the score sentence and the judged and corroborated counts. The browser holds no rule and no number of its own.
 
 ### Anchor table

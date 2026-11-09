@@ -645,9 +645,10 @@ test('a saved rating redraws the stars, the tag and the follow from the server',
   assert.equal(group.querySelector('.person-stars__number').textContent, '2.8');
   assert.equal(m.els['person-tag'].textContent, 'Mixed record');
   assert.equal(m.els['person-tag-sentence'].textContent, '4 of their last 9 reports were confirmed.');
+  // Amended 2026-11-09 (quick 261109-n25, fewer words): the server still sends
+  // the two parts, and the page draws neither of them.
   const names = group.children.map((c) => c.id);
-  assert.deepEqual(names.filter((n) => String(n).startsWith('person-')), ['person-stars-from-reports', 'person-stars-from-ratings']);
-  assert.equal(group.children.find((c) => c.id === 'person-stars-from-ratings').textContent, '1.0 from ratings by 6 people');
+  assert.deepEqual(names.filter((n) => String(n).startsWith('person-')), []);
   assert.equal(m.els['person-unfollow'].hidden, true, 'the ended follow is taken away');
   assert.equal(m.els['person-follow'].hidden, false);
   assert.deepEqual(m.sinks, []);

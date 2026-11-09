@@ -116,8 +116,10 @@ func TestPersonPageCopy(t *testing.T) {
 		// satisfy it.
 		">Follow</button>", ">Following</button>", "<span>More</span>",
 		">Edit in Settings</a>", ">Remove follower</button>", ">Block</button>",
-		// Surface 5, the part of the section this plan draws.
-		"Recent reports", "Reports from the last 30 days, newest first.",
+		// Surface 5, the part of the section this plan draws. Amended 2026-11-09
+		// (quick 261109-n25, fewer words): the line "Reports from the last 30 days,
+		// newest first." under the title is cut, so only the title is pinned.
+		"Recent reports",
 		`person-stars__word">stars</span>`,
 	} {
 		if !strings.Contains(tmpl, want) {
@@ -266,11 +268,11 @@ func TestPersonReportsSection(t *testing.T) {
 		`<span>Report</span>`, `<span>Status</span>`, `<span>When</span>`, `<span>Distance</span>`)
 	for _, want := range []string{
 		"Couldn't load reports", "Check your connection and try again.", `<a class="btn" href="/u/{{.Profile.Username}}">Try again</a>`,
+		// Amended 2026-11-09 (quick 261109-n25, fewer words): the empty state keeps
+		// only its heading, and a Distance cell starts empty instead of Unknown.
 		"No reports in the last 30 days",
-		"Reports you post will show here.",
-		"Nothing from {{.Profile.Username}} in the last 30 days.",
 		`{{if .ReportsCut}}<p class="person-reports__cut">{{.ReportsCutText}}</p>{{end}}`,
-		`class="person-report__distance" data-lat="{{.Lat}}" data-lon="{{.Lon}}" data-approx="{{.Approx}}">Unknown</span>`,
+		`class="person-report__distance" data-lat="{{.Lat}}" data-lon="{{.Lon}}" data-approx="{{.Approx}}"></span>`,
 		`<a class="person-report__body" href="{{.Href}}">`,
 	} {
 		if !strings.Contains(section, want) {
@@ -304,15 +306,41 @@ func TestPersonReportsSection(t *testing.T) {
 		t.Errorf("the page must carry data-account-id for position.js; without it every distance reads Unknown")
 	}
 	script := p421ReadStatic(t, "js/person-reports.js")
-	for _, want := range []string{"PinalertPosition", "'Unknown'", "'About '", "person-report__distance"} {
+	for _, want := range []string{"PinalertPosition", "'About '", "person-report__distance", "person-report__chevron"} {
 		if !strings.Contains(script, want) {
 			t.Errorf("person-reports.js lacks %q", want)
 		}
+	}
+	// Amended 2026-11-09 (quick 261109-n25, fewer words): no word is written for
+	// an unknown distance, and the empty paragraph and line are gone.
+	if strings.Contains(script, "Unknown'") {
+		t.Errorf("person-reports.js still writes Unknown")
+	}
+	for _, gone := range []string{"Reports you post will show here.", "Nothing from {{.Profile.Username}} in the last 30 days.", "person-reports__line", ">Unknown<"} {
+		if strings.Contains(tmpl, gone) {
+			t.Errorf("person.html.tmpl still holds %q", gone)
+		}
+	}
+	// The finished row's foot starts hidden: with no distance it would be an
+	// empty bordered strip on the phone. The live row's foot is never hidden.
+	if strings.Count(section, `<span class="person-report__foot" hidden>`) != 1 || strings.Count(section, `<span class="person-report__foot">`) != 1 {
+		t.Errorf("exactly the finished row's foot starts hidden")
 	}
 	for _, sink := range []string{"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"} {
 		if strings.Contains(script, sink) {
 			t.Errorf("person-reports.js uses the markup sink %s", sink)
 		}
+	}
+	// Quick 261109-n25: the hidden foot really disappears (the foot's display
+	// rule would beat the hidden attribute), and on the phone the card drops the
+	// empty fourth grid row so no gap is left under the "when" line.
+	css := p421ReadStatic(t, "css/person.css")
+	if !strings.Contains(css, ".person-report__foot[hidden] {\n  display: none;\n}") {
+		t.Errorf("person.css does not undo the foot's display rule for the hidden attribute")
+	}
+	phoneFoot := "@media not all and (min-width: 900px) {\n  .person-report__body:has(.person-report__foot[hidden]) {\n    grid-template-areas:\n      \"disc status\"\n      \"report report\"\n      \"when when\";"
+	if !strings.Contains(css, phoneFoot) {
+		t.Errorf("person.css does not drop the foot row of a card whose foot is hidden, phone only")
 	}
 }
 
@@ -339,8 +367,9 @@ func TestPersonChipTintsMatchActivity(t *testing.T) {
 }
 
 // TestPersonStarsParts pins plan 09-16 (D-02, UI-SPEC 1c and 3a) in the
-// template: the two parts follow the total inside #person-stars, each drawn only
-// when the server sends it, with no separator; the rating box mounts under the
+// template. Amended 2026-11-09 (quick 261109-n25, fewer words): the page draws
+// the stars total alone, so the two parts are no longer in the group, in the
+// stylesheet or in person.js; the group keeps its accessible name. The rating box mounts under the
 // action row only when the server says MayRate, and only on another person's
 // page; stars.css and stars.js are linked, the script before person.js.
 func TestPersonStarsParts(t *testing.T) {
@@ -348,20 +377,18 @@ func TestPersonStarsParts(t *testing.T) {
 	p421InOrder(t, "the stars group", tmpl,
 		`id="person-stars"`,
 		`class="person-stars__total"`,
-		`{{if .Profile.StarsFromReports}}<span id="person-stars-from-reports"`,
-		`{{if .Profile.StarsFromRatings}}<span id="person-stars-from-ratings"`,
 		`id="person-tag"`,
 	)
-	// Both parts sit inside the group: only the group's own closing div comes
-	// between the total and the tag chip.
+	// Only the total is inside the group: one closing div comes between the
+	// total and the tag chip, and no part is drawn.
 	group := tmpl[strings.Index(tmpl, `id="person-stars"`):strings.Index(tmpl, `id="person-tag"`)]
-	for _, want := range []string{"person-stars-from-reports", "person-stars-from-ratings"} {
-		if !strings.Contains(group, want) {
-			t.Errorf("%s is not inside the stars group", want)
+	for _, gone := range []string{"person-stars-from-reports", "person-stars-from-ratings", "StarsFromReports", "StarsFromRatings", "person-stars__part"} {
+		if strings.Contains(tmpl, gone) {
+			t.Errorf("person.html.tmpl still draws %q", gone)
 		}
 	}
 	if strings.Count(group, "</div>") != 1 {
-		t.Errorf("the stars group holds %d closing divs before the tag chip, want 1 (both parts are inside it)", strings.Count(group, "</div>"))
+		t.Errorf("the stars group holds %d closing divs before the tag chip, want 1", strings.Count(group, "</div>"))
 	}
 	for _, sep := range []string{"&middot;", string(rune(0xb7)), "&bull;", string(rune(0x2022)), "|"} {
 		if strings.Contains(group, sep) {
@@ -396,10 +423,13 @@ func TestPersonStarsParts(t *testing.T) {
 		`src="/static/js/person.js?v={{.AssetVersion}}"`,
 	)
 	css := p421ReadStatic(t, "css/person.css")
-	if !strings.Contains(css, ".person-stars__part") || !strings.Contains(css, "--color-text-muted") {
-		t.Errorf("person.css does not style .person-stars__part as muted Label text")
+	if strings.Contains(css, ".person-stars__part") || strings.Contains(css, ".person-reports__line") {
+		t.Errorf("person.css still styles a part or a line the page no longer draws")
 	}
 	script := p421ReadStatic(t, "js/person.js")
+	if strings.Contains(script, "drawPart") || strings.Contains(script, "person-stars-from") {
+		t.Errorf("person.js still draws the stars parts")
+	}
 	for _, want := range []string{"PinalertStars", "createControl", "may_rate", "your_rating", "data-your-rating"} {
 		if !strings.Contains(script, want) {
 			t.Errorf("person.js lacks %q", want)
