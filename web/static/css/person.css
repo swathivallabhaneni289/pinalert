@@ -9,9 +9,10 @@
  * header is one full width box, then the Recent reports at full width; the
  * phone is the column it always was. Quick 261108-hm7 (owner decision
  * 2026-11-08, all beside your letter): inside that box every part sits close
- * beside the letter disc, with the action row right after the username. The
- * same features and words show on both
- * sizes; nothing here hides a control on one size.
+ * beside the letter disc, with the action row right after the username. Quick
+ * 261109-n25 (owner decision 2026-11-09): from 900px the band and the empty
+ * state draw no box and the action buttons are small. The same features and
+ * words show on both sizes; nothing here hides a control on one size.
  *
  * Muted text appears on --color-bg only. The letter disc, the tag chip and the
  * hover fills take --color-text on --color-surface. The stars are drawn in
@@ -771,6 +772,9 @@ a.person-report__body:hover .person-report__label {
      column and its gap; only the padding is wider. */
   .person-page {
     padding: var(--space-lg);
+    /* Quick 261109-n25: the band has no box and no padding any more, so the
+       header, the state line and Recent reports are kept apart by the page gap. */
+    gap: var(--space-xl);
   }
 
   /* Quick 261108-hm7 (owner decision 2026-11-08, all beside your letter): the
@@ -790,7 +794,10 @@ a.person-report__body:hover .person-report__label {
      The rating mount and the action error line are not named in the areas: they
      take the second column in the rows after the record, and an empty or hidden
      one adds no row and no gap. The band never sets overflow, so the More menu
-     is not clipped. */
+     is not clipped. Quick 261109-n25 (owner decision 2026-11-09, "these boxes
+     make it look really empty"): the band draws no box. It has no border, no
+     radius, no background and no inner padding, so its content sits straight on
+     the page background and its left edge is Recent reports' left edge. */
   .person-band {
     display: grid;
     grid-template-columns: auto auto minmax(0, 1fr);
@@ -804,10 +811,6 @@ a.person-report__body:hover .person-report__label {
     align-items: start;
     box-sizing: border-box;
     min-width: 0;
-    padding: var(--space-lg);
-    border: 1px solid var(--color-border);
-    border-radius: 12px;
-    background: var(--color-bg);
   }
 
   .person-band .person-ident,
@@ -921,13 +924,51 @@ a.person-report__body:hover .person-report__label {
     border: 0;
   }
 
-  /* Quick 261108-fku (owner decision 2026-11-08, D6): the empty and the error
-     state of Recent reports sit in a box with the rows box's border and radius,
-     the text centred inside it (main.css centres it). */
+  /* Quick 261108-fku (owner decision 2026-11-08, D6) boxed the empty and the
+     error state of Recent reports. Quick 261109-n25 (owner decision 2026-11-09)
+     takes the box away: the heading sits left aligned under Recent reports in the
+     muted text colour at body size, with no border and no padding (main.css
+     centres the text and pads it, so both are undone here). The error state is
+     the same and keeps its Try again button. The rows box with real rows below
+     is unchanged. */
   .person-reports__state {
-    padding: var(--space-xl) var(--space-lg);
-    border: 1px solid var(--color-border);
-    border-radius: 12px;
+    align-items: flex-start;
+    padding: 0;
+    text-align: left;
+  }
+
+  .person-reports__state h3 {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
+    font-weight: var(--font-weight-regular);
+  }
+
+  /* Quick 261109-n25 (owner decision 2026-11-09, "Edit in Settings looks too
+     big"): the action row's buttons are small on the laptop. 32px tall, the
+     label font size and a compact inline padding, the same 6px radius. The
+     target size is 32px, above the 24px that WCAG 2.5.8 (Target Size, Minimum)
+     asks for. The phone keeps the 44px buttons. The Followers and Following
+     counts keep their 44px hit area and the menu items keep theirs. */
+  .person-band .person-actions .btn {
+    box-sizing: border-box;
+    min-height: 32px;
+    padding: 0 var(--space-12);
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
+  }
+
+  .person-band .person-bell:not([hidden]) {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+  }
+
+  .person-band .person-bell__icon {
+    width: 20px;
+    height: 20px;
   }
 
   /* Surface 5b: rows in columns inside one box. */
@@ -999,13 +1040,13 @@ a.person-report__body:hover .person-report__label {
     border: 1px solid CanvasText;
   }
 
-  /* Quick 261108-fku (owner decision 2026-11-08): the band and the state box
-     keep their edges in a forced colours theme. These set only colours, so they
-     draw nothing on the phone, where no border style is set. Quick 261108-hm7:
-     the line across the band is gone, so the record has no edge to keep. */
-  .person-band,
-  .person-reports__state {
-    border-color: CanvasText;
+  /* Quick 261109-n25 (owner decision 2026-11-09): the band and the state box
+     draw no edge on the laptop any more, so the edge rules of 261108-fku are
+     gone. The small action buttons and the bell keep a visible border in a forced
+     colours theme. */
+  .person-actions .btn,
+  .person-bell {
+    border: 1px solid ButtonText;
   }
 
   /* Plan 09-24 (UI-SPEC 1d): the chosen bell adds a Highlight border. */
