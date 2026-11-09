@@ -12,7 +12,10 @@
 // "{d} km". A finished report's cell carries only the coarse cell centre the
 // server wrote (data-approx is true) and reads "About {d} km", at least 1, so
 // the reader is never given a finished report's exact place. With no known
-// position, every cell reads Unknown. A cell with no coordinates is left alone.
+// position, or with numbers that cannot be used, the cell is left empty (quick
+// 261109-n25, owner decision 2026-11-09: fewer words) and its foot is hidden
+// unless it also holds the live row's chevron. A cell with no coordinates is
+// left alone.
 //
 // The distance is for display only. It is never an input to a vote, a count or
 // any trust figure.
@@ -24,7 +27,6 @@ window.PinalertPersonReports = (function () {
 
   // The earth's mean radius in kilometres, for the great circle distance.
   var EARTH_RADIUS_KM = 6371;
-  var UNKNOWN = 'Unknown';
 
   // greatCircleKm is the haversine distance between two points, in the arctan
   // form of the same formula ended-nearby.js uses.
@@ -64,8 +66,18 @@ window.PinalertPersonReports = (function () {
     return Number(raw);
   }
 
+  // showFoot hides the foot of a row that has nothing to show: no distance and
+  // no chevron (a finished row). A live row keeps its foot for the chevron.
+  function showFoot(cell, hasText) {
+    var foot = cell.parentNode;
+    if (!foot || typeof foot.querySelector !== 'function') {
+      return;
+    }
+    foot.hidden = !hasText && !foot.querySelector('.person-report__chevron');
+  }
+
   // fillDistances writes every Distance cell of the section from a position
-  // {lat, lon}, or Unknown when there is none or a cell has unusable numbers.
+  // {lat, lon}, or nothing when there is none or a cell has unusable numbers.
   function fillDistances(position) {
     var cells = document.querySelectorAll('.person-report__distance');
     for (var i = 0; i < cells.length; i++) {
@@ -75,12 +87,13 @@ window.PinalertPersonReports = (function () {
       }
       var lat = readNumber(cell, 'data-lat');
       var lon = readNumber(cell, 'data-lon');
-      var text = UNKNOWN;
+      var text = '';
       if (position && isFinite(position.lat) && isFinite(position.lon) && isFinite(lat) && isFinite(lon)) {
         var km = greatCircleKm(position.lat, position.lon, lat, lon);
         text = cell.getAttribute('data-approx') === 'true' ? finishedWords(km) : liveWords(km);
       }
       cell.textContent = text;
+      showFoot(cell, text !== '');
     }
   }
 

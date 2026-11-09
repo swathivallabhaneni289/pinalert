@@ -197,10 +197,17 @@ func (s *PeopleService) Profile(ctx context.Context, viewerID int64, username st
 		return PersonProfile{}, fmt.Errorf("service: Profile: counting: %w", err)
 	}
 
+	tagSentence := sig.Sentence
+	if sig.Tag == ReporterNew {
+		// Quick 261109-n25: the profile view model carries the short New line; the
+		// shared trust sentence is unchanged everywhere else.
+		tagSentence = ProfileNewSentence
+	}
+
 	p := PersonProfile{
 		MemberSince:    MemberSinceText(person.CreatedAt),
 		TagWord:        sig.Label,
-		TagSentence:    sig.Sentence,
+		TagSentence:    tagSentence,
 		FollowersCount: int(counts.Followers),
 		FollowingCount: int(counts.Following),
 		FollowersWord:  FollowersWord(int(counts.Followers)),

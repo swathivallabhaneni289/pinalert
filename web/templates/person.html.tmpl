@@ -59,9 +59,7 @@
       <div id="person-stars" class="person-stars" role="group" aria-label="{{.Profile.StarsLabel}}">
         <span class="person-stars__icon" aria-hidden="true"></span>
         <span class="person-stars__total"><span class="person-stars__number">{{.Profile.StarsNumber}}</span> <span class="person-stars__word">stars</span></span>
-        {{/* Plan 09-16 (D-02, UI-SPEC 1c): the two parts of the total, drawn only when the server sends them (from 5 raters on). They wrap under the total on a narrow phone and carry no separator. */}}
-        {{if .Profile.StarsFromReports}}<span id="person-stars-from-reports" class="person-stars__part">{{.Profile.StarsFromReports}}</span>{{end}}
-        {{if .Profile.StarsFromRatings}}<span id="person-stars-from-ratings" class="person-stars__part">{{.Profile.StarsFromRatings}}</span>{{end}}
+        {{/* Quick 261109-n25 (owner decision 2026-11-09, fewer words): the page draws the stars total alone. The two parts stay in the JSON route and in the group's accessible name (StarsLabel). */}}
       </div>
       {{end}}
       <div class="person-tag-group">
@@ -111,7 +109,6 @@
 
     <section id="person-reports-section" class="person-reports" aria-labelledby="person-reports-title">
       <h2 id="person-reports-title" class="person-reports__title">Recent reports</h2>
-      <p class="person-reports__line">Reports from the last 30 days, newest first.</p>
       {{/* Plan 09-11 (D-06, D-07, UI-SPEC Surface 5): the rows are drawn here, on the server, as My activity draws its rows. person-reports.js only fills each Distance cell from the position Nearby kept. A live row is a link to the Phase 8 report link; a finished row is plain content with no link, no tabindex and no chevron, and its coordinates are the coarse cell centre. */}}
       <div id="person-reports" class="person-reports__list">
         {{if .ReportsFailed}}
@@ -123,7 +120,6 @@
         {{else if not .Reports}}
         <div class="empty-state person-reports__state" id="person-reports-empty">
           <h3>No reports in the last 30 days</h3>
-          <p>{{if .Profile.IsSelf}}Reports you post will show here.{{else}}Nothing from {{.Profile.Username}} in the last 30 days.{{end}}</p>
         </div>
         {{else}}
         <div class="person-report-box">
@@ -144,7 +140,7 @@
                 {{/* Review fix IN-T04: the hidden prefix already says Disputed or Not confirmed yet at the start of the row's name, so the visible line and the chip are skipped by a screen reader and the state is read once. */}}
                 <span class="person-report__status"><span class="person-chip {{.ChipClass}}"{{if .AccessiblePrefix}} aria-hidden="true"{{end}}>{{.StatusWord}}</span></span>
                 <span class="person-report__when">{{.WhenText}}</span>
-                <span class="person-report__foot"><span class="person-report__distance" data-lat="{{.Lat}}" data-lon="{{.Lon}}" data-approx="{{.Approx}}">Unknown</span><span class="app-icon app-icon--chevron-right person-report__chevron" aria-hidden="true"></span></span>
+                <span class="person-report__foot"><span class="person-report__distance" data-lat="{{.Lat}}" data-lon="{{.Lon}}" data-approx="{{.Approx}}"></span><span class="app-icon app-icon--chevron-right person-report__chevron" aria-hidden="true"></span></span>
               </a>
             </li>
             {{else}}
@@ -154,7 +150,8 @@
                 <span class="person-report__report"><span class="visually-hidden">{{.AccessiblePrefix}} </span><span class="person-report__title">{{.Title}}</span>{{if .AreaLine}}<span class="person-report__label">{{.AreaLine}}</span>{{end}}</span>
                 <span class="person-report__status"><span class="person-chip {{.ChipClass}}">{{.StatusWord}}</span></span>
                 <span class="person-report__when">{{.WhenText}}</span>
-                <span class="person-report__foot"><span class="person-report__distance" data-lat="{{.Lat}}" data-lon="{{.Lon}}" data-approx="{{.Approx}}">Unknown</span></span>
+                {{/* Quick 261109-n25: a finished row has no chevron, so with no distance its foot would be an empty bordered strip on the phone. It starts hidden and person-reports.js shows it only when it writes a distance. */}}
+                <span class="person-report__foot" hidden><span class="person-report__distance" data-lat="{{.Lat}}" data-lon="{{.Lon}}" data-approx="{{.Approx}}"></span></span>
               </div>
             </li>
             {{end}}

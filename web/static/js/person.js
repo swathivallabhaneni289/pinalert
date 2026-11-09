@@ -300,35 +300,9 @@ window.PinalertPerson = (function () {
     return span;
   }
 
-  // drawPart shows or takes out one of the two parts of the stars total from the
-  // string the server sent: an empty string takes it out.
-  function drawPart(group, id, text, before) {
-    var part = byId(id);
-    if (typeof text !== 'string') {
-      return part;
-    }
-    if (text === '') {
-      if (part && part.parentNode) {
-        part.parentNode.removeChild(part);
-      }
-      return null;
-    }
-    if (!part) {
-      part = makeSpan('person-stars__part', text);
-      part.id = id;
-      if (before) {
-        group.insertBefore(part, before);
-      } else {
-        group.appendChild(part);
-      }
-      return part;
-    }
-    setText(part, text);
-    return part;
-  }
-
   // drawStars follows the server's total after a rating: it redraws the number
-  // and the label, adds or takes out the two parts, and builds the group when
+  // and the label (the two parts are not drawn on the page since quick
+  // 261109-n25, so a rating adds none), and builds the group when
   // the number turns up for the first time or takes it out when it goes. The
   // browser computes no number; it writes the strings that came back.
   function drawStars(profile) {
@@ -370,9 +344,6 @@ window.PinalertPerson = (function () {
     var number = typeof group.querySelector === 'function'
       ? group.querySelector('.person-stars__number') : null;
     setText(number, profile.stars_number);
-    var ratings = byId('person-stars-from-ratings');
-    drawPart(group, 'person-stars-from-reports', profile.stars_from_reports, ratings);
-    drawPart(group, 'person-stars-from-ratings', profile.stars_from_ratings, null);
   }
 
   // drawTag writes the tag word and its sentence from the server's strings.

@@ -113,13 +113,25 @@ func StarsGroupLabelParts(points int, fromReports, fromRatings string) string {
 	return label + " " + fromReports + ". " + fromRatings + "."
 }
 
+// ProfileNewSentence is the line the profile page and its JSON route show
+// beside the New reporter tag (quick 261109-n25, owner decision 2026-11-09:
+// fewer words). It is a profile view model line only: the shared trust
+// sentence for a New reporter ("Not rated yet. It needs 5 reports with a clear
+// result.") stays as it is on the report popups, My activity and everywhere
+// else.
+const ProfileNewSentence = "Not rated yet."
+
+// ProfilePrivateStateLine is the line on your own page while the profile is
+// off (quick 261109-n25, owner decision 2026-11-09: fewer words).
+const ProfilePrivateStateLine = "Only you can see this page."
+
 // OwnStateLine is the line under the buttons on your own page (UI-SPEC 1g):
 // one for a public profile that holds the tag, one for a public profile that
 // does not, and one for a profile that is off.
 func OwnStateLine(public, reliable bool) string {
 	switch {
 	case !public:
-		return "Only you can see this page. Turn on Let others follow me in Settings."
+		return ProfilePrivateStateLine
 	case reliable:
 		return "People can follow you while you hold the Reliable reporter tag."
 	default:

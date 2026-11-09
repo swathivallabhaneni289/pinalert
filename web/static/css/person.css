@@ -143,17 +143,6 @@ h1.person-username {
   font-weight: var(--font-weight-semibold);
 }
 
-/* Plan 09-16 (1c): the two parts beside the total, Label 14px muted on the page
-   background. They sit on the same wrapping row, 12px from the total and from
-   each other (the row's gap), and wrap under the total on a narrow phone. No
-   separator is drawn. */
-.person-stars__part {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-label);
-  line-height: var(--line-height-label);
-  font-weight: var(--font-weight-regular);
-}
-
 /* 1b part 3: the reporter tag chip and its counts sentence. */
 .person-tag-group {
   display: flex;
@@ -370,24 +359,19 @@ h1.person-username {
   font-weight: var(--font-weight-regular);
 }
 
-/* Surface 5, the part this plan draws: the section title and its line. */
+/* Surface 5, the part this plan draws: the section title. Quick 261109-n25
+   (owner decision 2026-11-09, fewer words): the line under it is gone, so the
+   title carries the 12px that line used to leave before the rows. */
 .person-reports {
   min-width: 0;
 }
 
 .person-reports__title {
-  margin: 0;
+  margin: 0 0 var(--space-12);
   color: var(--color-text);
   font-size: var(--font-size-heading);
   line-height: var(--line-height-heading);
   font-weight: var(--font-weight-semibold);
-}
-
-.person-reports__line {
-  margin: var(--space-xs) 0 var(--space-12);
-  color: var(--color-text-muted);
-  font-size: var(--font-size-label);
-  line-height: var(--line-height-label);
 }
 
 /* Surface 5 (plan 09-11): the rows of Recent reports, written by the server.
@@ -613,6 +597,23 @@ a.person-report__body:hover .person-report__label {
   color: var(--color-text);
   font-size: var(--font-size-label);
   line-height: var(--line-height-label);
+}
+
+/* Quick 261109-n25: a finished row with no distance has nothing to show in its
+   foot, so person-reports.js hides it. The display rule above would beat the
+   hidden attribute, and the phone grid would keep an empty fourth row and its
+   gap, so both are undone here. Phone only: the laptop foot is a column. */
+.person-report__foot[hidden] {
+  display: none;
+}
+
+@media not all and (min-width: 900px) {
+  .person-report__body:has(.person-report__foot[hidden]) {
+    grid-template-areas:
+      "disc status"
+      "report report"
+      "when when";
+  }
 }
 
 .person-report__chevron {
