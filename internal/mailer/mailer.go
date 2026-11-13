@@ -1,8 +1,8 @@
 // Package mailer defines the single seam Pinalert's email delivery goes
 // through. Injecting a Mailer implementation keeps tests and local
 // development off the network entirely (RESEARCH.md Pitfall 6): a fake in
-// tests, a log-only implementation in development, and a real Resend-backed
-// implementation in production, all satisfying the same interface so the
+// tests, a log-only implementation in development, and a real SMTP backed
+// implementation (Gmail) in production, all satisfying the same interface so the
 // caller never branches on environment.
 package mailer
 

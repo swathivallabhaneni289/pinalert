@@ -10,7 +10,7 @@ import (
 // development/test fallback so the flow can be completed end to end without a
 // provider key or network access. It deliberately logs the code (accepted
 // risk AR-28, 01.1-01-PLAN.md): this is the only way to complete the flow
-// without a Resend key, and selecting this implementation is a fatal error
+// without a mail account, and selecting this implementation is a fatal error
 // outside ENV=development.
 type logMailer struct{}
 

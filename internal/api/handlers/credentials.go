@@ -12,7 +12,7 @@ package handlers
 // its tests (research Pitfall 18).
 //
 // The 10 second write limit. The production server has a WriteTimeout of 10
-// seconds, while the Resend client may take a minute. The three handlers that
+// seconds, while the mail send may take up to 20 seconds. The three handlers that
 // send a code email inside the request (SignUp, ResendCode, RequestReset) call
 // extendWriteDeadline after the body is decoded and the buckets have agreed,
 // the way the cron door in official_refresh.go does after its token check, so a
