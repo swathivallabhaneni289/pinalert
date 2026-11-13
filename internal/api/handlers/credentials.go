@@ -1,8 +1,9 @@
 package handlers
 
-// credentials.go puts service.CredentialService on the HTTP surface: the six
+// credentials.go puts service.CredentialService on the HTTP surface: the seven
 // public POST routes of Create account, the typed code, Sign in, Resend and
-// Forgot password (Phase 7.1, plan 07). The routes sit outside the access gate
+// Forgot password (Phase 7.1, plan 07; quick 261113-r5w split the Forgot
+// password confirm into two routes, reset/code and reset/password). The routes sit outside the access gate
 // and behind net/http CrossOriginProtection (see api.NewRouter), and every one
 // answers with Cache-Control no-store. No response, header or log line holds an
 // email address, a code or a password (D-05, WR-S03).
@@ -16,7 +17,7 @@ package handlers
 // send a code email inside the request (SignUp, ResendCode, RequestReset) call
 // extendWriteDeadline after the body is decoded and the buckets have agreed,
 // the way the cron door in official_refresh.go does after its token check, so a
-// slow mail provider is answered and not dropped. The other three handlers
+// slow mail provider is answered and not dropped. The other four handlers
 // answer in well under the limit and leave the deadline alone. Plans 08, 09,
 // 10, 10b, 14 and 14b follow the same choice for any handler that sends mail.
 //
@@ -82,11 +83,21 @@ type ResetRequest struct {
 	Email string `json:"email" example:"visitor@example.com"`
 }
 
-// ResetCodeRequest is the body of POST /api/auth/reset/code: the typed code and
-// the new password.
+// ResetCodeRequest is the body of POST /api/auth/reset/code, step one of Forgot
+// password: the typed code.
 type ResetCodeRequest struct {
-	Code     string `json:"code" example:"482913"`
+	Code string `json:"code" example:"482913"`
+}
+
+// ResetPasswordRequest is the body of POST /api/auth/reset/password, step two of
+// Forgot password: the new password.
+type ResetPasswordRequest struct {
 	Password string `json:"password" example:"wide river morning 47"`
+}
+
+// CodeOKResponse answers a right reset code (step one). It sets no password.
+type CodeOKResponse struct {
+	CodeOK bool `json:"code_ok" example:"true"`
 }
 
 // CodeSentResponse answers every request that may have sent a code, with the
@@ -107,7 +118,7 @@ type PasswordSetResponse struct {
 }
 
 // writeAuthError writes the shared error envelope with no-store, so every
-// refusal of the six routes, the body ones included, carries it.
+// refusal of the seven routes, the body ones included, carries it.
 func writeAuthError(w http.ResponseWriter, status int, field, message string) {
 	w.Header().Set("Cache-Control", "no-store")
 	writeFieldError(w, status, field, message)
@@ -119,7 +130,7 @@ func writeAuthRateLimited(w http.ResponseWriter, message string, wait time.Durat
 	writeRateLimited(w, "email", message, wait, false, "")
 }
 
-// decodeAuthBody applies the rules of the six routes: application/json only
+// decodeAuthBody applies the rules of the seven routes: application/json only
 // (415), a maxCredentialBodyBytes cap (413), unknown fields refused (400) and
 // exactly one JSON value (400). Every refusal is the shared envelope with the
 // generic sentence: the page's own script always sends a valid body, so no body
@@ -460,25 +471,30 @@ func RequestReset(creds *service.CredentialService, gate *AuthGate) http.Handler
 	}
 }
 
-// ConfirmReset handles POST /api/auth/reset/code: the typed code and the new
-// password. It ends every session of the account and signs nobody in; the
-// person signs in with the new password.
+// ConfirmResetCode handles POST /api/auth/reset/code, step one of Forgot
+// password: the typed code and nothing else. A right code is remembered for this
+// browser and for a code lifetime, and opens step two; it sets no password and
+// ends no session. A wrong code is counted against the same budget of five tries
+// as ever, and the answer is the same for an address with an account and one
+// without.
 //
-// @Summary      Set a new password with the reset code
-// @Description  Checks the 6 digit code and the new password. A right code sets the password and
-// @Description  ends every session of the account. It does not sign this browser in.
+// @Summary      Confirm the reset code
+// @Description  Checks the 6 digit code typed on the Forgot password screen. A right code is
+// @Description  remembered for this browser for a short time, so the next call can set the new
+// @Description  password. It sets no password and signs nobody in. A wrong, expired or replaced
+// @Description  code gets the same answer, whether or not the address has an account.
 // @Tags         auth
 // @Accept       json
 // @Produce      json
-// @Param        body  body      ResetCodeRequest  true  "The typed code and the new password"
-// @Success      200   {object}  PasswordSetResponse
+// @Param        body  body      ResetCodeRequest  true  "The typed code"
+// @Success      200   {object}  CodeOKResponse
 // @Failure      400   {object}  ErrorResponse
 // @Failure      413   {object}  ErrorResponse
 // @Failure      415   {object}  ErrorResponse
 // @Failure      429   {object}  RateLimitResponse
 // @Failure      503   {object}  ErrorResponse
 // @Router       /auth/reset/code [post]
-func ConfirmReset(creds *service.CredentialService, gate *AuthGate) http.HandlerFunc {
+func ConfirmResetCode(creds *service.CredentialService, gate *AuthGate) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionID, ok := authReady(w, r, creds)
 		if !ok {
@@ -493,13 +509,61 @@ func ConfirmReset(creds *service.CredentialService, gate *AuthGate) http.Handler
 			writeAuthRateLimited(w, authRateLimitedMessage, try.RetryAfter)
 			return
 		}
-		if err := creds.ConfirmReset(r.Context(), sessionID, req.Code, req.Password); err != nil {
-			// A refused new password is checked before any try is counted, so
-			// its token goes back.
+		if err := creds.CheckResetCode(r.Context(), sessionID, req.Code); err != nil {
+			writeCredentialError(w, "ConfirmResetCode", err)
+			return
+		}
+		try.Cancel()
+		writeJSON(w, http.StatusOK, CodeOKResponse{CodeOK: true})
+	}
+}
+
+// SetResetPassword handles POST /api/auth/reset/password, step two of Forgot
+// password: the new password, for a browser whose code was confirmed by step
+// one. It ends every session of the account and signs nobody in; the person
+// signs in with the new password. It takes a token from the same bucket as the
+// code tries, because a request that reaches the hasher is costly; the token
+// goes back on success and when the new password itself was refused, which
+// counts nothing and keeps the confirm.
+//
+// @Summary      Set a new password after the reset code was confirmed
+// @Description  Sets the new password for a browser whose reset code was confirmed a short time
+// @Description  ago. A browser with no confirmed code, a confirm that ran out, or a code replaced by
+// @Description  a newer one gets the wrong code answer. A good call ends every session of the
+// @Description  account and does not sign this browser in.
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      ResetPasswordRequest  true  "The new password"
+// @Success      200   {object}  PasswordSetResponse
+// @Failure      400   {object}  ErrorResponse
+// @Failure      413   {object}  ErrorResponse
+// @Failure      415   {object}  ErrorResponse
+// @Failure      429   {object}  RateLimitResponse
+// @Failure      503   {object}  ErrorResponse
+// @Router       /auth/reset/password [post]
+func SetResetPassword(creds *service.CredentialService, gate *AuthGate) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sessionID, ok := authReady(w, r, creds)
+		if !ok {
+			return
+		}
+		var req ResetPasswordRequest
+		if !decodeAuthBody(w, r, &req) {
+			return
+		}
+		try := gate.ReserveCodeTry(r)
+		if !try.OK {
+			writeAuthRateLimited(w, authRateLimitedMessage, try.RetryAfter)
+			return
+		}
+		if err := creds.ConfirmReset(r.Context(), sessionID, req.Password); err != nil {
+			// A refused new password is checked before anything is counted or
+			// spent, so its token goes back.
 			if isValidation(err) {
 				try.Cancel()
 			}
-			writeCredentialError(w, "ConfirmReset", err)
+			writeCredentialError(w, "SetResetPassword", err)
 			return
 		}
 		try.Cancel()

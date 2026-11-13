@@ -16,7 +16,7 @@ import (
 
 // CredentialQuerier is the subset of the sqlc-generated Queries type
 // CredentialService needs, small enough to fake without a real Postgres. It
-// embeds SessionQuerier because ConfirmReset ends every session of the account
+// embeds SessionQuerier because ConfirmReset (step two) ends every session of the account
 // through SessionService.LogOutAllDevices, inside the confirm transaction.
 type CredentialQuerier interface {
 	SessionQuerier
@@ -34,6 +34,11 @@ type CredentialQuerier interface {
 	IssueAuthCode(ctx context.Context, arg sqlcgen.IssueAuthCodeParams) (int64, error)
 	BumpAuthCodeAttempt(ctx context.Context, arg sqlcgen.BumpAuthCodeAttemptParams) (sqlcgen.BumpAuthCodeAttemptRow, error)
 	ConsumeAuthCode(ctx context.Context, id int64) (int64, error)
+	// MarkAuthCodeVerified is step one of Forgot password (quick 261113-r5w): the
+	// right code was typed. ConsumeVerifiedResetCode is step two's spend of that
+	// verified row, guarded by the confirm window.
+	MarkAuthCodeVerified(ctx context.Context, arg sqlcgen.MarkAuthCodeVerifiedParams) (int64, error)
+	ConsumeVerifiedResetCode(ctx context.Context, arg sqlcgen.ConsumeVerifiedResetCodeParams) (int64, error)
 	// MarkAuthCodePasswordSet marks the kept row of a Create account confirm that
 	// only set a password on an existing account (review fix round 4, SK3-03).
 	MarkAuthCodePasswordSet(ctx context.Context, id int64) error

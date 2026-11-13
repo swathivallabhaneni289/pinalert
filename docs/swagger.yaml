@@ -78,6 +78,12 @@ definitions:
         example: live
         type: string
     type: object
+  handlers.CodeOKResponse:
+    properties:
+      code_ok:
+        example: true
+        type: boolean
+    type: object
   handlers.CodeRequest:
     properties:
       code:
@@ -1562,6 +1568,9 @@ definitions:
       code:
         example: "482913"
         type: string
+    type: object
+  handlers.ResetPasswordRequest:
+    properties:
       password:
         example: wide river morning 47
         type: string
@@ -2073,15 +2082,63 @@ paths:
       consumes:
       - application/json
       description: |-
-        Checks the 6 digit code and the new password. A right code sets the password and
-        ends every session of the account. It does not sign this browser in.
+        Checks the 6 digit code typed on the Forgot password screen. A right code is
+        remembered for this browser for a short time, so the next call can set the new
+        password. It sets no password and signs nobody in. A wrong, expired or replaced
+        code gets the same answer, whether or not the address has an account.
       parameters:
-      - description: The typed code and the new password
+      - description: The typed code
         in: body
         name: body
         required: true
         schema:
           $ref: '#/definitions/handlers.ResetCodeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.CodeOKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/handlers.RateLimitResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Confirm the reset code
+      tags:
+      - auth
+  /auth/reset/password:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Sets the new password for a browser whose reset code was confirmed a short time
+        ago. A browser with no confirmed code, a confirm that ran out, or a code replaced by
+        a newer one gets the wrong code answer. A good call ends every session of the
+        account and does not sign this browser in.
+      parameters:
+      - description: The new password
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.ResetPasswordRequest'
       produces:
       - application/json
       responses:
@@ -2109,7 +2166,7 @@ paths:
           description: Service Unavailable
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
-      summary: Set a new password with the reset code
+      summary: Set a new password after the reset code was confirmed
       tags:
       - auth
   /auth/sign-in:

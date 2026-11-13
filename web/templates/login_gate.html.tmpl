@@ -25,7 +25,7 @@
   <div class="login-gate{{if not .LowDataDefault}} has-globe{{end}}" id="login-gate">
     <div class="login-column">
     <div class="login-card" id="login-form-panel"
-         data-start-panel="{{.StartPanel}}" data-code-mode="{{.CodeMode}}"
+         data-start-panel="{{.StartPanel}}" data-code-mode="{{.CodeMode}}" data-code-step="{{if .CodeVerified}}password{{else}}code{{end}}"
          data-code-seconds-left="{{.CodeSecondsLeft}}" data-code-ttl-seconds="{{.CodeTTLSeconds}}"
          data-resend-seconds="{{.ResendSeconds}}" data-resend-cooldown-seconds="{{.ResendCooldownSeconds}}"
          data-password-min="{{.PasswordMin}}">
@@ -82,17 +82,27 @@
 
       <section id="auth-panel-code" aria-labelledby="login-title"{{if ne .StartPanel "code"}} hidden{{end}}>
         <form id="auth-form-code" method="post" action="/login">
-          <p id="code-lead">We emailed <span class="login-email" id="code-email">{{.CodeEmail}}</span>. Type the {{.CodeDigits}} digit code from that email.</p>
-          <label for="code-input">{{.CodeDigits}} digit code</label>
-          <div class="login-field login-field--code">
-            <span class="auth-icon auth-icon--shield-check" aria-hidden="true"></span>
-            <input type="text" id="code-input" name="code" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="{{.CodeDigits}}" enterkeyhint="done" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+          {{/*
+            Forgot password is two steps (quick 261113-r5w): the code, then the new
+            password. The server draws the step: CodeVerified is true only for a
+            reset code this browser already confirmed. The address stays page text
+            of #code-email in step one's lead, which step two hides and never
+            removes. Only the visible step's field is required.
+          */}}
+          <p id="code-lead"{{if .CodeVerified}} hidden{{end}}>We emailed <span class="login-email" id="code-email">{{.CodeEmail}}</span>. Type the {{.CodeDigits}} digit code from that email.</p>
+          <p id="code-lead-confirmed"{{if not .CodeVerified}} hidden{{end}}>Code confirmed. Choose a new password.</p>
+          <div id="code-entry-wrap"{{if .CodeVerified}} hidden{{end}}>
+            <label for="code-input">{{.CodeDigits}} digit code</label>
+            <div class="login-field login-field--code">
+              <span class="auth-icon auth-icon--shield-check" aria-hidden="true"></span>
+              <input type="text" id="code-input" name="code" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="{{.CodeDigits}}" enterkeyhint="done" autocapitalize="none" autocorrect="off" spellcheck="false"{{if not .CodeVerified}} required{{end}}>
+            </div>
           </div>
-          <div id="code-new-wrap"{{if ne .CodeMode "reset"}} hidden{{end}}>
+          <div id="code-new-wrap"{{if not .CodeVerified}} hidden{{end}}>
             <label for="code-new-password">New password</label>
             <div class="login-field login-field--rule">
               <span class="auth-icon auth-icon--lock" aria-hidden="true"></span>
-              <input type="password" id="code-new-password" name="new-password" autocomplete="new-password" minlength="{{.PasswordMin}}" maxlength="{{.PasswordMax}}" autocapitalize="none" autocorrect="off" spellcheck="false" aria-describedby="code-new-rule">
+              <input type="password" id="code-new-password" name="new-password" autocomplete="new-password" minlength="{{.PasswordMin}}" maxlength="{{.PasswordMax}}" autocapitalize="none" autocorrect="off" spellcheck="false"{{if .CodeVerified}} required{{end}} aria-describedby="code-new-rule">
               <button type="button" class="login-show" id="code-new-show" data-show-for="code-new-password" aria-label="Show password">Show</button>
             </div>
             <p class="login-rule" id="code-new-rule">At least {{.PasswordMin}} characters.</p>
@@ -100,8 +110,8 @@
           <p class="login-status" id="code-status" role="status" hidden></p>
           <p class="inline-error" id="code-error" role="alert" hidden></p>
           <div class="login-actions">
-            <button type="submit" class="btn btn--primary btn--off" id="code-submit">{{if eq .CodeMode "reset"}}Set new password{{else}}Create account{{end}}</button>
-            <button type="button" class="btn btn--off" id="code-resend" aria-disabled="true">Resend in {{.ResendSeconds}}s</button>
+            <button type="submit" class="btn btn--primary btn--off" id="code-submit">{{if eq .CodeMode "reset"}}{{if .CodeVerified}}Set new password{{else}}Confirm code{{end}}{{else}}Create account{{end}}</button>
+            <button type="button" class="btn btn--off" id="code-resend" aria-disabled="true"{{if .CodeVerified}} hidden{{end}}>Resend in {{.ResendSeconds}}s</button>
             <button type="button" class="btn" id="code-change-email"><span class="auth-icon auth-icon--arrow-left" aria-hidden="true"></span>Change email</button>
           </div>
           <span class="visually-hidden" id="code-ready-live" role="status"></span>

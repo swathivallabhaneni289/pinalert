@@ -211,6 +211,12 @@
   width: 100%;
 }
 
+/* Step two of Forgot password hides Resend. The shared .btn sets a display, which
+ * would beat the hidden attribute, so the hidden state is named here. */
+.login-actions .btn[hidden] {
+  display: none;
+}
+
 /* A 20px arrow at the left of Change email and Back to sign in. */
 .login-card .btn .auth-icon {
   width: 20px;

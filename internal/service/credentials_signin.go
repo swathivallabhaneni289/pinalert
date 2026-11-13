@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"pinalert/internal/auth"
 	sqlcgen "pinalert/internal/store/sqlc"
@@ -33,6 +34,10 @@ type LiveCode struct {
 	// send, rounded up and never negative (review WR-B02), so a reload or a
 	// return from the mail app shows the wait that is really left.
 	ResendSecondsLeft int
+	// Verified is true when the row is a reset row whose right code was typed
+	// (Forgot password step one, quick 261113-r5w) less than a code lifetime ago,
+	// so a reload shows step two, the new password, and not the code box again.
+	Verified bool
 }
 
 // spentCodeMemory is how long after the spend SpentCode still reports a
@@ -85,7 +90,7 @@ func cleanTypedCode(raw string) (string, bool) {
 	return code, true
 }
 
-// proveCode is the shared front half of ConfirmSignUp and ConfirmReset. It
+// proveCode is the shared front half of ConfirmSignUp and CheckResetCode. It
 // counts the try before the compare (the bump is one atomic UPDATE, so
 // parallel guessing cannot beat the budget), checks the keyed hash, and refuses
 // any row that is not a delivery of code, so an account_exists or no_account row
@@ -125,15 +130,20 @@ func (s *CredentialService) inTx(ctx context.Context, fn func(q CredentialQuerie
 // CR-S02, IN-S07). The spent row itself is kept, used and with no password
 // hash, so SpentCode can tell this browser its code was confirmed (review fix
 // round 3, skeptic SK2-01).
-func spend(ctx context.Context, q CredentialQuerier, row sqlcgen.BumpAuthCodeAttemptRow) error {
-	n, err := q.ConsumeAuthCode(ctx, row.ID)
+//
+// consume is the conditional spend of the row: ConsumeAuthCode for a typed code
+// of Create account, and ConsumeVerifiedResetCode for the second step of Forgot
+// password (quick 261113-r5w). Both write used_at only where it is still NULL, so
+// two parallel confirms cannot both win.
+func spend(ctx context.Context, q CredentialQuerier, id int64, email string, consume func() (int64, error)) error {
+	n, err := consume()
 	if err != nil {
 		return fmt.Errorf("service: consuming code: %w", err)
 	}
 	if n == 0 {
 		return ErrWrongCode
 	}
-	if err := q.DeleteOtherAuthCodesForEmail(ctx, sqlcgen.DeleteOtherAuthCodesForEmailParams{Email: row.Email, KeepID: row.ID}); err != nil {
+	if err := q.DeleteOtherAuthCodesForEmail(ctx, sqlcgen.DeleteOtherAuthCodesForEmailParams{Email: email, KeepID: id}); err != nil {
 		return fmt.Errorf("service: deleting spent codes: %w", err)
 	}
 	return nil
@@ -183,7 +193,7 @@ func (s *CredentialService) ConfirmSignUp(ctx context.Context, sessionID, rawCod
 		if err := s.lockAddress(ctx, q, row.Email); err != nil {
 			return err
 		}
-		if err := spend(ctx, q, row); err != nil {
+		if err := spend(ctx, q, row.ID, row.Email, func() (int64, error) { return q.ConsumeAuthCode(ctx, row.ID) }); err != nil {
 			return err
 		}
 		var accountID, epoch int64
@@ -358,21 +368,22 @@ func (s *CredentialService) reserveTry(ctx context.Context, key string) (sqlcgen
 	return sqlcgen.ReserveSignInTryRow{}, SignInLockedError{Wait: time.Second}
 }
 
-// ConfirmReset is the typed code of Forgot password, with the new password.
-// A bad new password is refused before any try is counted. A right code sets
-// the NFKC form of the new password, deletes the address's code rows, ends
-// every session and push subscription of the account, and clears the throttle
-// (a locked address can always be recovered this way). It never signs the
-// browser in: the person signs in with the new password.
+// CheckResetCode is step one of Forgot password (quick 261113-r5w): the typed
+// code, and nothing else. A right code marks this browser's reset row verified
+// and sets no password, spends nothing and signs nobody in; the person is then
+// let to step two, ConfirmReset. A wrong code is counted against the same try
+// budget as ever, and the fifth switches the code off as today.
 //
-// The writes run in one transaction, after the address lock both confirms take
-// first (review fix skeptic SK-05), the password first (Phase 7.1 review
-// CR-S02): the password is set with a new epoch, which takes the account row
-// lock, then the code is spent, the throttle cleared and every session ended.
-// A sign in that read the old epoch cannot bind after it, and the gate refuses
-// any session still on the old epoch. A failure anywhere changes nothing and
-// leaves the code usable.
-func (s *CredentialService) ConfirmReset(ctx context.Context, sessionID, rawCode, newPassword string) error {
+// It is the same front half the whole flow has always had. The latest row of
+// this browser inside the resume window must be a reset row that is still
+// unused (a sign up row is never read as a reset); the typed code is cleaned,
+// the try is counted before the compare (proveCode, one atomic statement), and
+// every refusal is ErrWrongCode, so an address with no account, whose row is a
+// no_account one that never held a code, answers exactly like a wrong code and
+// can never be verified. A right code typed again on a row already verified is
+// still one verify (the mark keeps the first moment), and is refused as soon as
+// the row is spent, replaced or past its life.
+func (s *CredentialService) CheckResetCode(ctx context.Context, sessionID, rawCode string) error {
 	latest, err := s.q.GetLatestAuthCode(ctx, sqlcgen.GetLatestAuthCodeParams{
 		SessionID: sessionID,
 		Since:     s.now().Add(-s.limits.ResumeWindow),
@@ -386,9 +397,6 @@ func (s *CredentialService) ConfirmReset(ctx context.Context, sessionID, rawCode
 	if latest.Purpose != PurposeReset || latest.UsedAt.Valid {
 		return ErrWrongCode
 	}
-	if err := checkPassword(newPassword, latest.Email); err != nil {
-		return err
-	}
 	code, ok := cleanTypedCode(rawCode)
 	if !ok {
 		return ErrWrongCode
@@ -397,9 +405,63 @@ func (s *CredentialService) ConfirmReset(ctx context.Context, sessionID, rawCode
 	if err != nil {
 		return err
 	}
+	n, err := s.q.MarkAuthCodeVerified(ctx, sqlcgen.MarkAuthCodeVerifiedParams{ID: row.ID, VerifiedAt: s.now()})
+	if err != nil {
+		return fmt.Errorf("service: marking code verified: %w", err)
+	}
+	if n == 0 {
+		return ErrWrongCode
+	}
+	return nil
+}
+
+// ConfirmReset is step two of Forgot password, the new password (quick
+// 261113-r5w). It needs the verified row CheckResetCode made: the newest row of
+// this browser must be a reset row that was emailed a code, is unused and was
+// verified less than a code lifetime ago, otherwise ErrWrongCode, the one
+// answer to a wrong, expired, replaced or never confirmed code. A newer code
+// (Resend, or Forgot password again) is a newer row, so the verified older row
+// is no longer the newest and this refuses; that is intended. Without the
+// check the route would be a way to set a password with no code at all.
+//
+// A bad new password is refused before anything is hashed, written or spent
+// (and keeps the confirm), a right one sets the NFKC form of the new password,
+// deletes the address's other code rows, ends every session and push
+// subscription of the account, and clears the throttle (a locked address can
+// always be recovered this way). It never signs the browser in: the person
+// signs in with the new password.
+//
+// The writes run in one transaction, after the address lock both confirms take
+// first (review fix skeptic SK-05), the password first (Phase 7.1 review
+// CR-S02): the password is set with a new epoch, which takes the account row
+// lock, then the code is spent, the throttle cleared and every session ended.
+// A sign in that read the old epoch cannot bind after it, and the gate refuses
+// any session still on the old epoch. A failure anywhere changes nothing and
+// leaves the code usable. The spend is conditional on the row still being
+// unused and inside the confirm window, so two parallel calls cannot both
+// win, and a Resend that retired the row after it was read rolls everything
+// back.
+func (s *CredentialService) ConfirmReset(ctx context.Context, sessionID, newPassword string) error {
+	now := s.now()
+	latest, err := s.q.GetLatestAuthCode(ctx, sqlcgen.GetLatestAuthCodeParams{
+		SessionID: sessionID,
+		Since:     now.Add(-s.limits.ResumeWindow),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrWrongCode
+		}
+		return fmt.Errorf("service: reading latest code: %w", err)
+	}
+	if !verifiedResetRow(latest.Purpose, latest.Delivery, latest.UsedAt, latest.VerifiedAt, now, s.limits.CodeTTL) {
+		return ErrWrongCode
+	}
+	if err := checkPassword(newPassword, latest.Email); err != nil {
+		return err
+	}
 	// Everything that can fail softly runs before the code is spent, so a busy
-	// hasher or a vanished account does not burn a right code.
-	account, found, err := s.lookupAccount(ctx, row.Email)
+	// hasher or a vanished account does not burn a confirmed code.
+	account, found, err := s.lookupAccount(ctx, latest.Email)
 	if err != nil {
 		return err
 	}
@@ -411,16 +473,20 @@ func (s *CredentialService) ConfirmReset(ctx context.Context, sessionID, rawCode
 		return s.hashError(err)
 	}
 	return s.inTx(ctx, func(q CredentialQuerier) error {
-		if err := s.lockAddress(ctx, q, row.Email); err != nil {
+		if err := s.lockAddress(ctx, q, latest.Email); err != nil {
 			return err
 		}
 		if _, err := s.setPasswordNewEpoch(ctx, q, account.ID, hash); err != nil {
 			return err
 		}
-		if err := spend(ctx, q, row); err != nil {
+		verifiedAfter := s.now().Add(-s.limits.CodeTTL)
+		consume := func() (int64, error) {
+			return q.ConsumeVerifiedResetCode(ctx, sqlcgen.ConsumeVerifiedResetCodeParams{ID: latest.ID, VerifiedAfter: verifiedAfter})
+		}
+		if err := spend(ctx, q, latest.ID, latest.Email, consume); err != nil {
 			return err
 		}
-		if err := s.clearThrottle(ctx, q, row.Email); err != nil {
+		if err := s.clearThrottle(ctx, q, latest.Email); err != nil {
 			return err
 		}
 		if _, err := NewSessionService(q, WithSessionClock(s.now)).LogOutAllDevices(ctx, account.ID); err != nil {
@@ -428,6 +494,15 @@ func (s *CredentialService) ConfirmReset(ctx context.Context, sessionID, rawCode
 		}
 		return nil
 	})
+}
+
+// verifiedResetRow is true for a code row that step two may spend: a reset row
+// that was emailed a code, is unused, and was verified less than ttl before now.
+func verifiedResetRow(purpose, delivery string, usedAt, verifiedAt pgtype.Timestamptz, now time.Time, ttl time.Duration) bool {
+	if purpose != PurposeReset || delivery != DeliveryCode || usedAt.Valid || !verifiedAt.Valid {
+		return false
+	}
+	return now.Before(verifiedAt.Time.Add(ttl))
 }
 
 // setPassword stores the first password of a brand new account without moving
@@ -545,6 +620,7 @@ func (s *CredentialService) LiveCode(ctx context.Context, sessionID string) (Liv
 		Email:             row.Email,
 		SecondsLeft:       secondsUntil(now, row.ExpiresAt),
 		ResendSecondsLeft: secondsUntil(now, sentAt.Add(s.limits.SendCooldown)),
+		Verified:          verifiedResetRow(row.Purpose, row.Delivery, row.UsedAt, row.VerifiedAt, now, s.limits.CodeTTL),
 	}, true, nil
 }
 

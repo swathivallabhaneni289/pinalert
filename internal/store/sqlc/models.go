@@ -66,6 +66,7 @@ type AuthCode struct {
 	CreatedAt    time.Time
 	ExpiresAt    time.Time
 	UsedAt       pgtype.Timestamptz
+	VerifiedAt   pgtype.Timestamptz
 }
 
 type AuthThrottle struct {

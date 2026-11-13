@@ -443,6 +443,11 @@ func TestAccessGateAllowsVerified(t *testing.T) {
 // tile, the Demo feed, the six password routes and the ten app assets; the count
 // "seventeen" in the paragraph above predates all of these amendments.
 //
+// Amended 2026-11-13 by quick 261113-r5w: Forgot password became two steps, so
+// the "reset code" row now carries the code alone and one row, "reset password"
+// for POST /api/auth/reset/password, was added. Each table count above is one
+// more than it says.
+//
 // Amended 2026-10-29 by plan 05-12 (D-15): the external cron's door joins the
 // exempt list. With a token configured and a fake refresher, POST
 // /internal/official/refresh with the bearer token must answer 200 for a caller
@@ -521,7 +526,8 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 		{"code resend", http.MethodPost, "/api/auth/code/resend", `{}`},
 		{"sign in", http.MethodPost, "/api/auth/sign-in", `{"email":"exempt-sign-in@example.com","password":"` + gateTestPassword + `"}`},
 		{"reset", http.MethodPost, "/api/auth/reset", `{"email":"exempt-reset@example.com"}`},
-		{"reset code", http.MethodPost, "/api/auth/reset/code", `{"code":"123456","password":"` + gateTestPassword + `"}`},
+		{"reset code", http.MethodPost, "/api/auth/reset/code", `{"code":"123456"}`},
+		{"reset password", http.MethodPost, "/api/auth/reset/password", `{"password":"` + gateTestPassword + `"}`},
 	}
 	for _, p := range appAssets {
 		cases = append(cases, struct {

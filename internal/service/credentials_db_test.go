@@ -105,7 +105,10 @@ func TestCredentialFlowOnDatabase(t *testing.T) {
 	}
 	resetCode := mail.last(t).msg.Code
 	newPassword := "a brand new password 55"
-	if err := svc.ConfirmReset(ctx, "sess-D", resetCode, newPassword); err != nil {
+	if err := svc.CheckResetCode(ctx, "sess-D", resetCode); err != nil {
+		t.Fatalf("CheckResetCode: %v", err)
+	}
+	if err := svc.ConfirmReset(ctx, "sess-D", newPassword); err != nil {
 		t.Fatalf("ConfirmReset: %v", err)
 	}
 	for _, id := range []string{res.SessionID, in.SessionID} {
@@ -364,7 +367,10 @@ func TestResetEndsSignInInFlight(t *testing.T) {
 	if err := r.svc.RequestReset(ctx, "sess-reset", credEmail); err != nil {
 		t.Fatalf("RequestReset: %v", err)
 	}
-	if err := r.svc.ConfirmReset(ctx, "sess-reset", r.mail.last(t).msg.Code, "a brand new password 55"); err != nil {
+	if err := r.svc.CheckResetCode(ctx, "sess-reset", r.mail.last(t).msg.Code); err != nil {
+		t.Fatalf("CheckResetCode: %v", err)
+	}
+	if err := r.svc.ConfirmReset(ctx, "sess-reset", "a brand new password 55"); err != nil {
 		t.Fatalf("ConfirmReset: %v", err)
 	}
 	close(h.release)
@@ -393,8 +399,11 @@ func TestConfirmResetIsAtomic(t *testing.T) {
 		t.Fatalf("RequestReset: %v", err)
 	}
 	code := r.mail.last(t).msg.Code
+	if err := r.svc.CheckResetCode(ctx, "sess-reset", code); err != nil {
+		t.Fatalf("CheckResetCode: %v", err)
+	}
 	r.failRevoke.Store(true)
-	if err := r.svc.ConfirmReset(ctx, "sess-reset", code, "a brand new password 55"); err == nil {
+	if err := r.svc.ConfirmReset(ctx, "sess-reset", "a brand new password 55"); err == nil {
 		t.Fatal("ConfirmReset succeeded although ending the sessions failed")
 	}
 	if hash, epoch := r.passwordState(t, credEmail); hash != hashBefore || epoch != epochBefore {
@@ -404,7 +413,7 @@ func TestConfirmResetIsAtomic(t *testing.T) {
 		t.Errorf("a failed reset changed the old session: live=%v err=%v", live, err)
 	}
 	r.failRevoke.Store(false)
-	if err := r.svc.ConfirmReset(ctx, "sess-reset", code, "a brand new password 55"); err != nil {
+	if err := r.svc.ConfirmReset(ctx, "sess-reset", "a brand new password 55"); err != nil {
 		t.Fatalf("the same code after a failed reset must still work: %v", err)
 	}
 	if live, _ := r.svc.SignedIn(ctx, old.SessionID); live {
@@ -521,7 +530,10 @@ func TestRefusedBindKeepsOtherAccountSession(t *testing.T) {
 	if err := r.svc.RequestReset(ctx, "sess-reset", credEmail); err != nil {
 		t.Fatalf("RequestReset: %v", err)
 	}
-	if err := r.svc.ConfirmReset(ctx, "sess-reset", r.mail.last(t).msg.Code, "a brand new password 55"); err != nil {
+	if err := r.svc.CheckResetCode(ctx, "sess-reset", r.mail.last(t).msg.Code); err != nil {
+		t.Fatalf("CheckResetCode: %v", err)
+	}
+	if err := r.svc.ConfirmReset(ctx, "sess-reset", "a brand new password 55"); err != nil {
 		t.Fatalf("ConfirmReset: %v", err)
 	}
 	close(h.release)

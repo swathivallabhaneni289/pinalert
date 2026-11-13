@@ -101,7 +101,10 @@ func TestSpentCodeOnDatabase(t *testing.T) {
 	if err := svc.RequestReset(ctx, "spent-D", credEmail); err != nil {
 		t.Fatalf("RequestReset: %v", err)
 	}
-	if err := svc.ConfirmReset(ctx, "spent-D", mail.last(t).msg.Code, "a brand new password 55"); err != nil {
+	if err := svc.CheckResetCode(ctx, "spent-D", mail.last(t).msg.Code); err != nil {
+		t.Fatalf("CheckResetCode: %v", err)
+	}
+	if err := svc.ConfirmReset(ctx, "spent-D", "a brand new password 55"); err != nil {
 		t.Fatalf("ConfirmReset: %v", err)
 	}
 	spent, ok, err = svc.SpentCode(ctx, "spent-D")
