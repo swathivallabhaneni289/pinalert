@@ -817,6 +817,8 @@ test('Forgot password: copies the email, sends it, confirms the code, then takes
   assert.equal(byId(page, 'code-input').hasAttribute('required'), false, 'a hidden empty required box would block the submit');
   assert.ok(isFocused(page, 'code-new-password'));
   assert.equal(page.timers.size, 0, 'no clock runs on step two');
+  // Review fix IN-05: the visually hidden live region says the code was accepted.
+  assert.equal(text(page, 'code-ready-live'), 'Code confirmed. Choose a new password.');
 
   byId(page, 'code-new-password').value = 'a new long password';
   submit(page, 'code');
@@ -942,6 +944,7 @@ test('a reload on step two draws step two with focus in the new password box and
   assert.equal(byId(page, 'code-input').hasAttribute('required'), false);
   assert.equal(byId(page, 'code-new-password').hasAttribute('required'), true);
   assert.equal(byId(page, 'code-status').hidden, true, 'no "code has expired" line over a confirmed code');
+  assert.equal(text(page, 'code-ready-live'), 'Code confirmed. Choose a new password.', 'a reload on step two says it too');
   assert.ok(isFocused(page, 'code-new-password'));
   assert.equal(page.timers.size, 0);
   assert.equal(page.requests.length, 0);

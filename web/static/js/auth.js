@@ -26,6 +26,10 @@
   var CODE_TRIES_MESSAGE = 'Too many wrong tries. Get a new code.';
   var CODE_SENT_MESSAGE = 'A new code is on its way.';
   var PASSWORD_SET_MESSAGE = 'Password set. Sign in to continue.';
+  // Said once through the visually hidden live region when step two is drawn, so a
+  // screen reader hears that the code was accepted and not only "New password"
+  // (review fix IN-05).
+  var STEP_TWO_ANNOUNCEMENT = 'Code confirmed. Choose a new password.';
   var SENDING_LABEL = 'Sending\u2026';
   var SIGNING_IN_LABEL = 'Signing in\u2026';
   var CHECKING_LABEL = 'Checking\u2026';
@@ -612,7 +616,6 @@
   // and focus moves to the new password box.
   function enterPasswordStep() {
     stopTimers();
-    setText(codeReadyLive, '');
     setText(codeStatus, '');
     codeStatus.hidden = true;
     codeInput.value = '';
@@ -623,6 +626,8 @@
     setCodeMode('reset', 'password');
     state.generation += 1;
     codeNewPassword.focus();
+    // After the timers are stopped: the resend wait writes to this region too.
+    setText(codeReadyLive, STEP_TWO_ANNOUNCEMENT);
   }
 
   // backToCodeStep is what step two does when the server no longer holds the
@@ -973,6 +978,7 @@
     setCodeMode(mode, startStep);
     if (startStep === 'password') {
       codeNewPassword.focus();
+      setText(codeReadyLive, STEP_TWO_ANNOUNCEMENT);
     } else {
       startResendWait(numberAttr('data-resend-seconds'));
       var left = numberAttr('data-code-seconds-left');
