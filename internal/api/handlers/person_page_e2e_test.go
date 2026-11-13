@@ -529,92 +529,88 @@ func TestPersonPageServerErrorIsAFramedState(t *testing.T) {
 	}
 }
 
-// fkuDivBlock returns the element opened by the div with this id, cut out by
-// counting nested div tags from its opening tag to the matching close, and the
-// rest of the page after it.
-func fkuDivBlock(t *testing.T, body, id string) (string, string) {
-	t.Helper()
-	open := strings.Index(body, `<div id="`+id+`"`)
-	if open < 0 {
-		t.Fatalf("no div with id %s on the page", id)
-	}
-	depth := 0
-	re := regexp.MustCompile(`<div[\s>]|</div>`)
-	for _, loc := range re.FindAllStringIndex(body[open:], -1) {
-		if body[open+loc[0]:open+loc[0]+2] == "</" {
-			depth--
-		} else {
-			depth++
-		}
-		if depth == 0 {
-			end := open + loc[1]
-			return body[open:end], body[end:]
-		}
-	}
-	t.Fatalf("the div %s is never closed", id)
-	return "", ""
-}
-
-// TestPersonPageBand pins Quick 261108-fku (owner decision 2026-11-08): the
-// header holds one band with the identity, the record, the counts, the actions
-// and the action error line; on your own page the state line is after the band
-// and before the closing header tag, never inside it.
-func TestPersonPageBand(t *testing.T) {
+// TestPersonPageCentred pins quick 261113-k9t (owner decision 2026-11-13, the
+// centred profile). Amended 2026-11-13: it replaces TestPersonPageBand of quick
+// 261108-fku and 261108-hm7, whose band wrapper, record wrapper and "the markup
+// keeps the phone's reading order, the grid moves the parts" note are gone. The
+// header now holds, as direct reading order, the letter, the username, the name,
+// the action row, the counts row (the stars when present, Followers, Following,
+// the reporter cell), the details line, then the state line on your own page or
+// Your rating on someone else's, then the action error line, and nothing else.
+func TestPersonPageCentred(t *testing.T) {
 	srv, mailer, pool := p907Server(t)
-	viewer, _ := p907Person(t, srv, mailer, pool, "fku-band-viewer@example.com", "band_viewer", false)
-	owner, _ := p907Reporter(t, srv, mailer, pool, "fku-band-owner@example.com", "band_owner")
+	viewer, _ := p907Person(t, srv, mailer, pool, "ctr-viewer@example.com", "ctr_viewer", false)
+	owner, _ := p907Reporter(t, srv, mailer, pool, "ctr-owner@example.com", "ctr_owner")
 
-	common := []string{
-		`id="person-disc"`, `<h1 id="person-username"`, `id="person-record"`,
-		`id="person-followers-button"`, `id="person-following-button"`,
-		`id="person-actions"`, `id="person-action-error"`,
+	header := func(body string) string {
+		open := strings.Index(body, `<header id="person-header"`)
+		if open < 0 {
+			t.Fatalf("the page has no header block")
+		}
+		end := strings.Index(body[open:], "</header>")
+		if end < 0 {
+			t.Fatalf("the page header is never closed")
+		}
+		return body[open : open+end]
 	}
-
-	status, other, _ := p907Do(t, viewer, http.MethodGet, srv.URL+"/u/band_owner", "")
-	if status != http.StatusOK {
-		t.Fatalf("GET /u/band_owner: status = %d, body %s", status, other)
-	}
-	band, _ := fkuDivBlock(t, other, "person-band")
-	for _, want := range append(append([]string{}, common...), `id="person-follow"`, `id="person-more-menu"`) {
-		if !strings.Contains(band, want) {
-			t.Errorf("someone else's page: the band lacks %s", want)
+	inOrder := func(label, block string, ids ...string) {
+		t.Helper()
+		last := -1
+		for _, id := range ids {
+			at := strings.Index(block, id)
+			if at < 0 || at < last {
+				t.Errorf("%s: %s is missing or out of the reading order", label, id)
+			}
+			last = at
 		}
 	}
-	// Review fix IN-04: the state line sits after the band on your own page, so the
-	// check on someone else's page searches the whole page, not only the band.
+
+	status, other, _ := p907Do(t, viewer, http.MethodGet, srv.URL+"/u/ctr_owner", "")
+	if status != http.StatusOK {
+		t.Fatalf("GET /u/ctr_owner: status = %d, body %s", status, other)
+	}
+	block := header(other)
+	inOrder("someone else's page", block,
+		`id="person-disc"`, `<h1 id="person-username"`, `id="person-actions"`, `id="person-follow"`,
+		`id="person-more-menu"`, `id="person-stats"`, `id="person-followers-button"`,
+		`id="person-following-button"`, `id="person-tag"`, `id="person-tag-sentence"`,
+		`class="person-facts"`, `id="person-member-since"`, `id="person-action-error"`)
 	if strings.Contains(other, `id="person-state-line"`) {
 		t.Errorf("someone else's page draws the state line")
 	}
-
-	status, own, _ := p907Do(t, owner, http.MethodGet, srv.URL+"/u/band_owner", "")
-	if status != http.StatusOK {
-		t.Fatalf("GET own /u/band_owner: status = %d, body %s", status, own)
-	}
-	band, after := fkuDivBlock(t, own, "person-band")
-	for _, want := range append(append([]string{}, common...), `id="person-edit"`) {
-		if !strings.Contains(band, want) {
-			t.Errorf("your own page: the band lacks %s", want)
-		}
-	}
-	if strings.Contains(band, `id="person-state-line"`) {
-		t.Errorf("your own page draws the state line inside the band")
-	}
-	// Quick 261108-hm7 (owner decision 2026-11-08, all beside your letter): the
-	// laptop moves the parts with the grid areas only, so the markup keeps the
-	// phone's reading order: the letter, the username, the record, the counts, then
-	// the action row. The action row is drawn next to the username on the laptop,
-	// but it must stay after the counts here (no markup moved for the laptop).
+	// The counts row holds the cells in order: the stars group (only with stars),
+	// Followers, Following, the reporter cell.
+	statsAt := strings.Index(block, `id="person-stats"`)
+	factsAt := strings.Index(block, `class="person-facts"`)
+	stats := block[statsAt:factsAt]
 	last := -1
-	for _, id := range []string{`id="person-disc"`, `<h1 id="person-username"`, `id="person-record"`, `id="person-followers-button"`, `id="person-following-button"`, `id="person-actions"`, `id="person-action-error"`} {
-		at := strings.Index(band, id)
+	for _, id := range []string{`id="person-followers-button"`, `id="person-following-button"`, `class="person-tag-group"`} {
+		at := strings.Index(stats, id)
 		if at < 0 || at < last {
-			t.Errorf("your own page: %s is missing or out of the phone's reading order in the band", id)
+			t.Errorf("someone else's page: the counts row lacks %s or has it out of order", id)
 		}
 		last = at
 	}
-	stateAt := strings.Index(after, `id="person-state-line"`)
-	headerEnd := strings.Index(after, "</header>")
-	if stateAt < 0 || headerEnd < 0 || stateAt > headerEnd {
-		t.Errorf("your own page: the state line is not after the band and before the closing header tag (state %d, header end %d)", stateAt, headerEnd)
+	if strings.Contains(stats, `id="person-stars"`) && strings.Index(stats, `id="person-stars"`) > strings.Index(stats, `id="person-followers-button"`) {
+		t.Errorf("someone else's page: the stars group is not the first cell of the counts row")
+	}
+	for _, id := range []string{"person-band", "person-record"} {
+		if strings.Contains(other, `id="`+id+`"`) {
+			t.Errorf("the page still draws %s", id)
+		}
+	}
+
+	status, own, _ := p907Do(t, owner, http.MethodGet, srv.URL+"/u/ctr_owner", "")
+	if status != http.StatusOK {
+		t.Fatalf("GET own /u/ctr_owner: status = %d, body %s", status, own)
+	}
+	block = header(own)
+	inOrder("your own page", block,
+		`id="person-disc"`, `<h1 id="person-username"`, `id="person-actions"`, `id="person-edit"`,
+		`id="person-stats"`, `id="person-followers-button"`, `id="person-following-button"`,
+		`id="person-tag"`, `id="person-tag-sentence"`, `class="person-facts"`,
+		`id="person-member-since"`, `id="person-state-line"`, `id="person-action-error"`)
+	if strings.Contains(block, `id="person-rating"`) {
+		t.Errorf("your own page draws the rating box")
 	}
 }

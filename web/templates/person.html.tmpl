@@ -43,38 +43,12 @@
     {{else}}
     {{if not .BlockedByYou}}
     <header id="person-header" class="person-header">
-      {{/* Quick 261108-fku (owner decision 2026-11-08): the band across the top on the laptop. On the phone this wrapper and the record wrapper take display contents, so the column is what it was. The DOM keeps the phone's reading order: identity, record, counts, actions, rating, error line. */}}
-      <div id="person-band" class="person-band">
-      <div class="person-ident">
-        <span id="person-disc" class="person-disc" aria-hidden="true">{{.Profile.Initial}}</span>
-        <div class="person-ident__text">
-          <h1 id="person-username" class="person-username">{{.Profile.Username}}</h1>
-          {{/* Review fix IN-T02: under 900px the top bar title is the page's h1, so the username there is this plain line; person.css shows one of the two at each size. */}}
-          <p class="person-username person-username--phone">{{.Profile.Username}}</p>
-          {{if .Profile.Name}}<p id="person-name" class="person-name">{{.Profile.Name}}</p>{{end}}
-        </div>
-      </div>
-      <div id="person-record" class="person-record">
-      {{if .Profile.StarsNumber}}
-      <div id="person-stars" class="person-stars" role="group" aria-label="{{.Profile.StarsLabel}}">
-        <span class="person-stars__icon" aria-hidden="true"></span>
-        <span class="person-stars__total"><span class="person-stars__number">{{.Profile.StarsNumber}}</span> <span class="person-stars__word">stars</span></span>
-        {{/* Quick 261109-n25 (owner decision 2026-11-09, fewer words): the page draws the stars total alone. The two parts stay in the JSON route and in the group's accessible name (StarsLabel). */}}
-      </div>
-      {{end}}
-      <div class="person-tag-group">
-        <span id="person-tag" class="person-tag">{{.Profile.TagWord}}</span>
-        <p id="person-tag-sentence" class="person-tag-sentence">{{.Profile.TagSentence}}</p>
-      </div>
-      <p id="person-member-since" class="person-meta">{{.Profile.MemberSince}}</p>
-      {{if .Profile.HomeAreaName}}
-      <p id="person-home-area" class="person-meta person-meta--area"><span class="app-icon app-icon--map-pin person-meta__icon" aria-hidden="true"></span><span>{{.Profile.HomeAreaName}}</span></p>
-      {{end}}
-      </div>
-      <div class="person-counts">
-        <button type="button" id="person-followers-button" class="person-count" aria-haspopup="dialog" aria-label="{{.Profile.FollowersText}}"><span id="person-followers-count" class="person-count__number">{{.Profile.FollowersCount}}</span> <span id="person-followers-word" class="person-count__word">{{.Profile.FollowersWord}}</span></button>
-        <button type="button" id="person-following-button" class="person-count" aria-haspopup="dialog" aria-label="{{.Profile.FollowingText}}"><span id="person-following-count" class="person-count__number">{{.Profile.FollowingCount}}</span> <span id="person-following-word" class="person-count__word">{{.Profile.FollowingWord}}</span></button>
-      </div>
+      {{/* Quick 261113-k9t (owner decision 2026-11-13, the centred profile, option D of the mockup): the header is one centred column on both sizes and the DOM order is the reading order, so Tab and a screen reader follow what the eye sees: the letter, the username, the name, the action row, the counts row, the details line, then the state line on your own page or Your rating on someone else's, then the action error line. This replaces the 261108-fku band, the 261108-hm7 grid and its Tab order conflict, and the 261109-n25 left aligned header, and it replaces the phone header too. There are no wrappers, so every part is a direct child of the header. */}}
+      <span id="person-disc" class="person-disc" aria-hidden="true">{{.Profile.Initial}}</span>
+      <h1 id="person-username" class="person-username">{{.Profile.Username}}</h1>
+      {{/* Review fix IN-T02: under 900px the top bar title is the page's h1, so the username there is this plain line; person.css shows one of the two at each size. */}}
+      <p class="person-username person-username--phone">{{.Profile.Username}}</p>
+      {{if .Profile.Name}}<p id="person-name" class="person-name">{{.Profile.Name}}</p>{{end}}
       {{if .Profile.IsSelf}}
       <div id="person-actions" class="person-actions">
         <a id="person-edit" class="btn" href="/settings">Edit in Settings</a>
@@ -94,17 +68,37 @@
           <button type="button" id="person-block" class="person-menu__item" role="menuitem">Block</button>
         </div>
       </div>
-      {{if .Profile.MayRate}}
+      {{end}}
+      {{/* The counts row: the stars total first when there is one, then Followers, Following and the reporter cell, each a number with its word under it and a thin line between the cells. */}}
+      <div id="person-stats" class="person-stats">
+        {{if .Profile.StarsNumber}}
+        <div id="person-stars" class="person-stars" role="group" aria-label="{{.Profile.StarsLabel}}">
+          <span class="person-stars__icon" aria-hidden="true"></span>
+          <span class="person-stars__total"><span class="person-stars__number">{{.Profile.StarsNumber}}</span> <span class="person-stars__word">Stars</span></span>
+          {{/* Quick 261109-n25 (owner decision 2026-11-09, fewer words): the page draws the stars total alone. The two parts stay in the JSON route and in the group's accessible name (StarsLabel). */}}
+        </div>
+        {{end}}
+        <button type="button" id="person-followers-button" class="person-count" aria-haspopup="dialog" aria-label="{{.Profile.FollowersText}}"><span id="person-followers-count" class="person-count__number">{{.Profile.FollowersCount}}</span> <span id="person-followers-word" class="person-count__word">{{.Profile.FollowersWord}}</span></button>
+        <button type="button" id="person-following-button" class="person-count" aria-haspopup="dialog" aria-label="{{.Profile.FollowingText}}"><span id="person-following-count" class="person-count__number">{{.Profile.FollowingCount}}</span> <span id="person-following-word" class="person-count__word">{{.Profile.FollowingWord}}</span></button>
+        <div class="person-tag-group">
+          <span id="person-tag" class="person-tag">{{.Profile.TagWord}}</span>
+          <p id="person-tag-sentence" class="person-tag-sentence">{{.Profile.TagSentence}}</p>
+        </div>
+      </div>
+      {{/* The details line: Member since and the home area, each with a small icon. */}}
+      <div class="person-facts">
+        <p id="person-member-since" class="person-meta"><span class="app-icon app-icon--clock person-meta__icon" aria-hidden="true"></span><span>{{.Profile.MemberSince}}</span></p>
+        {{if .Profile.HomeAreaName}}
+        <p id="person-home-area" class="person-meta person-meta--area"><span class="app-icon app-icon--map-pin person-meta__icon" aria-hidden="true"></span><span>{{.Profile.HomeAreaName}}</span></p>
+        {{end}}
+      </div>
+      {{if .Profile.IsSelf}}
+      <p id="person-state-line" class="person-state-line" role="status">{{.Profile.StateLine}}</p>
+      {{else if .Profile.MayRate}}
       {{/* Plan 09-16 (D-02, UI-SPEC 3a): the mount of the Your rating control. It is drawn only when the server says this reader may rate, and never on your own page. stars.js fills it. data-your-rating is the server's number, 0 when unrated. */}}
       <div id="person-rating" class="person-rating" data-your-rating="{{.Profile.YourRating}}"></div>
       {{end}}
-      {{end}}
       <p id="person-action-error" class="inline-error" role="alert" hidden></p>
-      </div>
-      {{if .Profile.IsSelf}}
-      {{/* Quick 261108-fku (owner decision 2026-11-08, D5): the state line sits directly under the band, outside it. */}}
-      <p id="person-state-line" class="person-state-line" role="status">{{.Profile.StateLine}}</p>
-      {{end}}
     </header>
 
     <section id="person-reports-section" class="person-reports" aria-labelledby="person-reports-title">

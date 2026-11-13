@@ -1,10 +1,11 @@
 package web
 
-// Quick 261108-fku (owner decision 2026-11-08, testing on the laptop): the
-// profile page header is one band across the top from 900px. These tests read
-// the shipped template and stylesheet from the embedded trees, never a copy.
-// The phone is proved unchanged by the base rule pins below and by the before
-// and after screenshots the quick summary records; how the band looks in a
+// Quick 261108-fku (owner decision 2026-11-08, testing on the laptop) drew the
+// profile page header as one band across the top from 900px. Amended
+// 2026-11-13 by quick 261113-k9t (owner decision 2026-11-13, the centred
+// profile): the band is replaced on both sizes by the centred header, and the
+// pins below describe that. These tests read the shipped template and
+// stylesheet from the embedded trees, never a copy. How the header looks in a
 // forced colours theme is pinned here by the declared rules only, because
 // WebKit cannot emulate forced colours.
 
@@ -79,25 +80,36 @@ func fkuIDs(t *testing.T, label, text string, parts ...string) {
 	p421InOrder(t, label, text, parts...)
 }
 
-func TestPersonProfileBand(t *testing.T) {
+// fkuPhoneOnly keeps the rules inside the phone only block (below 900px).
+func fkuPhoneOnly(rules []p16CSSRule) []p16CSSRule {
+	var out []p16CSSRule
+	for _, r := range rules {
+		if strings.Contains(r.Media, "not all and (min-width: 900px)") {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// TestPersonProfileCentred pins quick 261113-k9t (owner decision 2026-11-13,
+// the centred profile, option D of the mockup, "lets do the centered"). It
+// replaces the TestPersonProfileBand pins of quick 261108-fku, 261108-hm7 and
+// 261109-n25: the band, its record wrapper, the grid areas, the display
+// contents wrappers, the band placement rules and the hm7 Tab order note are
+// gone, and the header is one centred column on the laptop and on the phone.
+// Amended 2026-11-13 by that decision.
+func TestPersonProfileCentred(t *testing.T) {
 	tmpl := p421ReadTemplate(t, "person.html.tmpl")
-	// Quick 261108-fku (C1, C2): the wrappers sit inside the header and the DOM
-	// keeps the phone's reading order. Tab on the laptop runs Followers,
-	// Following, the action row, then the rating control.
-	fkuIDs(t, "the band order", tmpl,
+	// The DOM order is the reading order (this ends the hm7 conflict between the
+	// Tab order and the drawing): the letter, the username, the name, the action
+	// row, the counts row, the details line, then the state line or Your rating,
+	// then the action error line.
+	fkuIDs(t, "the header order", tmpl,
 		`id="person-header"`,
-		`id="person-band" class="person-band"`,
 		`id="person-disc"`,
 		`<h1 id="person-username"`,
+		`class="person-username person-username--phone"`,
 		`id="person-name"`,
-		`id="person-record" class="person-record"`,
-		`id="person-stars"`,
-		`id="person-tag"`,
-		`id="person-tag-sentence"`,
-		`id="person-member-since"`,
-		`id="person-home-area"`,
-		`id="person-followers-button"`,
-		`id="person-following-button"`,
 		`id="person-actions"`,
 		`id="person-edit"`,
 		`id="person-follow"`,
@@ -105,216 +117,213 @@ func TestPersonProfileBand(t *testing.T) {
 		`id="person-bell"`,
 		`id="person-more"`,
 		`id="person-more-menu"`,
+		`id="person-stats" class="person-stats"`,
+		`id="person-stars"`,
+		`id="person-followers-button"`,
+		`id="person-following-button"`,
+		`class="person-tag-group"`,
+		`id="person-tag"`,
+		`id="person-tag-sentence"`,
+		`class="person-facts"`,
+		`id="person-member-since"`,
+		`id="person-home-area"`,
+		`id="person-state-line"`,
 		`id="person-rating"`,
 		`id="person-action-error"`,
-		`id="person-state-line"`,
 		`</header>`,
 	)
-	for _, id := range []string{"person-band", "person-record"} {
-		if n := strings.Count(tmpl, `id="`+id+`"`); n != 1 {
-			t.Errorf("person.html.tmpl draws %s %d times, want once", id, n)
+	// The counts row holds the stars group (when present), the two count buttons
+	// and the reporter cell, in that order, and nothing else.
+	statsAt := strings.Index(tmpl, `id="person-stats"`)
+	factsAt := strings.Index(tmpl, `class="person-facts"`)
+	if statsAt < 0 || factsAt < statsAt {
+		t.Fatalf("the counts row or the details line was not found")
+	}
+	stats := tmpl[statsAt:factsAt]
+	for _, id := range []string{"person-stars", "person-followers-button", "person-following-button", "person-tag"} {
+		if strings.Count(stats, `id="`+id+`"`) != 1 {
+			t.Errorf("the counts row draws %s %d times, want once", id, strings.Count(stats, `id="`+id+`"`))
 		}
 	}
-	// The state line is outside the band: the band's closing div comes between
-	// the action error line and the state line.
-	errAt := strings.Index(tmpl, `id="person-action-error"`)
-	stateAt := strings.Index(tmpl, `id="person-state-line"`)
-	if errAt < 0 || stateAt < errAt || !strings.Contains(tmpl[errAt:stateAt], "</div>") {
-		t.Errorf("the state line is not after the band's closing div")
+	// The details line has the clock and the map pin, both hidden from a screen reader.
+	facts := tmpl[factsAt:strings.Index(tmpl, `id="person-state-line"`)]
+	for _, want := range []string{`app-icon--clock`, `app-icon--map-pin`} {
+		if !strings.Contains(facts, want) {
+			t.Errorf("the details line lacks %s", want)
+		}
+	}
+	if strings.Count(facts, `aria-hidden="true"`) < 2 {
+		t.Errorf("the details line icons are not aria-hidden")
+	}
+	// No wrapper of the earlier layouts is left in the markup or the stylesheet.
+	css := stripCSSComments(p421ReadStatic(t, "css/person.css"))
+	for _, gone := range []string{"person-band", "person-record", "person-ident", "person-counts"} {
+		if strings.Contains(tmpl, gone) {
+			t.Errorf("person.html.tmpl still names %s", gone)
+		}
+		if strings.Contains(css, gone) {
+			t.Errorf("person.css still names %s", gone)
+		}
 	}
 
 	rules := p26Rules(t, "person.css")
 	base := fkuBase(rules)
 	laptop := fkuLaptop(rules)
+	phoneOnly := fkuPhoneOnly(rules)
 	forced := fkuForced(rules)
 	if len(laptop) == 0 {
 		t.Fatalf("person.css has no min-width: 900px block")
 	}
+	if len(phoneOnly) == 0 {
+		t.Fatalf("person.css has no phone only block")
+	}
 
-	// Laptop: one full width column, the band drawn as a grid.
+	// The page: still a full width column (03.4 R6), never a grid.
 	if v, ok := fkuDecl(laptop, ".person-page", "grid-template-columns"); ok {
-		t.Errorf("the laptop .person-page still declares grid-template-columns %q (one full width column, 03.4 R6)", v)
+		t.Errorf("the laptop .person-page declares grid-template-columns %q (one full width column, 03.4 R6)", v)
 	}
 	if v, _ := fkuDecl(laptop, ".person-page", "display"); v == "grid" {
-		t.Errorf("the laptop .person-page is still a grid")
-	}
-	fkuWant(t, "band", laptop, ".person-band", "display", "grid")
-	// Amended 2026-11-09 (quick 261109-n25, "these boxes make it look really
-	// empty"): the fku pins for the band's border, radius and padding are replaced.
-	// The band draws no box on the laptop: no border, no radius, no padding and no
-	// background, and the phone base never had them either.
-	for _, prop := range []string{"border", "border-width", "border-style", "border-color", "border-radius", "padding", "background", "background-color"} {
-		if v, ok := fkuDecl(laptop, ".person-band", prop); ok {
-			t.Errorf("the laptop .person-band declares %s: %s (no box around the band)", prop, v)
-		}
-		if v, ok := fkuDecl(base, ".person-band", prop); ok {
-			t.Errorf("the phone .person-band declares %s: %s", prop, v)
-		}
-	}
-	// The header, the state line and Recent reports stay apart by the page gap.
-	fkuWant(t, "page gap", laptop, ".person-page", "gap", "var(--space-xl)")
-	// Quick 261108-hm7 (owner decision 2026-11-08, all beside your letter; amended
-	// 2026-11-08): the disc takes the first column and every other part the second,
-	// so the areas are a disc column beside user and actions, name, counts, record.
-	// Amended 2026-11-08 (261108-hm7): the fku areas "ident counts", "ident actions"
-	// and "record record" are replaced by the rows below.
-	fkuWant(t, "band", laptop, ".person-band", "grid-template-columns", "auto auto minmax(0, 1fr)")
-	areas, _ := fkuDecl(laptop, ".person-band", "grid-template-areas")
-	for _, row := range []string{`"disc user actions"`, `"disc name name"`, `"disc counts counts"`, `"disc record record"`} {
-		if !strings.Contains(areas, row) {
-			t.Errorf("the band grid areas %q lack the row %s", areas, row)
-		}
-	}
-	for _, old := range []string{`"ident counts"`, `"ident actions"`, `"record record"`} {
-		if strings.Contains(areas, old) {
-			t.Errorf("the band grid areas %q still hold the 261108-fku row %s", areas, old)
-		}
-	}
-	if _, ok := fkuDecl(laptop, ".person-band", "overflow"); ok {
-		t.Errorf("the laptop band declares overflow, which would clip the More menu")
-	}
-	// The identity wrappers give their children to the grid, so the disc, the h1
-	// and the name are grid items.
-	fkuWant(t, "ident wrapper", laptop, ".person-band .person-ident", "display", "contents")
-	fkuWant(t, "ident text wrapper", laptop, ".person-band .person-ident__text", "display", "contents")
-	fkuWant(t, "disc", laptop, ".person-band .person-disc", "grid-area", "disc")
-	fkuWant(t, "disc", laptop, ".person-band .person-disc", "align-self", "start")
-	fkuWant(t, "username", laptop, ".person-band h1.person-username", "grid-area", "user")
-	fkuWant(t, "username", laptop, ".person-band h1.person-username", "align-self", "center")
-	fkuWant(t, "name", laptop, ".person-band .person-name", "grid-area", "name")
-	// The action row sits right after the username on the same line, left aligned
-	// and centred on it. Nothing is pushed to the far right.
-	fkuWant(t, "actions", laptop, ".person-band .person-actions", "grid-area", "actions")
-	fkuWant(t, "actions", laptop, ".person-band .person-actions", "justify-self", "start")
-	fkuWant(t, "actions", laptop, ".person-band .person-actions", "align-self", "center")
-	fkuWant(t, "counts", laptop, ".person-band .person-counts", "grid-area", "counts")
-	fkuWant(t, "counts", laptop, ".person-band .person-counts", "justify-self", "start")
-	fkuWant(t, "counts", laptop, ".person-band .person-counts", "margin-inline-start", "calc((var(--space-12) + 1px) * -1)")
-	for _, r := range laptop {
-		for prop, v := range r.Decls {
-			if prop == "justify-self" && v == "end" || prop == "justify-content" && v == "flex-end" {
-				t.Errorf("laptop rule %q pushes to the far right with %s: %s", r.Head, prop, v)
-			}
-		}
-	}
-	// D4: the counts read as counts. C5: the border stays so nothing moves.
-	fkuWant(t, "counts in the band", laptop, ".person-band .person-count", "border-color", "transparent")
-	// The line across the box is gone: the record keeps no border and no padding
-	// at the laptop size, and it is the record area of the grid.
-	fkuWant(t, "record", laptop, ".person-record", "grid-area", "record")
-	for _, prop := range []string{"border-top", "border", "padding", "margin"} {
-		if v, ok := fkuDecl(laptop, ".person-record", prop); ok {
-			t.Errorf("the laptop .person-record still declares %s: %s (no line across the box)", prop, v)
-		}
-	}
-	// The rating and the error line take the second column after the record.
-	fkuWant(t, "rating", laptop, ".person-band .person-rating", "grid-column", "2 / -1")
-	fkuWant(t, "tag row", laptop, ".person-tag-group", "flex-direction", "row")
-	// Amended 2026-11-09 (quick 261109-n25): the fku D6 pins (a bordered, rounded
-	// box with centred text) are replaced. The empty and error states have no
-	// border and no padding on the laptop, sit left aligned, and the heading is
-	// muted body text. The rows box with real rows is unchanged.
-	for _, prop := range []string{"border", "border-radius", "border-width", "border-color"} {
-		if v, ok := fkuDecl(laptop, ".person-reports__state", prop); ok {
-			t.Errorf("the laptop .person-reports__state declares %s: %s (no box around the empty and error states)", prop, v)
-		}
-	}
-	fkuWant(t, "state", laptop, ".person-reports__state", "padding", "0")
-	fkuWant(t, "state", laptop, ".person-reports__state", "text-align", "left")
-	fkuWant(t, "state", laptop, ".person-reports__state", "align-items", "flex-start")
-	fkuWant(t, "state heading", laptop, ".person-reports__state h3", "color", "var(--color-text-muted)")
-	fkuWant(t, "state heading", laptop, ".person-reports__state h3", "font-size", "var(--font-size-body)")
-	fkuWant(t, "state heading", laptop, ".person-reports__state h3", "font-weight", "var(--font-weight-regular)")
-	fkuWant(t, "rows box", laptop, ".person-report-box", "border", "1px solid var(--color-border)")
-	fkuWant(t, "rows box", laptop, ".person-report-box", "border-radius", "12px")
-	// Small action buttons: 32px tall, label font size, compact inline padding, the
-	// radius of .btn left alone (WCAG 2.5.8 asks for 24px). The bell matches. The
-	// counts keep their 44px hit area (the phone base rule is not overridden).
-	fkuWant(t, "small buttons", laptop, ".person-band .person-actions .btn", "min-height", "32px")
-	fkuWant(t, "small buttons", laptop, ".person-band .person-actions .btn", "padding", "0 var(--space-12)")
-	fkuWant(t, "small buttons", laptop, ".person-band .person-actions .btn", "font-size", "var(--font-size-label)")
-	if v, ok := fkuDecl(laptop, ".person-band .person-actions .btn", "border-radius"); ok {
-		t.Errorf("the small buttons change the radius: %s", v)
-	}
-	for _, prop := range []string{"width", "height", "min-width", "min-height"} {
-		fkuWant(t, "small bell", laptop, ".person-band .person-bell:not([hidden])", prop, "32px")
-	}
-	if v, ok := fkuDecl(laptop, ".person-count", "min-height"); ok {
-		t.Errorf("the laptop shrinks the counts' hit area: %s", v)
-	}
-	if v, ok := fkuDecl(laptop, ".person-band .person-count", "min-height"); ok {
-		t.Errorf("the laptop shrinks the counts' hit area: %s", v)
-	}
-	fkuWant(t, "phone buttons", base, ".person-bell:not([hidden])", "width", "var(--touch-target-min)")
-	fkuWant(t, "phone buttons", base, ".person-count", "min-height", "var(--touch-target-min)")
-	// C4: the menu hangs from the right edge of the action row.
-	fkuWant(t, "menu", laptop, ".person-band .person-menu:not([hidden])", "right", "0")
-
-	// Phone base: the only base rule that names a wrapper is display contents.
-	sawWrapper := false
-	for _, r := range base {
-		for _, part := range p16HeadParts(r.Head) {
-			if part == ".person-band" || part == ".person-record" {
-				sawWrapper = true
-				if len(r.Decls) != 1 || r.Decls["display"] != "contents" {
-					t.Errorf("base rule %q declares %v, want exactly display: contents", r.Head, r.Decls)
-				}
-			}
-		}
-	}
-	if !sawWrapper {
-		t.Errorf("the phone base has no display: contents rule for the band and record wrappers")
+		t.Errorf("the laptop .person-page is a grid")
 	}
 	fkuWant(t, "phone page", base, ".person-page", "display", "flex")
 	fkuWant(t, "phone page", base, ".person-page", "flex-direction", "column")
-	fkuWant(t, "phone page", base, ".person-page", "gap", "var(--space-lg)")
-	fkuWant(t, "phone page", base, ".person-page", "padding", "var(--space-md)")
-	fkuWant(t, "phone header", base, ".person-header:not([hidden])", "display", "flex")
-	fkuWant(t, "phone header", base, ".person-header:not([hidden])", "flex-direction", "column")
-	fkuWant(t, "phone header", base, ".person-header:not([hidden])", "gap", "var(--space-md)")
-	fkuWant(t, "phone count", base, ".person-count", "border", "1px solid var(--color-border)")
-	fkuWant(t, "phone count", base, ".person-count", "border-radius", "8px")
-	fkuWant(t, "phone count", base, ".person-count", "background", "var(--color-bg)")
-	fkuWant(t, "phone count", base, ".person-count", "min-height", "var(--touch-target-min)")
-	fkuWant(t, "phone tag group", base, ".person-tag-group", "flex-direction", "column")
-	fkuWant(t, "phone menu", base, ".person-menu:not([hidden])", "left", "0")
-	fkuWant(t, "phone state", base, ".person-reports__state", "padding", "var(--space-xl) var(--space-lg) 0")
-	for _, r := range base {
-		if _, ok := r.Decls["grid-template-areas"]; ok && strings.Contains(r.Head, ".person-band") {
-			t.Errorf("a phone base rule declares grid-template-areas for the band")
+	fkuWant(t, "phone page gap", base, ".person-page", "gap", "var(--space-xl)")
+	fkuWant(t, "phone page", base, ".person-page", "padding", "var(--space-lg) var(--space-md) var(--space-md)")
+	fkuWant(t, "laptop page gap", laptop, ".person-page", "gap", "var(--space-2xl)")
+	fkuWant(t, "laptop page", laptop, ".person-page", "padding", "var(--space-2xl) var(--space-lg) var(--space-lg)")
+
+	// The header is a centred column on both sizes.
+	fkuWant(t, "header", base, ".person-header:not([hidden])", "display", "flex")
+	fkuWant(t, "header", base, ".person-header:not([hidden])", "flex-direction", "column")
+	fkuWant(t, "header", base, ".person-header:not([hidden])", "align-items", "center")
+	fkuWant(t, "header", base, ".person-header:not([hidden])", "text-align", "center")
+	// The letter is 88px on the phone and 104px on the laptop, from tokens.
+	fkuWant(t, "phone letter", base, ".person-disc", "width", "calc(var(--space-3xl) + var(--space-lg))")
+	fkuWant(t, "phone letter", base, ".person-disc", "height", "calc(var(--space-3xl) + var(--space-lg))")
+	fkuWant(t, "laptop letter", laptop, ".person-disc", "width", "calc(var(--space-3xl) + var(--space-xl) + var(--space-sm))")
+	fkuWant(t, "laptop letter", laptop, ".person-disc", "height", "calc(var(--space-3xl) + var(--space-xl) + var(--space-sm))")
+	// The username: heading size on the phone, display size on the laptop h1.
+	fkuWant(t, "phone username", base, ".person-username", "font-size", "var(--font-size-heading)")
+	fkuWant(t, "phone username", base, ".person-username", "font-weight", "var(--font-weight-semibold)")
+	fkuWant(t, "laptop username", laptop, "h1.person-username", "font-size", "var(--font-size-display)")
+	fkuWant(t, "laptop username", laptop, "h1.person-username", "display", "block")
+	fkuWant(t, "phone h1", base, "h1.person-username", "display", "none")
+	fkuWant(t, "laptop phone line", laptop, ".person-username--phone", "display", "none")
+	fkuWant(t, "name", base, ".person-name", "color", "var(--color-text-muted)")
+
+	// The action row is centred; the laptop buttons are small (quick 261109-n25
+	// stays: 32px, the label font size, the radius of .btn left alone) and the
+	// phone buttons keep the 44px of .btn and the bell.
+	fkuWant(t, "action row", base, ".person-actions", "justify-content", "center")
+	fkuWant(t, "small buttons", laptop, ".person-header .person-actions .btn", "min-height", "32px")
+	fkuWant(t, "small buttons", laptop, ".person-header .person-actions .btn", "padding", "0 var(--space-12)")
+	fkuWant(t, "small buttons", laptop, ".person-header .person-actions .btn", "font-size", "var(--font-size-label)")
+	if v, ok := fkuDecl(laptop, ".person-header .person-actions .btn", "border-radius"); ok {
+		t.Errorf("the small buttons change the radius: %s", v)
+	}
+	for _, prop := range []string{"width", "height", "min-width", "min-height"} {
+		fkuWant(t, "small bell", laptop, ".person-header .person-bell:not([hidden])", prop, "32px")
+		fkuWant(t, "phone bell", base, ".person-bell:not([hidden])", prop, "var(--touch-target-min)")
+	}
+	// The More menu hangs from the right edge of the row, under More, on both
+	// sizes, so it stays inside the viewport at 320px.
+	fkuWant(t, "menu", base, ".person-menu:not([hidden])", "right", "0")
+	fkuWant(t, "menu", base, ".person-menu:not([hidden])", "left", "auto")
+	fkuWant(t, "menu", base, ".person-menu:not([hidden])", "min-width", "200px")
+
+	// The counts row: a flex row with no outer box, a 1px line between the cells,
+	// the count buttons 44px or more tall with no box of their own.
+	fkuWant(t, "counts row", base, ".person-stats", "display", "flex")
+	fkuWant(t, "counts row", base, ".person-stats", "flex-wrap", "wrap")
+	fkuWant(t, "counts row", base, ".person-stats", "justify-content", "center")
+	for _, prop := range []string{"border", "border-width", "border-style", "border-color", "border-radius", "padding", "background", "background-color"} {
+		for label, set := range map[string][]p16CSSRule{"base": base, "laptop": laptop} {
+			if v, ok := fkuDecl(set, ".person-stats", prop); ok {
+				t.Errorf("the %s .person-stats declares %s: %s (no outer box on the counts row)", label, prop, v)
+			}
 		}
 	}
+	fkuWant(t, "cell line", base, ".person-stats > * + *", "border-left", "1px solid var(--color-border)")
+	fkuWant(t, "cell", base, ".person-stats > *", "flex-direction", "column")
+	fkuWant(t, "cell", base, ".person-stats > *", "align-items", "center")
+	fkuWant(t, "count button", base, ".person-count", "min-height", "var(--touch-target-min)")
+	fkuWant(t, "count button", base, ".person-count", "border", "0")
+	fkuWant(t, "count button", base, ".person-count", "background", "transparent")
+	fkuWant(t, "count number", base, ".person-count__number", "font-weight", "var(--font-weight-semibold)")
+	fkuWant(t, "count word", base, ".person-count__word", "color", "var(--color-text-muted)")
+	if v, ok := fkuDecl(laptop, ".person-count", "min-height"); ok {
+		t.Errorf("the laptop shrinks the counts' hit area: %s", v)
+	}
+	// The stars cell draws the star and the number with Stars under them.
+	fkuWant(t, "stars cell", base, ".person-stars:not([hidden])", "display", "grid")
+	fkuWant(t, "stars word", base, ".person-stars__word", "grid-column", "1 / -1")
+	// The reporter cell: the chip with its sentence under it, the chip allowed to
+	// wrap in a narrow phone cell and kept on one line on the laptop.
+	fkuWant(t, "tag sentence", base, ".person-tag-sentence", "color", "var(--color-text-muted)")
+	fkuWant(t, "tag chip", base, ".person-tag", "overflow-wrap", "anywhere")
+	fkuWant(t, "laptop tag chip", laptop, ".person-tag", "white-space", "nowrap")
+	// Laptop cells: at least 140px wide, the reporter cell at most 260px, one row.
+	fkuWant(t, "laptop cells", laptop, ".person-stats > *", "min-width", "140px")
+	fkuWant(t, "laptop cells", laptop, ".person-stats > *", "padding", "var(--space-sm) var(--space-lg)")
+	fkuWant(t, "laptop reporter cell", laptop, ".person-stats > .person-tag-group", "max-width", "260px")
+	fkuWant(t, "laptop counts row", laptop, ".person-stats", "flex-wrap", "nowrap")
+	// Phone: the cells share the width; with the stars cell there are four cells
+	// and the reporter cell takes a row of its own, with no line on its left.
+	fkuWant(t, "phone cells", base, ".person-stats > *", "flex", "1 1 0")
+	fkuWant(t, "phone four cells", phoneOnly, ".person-stats:has(> .person-stars) > .person-tag-group", "flex", "1 0 100%")
+	fkuWant(t, "phone four cells", phoneOnly, ".person-stats:has(> .person-stars) > .person-tag-group", "border-left", "0")
 
-	// C7: forced colours keeps the edges of the band and the state box.
+	// The details line: stacked on the phone, side by side on the laptop, muted.
+	fkuWant(t, "phone details", base, ".person-facts", "flex-direction", "column")
+	fkuWant(t, "laptop details", laptop, ".person-facts", "flex-direction", "row")
+	fkuWant(t, "laptop details", laptop, ".person-facts", "justify-content", "center")
+	fkuWant(t, "details", base, ".person-meta", "color", "var(--color-text-muted)")
+	fkuWant(t, "clock icon", base, "main.person-page .app-icon--clock", "mask-image", `url("/static/icons/clock.svg")`)
+	// The state line and Your rating are centred (the header centres its text).
+	fkuWant(t, "state line", base, ".person-state-line", "color", "var(--color-text-muted)")
+	fkuWant(t, "rating", base, ".person-rating", "align-items", "center")
+	fkuWant(t, "rating row", base, ".person-rating .stars-control__row", "justify-content", "center")
+
+	// Recent reports: its heading stays left aligned, the rows box is unchanged,
+	// and the empty and the error state sit in a bordered box on both sizes.
+	if v, ok := fkuDecl(base, ".person-reports__title", "text-align"); ok {
+		t.Errorf("the Recent reports heading declares text-align %s, it stays left aligned", v)
+	}
+	fkuWant(t, "state box", base, ".person-reports__state", "border", "1px solid var(--color-border)")
+	fkuWant(t, "state box", base, ".person-reports__state", "border-radius", "12px")
+	fkuWant(t, "state box", base, ".person-reports__state", "padding", "var(--space-lg) var(--space-md)")
+	fkuWant(t, "state box", base, ".person-reports__state", "text-align", "left")
+	fkuWant(t, "state box", base, ".person-reports__state", "align-items", "flex-start")
+	fkuWant(t, "state heading", base, ".person-reports__state h3", "color", "var(--color-text-muted)")
+	fkuWant(t, "state heading", base, ".person-reports__state h3", "font-size", "var(--font-size-body)")
+	fkuWant(t, "state heading", base, ".person-reports__state h3", "font-weight", "var(--font-weight-regular)")
+	for _, prop := range []string{"border", "border-radius", "padding", "text-align"} {
+		if v, ok := fkuDecl(laptop, ".person-reports__state", prop); ok {
+			t.Errorf("the laptop .person-reports__state declares %s: %s (the box is the same on both sizes)", prop, v)
+		}
+	}
+	fkuWant(t, "rows box", laptop, ".person-report-box", "border", "1px solid var(--color-border)")
+	fkuWant(t, "rows box", laptop, ".person-report-box", "border-radius", "12px")
+
+	// Forced colours keeps the lines between the cells, the box edge and the
+	// button borders.
 	if len(forced) == 0 {
 		t.Errorf("person.css has no forced-colors block")
 	}
-	// Amended 2026-11-09 (quick 261109-n25): the band and the state box draw no edge,
-	// so their forced colours edge rules are gone; the small action buttons and the
-	// bell keep a visible border instead.
-	if v, ok := fkuDecl(forced, ".person-band", "border-color"); ok {
-		t.Errorf("the forced colours block still keeps a band edge: %s", v)
-	}
+	fkuWant(t, "forced cell line", forced, ".person-stats > * + *", "border-left", "1px solid CanvasText")
+	fkuWant(t, "forced state box", forced, ".person-reports__state", "border", "1px solid CanvasText")
 	fkuWant(t, "forced buttons", forced, ".person-actions .btn", "border", "1px solid ButtonText")
 	fkuWant(t, "forced bell", forced, ".person-bell", "border", "1px solid ButtonText")
-	// Amended 2026-11-08 (261108-hm7): the line across the band is gone, so the
-	// record has no edge to keep in a forced colours theme.
-	if v, ok := fkuDecl(forced, ".person-record", "border-top-color"); ok {
-		t.Errorf("the forced colours block still colours a record line: %s", v)
-	}
-	if v, ok := fkuDecl(forced, ".person-reports__state", "border-color"); ok {
-		t.Errorf("the forced colours block still keeps a state box edge: %s", v)
-	}
 
-	// Whole file: no CSS order property, no hex colour in the new rules, no new
-	// custom property (D7, D8). A property is matched by its exact name, never
-	// by substring, because border: contains order.
+	// Whole file: no CSS order property, no hex colour outside the chip tint
+	// block, no new custom property. A property is matched by its exact name,
+	// never by substring, because border: contains order.
 	hex := regexp.MustCompile(`#[0-9A-Fa-f]{3,8}\b`)
 	for _, r := range rules {
 		if _, ok := r.Decls["order"]; ok {
 			t.Errorf("rule %q declares the order property", r.Head)
 		}
-		named := strings.Contains(r.Head, ".person-band") || strings.Contains(r.Head, ".person-record")
+		named := strings.Contains(r.Head, ".person-stats") || strings.Contains(r.Head, ".person-facts") || strings.Contains(r.Head, ".person-header")
 		for prop, v := range r.Decls {
 			if named && hex.MatchString(v) {
 				t.Errorf("rule %q holds a hex colour in %s", r.Head, prop)
@@ -326,7 +335,6 @@ func TestPersonProfileBand(t *testing.T) {
 	}
 	// The only custom properties person.css defines are the six chip tints that
 	// were there before.
-	css := stripCSSComments(p421ReadStatic(t, "css/person.css"))
 	for _, m := range regexp.MustCompile(`(?m)^\s*(--[a-z0-9-]+)\s*:`).FindAllStringSubmatch(css, -1) {
 		if !strings.HasPrefix(m[1], "--p-chip-") {
 			t.Errorf("person.css defines the new custom property %s", m[1])
