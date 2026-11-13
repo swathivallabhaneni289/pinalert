@@ -12,7 +12,7 @@ package handlers
 // its tests (research Pitfall 18).
 //
 // The 10 second write limit. The production server has a WriteTimeout of 10
-// seconds, while the mail send may take up to 20 seconds. The three handlers that
+// seconds, while the Resend client may take a minute. The three handlers that
 // send a code email inside the request (SignUp, ResendCode, RequestReset) call
 // extendWriteDeadline after the body is decoded and the buckets have agreed,
 // the way the cron door in official_refresh.go does after its token check, so a
@@ -41,8 +41,7 @@ import (
 const maxCredentialBodyBytes = 4096
 
 // authWriteWindow is the write deadline a code sending handler gives its one
-// answer. It is longer than the SMTP mailer's 20 second limit (smtpDefaultTimeout
-// in internal/mailer).
+// answer. It is longer than the mailer's one minute client timeout.
 const authWriteWindow = 75 * time.Second
 
 // The sentences that are not in package service. The rate limit sentence is

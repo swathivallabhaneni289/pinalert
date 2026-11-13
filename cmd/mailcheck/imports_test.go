@@ -8,7 +8,7 @@ import (
 
 // TestMailcheckStaysSmall pins IN-10: the command that "touches no database"
 // must not link the service package (pgx, sqlc, push, moderation, geocode and
-// areas with it), nor the fake server or the testing package. The lifetime of a
+// areas with it), nor the testing package. The lifetime of a
 // code comes from mailer.CodeLifetime instead.
 func TestMailcheckStaysSmall(t *testing.T) {
 	out, err := exec.Command("go", "list", "-deps", ".").Output()
@@ -29,7 +29,6 @@ func TestMailcheckStaysSmall(t *testing.T) {
 	for _, banned := range []string{
 		"pinalert/internal/service",
 		"pinalert/internal/store",
-		"pinalert/internal/mailer/smtptest",
 		"github.com/jackc/pgx/v5",
 		"testing",
 	} {

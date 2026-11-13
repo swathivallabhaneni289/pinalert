@@ -30,12 +30,9 @@ How confirmations are counted, why a place is a precision 7 geohash cell, the 1 
    export DATABASE_URL="postgres://localhost:5432/pinalert?sslmode=disable"  # or your Neon/Supabase connection string
    export SESSION_SECRET="$(openssl rand -base64 32)"
    export BASE_URL="http://localhost:8080"        # the site origin; roots every share link and og:url, push still reads it; outside ENV=development it must be an https address, see below
-   export ENV=development                          # unlocks the SESSION_SECRET/SMTP dev fallbacks below
-   # export SMTP_HOST="smtp.gmail.com"               # optional when ENV=development (codes print to the server log), required otherwise; set all three of host, user name and password together, see Email delivery below
-   # export SMTP_PORT="587"                          # optional, default 587 (STARTTLS); 465 starts TLS at the first byte
-   # export SMTP_USERNAME="YOUR_PINALERT_GMAIL_ADDRESS"  # the Gmail account that sends the emails
-   # export SMTP_PASSWORD="abcdefghijklmnop"         # a Google app password for that account, never the account password; keep it as a host secret
-   # export MAIL_FROM="Pinalert <YOUR_PINALERT_GMAIL_ADDRESS>"  # optional; defaults to Pinalert <SMTP_USERNAME>
+   export ENV=development                          # unlocks the SESSION_SECRET/RESEND_API_KEY dev fallbacks below
+   export RESEND_API_KEY="re_..."                   # optional when ENV=development, required otherwise, see Email delivery below
+   export RESEND_FROM="Pinalert <onboarding@resend.dev>"  # optional; defaults to the Resend sandbox sender when unset
    export NOMINATIM_CONTACT_EMAIL="you@example.com"  # optional, safe to leave unset; see below
    # export OPENAI_API_KEY="sk-..."                  # optional when ENV=development (each text check passes with a WARNING), required otherwise: the server will not start without it
    # export MODERATION_MODEL="omni-moderation-2024-09-26"  # optional, that pinned snapshot is the default
@@ -52,13 +49,11 @@ How confirmations are counted, why a place is a precision 7 geohash cell, the 1 
    ```
    The server refuses to start without `SESSION_SECRET` unless `ENV=development` is also set —
    never let a missing secret silently fall back to an auto-generated one, which would invalidate
-   every session on every restart. The mail settings (`SMTP_HOST`, `SMTP_USERNAME` and
-   `SMTP_PASSWORD`) follow the identical rule: with `ENV=development` and none of them set, the
-   server prints each 6 digit sign in code to its own log instead of sending it (a line with
-   `code=`; there is never a link to print); with any other `ENV` (including unset), a missing
-   mail setting makes the process exit at startup rather than boot into a state where nobody can
-   receive their code email. A half set group (for example `SMTP_PASSWORD` without `SMTP_HOST`)
-   also stops startup outside development, and the message names the setting, never its value. `BASE_URL` is no longer used
+   every session on every restart. `RESEND_API_KEY` follows the identical rule: with
+   `ENV=development` and no key set, the server prints each 6 digit sign in code to its own log
+   instead of sending it (a line with `code=`; there is never a link to print); with any other
+   `ENV` (including unset), a missing `RESEND_API_KEY` makes the process exit at startup rather
+   than boot into a state where nobody can receive their code email. `BASE_URL` is no longer used
    by sign in, because no email carries a link any more. Amended 2026-10-29 by Phase 8: it now roots
    every share link and the `og:url` of the public report page, and phone notifications still read
    it as a fallback contact. Outside `ENV=development` the server refuses to start unless `BASE_URL`
@@ -70,7 +65,7 @@ How confirmations are counted, why a place is a precision 7 geohash cell, the 1 
    your address in that header, which both services receive, and in Nominatim's optional `email`
    parameter. There is no signup and no API key for
    either service. Leaving it unset is safe and the server still starts, falling back to the project
-   repository URL as the identifier, so unlike `SESSION_SECRET` and the mail settings this variable
+   repository URL as the identifier, so unlike `SESSION_SECRET` and `RESEND_API_KEY` this variable
    never blocks boot. The text check, the limits, the moderator screen and the numbers settings are
    described in [docs/MODERATION.md](./docs/MODERATION.md). A missing `OPENAI_API_KEY` outside
    `ENV=development`, a malformed `CONTACT_EMAIL`, a missing `CLIENT_IP_HEADER` outside
@@ -102,87 +97,64 @@ Every push and pull request runs `go build`, `go vet`, the browser script tests
 GitHub Actions service container (see `.github/workflows/ci.yml`) — no local setup needed to see
 CI results on a PR.
 
-## Email delivery (Gmail)
+## Email delivery (Resend)
 
-Pinalert sends its sign in email through a Gmail account, over SMTP with an app password. There
-are four emails, all plain, all with a 6 digit code or a short notice and no link: the sign up
-code, the Forgot password code, a note to the owner of an address that already has an account
-when someone tries Create account with it, and a note to an address with no account when someone
-tries Forgot password with it. `internal/mailer/loader.go` selects the implementation at startup:
-with none of the mail settings set and `ENV=development`, the code is printed to the server log (a
+Pinalert sends its sign in email through [Resend](https://resend.com)'s free tier. There are four
+emails, all plain, all with a 6 digit code or a short notice and no link: the sign up code, the
+Forgot password code, a note to the owner of an address that already has an account when someone
+tries Create account with it, and a note to an address with no account when someone tries Forgot
+password with it. `internal/mailer/loader.go` selects the implementation at startup:
+`RESEND_API_KEY` unset with `ENV=development` prints the code to the server log (a
 build-and-test convenience, not a substitute for real delivery; a green test suite proves nothing
-about whether real mail arrives); with `SMTP_HOST`, `SMTP_USERNAME` and `SMTP_PASSWORD` set, the
-email goes out through that SMTP server; with any other `ENV` and a missing or half set group, the
-server refuses to start.
+about whether real mail arrives);
+`RESEND_API_KEY` set sends through Resend's official Go SDK; `RESEND_API_KEY` unset with any other
+`ENV` refuses to start.
 
-**Why Gmail.** It is free and needs no domain of your own. A transactional email service on its
-free plan only delivers to the account owner until a domain is added and verified in DNS, and
-because login is mandatory to view anything at all (see PROJECT.md's Access Model), an
-undeliverable code email means an unusable app for that person, not a degraded experience. Gmail
-delivers to anyone.
+**Pre-launch requirement: read before sharing this app with anyone but yourself.** Resend's
+sandbox sender `onboarding@resend.dev` (the default when `RESEND_FROM` is unset) delivers **only**
+to the Resend account owner's own signup address. Until a custom domain is added and DNS-verified,
+every other visitor's code email is silently undeliverable, and because login is mandatory to
+view anything at all (see PROJECT.md's Access Model), an undeliverable code email means an
+unusable app for that person, not a degraded experience.
 
-**The mail settings** (keep them as host secrets, never in the repo, never in a file you commit):
+Resend sends over HTTPS (port 443), so hosts that block the mail ports (Render's free plan blocks
+25, 465 and 587) are fine.
 
-| Setting | What it is |
-| --- | --- |
-| `SMTP_HOST` | `smtp.gmail.com` |
-| `SMTP_PORT` | `587` (the default, STARTTLS). `465` starts TLS at the first byte. |
-| `SMTP_USERNAME` | The Gmail address that sends the emails. |
-| `SMTP_PASSWORD` | A Google app password for that account (not the account password). The spaces Google shows in it are dropped for you only when `SMTP_HOST` is `smtp.gmail.com` and what is left is 16 letters; any other password is used exactly as you give it. |
-| `MAIL_FROM` | Optional. Defaults to `Pinalert <SMTP_USERNAME>`. |
+**Owner check today, before any domain.** In your own Terminal app (a new window you close
+afterwards, so the key stays out of your shell history and out of every later command; `read -s`
+takes it without showing it):
 
-The connection is always encrypted before the password is sent: the server refuses to send if it
-does not offer STARTTLS, it needs TLS 1.2 or newer, and it checks the server's certificate and
-name. A failed send shows only the kind of failure in the server log (could not reach the server,
-could not secure the connection, the server did not start encryption, sign in refused, no
-password sign in offered, connection lost during sign in, try again later, message refused),
-never the
-password, the user name, an address or a code.
+```sh
+cd ~/code/pinalert
+read -s RESEND_API_KEY     # paste the key, nothing is shown, press Return
+export RESEND_API_KEY
+go run ./cmd/mailcheck -to YOUR_RESEND_SIGNUP_EMAIL
+exit
+```
 
-**Owner steps for Gmail:**
+The `-to` address must be the one the Resend account was made with until a domain is verified.
+Use a new API key named Pinalert, never one from another project, and never paste it into a chat
+or a file. `mailcheck` sends one sample code email, touches no database and starts no server, and
+prints either `Sent. Check the inbox and the spam folder.` or the kind of failure. Add `-kind
+reset` for the Forgot password wording. Never start the test copy, `make run` or any server in
+that shell: it would see the real key and send real email to the made up people of the test data.
 
-1. Make a new Gmail account just for Pinalert. Never use a personal one: the app password gives
-   whoever holds it the right to send as that account.
-2. In that Google account, turn on 2-Step Verification (Google Account, Security).
-3. In the same place, create an app password (name it Pinalert). Google shows it once.
-4. Set `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`, `SMTP_USERNAME` (the Pinalert Gmail) and
-   `SMTP_PASSWORD` (the app password) as host secrets. `MAIL_FROM` is optional.
-5. Check it with a real inbox before letting anyone in. Do it in a new terminal tab that you close
-   afterwards, so the app password stays out of your shell history and out of every later command
-   (in zsh, `read -s` takes the password without showing it and without writing it to the
-   history):
+**On deploy day,** buy a domain (about $10 a year), add and verify it in Resend (Domains, Add
+Domain, then the DNS records), set `RESEND_FROM` to an address at it (for example
+`Pinalert <codes@YOUR_DOMAIN>`), then run `mailcheck` to an address that is not the sign up one.
+If this Resend account already holds another project's domain and the free plan's domain limit is
+reached, make a separate Resend account for Pinalert.
 
-   ```sh
-   read -s SMTP_PASSWORD     # paste the app password, nothing is shown, press Return
-   export SMTP_PASSWORD
-   export SMTP_HOST=smtp.gmail.com SMTP_USERNAME=YOUR_PINALERT_GMAIL_ADDRESS
-   go run ./cmd/mailcheck -to YOUR_OWN_EMAIL_ADDRESS
-   exit
-   ```
+**If the key leaks,** delete it in the Resend dashboard (API Keys) and set a new one. Nothing else
+needs to change.
 
-   Add `-kind reset` to the `mailcheck` line for the Forgot password wording. `exit` closes the
-   shell and forgets the password. Never start the test copy, `make run` or any server in that
-   shell: it would see the real mail settings and send real email from the Pinalert account to
-   the made up people of the test data. `mailcheck` sends one sample code email, touches no
-   database and starts no server, and prints either `Sent. Check the inbox and the spam folder.`
-   or the kind of failure. Look in the spam folder too: a brand new sending account can land
-   there at first.
+Before sharing a deployed instance with real visitors, the owner steps are these (the verified
+sender is the first):
 
-**Limits.** A free Gmail account can send to only a few hundred recipients a day, and the server's
-own ceiling (below) stays well under that. Some free hosts block the outgoing mail ports (465 and
-587); the host you pick must allow one of them, so this is part of the hosting choice. Readers see
-the emails come from the Pinalert Gmail address (the `MAIL_FROM` name shows, the address is the
-account's), and Gmail rewrites a different `MAIL_FROM` address to the account's own.
-
-**If the password leaks,** open the Google account's app passwords and revoke it, create a new one
-and set it as the new `SMTP_PASSWORD`. Nothing else needs to change.
-
-Before sharing a deployed instance with real visitors, the owner steps are these (the Gmail
-sending test is the first):
-
-1. Do the Gmail steps above and run `mailcheck` until a real email reaches a real inbox.
-2. Check that the host allows an outgoing mail port (587 or 465) by running `mailcheck` from the
-   host itself, or from a one-off job on it, not only from your own computer.
+1. In the Resend dashboard, go to **Domains → Add Domain**, then add the printed DKIM/SPF records
+   at your DNS registrar and wait for verification to complete.
+2. Set `RESEND_FROM` to an address at that verified domain (e.g. `Pinalert <alerts@yourdomain.com>`)
+   and redeploy; `onboarding@resend.dev` must not be the sender in anything but local development.
 3. Set the contact email (`CONTACT_EMAIL`; empty means no contact block anywhere). The address is
    your choice, and nothing contact related is public until it is set.
 4. Check the emergency numbers on the live government pages (112.gov.in, which neither earlier
@@ -208,10 +180,10 @@ sending test is the first):
    account agrees again to the text that ships (`TestTermsVersionFollowsPolicyDate` keeps the two
    equal).
 
-A free Gmail account is also quota-limited (a few hundred recipients a day at the time this was
-written; Google can change it, so re-check the current figure rather than trusting this document).
-The server holds a daily ceiling of **90 sends a day** (UTC days, all four emails together), well
-under that cap, and keeps 20 of those 90 for Forgot password emails. Sends are also
+Resend's free tier is also quota-limited (roughly 100 sends/day at the time this was written;
+re-check the current figure in your own Resend dashboard rather than trusting this document). The
+server holds a daily ceiling of **90 sends a day** (UTC days, all four emails together) so the
+free 100 is never used up, and keeps 20 of those 90 for Forgot password emails. Sends are also
 paced at 15 in any 10 minutes (5 kept for Forgot password), and once the other emails are spent one
 sender (a client network with `CLIENT_IP_HEADER`, or every request without a valid cookie) may take
 only 3 of the kept slots a day, so one network cannot spend the reserve. Several networks working
