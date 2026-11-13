@@ -69,7 +69,6 @@ func TestLoadMailer(t *testing.T) {
 
 	t.Run("host set, env development still returns the smtp mailer", func(t *testing.T) {
 		setSMTPEnv(t, "smtp.example.com", "", "pinalert.sender@example.com", "pw", "")
-		t.Setenv("ENV", "development")
 
 		m, err := LoadMailer("development")
 		if err != nil {
