@@ -101,13 +101,14 @@ func TestSpentCodeOnDatabase(t *testing.T) {
 	if err := svc.RequestReset(ctx, "spent-D", credEmail); err != nil {
 		t.Fatalf("RequestReset: %v", err)
 	}
-	if err := svc.CheckResetCode(ctx, "spent-D", mail.last(t).msg.Code); err != nil {
+	freshD, err := svc.CheckResetCode(ctx, "spent-D", mail.last(t).msg.Code, credSessionIDs("spent-D2"))
+	if err != nil {
 		t.Fatalf("CheckResetCode: %v", err)
 	}
-	if err := svc.ConfirmReset(ctx, "spent-D", "a brand new password 55"); err != nil {
+	if err := svc.ConfirmReset(ctx, freshD, "a brand new password 55"); err != nil {
 		t.Fatalf("ConfirmReset: %v", err)
 	}
-	spent, ok, err = svc.SpentCode(ctx, "spent-D")
+	spent, ok, err = svc.SpentCode(ctx, freshD)
 	if err != nil || !ok || spent.Purpose != service.PurposeReset || spent.Email != credEmail {
 		t.Fatalf("SpentCode after the reset = %+v, %v, %v; want the reset of %s", spent, ok, err, credEmail)
 	}
@@ -135,17 +136,17 @@ func TestSpentCodeOnDatabase(t *testing.T) {
 	// phone does not see the address and the line. A few minutes later it still
 	// shows (the lost answer case); eleven minutes later it is gone.
 	offset.Store(int64(5 * time.Minute))
-	if _, ok, err := svc.SpentCode(ctx, "spent-D"); err != nil || !ok {
+	if _, ok, err := svc.SpentCode(ctx, freshD); err != nil || !ok {
 		t.Errorf("SpentCode five minutes after the spend = %v, %v; want true", ok, err)
 	}
 	offset.Store(int64(11 * time.Minute))
-	if _, ok, err := svc.SpentCode(ctx, "spent-D"); err != nil || ok {
+	if _, ok, err := svc.SpentCode(ctx, freshD); err != nil || ok {
 		t.Errorf("SpentCode eleven minutes after the spend = %v, %v; want false (inside the resume window)", ok, err)
 	}
 
 	// Outside the resume window the spent row says nothing.
 	offset.Store(int64(limits.ResumeWindow + time.Minute))
-	if _, ok, err := svc.SpentCode(ctx, "spent-D"); err != nil || ok {
+	if _, ok, err := svc.SpentCode(ctx, freshD); err != nil || ok {
 		t.Errorf("SpentCode after the resume window = %v, %v; want false", ok, err)
 	}
 }

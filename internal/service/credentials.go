@@ -39,6 +39,8 @@ type CredentialQuerier interface {
 	// verified row, guarded by the confirm window.
 	MarkAuthCodeVerified(ctx context.Context, arg sqlcgen.MarkAuthCodeVerifiedParams) (int64, error)
 	ConsumeVerifiedResetCode(ctx context.Context, arg sqlcgen.ConsumeVerifiedResetCodeParams) (int64, error)
+	// ClearAuthCodeVerified turns a browser's confirm off (review fix WR-01).
+	ClearAuthCodeVerified(ctx context.Context, sessionID string) (int64, error)
 	// MarkAuthCodePasswordSet marks the kept row of a Create account confirm that
 	// only set a password on an existing account (review fix round 4, SK3-03).
 	MarkAuthCodePasswordSet(ctx context.Context, id int64) error
@@ -202,6 +204,15 @@ var DefaultCredentialLimits = CredentialLimits{
 	ForgetAfter:     30 * time.Minute,
 	ResumeWindow:    time.Hour,
 }
+
+// ResetConfirmWindow is how long a confirmed reset code stays good for step two
+// of Forgot password, counted from the confirm and not from the send (quick
+// 261113-r5w, review fix WR-01). It is short on purpose: for this long after the
+// right code was typed, whoever holds the browser's session can set the password
+// without the code, so it is kept well under the code's own 10 minute life. The
+// service, LiveCode (which draws step two) and docs/TRUST-MODEL.md all use this
+// one number.
+const ResetConfirmWindow = 5 * time.Minute
 
 // codeRowRetention is how long an expired code row is kept before the prune
 // deletes it. The prune runs when a code is sent (issueAndSend), so a row can

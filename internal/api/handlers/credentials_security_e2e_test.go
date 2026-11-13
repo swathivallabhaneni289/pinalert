@@ -991,11 +991,16 @@ func TestResetEndsEverySession(t *testing.T) {
 	if got := reportsStatus(t, third, srv); got != http.StatusUnauthorized {
 		t.Errorf("the resetting browser: GET /api/reports = %d, want 401 (signed out)", got)
 	}
-	if got := sessionIDFromJar(t, third, srv.URL); got != thirdID {
-		t.Errorf("the resetting browser changed its session id")
+	// Review fix WR-02: step one moved the browser to a fresh session id. Neither
+	// the old nor the fresh id is bound to the account.
+	freshID := sessionIDFromJar(t, third, srv.URL)
+	if freshID == thirdID {
+		t.Errorf("the resetting browser kept its session id through step one")
 	}
-	if id := sessionAccountID(t, pool, thirdID); id != nil {
-		t.Errorf("the resetting browser's session is bound to account %d", *id)
+	for _, id := range []string{thirdID, freshID} {
+		if bound := sessionAccountIDOrNone(t, pool, id); bound != nil {
+			t.Errorf("the resetting browser's session %q is bound to account %d", id, *bound)
+		}
 	}
 
 	old := doAuth(t, newLoginClient(t, srv), srv, "/api/auth/sign-in", map[string]string{"email": email, "password": e2eTestPassword})

@@ -1,9 +1,10 @@
 package handlers
 
-// credentials.go puts service.CredentialService on the HTTP surface: the seven
+// credentials.go puts service.CredentialService on the HTTP surface: the eight
 // public POST routes of Create account, the typed code, Sign in, Resend and
 // Forgot password (Phase 7.1, plan 07; quick 261113-r5w split the Forgot
-// password confirm into two routes, reset/code and reset/password). The routes sit outside the access gate
+// password confirm into two routes, reset/code and reset/password, and the
+// eighth, reset/cancel, turns the confirm of step two off). The routes sit outside the access gate
 // and behind net/http CrossOriginProtection (see api.NewRouter), and every one
 // answers with Cache-Control no-store. No response, header or log line holds an
 // email address, a code or a password (D-05, WR-S03).
@@ -117,8 +118,19 @@ type PasswordSetResponse struct {
 	PasswordSet bool `json:"password_set" example:"true"`
 }
 
+// ResetCancelRequest is the body of POST /api/auth/reset/cancel. It has no
+// members: the browser's own session names the confirm to turn off. The page
+// sends {}.
+type ResetCancelRequest struct{}
+
+// ResetCancelledResponse answers POST /api/auth/reset/cancel. It is the same
+// bytes whether or not this browser had a confirm to turn off.
+type ResetCancelledResponse struct {
+	Cancelled bool `json:"cancelled" example:"true"`
+}
+
 // writeAuthError writes the shared error envelope with no-store, so every
-// refusal of the seven routes, the body ones included, carries it.
+// refusal of the eight routes, the body ones included, carries it.
 func writeAuthError(w http.ResponseWriter, status int, field, message string) {
 	w.Header().Set("Cache-Control", "no-store")
 	writeFieldError(w, status, field, message)
@@ -130,7 +142,7 @@ func writeAuthRateLimited(w http.ResponseWriter, message string, wait time.Durat
 	writeRateLimited(w, "email", message, wait, false, "")
 }
 
-// decodeAuthBody applies the rules of the seven routes: application/json only
+// decodeAuthBody applies the rules of the eight routes: application/json only
 // (415), a maxCredentialBodyBytes cap (413), unknown fields refused (400) and
 // exactly one JSON value (400). Every refusal is the shared envelope with the
 // generic sentence: the page's own script always sends a valid body, so no body
@@ -473,16 +485,18 @@ func RequestReset(creds *service.CredentialService, gate *AuthGate) http.Handler
 
 // ConfirmResetCode handles POST /api/auth/reset/code, step one of Forgot
 // password: the typed code and nothing else. A right code is remembered for this
-// browser and for a code lifetime, and opens step two; it sets no password and
-// ends no session. A wrong code is counted against the same budget of five tries
-// as ever, and the answer is the same for an address with an account and one
-// without.
+// browser for 5 minutes and opens step two, and the browser moves to a freshly
+// drawn session id (the new cookie rides on the answer); it sets no password and
+// signs nobody in. A wrong code is counted against the same budget of five tries
+// as ever, sets no cookie, and the answer is the same for an address with an
+// account and one without.
 //
 // @Summary      Confirm the reset code
 // @Description  Checks the 6 digit code typed on the Forgot password screen. A right code is
-// @Description  remembered for this browser for a short time, so the next call can set the new
-// @Description  password. It sets no password and signs nobody in. A wrong, expired or replaced
-// @Description  code gets the same answer, whether or not the address has an account.
+// @Description  remembered for this browser for 5 minutes, so the next call can set the new
+// @Description  password, and this browser is moved to a new session in the same answer. It sets
+// @Description  no password and signs nobody in. A wrong, expired or replaced code gets the same
+// @Description  answer, whether or not the address has an account, and changes no cookie.
 // @Tags         auth
 // @Accept       json
 // @Produce      json
@@ -494,7 +508,7 @@ func RequestReset(creds *service.CredentialService, gate *AuthGate) http.Handler
 // @Failure      429   {object}  RateLimitResponse
 // @Failure      503   {object}  ErrorResponse
 // @Router       /auth/reset/code [post]
-func ConfirmResetCode(creds *service.CredentialService, gate *AuthGate) http.HandlerFunc {
+func ConfirmResetCode(creds *service.CredentialService, gate *AuthGate, mgr *session.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionID, ok := authReady(w, r, creds)
 		if !ok {
@@ -509,11 +523,15 @@ func ConfirmResetCode(creds *service.CredentialService, gate *AuthGate) http.Han
 			writeAuthRateLimited(w, authRateLimitedMessage, try.RetryAfter)
 			return
 		}
-		if err := creds.CheckResetCode(r.Context(), sessionID, req.Code); err != nil {
+		fresh, err := creds.CheckResetCode(r.Context(), sessionID, req.Code, mgr.NewID)
+		if err != nil {
 			writeCredentialError(w, "ConfirmResetCode", err)
 			return
 		}
 		try.Cancel()
+		// The confirmed code now belongs to a freshly drawn session id, which only
+		// this answer carries (review fix WR-02); a wrong code sets no cookie.
+		mgr.SetCookie(w, fresh)
 		writeJSON(w, http.StatusOK, CodeOKResponse{CodeOK: true})
 	}
 }
@@ -527,7 +545,7 @@ func ConfirmResetCode(creds *service.CredentialService, gate *AuthGate) http.Han
 // counts nothing and keeps the confirm.
 //
 // @Summary      Set a new password after the reset code was confirmed
-// @Description  Sets the new password for a browser whose reset code was confirmed a short time
+// @Description  Sets the new password for a browser whose reset code was confirmed less than 5 minutes
 // @Description  ago. A browser with no confirmed code, a confirm that ran out, or a code replaced by
 // @Description  a newer one gets the wrong code answer. A good call ends every session of the
 // @Description  account and does not sign this browser in.
@@ -568,5 +586,47 @@ func SetResetPassword(creds *service.CredentialService, gate *AuthGate) http.Han
 		}
 		try.Cancel()
 		writeJSON(w, http.StatusOK, PasswordSetResponse{PasswordSet: true})
+	}
+}
+
+// CancelReset handles POST /api/auth/reset/cancel: Change email on step two of
+// Forgot password turns this browser's confirm off on the server, so a reload
+// afterwards draws the code screen and never step two (review fix WR-01). It
+// sits behind the same cross site guard and strict body as its siblings, and it
+// takes no bucket token: it sends nothing, hashes nothing and spends nothing,
+// and the one thing it changes is the confirm of the caller's own session. The
+// answer is the same bytes whether or not there was a confirm to turn off, so
+// it says nothing about the browser's code or about any address.
+//
+// @Summary      Turn off the confirmed reset code of this browser
+// @Description  Called when the person leaves the new password step with Change email. Clears the
+// @Description  confirm of this browser's newest unused reset code, so the code has to be typed
+// @Description  again before a new password is accepted. The body is an empty object. The answer is
+// @Description  the same whether or not there was a confirm to clear.
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      ResetCancelRequest  true  "Empty object"
+// @Success      200   {object}  ResetCancelledResponse
+// @Failure      400   {object}  ErrorResponse
+// @Failure      413   {object}  ErrorResponse
+// @Failure      415   {object}  ErrorResponse
+// @Failure      503   {object}  ErrorResponse
+// @Router       /auth/reset/cancel [post]
+func CancelReset(creds *service.CredentialService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sessionID, ok := authReady(w, r, creds)
+		if !ok {
+			return
+		}
+		var req ResetCancelRequest
+		if !decodeAuthBody(w, r, &req) {
+			return
+		}
+		if err := creds.CancelResetConfirm(r.Context(), sessionID); err != nil {
+			writeCredentialError(w, "CancelReset", err)
+			return
+		}
+		writeJSON(w, http.StatusOK, ResetCancelledResponse{Cancelled: true})
 	}
 }

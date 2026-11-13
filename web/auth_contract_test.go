@@ -103,7 +103,7 @@ func TestAuthJSPanelContract(t *testing.T) {
 	// The routes of plan 07 appear as literal paths, so a rename is a test failure.
 	for _, route := range []string{
 		"/api/auth/sign-up", "/api/auth/sign-up/code", "/api/auth/code/resend",
-		"/api/auth/sign-in", "/api/auth/reset", "/api/auth/reset/code", "/api/auth/reset/password",
+		"/api/auth/sign-in", "/api/auth/reset", "/api/auth/reset/code", "/api/auth/reset/password", "/api/auth/reset/cancel",
 	} {
 		if !strings.Contains(script, "'"+route+"'") {
 			t.Errorf("%s never posts to %s", authJSPath, route)

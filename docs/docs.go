@@ -149,9 +149,67 @@ const docTemplate = `{
                 }
             }
         },
+        "/auth/reset/cancel": {
+            "post": {
+                "description": "Called when the person leaves the new password step with Change email. Clears the\nconfirm of this browser's newest unused reset code, so the code has to be typed\nagain before a new password is accepted. The body is an empty object. The answer is\nthe same whether or not there was a confirm to clear.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Turn off the confirmed reset code of this browser",
+                "parameters": [
+                    {
+                        "description": "Empty object",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ResetCancelRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ResetCancelledResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "415": {
+                        "description": "Unsupported Media Type",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/reset/code": {
             "post": {
-                "description": "Checks the 6 digit code typed on the Forgot password screen. A right code is\nremembered for this browser for a short time, so the next call can set the new\npassword. It sets no password and signs nobody in. A wrong, expired or replaced\ncode gets the same answer, whether or not the address has an account.",
+                "description": "Checks the 6 digit code typed on the Forgot password screen. A right code is\nremembered for this browser for 5 minutes, so the next call can set the new\npassword, and this browser is moved to a new session in the same answer. It sets\nno password and signs nobody in. A wrong, expired or replaced code gets the same\nanswer, whether or not the address has an account, and changes no cookie.",
                 "consumes": [
                     "application/json"
                 ],
@@ -215,7 +273,7 @@ const docTemplate = `{
         },
         "/auth/reset/password": {
             "post": {
-                "description": "Sets the new password for a browser whose reset code was confirmed a short time\nago. A browser with no confirmed code, a confirm that ran out, or a code replaced by\na newer one gets the wrong code answer. A good call ends every session of the\naccount and does not sign this browser in.",
+                "description": "Sets the new password for a browser whose reset code was confirmed less than 5 minutes\nago. A browser with no confirmed code, a confirm that ran out, or a code replaced by\na newer one gets the wrong code answer. A good call ends every session of the\naccount and does not sign this browser in.",
                 "consumes": [
                     "application/json"
                 ],
@@ -5889,6 +5947,18 @@ const docTemplate = `{
         },
         "handlers.ResendRequest": {
             "type": "object"
+        },
+        "handlers.ResetCancelRequest": {
+            "type": "object"
+        },
+        "handlers.ResetCancelledResponse": {
+            "type": "object",
+            "properties": {
+                "cancelled": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
         },
         "handlers.ResetCodeRequest": {
             "type": "object",

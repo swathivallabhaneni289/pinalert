@@ -266,18 +266,35 @@ func (f *credFakeQuerier) ConsumeAuthCode(_ context.Context, id int64) (int64, e
 	return 0, nil
 }
 
-// MarkAuthCodeVerified follows the real query: a live reset row that was emailed a
-// code gets verified_at once, and a second mark keeps the first moment.
+// MarkAuthCodeVerified follows the real query: a live reset row of the old
+// session that was emailed a code gets verified_at (a second mark restarts the
+// window) and moves to the new session id.
 func (f *credFakeQuerier) MarkAuthCodeVerified(_ context.Context, arg sqlcgen.MarkAuthCodeVerifiedParams) (int64, error) {
 	f.log("MarkAuthCodeVerified")
 	for i := range f.codes {
 		r := &f.codes[i]
-		if r.id == arg.ID && r.used == nil && r.expires.After(f.clk.Now()) &&
+		if r.id == arg.ID && r.session == arg.OldSessionID && r.used == nil && r.expires.After(f.clk.Now()) &&
 			r.purpose == service.PurposeReset && r.delivery == service.DeliveryCode {
+			v := arg.VerifiedAt
+			r.verified = &v
+			r.session = arg.NewSessionID
+			return 1, nil
+		}
+	}
+	return 0, nil
+}
+
+// ClearAuthCodeVerified follows the real query: the newest unused reset row of
+// the session loses its verified_at.
+func (f *credFakeQuerier) ClearAuthCodeVerified(_ context.Context, sessionID string) (int64, error) {
+	f.log("ClearAuthCodeVerified")
+	for i := len(f.codes) - 1; i >= 0; i-- {
+		r := &f.codes[i]
+		if r.session == sessionID && r.purpose == service.PurposeReset && r.used == nil {
 			if r.verified == nil {
-				v := arg.VerifiedAt
-				r.verified = &v
+				return 0, nil
 			}
+			r.verified = nil
 			return 1, nil
 		}
 	}
@@ -292,9 +309,16 @@ func (f *credFakeQuerier) ConsumeVerifiedResetCode(_ context.Context, arg sqlcge
 	if f.consumeZero {
 		return 0, nil
 	}
+	newest := int64(-1) // the newest row of the session, used or not (review fix IN-07)
+	for i := range f.codes {
+		if f.codes[i].session == arg.SessionID && f.codes[i].id > newest {
+			newest = f.codes[i].id
+		}
+	}
 	for i := range f.codes {
 		r := &f.codes[i]
-		if r.id == arg.ID && r.used == nil && r.purpose == service.PurposeReset && r.delivery == service.DeliveryCode &&
+		if r.id == arg.ID && r.id == newest && r.session == arg.SessionID && r.used == nil &&
+			r.purpose == service.PurposeReset && r.delivery == service.DeliveryCode &&
 			r.verified != nil && r.verified.After(arg.VerifiedAfter) {
 			u := f.clk.Now()
 			r.used = &u
@@ -752,6 +776,13 @@ func credSessionIDs(prefix string) func() string {
 		n++
 		return fmt.Sprintf("%s-%d", prefix, n)
 	}
+}
+
+// checkReset runs step one of Forgot password with a predictable fresh session
+// id, the browser's id plus "-fresh" (review fix WR-02: a right code moves the
+// browser to a new id, and step two must then be asked on that id).
+func checkReset(svc *service.CredentialService, session, code string) (string, error) {
+	return svc.CheckResetCode(context.Background(), session, code, func() string { return session + "-fresh" })
 }
 
 // ---------------------------------------------------------------- Task 1 ----
@@ -1700,19 +1731,21 @@ func TestConfirmDeletesOtherCodesForAddress(t *testing.T) {
 		codeB := r.codeSent(t)
 		// Quick 261113-r5w: the other browser confirmed its code first, and
 		// then the first browser's whole two steps spent the address.
-		if err := r.svc.CheckResetCode(ctx, "sess-b", codeB); err != nil {
+		freshB, err := checkReset(r.svc, "sess-b", codeB)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if err := r.svc.CheckResetCode(ctx, "sess-a", codeA); err != nil {
+		freshA, err := checkReset(r.svc, "sess-a", codeA)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if err := r.svc.ConfirmReset(ctx, "sess-a", "a brand new password 55"); err != nil {
+		if err := r.svc.ConfirmReset(ctx, freshA, "a brand new password 55"); err != nil {
 			t.Fatal(err)
 		}
-		if err := r.svc.ConfirmReset(ctx, "sess-b", "another new password 66"); !errors.Is(err, service.ErrWrongCode) {
+		if err := r.svc.ConfirmReset(ctx, freshB, "another new password 66"); !errors.Is(err, service.ErrWrongCode) {
 			t.Fatalf("the other browser's confirmed code must be dead: %v", err)
 		}
-		if err := r.svc.CheckResetCode(ctx, "sess-b", codeB); !errors.Is(err, service.ErrWrongCode) {
+		if _, err := checkReset(r.svc, freshB, codeB); !errors.Is(err, service.ErrWrongCode) {
 			t.Fatalf("the other browser's pending code must be dead: %v", err)
 		}
 	})
@@ -1802,14 +1835,15 @@ func (r *credRig) resetCodeFor(t *testing.T, session string) string {
 }
 
 // resetVerified runs step one of Forgot password for the browser and returns the
-// code row it verified.
+// session id the browser is moved to, which holds the confirm.
 func (r *credRig) resetVerified(t *testing.T, session string) string {
 	t.Helper()
 	code := r.resetCodeFor(t, session)
-	if err := r.svc.CheckResetCode(context.Background(), session, code); err != nil {
+	fresh, err := checkReset(r.svc, session, code)
+	if err != nil {
 		t.Fatalf("CheckResetCode: %v", err)
 	}
-	return code
+	return fresh
 }
 
 func (r *credRig) newestCode(t *testing.T) *credCodeRow {
@@ -1832,9 +1866,9 @@ func TestConfirmResetSetsPasswordAndEndsSessions(t *testing.T) {
 	r.q.throttles[r.svc.ThrottleKey(credEmail)] = &credThrottle{failures: 9, last: r.clk.Now()}
 	epochBefore := acct.epoch
 
-	r.resetVerified(t, "sess-d")
+	fresh := r.resetVerified(t, "sess-d")
 	newPassword := "a brand new password 55"
-	if err := r.svc.ConfirmReset(ctx, "sess-d", newPassword); err != nil {
+	if err := r.svc.ConfirmReset(ctx, fresh, newPassword); err != nil {
 		t.Fatalf("ConfirmReset: %v", err)
 	}
 	if ok, _, err := r.hasher.inner.Verify(ctx, *acct.passwordHash, newPassword); err != nil || !ok {
@@ -1867,23 +1901,23 @@ func TestConfirmResetSetsPasswordAndEndsSessions(t *testing.T) {
 	if len(r.q.codes) != 1 || r.q.codes[0].used == nil {
 		t.Errorf("only the spent row of the address may be kept, used: %+v", r.q.codes)
 	}
-	if spent, ok, err := r.svc.SpentCode(ctx, "sess-d"); err != nil || !ok || spent.Purpose != service.PurposeReset || spent.Email != credEmail {
+	if spent, ok, err := r.svc.SpentCode(ctx, fresh); err != nil || !ok || spent.Purpose != service.PurposeReset || spent.Email != credEmail {
 		t.Errorf("SpentCode after step two = %+v, %v, %v; want the reset of %s", spent, ok, err, credEmail)
 	}
-	if err := r.svc.ConfirmReset(ctx, "sess-d", "another new password 66"); !errors.Is(err, service.ErrWrongCode) {
+	if err := r.svc.ConfirmReset(ctx, fresh, "another new password 66"); !errors.Is(err, service.ErrWrongCode) {
 		t.Errorf("step two twice: err = %v, want ErrWrongCode", err)
 	}
 
 	t.Run("a busy hasher does not burn the confirmed code", func(t *testing.T) {
 		r := newCredRig(t)
 		r.addPasswordAccount(t, credEmail, credPassword)
-		r.resetVerified(t, "sess-d")
+		fresh := r.resetVerified(t, "sess-d")
 		r.hasher.hashErr = auth.ErrHasherBusy
-		if err := r.svc.ConfirmReset(ctx, "sess-d", "a brand new password 55"); !errors.Is(err, service.ErrBusy) {
+		if err := r.svc.ConfirmReset(ctx, fresh, "a brand new password 55"); !errors.Is(err, service.ErrBusy) {
 			t.Fatalf("err = %v, want ErrBusy", err)
 		}
 		r.hasher.hashErr = nil
-		if err := r.svc.ConfirmReset(ctx, "sess-d", "a brand new password 55"); err != nil {
+		if err := r.svc.ConfirmReset(ctx, fresh, "a brand new password 55"); err != nil {
 			t.Fatalf("the same confirm must still work: %v", err)
 		}
 	})
@@ -1891,9 +1925,9 @@ func TestConfirmResetSetsPasswordAndEndsSessions(t *testing.T) {
 	t.Run("a vanished account is the wrong code answer", func(t *testing.T) {
 		r := newCredRig(t)
 		a := r.addPasswordAccount(t, credEmail, credPassword)
-		r.resetVerified(t, "sess-d")
+		fresh := r.resetVerified(t, "sess-d")
 		a.deleted = true
-		if err := r.svc.ConfirmReset(ctx, "sess-d", "a brand new password 55"); !errors.Is(err, service.ErrWrongCode) {
+		if err := r.svc.ConfirmReset(ctx, fresh, "a brand new password 55"); !errors.Is(err, service.ErrWrongCode) {
 			t.Fatalf("err = %v, want ErrWrongCode", err)
 		}
 	})
@@ -1912,12 +1946,34 @@ func TestCheckResetCode(t *testing.T) {
 		epoch := a.epoch
 		r.q.throttles[r.svc.ThrottleKey(credEmail)] = &credThrottle{failures: 3, last: r.clk.Now()}
 		code := r.resetCodeFor(t, "sess-d")
-		if err := r.svc.CheckResetCode(ctx, "sess-d", code); err != nil {
+		r.q.sessions["sess-d"] = &credSession{} // stored, unbound: the id the browser was on
+		fresh, err := checkReset(r.svc, "sess-d", code)
+		if err != nil {
 			t.Fatalf("CheckResetCode: %v", err)
+		}
+		if fresh != "sess-d-fresh" {
+			t.Errorf("fresh session id = %q, want the one newID drew", fresh)
 		}
 		row := r.newestCode(t)
 		if row.verified == nil || row.used != nil || row.attempts != 1 {
 			t.Errorf("row after step one: verified=%v used=%v attempts=%d; want verified, unused, 1 try", row.verified, row.used, row.attempts)
+		}
+		// Review fix WR-02: the confirm moved to the fresh id and the old id was
+		// ended, so a session id planted before the code was typed holds nothing.
+		if row.session != fresh {
+			t.Errorf("the verified row is on session %q, want the fresh %q", row.session, fresh)
+		}
+		if lc, ok, _ := r.svc.LiveCode(ctx, "sess-d"); ok {
+			t.Errorf("the old session id still shows a code screen: %+v", lc)
+		}
+		if err := r.svc.ConfirmReset(ctx, "sess-d", "a brand new password 55"); !errors.Is(err, service.ErrWrongCode) {
+			t.Errorf("step two on the old session id: err = %v, want ErrWrongCode", err)
+		}
+		if !r.q.sessions["sess-d"].revoked {
+			t.Error("the old session id was not revoked")
+		}
+		if len(r.q.pushDeleted) != 0 {
+			t.Errorf("an unbound old session had its alerts deleted: %v", r.q.pushDeleted)
 		}
 		if *a.passwordHash != before || a.epoch != epoch || r.q.sessions["phone"].revoked || len(r.q.throttles) != 1 {
 			t.Error("step one must not set a password, move the epoch, end a session or clear the throttle")
@@ -1928,14 +1984,19 @@ func TestCheckResetCode(t *testing.T) {
 		if r.q.count("BindSessionAccount") != 0 {
 			t.Error("step one never signs the browser in")
 		}
-		// The same right code again is still one verify.
+		// The same right code again restarts the confirm window.
 		first := *row.verified
 		r.clk.Advance(time.Minute)
-		if err := r.svc.CheckResetCode(ctx, "sess-d", code); err != nil {
+		again, err := checkReset(r.svc, fresh, code)
+		if err != nil {
 			t.Fatalf("the right code twice: %v", err)
 		}
-		if !row.verified.Equal(first) {
-			t.Errorf("verified_at moved from %v to %v; the first moment must stay", first, *row.verified)
+		if !row.verified.Equal(first.Add(time.Minute)) {
+			t.Errorf("verified_at is %v after the second right code, want %v (the window restarts)", *row.verified, first.Add(time.Minute))
+		}
+		// Each right code moves the browser on again; only the newest id holds the row.
+		if row.session != again || again == fresh {
+			t.Errorf("after the second right code the row is on %q (answer %q, first %q)", row.session, again, fresh)
 		}
 	})
 
@@ -1944,15 +2005,15 @@ func TestCheckResetCode(t *testing.T) {
 		r.addPasswordAccount(t, credEmail, credPassword)
 		code := r.resetCodeFor(t, "sess-d")
 		for i := 1; i <= 5; i++ {
-			if err := r.svc.CheckResetCode(ctx, "sess-d", credWrongCode(code)); !errors.Is(err, service.ErrWrongCode) {
-				t.Fatalf("wrong code %d: %v", i, err)
+			if id, err := checkReset(r.svc, "sess-d", credWrongCode(code)); !errors.Is(err, service.ErrWrongCode) || id != "" {
+				t.Fatalf("wrong code %d: id %q err %v", i, id, err)
 			}
 		}
 		row := r.newestCode(t)
-		if row.attempts != 5 || row.verified != nil {
-			t.Errorf("after five wrong codes: attempts=%d verified=%v; want 5 and none", row.attempts, row.verified)
+		if row.attempts != 5 || row.verified != nil || row.session != "sess-d" {
+			t.Errorf("after five wrong codes: attempts=%d verified=%v session=%q; want 5, none and the old session (a wrong code rotates nothing)", row.attempts, row.verified, row.session)
 		}
-		if err := r.svc.CheckResetCode(ctx, "sess-d", code); !errors.Is(err, service.ErrWrongCode) {
+		if _, err := checkReset(r.svc, "sess-d", code); !errors.Is(err, service.ErrWrongCode) {
 			t.Fatalf("the right code after the fifth wrong one: %v, want ErrWrongCode", err)
 		}
 		if row.verified != nil {
@@ -1964,7 +2025,7 @@ func TestCheckResetCode(t *testing.T) {
 		r := newCredRig(t)
 		r.addPasswordAccount(t, credEmail, credPassword)
 		code := r.resetCodeFor(t, "sess-d")
-		if err := r.svc.CheckResetCode(ctx, "sess-d", code); err != nil {
+		if _, err := checkReset(r.svc, "sess-d", code); err != nil {
 			t.Fatal(err)
 		}
 		bump, mark := r.callIndex("BumpAuthCodeAttempt"), r.callIndex("MarkAuthCodeVerified")
@@ -1978,7 +2039,7 @@ func TestCheckResetCode(t *testing.T) {
 		r.addPasswordAccount(t, credEmail, credPassword)
 		r.resetCodeFor(t, "sess-d")
 		for _, typed := range []string{"", "12345", "1234567", "12a456", arabicIndicDigits} {
-			if err := r.svc.CheckResetCode(ctx, "sess-d", typed); !errors.Is(err, service.ErrWrongCode) {
+			if _, err := checkReset(r.svc, "sess-d", typed); !errors.Is(err, service.ErrWrongCode) {
 				t.Errorf("%q: err = %v, want ErrWrongCode", typed, err)
 			}
 		}
@@ -1988,7 +2049,7 @@ func TestCheckResetCode(t *testing.T) {
 		r := newCredRig(t)
 		r.addPasswordAccount(t, credEmail, credPassword)
 		code := r.resetCodeFor(t, "sess-d")
-		if err := r.svc.CheckResetCode(ctx, "sess-d", code[:3]+" "+code[3:]); err != nil {
+		if _, err := checkReset(r.svc, "sess-d", code[:3]+" "+code[3:]); err != nil {
 			t.Fatalf("a pasted code with a space: %v", err)
 		}
 	})
@@ -2003,14 +2064,19 @@ func TestCheckResetCode(t *testing.T) {
 		row := r.newestCode(t)
 		row.codeHash = auth.CodeHash(credCodeKey, "reset", "ghost@example.com", "123456")
 		row.expires = now.Add(time.Minute)
-		ghost := r.svc.CheckResetCode(ctx, "sess-d", "123456")
+		ghostID, ghost := checkReset(r.svc, "sess-d", "123456")
 
 		known := newCredRig(t)
 		known.addPasswordAccount(t, credEmail, credPassword)
 		known.resetCodeFor(t, "sess-d")
-		wrong := known.svc.CheckResetCode(ctx, "sess-d", "123456")
+		wrongID, wrong := checkReset(known.svc, "sess-d", "123456")
 		if wrong == nil {
-			wrong = known.svc.CheckResetCode(ctx, "sess-d", "123457")
+			wrongID, wrong = checkReset(known.svc, "sess-d", "123457")
+		}
+		// Review fix WR-02: neither answer rotates the session, so the cookie
+		// behaviour of a no account address is that of a wrong code.
+		if ghostID != "" || wrongID != "" || row.session != "sess-d" {
+			t.Errorf("a refused code rotated a session: ghost %q wrong %q row on %q", ghostID, wrongID, row.session)
 		}
 		if !errors.Is(ghost, service.ErrWrongCode) || !errors.Is(wrong, service.ErrWrongCode) || ghost.Error() != wrong.Error() {
 			t.Fatalf("no account row: %v; wrong code on a known address: %v; want the same ErrWrongCode", ghost, wrong)
@@ -2029,7 +2095,7 @@ func TestCheckResetCode(t *testing.T) {
 	t.Run("a sign up row is never read as a reset", func(t *testing.T) {
 		r := newCredRig(t)
 		code := r.signUpAndCode(t, "sess-a", credEmail, credPassword)
-		if err := r.svc.CheckResetCode(ctx, "sess-a", code); !errors.Is(err, service.ErrWrongCode) {
+		if _, err := checkReset(r.svc, "sess-a", code); !errors.Is(err, service.ErrWrongCode) {
 			t.Fatalf("err = %v, want ErrWrongCode", err)
 		}
 		if r.q.count("BumpAuthCodeAttempt") != 0 || r.q.count("MarkAuthCodeVerified") != 0 {
@@ -2042,7 +2108,7 @@ func TestCheckResetCode(t *testing.T) {
 		r.addPasswordAccount(t, credEmail, credPassword)
 		code := r.resetCodeFor(t, "sess-d")
 		r.clk.Advance(service.DefaultCredentialLimits.CodeTTL + time.Second)
-		if err := r.svc.CheckResetCode(ctx, "sess-d", code); !errors.Is(err, service.ErrWrongCode) {
+		if _, err := checkReset(r.svc, "sess-d", code); !errors.Is(err, service.ErrWrongCode) {
 			t.Fatalf("err = %v, want ErrWrongCode", err)
 		}
 	})
@@ -2051,7 +2117,7 @@ func TestCheckResetCode(t *testing.T) {
 		r := newCredRig(t)
 		r.addPasswordAccount(t, credEmail, credPassword)
 		code := r.resetCodeFor(t, "sess-d")
-		if err := r.svc.CheckResetCode(ctx, "sess-other", code); !errors.Is(err, service.ErrWrongCode) {
+		if _, err := checkReset(r.svc, "sess-other", code); !errors.Is(err, service.ErrWrongCode) {
 			t.Fatalf("err = %v, want ErrWrongCode", err)
 		}
 	})
@@ -2094,29 +2160,29 @@ func TestConfirmResetNeedsAConfirmedCode(t *testing.T) {
 	t.Run("a confirm that ran out", func(t *testing.T) {
 		r := newCredRig(t)
 		a := r.addPasswordAccount(t, credEmail, credPassword)
-		r.resetVerified(t, "sess-d")
-		r.clk.Advance(service.DefaultCredentialLimits.CodeTTL + time.Second)
-		refused(t, r, a, "sess-d")
+		fresh := r.resetVerified(t, "sess-d")
+		r.clk.Advance(service.ResetConfirmWindow + time.Second)
+		refused(t, r, a, fresh)
 	})
 
 	t.Run("a newer code replaces the confirm", func(t *testing.T) {
 		r := newCredRig(t)
 		a := r.addPasswordAccount(t, credEmail, credPassword)
-		r.resetVerified(t, "sess-d")
+		fresh := r.resetVerified(t, "sess-d")
 		r.clk.Advance(46 * time.Second)
-		r.resetCodeFor(t, "sess-d")
-		refused(t, r, a, "sess-d")
+		r.resetCodeFor(t, fresh)
+		refused(t, r, a, fresh)
 	})
 
 	t.Run("Resend replaces the confirm", func(t *testing.T) {
 		r := newCredRig(t)
 		a := r.addPasswordAccount(t, credEmail, credPassword)
-		r.resetVerified(t, "sess-d")
+		fresh := r.resetVerified(t, "sess-d")
 		r.clk.Advance(46 * time.Second)
-		if err := r.svc.ResendCode(ctx, "sess-d"); err != nil {
+		if err := r.svc.ResendCode(ctx, fresh); err != nil {
 			t.Fatalf("ResendCode: %v", err)
 		}
-		refused(t, r, a, "sess-d")
+		refused(t, r, a, fresh)
 	})
 
 	t.Run("a sign up row", func(t *testing.T) {
@@ -2149,16 +2215,117 @@ func TestConfirmResetNeedsAConfirmedCode(t *testing.T) {
 		ttl := service.DefaultCredentialLimits.CodeTTL
 		code := r.resetCodeFor(t, "sess-d")
 		r.clk.Advance(ttl - time.Minute)
-		if err := r.svc.CheckResetCode(ctx, "sess-d", code); err != nil {
+		fresh, err := checkReset(r.svc, "sess-d", code)
+		if err != nil {
 			t.Fatalf("CheckResetCode: %v", err)
 		}
 		// The code itself is now past its life, but the confirm is two minutes old.
 		r.clk.Advance(2 * time.Minute)
-		if lc, ok, _ := r.svc.LiveCode(ctx, "sess-d"); !ok || !lc.Verified {
+		if lc, ok, _ := r.svc.LiveCode(ctx, fresh); !ok || !lc.Verified {
 			t.Errorf("LiveCode = %+v, %v; want a verified row", lc, ok)
 		}
-		if err := r.svc.ConfirmReset(ctx, "sess-d", newPassword); err != nil {
+		if err := r.svc.ConfirmReset(ctx, fresh, newPassword); err != nil {
 			t.Fatalf("ConfirmReset inside the confirm window: %v", err)
+		}
+	})
+
+	// A confirm that ran out while the code is still live is renewed by typing the
+	// code once more; without that, step two would stay refused until a Resend,
+	// because the window (5 minutes) is shorter than the code's life (10).
+	t.Run("a confirm that ran out while the code is live is renewed by typing the code again", func(t *testing.T) {
+		r := newCredRig(t)
+		a := r.addPasswordAccount(t, credEmail, credPassword)
+		code := r.resetCodeFor(t, "sess-d")
+		fresh, err := checkReset(r.svc, "sess-d", code)
+		if err != nil {
+			t.Fatalf("CheckResetCode: %v", err)
+		}
+		r.clk.Advance(service.ResetConfirmWindow + time.Minute) // 6 minutes: the code has 4 left
+		refused(t, r, a, fresh)
+		if lc, ok, _ := r.svc.LiveCode(ctx, fresh); !ok || lc.Verified || lc.SecondsLeft <= 0 {
+			t.Fatalf("LiveCode = %+v ok=%v; want a live code that is not confirmed", lc, ok)
+		}
+		again, err := checkReset(r.svc, fresh, code)
+		if err != nil {
+			t.Fatalf("the code typed again: %v", err)
+		}
+		if err := r.svc.ConfirmReset(ctx, again, newPassword); err != nil {
+			t.Fatalf("ConfirmReset after the renewal: %v", err)
+		}
+	})
+
+	// Review fix WR-01: Change email on step two turns the confirm off.
+	t.Run("the cancel turns the confirm off and the code can be typed again", func(t *testing.T) {
+		r := newCredRig(t)
+		a := r.addPasswordAccount(t, credEmail, credPassword)
+		code := r.resetCodeFor(t, "sess-d")
+		fresh, err := checkReset(r.svc, "sess-d", code)
+		if err != nil {
+			t.Fatalf("CheckResetCode: %v", err)
+		}
+		if err := r.svc.CancelResetConfirm(ctx, fresh); err != nil {
+			t.Fatalf("CancelResetConfirm: %v", err)
+		}
+		if lc, ok, _ := r.svc.LiveCode(ctx, fresh); !ok || lc.Verified {
+			t.Errorf("after the cancel LiveCode = %+v ok=%v, want the code screen and not step two", lc, ok)
+		}
+		refused(t, r, a, fresh)
+		// The row is still live: the same code confirms again, then step two works.
+		again, err := checkReset(r.svc, fresh, code)
+		if err != nil {
+			t.Fatalf("the code typed again after the cancel: %v", err)
+		}
+		if err := r.svc.ConfirmReset(ctx, again, newPassword); err != nil {
+			t.Fatalf("ConfirmReset after the code was typed again: %v", err)
+		}
+	})
+
+	t.Run("the cancel with nothing to clear is a plain nil and touches no other browser", func(t *testing.T) {
+		r := newCredRig(t)
+		r.addPasswordAccount(t, credEmail, credPassword)
+		for _, session := range []string{"nobody", "sess-g"} {
+			if err := r.svc.CancelResetConfirm(ctx, session); err != nil {
+				t.Errorf("CancelResetConfirm(%q) = %v, want nil", session, err)
+			}
+		}
+		other := r.resetVerified(t, "sess-o")
+		if err := r.svc.CancelResetConfirm(ctx, "sess-d"); err != nil {
+			t.Fatalf("CancelResetConfirm: %v", err)
+		}
+		if lc, ok, _ := r.svc.LiveCode(ctx, other); !ok || !lc.Verified {
+			t.Errorf("another browser's confirm was turned off: %+v ok=%v", lc, ok)
+		}
+	})
+
+	// Review fix WR-01: the confirm lasts 5 minutes, not a code lifetime.
+	t.Run("the confirm window is five minutes from the confirm", func(t *testing.T) {
+		if service.ResetConfirmWindow != 5*time.Minute {
+			t.Fatalf("ResetConfirmWindow = %v, want 5m", service.ResetConfirmWindow)
+		}
+		for _, c := range []struct {
+			name string
+			wait time.Duration
+			ok   bool
+		}{
+			{"4 minutes 59 seconds after the confirm", 5*time.Minute - time.Second, true},
+			{"5 minutes after the confirm", 5 * time.Minute, false},
+			{"6 minutes after the confirm", 6 * time.Minute, false},
+		} {
+			r := newCredRig(t)
+			a := r.addPasswordAccount(t, credEmail, credPassword)
+			fresh := r.resetVerified(t, "sess-d")
+			r.clk.Advance(c.wait)
+			lc, live, _ := r.svc.LiveCode(ctx, fresh)
+			if live && lc.Verified != c.ok {
+				t.Errorf("%s: LiveCode.Verified = %v, want %v", c.name, lc.Verified, c.ok)
+			}
+			if c.ok {
+				if err := r.svc.ConfirmReset(ctx, fresh, newPassword); err != nil {
+					t.Errorf("%s: ConfirmReset: %v", c.name, err)
+				}
+				continue
+			}
+			refused(t, r, a, fresh)
 		}
 	})
 }
@@ -2167,7 +2334,7 @@ func TestConfirmResetPolicyBeforeAttempt(t *testing.T) {
 	r := newCredRig(t)
 	ctx := context.Background()
 	r.addPasswordAccount(t, credEmail, credPassword)
-	r.resetVerified(t, "sess-d")
+	fresh := r.resetVerified(t, "sess-d")
 	tries := r.q.count("BumpAuthCodeAttempt")
 	cases := []struct{ password, message string }{
 		{"short1", service.PasswordTooShortMessage},
@@ -2175,7 +2342,7 @@ func TestConfirmResetPolicyBeforeAttempt(t *testing.T) {
 		{credEmail, service.PasswordIsEmailMessage},
 	}
 	for _, c := range cases {
-		err := r.svc.ConfirmReset(ctx, "sess-d", c.password)
+		err := r.svc.ConfirmReset(ctx, fresh, c.password)
 		var ve service.ValidationError
 		if !errors.As(err, &ve) || ve.Field != "password" || ve.Message != c.message {
 			t.Errorf("%q: err = %v, want password / %q", c.password, err, c.message)
@@ -2188,7 +2355,7 @@ func TestConfirmResetPolicyBeforeAttempt(t *testing.T) {
 		t.Error("a refused password must hash nothing and spend nothing")
 	}
 	// The confirm is kept: the same browser still sets an acceptable password.
-	if err := r.svc.ConfirmReset(ctx, "sess-d", "a brand new password 55"); err != nil {
+	if err := r.svc.ConfirmReset(ctx, fresh, "a brand new password 55"); err != nil {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -2269,15 +2436,16 @@ func TestLiveCode(t *testing.T) {
 		if lc, ok, _ := r.svc.LiveCode(ctx, "sess-a"); !ok || lc.Verified {
 			t.Errorf("a reset code not yet confirmed: %+v ok=%v, want live and not verified", lc, ok)
 		}
-		if err := r.svc.CheckResetCode(ctx, "sess-a", code); err != nil {
+		freshA, err := checkReset(r.svc, "sess-a", code)
+		if err != nil {
 			t.Fatal(err)
 		}
-		lc, ok, _ := r.svc.LiveCode(ctx, "sess-a")
+		lc, ok, _ := r.svc.LiveCode(ctx, freshA)
 		if !ok || !lc.Verified || lc.Purpose != service.PurposeReset {
 			t.Errorf("a confirmed reset code: %+v ok=%v, want live and verified", lc, ok)
 		}
-		r.clk.Advance(service.DefaultCredentialLimits.CodeTTL + time.Second)
-		if lc, _, _ := r.svc.LiveCode(ctx, "sess-a"); lc.Verified {
+		r.clk.Advance(service.ResetConfirmWindow + time.Second)
+		if lc, _, _ := r.svc.LiveCode(ctx, freshA); lc.Verified {
 			t.Error("the confirm ran out: Verified must be false")
 		}
 		// A sign up code is never verified.
@@ -2289,20 +2457,20 @@ func TestLiveCode(t *testing.T) {
 		// A newer code replaces the confirm.
 		again := newCredRig(t)
 		again.addPasswordAccount(t, credEmail, credPassword)
-		again.resetVerified(t, "sess-c")
+		freshC := again.resetVerified(t, "sess-c")
 		again.clk.Advance(46 * time.Second)
-		again.resetCodeFor(t, "sess-c")
-		if lc, ok, _ := again.svc.LiveCode(ctx, "sess-c"); !ok || lc.Verified {
+		again.resetCodeFor(t, freshC)
+		if lc, ok, _ := again.svc.LiveCode(ctx, freshC); !ok || lc.Verified {
 			t.Errorf("after a newer code: %+v ok=%v, want live and not verified", lc, ok)
 		}
 		// A spent row is not live at all.
 		done := newCredRig(t)
 		done.addPasswordAccount(t, credEmail, credPassword)
-		done.resetVerified(t, "sess-d")
-		if err := done.svc.ConfirmReset(ctx, "sess-d", "a brand new password 55"); err != nil {
+		freshD := done.resetVerified(t, "sess-d")
+		if err := done.svc.ConfirmReset(ctx, freshD, "a brand new password 55"); err != nil {
 			t.Fatal(err)
 		}
-		if _, ok, _ := done.svc.LiveCode(ctx, "sess-d"); ok {
+		if _, ok, _ := done.svc.LiveCode(ctx, freshD); ok {
 			t.Error("a spent reset row is not live")
 		}
 	})

@@ -44,38 +44,50 @@ func TestResetStepsOnDatabase(t *testing.T) {
 	}
 	const newPassword = "a brand new password 55"
 
-	askAndConfirm := func(t *testing.T, session string) {
+	// askAndConfirm asks for a reset code and types it on the browser; it returns
+	// the session id the browser is moved to, "<session>-f", which holds the
+	// confirm (review fix WR-02).
+	askAndConfirm := func(t *testing.T, session string) string {
 		t.Helper()
 		if err := svc.RequestReset(ctx, session, credEmail); err != nil {
 			t.Fatalf("RequestReset: %v", err)
 		}
-		if err := svc.CheckResetCode(ctx, session, mail.last(t).msg.Code); err != nil {
+		fresh, err := svc.CheckResetCode(ctx, session, mail.last(t).msg.Code, func() string { return session + "-f" })
+		if err != nil {
 			t.Fatalf("CheckResetCode: %v", err)
 		}
+		return fresh
 	}
 
 	t.Run("step one marks the row, step two spends it with the equal pair", func(t *testing.T) {
-		askAndConfirm(t, "steps-a")
+		a := askAndConfirm(t, "steps-a")
+		if a != "steps-a-f" {
+			t.Fatalf("fresh session id = %q", a)
+		}
 		var verified, used, expires *time.Time
-		if err := pool.QueryRow(ctx, `SELECT verified_at, used_at, expires_at FROM auth_codes WHERE session_id = 'steps-a'`).Scan(&verified, &used, &expires); err != nil {
+		if err := pool.QueryRow(ctx, `SELECT verified_at, used_at, expires_at FROM auth_codes WHERE session_id = $1`, a).Scan(&verified, &used, &expires); err != nil {
 			t.Fatal(err)
 		}
 		if verified == nil || used != nil {
 			t.Fatalf("after step one: verified=%v used=%v; want verified and unused", verified, used)
 		}
-		if lc, ok, err := svc.LiveCode(ctx, "steps-a"); err != nil || !ok || !lc.Verified {
+		var onOld int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM auth_codes WHERE session_id = 'steps-a'`).Scan(&onOld); err != nil || onOld != 0 {
+			t.Fatalf("code rows left on the old session id = %d err=%v; want 0", onOld, err)
+		}
+		if lc, ok, err := svc.LiveCode(ctx, a); err != nil || !ok || !lc.Verified {
 			t.Fatalf("LiveCode = %+v ok=%v err=%v; want verified", lc, ok, err)
 		}
-		if err := svc.ConfirmReset(ctx, "steps-a", newPassword); err != nil {
+		if err := svc.ConfirmReset(ctx, a, newPassword); err != nil {
 			t.Fatalf("ConfirmReset: %v", err)
 		}
-		if err := pool.QueryRow(ctx, `SELECT verified_at, used_at, expires_at FROM auth_codes WHERE session_id = 'steps-a'`).Scan(&verified, &used, &expires); err != nil {
+		if err := pool.QueryRow(ctx, `SELECT verified_at, used_at, expires_at FROM auth_codes WHERE session_id = $1`, a).Scan(&verified, &used, &expires); err != nil {
 			t.Fatal(err)
 		}
 		if used == nil || !used.Equal(*expires) {
 			t.Errorf("after step two: used=%v expires=%v; want the equal pair SpentCode reads", used, expires)
 		}
-		if spent, ok, err := svc.SpentCode(ctx, "steps-a"); err != nil || !ok || spent.Purpose != service.PurposeReset {
+		if spent, ok, err := svc.SpentCode(ctx, a); err != nil || !ok || spent.Purpose != service.PurposeReset {
 			t.Errorf("SpentCode = %+v ok=%v err=%v; want the reset", spent, ok, err)
 		}
 		if _, err := svc.SignIn(ctx, "steps-x", credEmail, newPassword, credSessionIDs("steps-x2")); err != nil {
@@ -87,14 +99,14 @@ func TestResetStepsOnDatabase(t *testing.T) {
 	})
 
 	t.Run("two parallel step two calls give one success", func(t *testing.T) {
-		askAndConfirm(t, "steps-b")
+		b := askAndConfirm(t, "steps-b")
 		var wg sync.WaitGroup
 		results := make([]error, 2)
 		for i := range results {
 			wg.Add(1)
 			go func(i int) {
 				defer wg.Done()
-				results[i] = svc.ConfirmReset(ctx, "steps-b", "parallel password "+string(rune('a'+i))+" 4821")
+				results[i] = svc.ConfirmReset(ctx, b, "parallel password "+string(rune('a'+i))+" 4821")
 			}(i)
 		}
 		wg.Wait()
@@ -115,30 +127,30 @@ func TestResetStepsOnDatabase(t *testing.T) {
 	})
 
 	t.Run("the confirm window counts from the confirm, not from the send", func(t *testing.T) {
-		askAndConfirm(t, "steps-c")
+		c := askAndConfirm(t, "steps-c")
 		// Stand the clock back by moving the row: sent 9 minutes ago, confirmed a
 		// minute ago, so the code itself ran out a minute ago and the confirm has
-		// 9 minutes left.
+		// 4 minutes left (the window is 5 minutes).
 		testutil.MustExec(t, pool, `UPDATE auth_codes
 			SET created_at = now() - interval '9 minutes 30 seconds',
 			    expires_at = now() - interval '30 seconds',
 			    verified_at = now() - interval '1 minute'
-			WHERE session_id = 'steps-c'`)
-		if lc, ok, err := svc.LiveCode(ctx, "steps-c"); err != nil || !ok || !lc.Verified {
+			WHERE session_id = 'steps-c-f'`)
+		if lc, ok, err := svc.LiveCode(ctx, c); err != nil || !ok || !lc.Verified {
 			t.Fatalf("LiveCode = %+v ok=%v err=%v; want verified although the code ran out", lc, ok, err)
 		}
-		if err := svc.ConfirmReset(ctx, "steps-c", newPassword); err != nil {
+		if err := svc.ConfirmReset(ctx, c, newPassword); err != nil {
 			t.Fatalf("ConfirmReset inside the confirm window: %v", err)
 		}
 	})
 
-	t.Run("a confirm older than the code lifetime is refused", func(t *testing.T) {
-		askAndConfirm(t, "steps-d")
-		testutil.MustExec(t, pool, `UPDATE auth_codes SET verified_at = now() - interval '11 minutes' WHERE session_id = 'steps-d'`)
-		if err := svc.ConfirmReset(ctx, "steps-d", newPassword); !errors.Is(err, service.ErrWrongCode) {
+	t.Run("a confirm older than the confirm window is refused", func(t *testing.T) {
+		d := askAndConfirm(t, "steps-d")
+		testutil.MustExec(t, pool, `UPDATE auth_codes SET verified_at = now() - interval '6 minutes' WHERE session_id = 'steps-d-f'`)
+		if err := svc.ConfirmReset(ctx, d, newPassword); !errors.Is(err, service.ErrWrongCode) {
 			t.Fatalf("err = %v, want ErrWrongCode", err)
 		}
-		if lc, ok, _ := svc.LiveCode(ctx, "steps-d"); !ok || lc.Verified {
+		if lc, ok, _ := svc.LiveCode(ctx, d); !ok || lc.Verified {
 			t.Errorf("LiveCode = %+v ok=%v; want shown but not verified", lc, ok)
 		}
 	})
@@ -150,11 +162,11 @@ func TestResetStepsOnDatabase(t *testing.T) {
 		if err := svc.ConfirmReset(ctx, "steps-e", newPassword); !errors.Is(err, service.ErrWrongCode) {
 			t.Fatalf("unconfirmed code: %v, want ErrWrongCode", err)
 		}
-		askAndConfirm(t, "steps-f")
-		if err := svc.RequestReset(ctx, "steps-f", credEmail); err != nil {
+		f := askAndConfirm(t, "steps-f")
+		if err := svc.RequestReset(ctx, f, credEmail); err != nil {
 			t.Fatal(err)
 		}
-		if err := svc.ConfirmReset(ctx, "steps-f", newPassword); !errors.Is(err, service.ErrWrongCode) {
+		if err := svc.ConfirmReset(ctx, f, newPassword); !errors.Is(err, service.ErrWrongCode) {
 			t.Fatalf("replaced confirm: %v, want ErrWrongCode", err)
 		}
 	})
@@ -163,7 +175,7 @@ func TestResetStepsOnDatabase(t *testing.T) {
 		if err := svc.RequestReset(ctx, "steps-g", "ghost@example.com"); err != nil {
 			t.Fatal(err)
 		}
-		if err := svc.CheckResetCode(ctx, "steps-g", "123456"); !errors.Is(err, service.ErrWrongCode) {
+		if id, err := svc.CheckResetCode(ctx, "steps-g", "123456", func() string { return "steps-g-f" }); !errors.Is(err, service.ErrWrongCode) || id != "" {
 			t.Fatalf("err = %v, want ErrWrongCode", err)
 		}
 		var verified *time.Time

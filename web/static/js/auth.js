@@ -26,6 +26,10 @@
   var CODE_TRIES_MESSAGE = 'Too many wrong tries. Get a new code.';
   var CODE_SENT_MESSAGE = 'A new code is on its way.';
   var PASSWORD_SET_MESSAGE = 'Password set. Sign in to continue.';
+  // Said once through the visually hidden live region when step two is drawn, so a
+  // screen reader hears that the code was accepted and not only "New password"
+  // (review fix IN-05).
+  var STEP_TWO_ANNOUNCEMENT = 'Code confirmed. Choose a new password.';
   var SENDING_LABEL = 'Sending\u2026';
   var SIGNING_IN_LABEL = 'Signing in\u2026';
   var CHECKING_LABEL = 'Checking\u2026';
@@ -612,22 +616,31 @@
   // and focus moves to the new password box.
   function enterPasswordStep() {
     stopTimers();
-    setText(codeReadyLive, '');
     setText(codeStatus, '');
     codeStatus.hidden = true;
     codeInput.value = '';
     codeNewPassword.value = '';
     lockCodeButton(false);
-    state.tries = 0;
+    // The server counted the right code as a try too, so the page's count goes up
+    // by one and is kept, not zeroed (review fix IN-04). Going back to step one
+    // then shows the same budget the server holds.
+    state.tries += 1;
     state.resendBusy = false;
     setCodeMode('reset', 'password');
     state.generation += 1;
     codeNewPassword.focus();
+    // After the timers are stopped: the resend wait writes to this region too.
+    setText(codeReadyLive, STEP_TWO_ANNOUNCEMENT);
   }
 
   // backToCodeStep is what step two does when the server no longer holds the
   // confirm (it ran out, or a newer code replaced it): the code screen again, with
-  // the wrong code sentence and Resend ready. The server counted no try.
+  // the wrong code sentence and Resend ready. The server counted no try for step
+  // two itself. The expiry notice starts again from the code's own deadline (kept
+  // in state.expiresAt, and still true after step two), so a code that has run out
+  // says so, and the page's try count is the one carried over from step one: when
+  // the budget is spent the button is switched off and the person is steered to
+  // Resend (review fix IN-04).
   function backToCodeStep() {
     resetShow();
     codeNewPassword.value = '';
@@ -635,6 +648,18 @@
     setCodeMode('reset', 'code');
     state.generation += 1;
     startResendWait(0);
+    var left = secondsUntil(state.expiresAt);
+    if (left > 0) {
+      startExpiry(left);
+    } else {
+      expireNow();
+    }
+    if (state.tries >= MAX_CLIENT_TRIES) {
+      showError(codeError, codeInput, CODE_TRIES_MESSAGE);
+      lockCodeButton(true);
+      codeResend.focus();
+      return;
+    }
     showError(codeError, codeInput, CODE_WRONG_MESSAGE);
     codeInput.focus();
   }
@@ -876,8 +901,17 @@
     });
   }
 
-  // changeEmail goes back to the panel the person came from. Nothing is sent.
+  // changeEmail goes back to the panel the person came from. On step two of
+  // Forgot password it first tells the server to turn the confirm off (review fix
+  // WR-01), so leaving step two is a way out on the server too and a reload does
+  // not draw step two again. The call is not waited for and its answer is not
+  // read: the card moves on at once, and a call that never arrived only leaves
+  // the confirm to run out by itself within its 5 minutes. Everywhere else
+  // nothing is sent.
   function changeEmail() {
+    if (state.mode === 'reset' && state.step === 'password') {
+      postJSON('/api/auth/reset/cancel', {});
+    }
     stopTimers();
     if (state.from === 'forgot') {
       forgotEmail.value = state.email;
@@ -964,6 +998,10 @@
     setCodeMode(mode, startStep);
     if (startStep === 'password') {
       codeNewPassword.focus();
+      setText(codeReadyLive, STEP_TWO_ANNOUNCEMENT);
+      // No clock runs on step two, but the code's own deadline is kept for the
+      // way back to step one (review fix IN-04).
+      state.expiresAt = Date.now() + numberAttr('data-code-seconds-left') * 1000;
     } else {
       startResendWait(numberAttr('data-resend-seconds'));
       var left = numberAttr('data-code-seconds-left');

@@ -62,6 +62,32 @@ func (q *Queries) BumpAuthCodeAttempt(ctx context.Context, arg BumpAuthCodeAttem
 	return i, err
 }
 
+const clearAuthCodeVerified = `-- name: ClearAuthCodeVerified :execrows
+UPDATE auth_codes
+SET verified_at = NULL
+WHERE id = (SELECT c.id FROM auth_codes c
+            WHERE c.session_id = $1
+              AND c.purpose = 'reset'
+              AND c.used_at IS NULL
+            ORDER BY c.id DESC
+            LIMIT 1)
+  AND verified_at IS NOT NULL
+  AND used_at IS NULL
+`
+
+// Review fix WR-01: Change email on step two of Forgot password turns the
+// confirm off. It clears verified_at on this browser's newest unused reset row,
+// so a reload shows the code screen again and step two is refused until the
+// code is typed once more. 0 rows (nothing to clear) is not an error: the
+// route answers the same either way. Only the session's own rows are read.
+func (q *Queries) ClearAuthCodeVerified(ctx context.Context, sessionID string) (int64, error) {
+	result, err := q.db.Exec(ctx, clearAuthCodeVerified, sessionID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const consumeAuthCode = `-- name: ConsumeAuthCode :execrows
 UPDATE auth_codes
 SET used_at = now(), expires_at = now(), password_hash = NULL
@@ -89,30 +115,36 @@ func (q *Queries) ConsumeAuthCode(ctx context.Context, id int64) (int64, error) 
 const consumeVerifiedResetCode = `-- name: ConsumeVerifiedResetCode :execrows
 UPDATE auth_codes
 SET used_at = now(), expires_at = now(), password_hash = NULL
-WHERE id = $1
+WHERE auth_codes.id = $1
+  AND auth_codes.session_id = $2
+  AND auth_codes.id = (SELECT max(c.id) FROM auth_codes c WHERE c.session_id = $2)
   AND used_at IS NULL
   AND purpose = 'reset'
   AND delivery = 'code'
   AND verified_at IS NOT NULL
-  AND verified_at > $2::timestamptz
+  AND verified_at > $3::timestamptz
 `
 
 type ConsumeVerifiedResetCodeParams struct {
 	ID            int64
+	SessionID     string
 	VerifiedAfter time.Time
 }
 
 // Quick 261113-r5w, step two of Forgot password: spends a verified reset code
 // exactly once. It is ConsumeAuthCode for a row whose right code was typed
-// earlier: the confirm window is the code lifetime counted from verified_at
-// (verified_after is that moment minus the lifetime), not from the send, so a
-// person who typed the code just before it would have expired still has the
-// whole window to choose a password. A newer code retires the row (used_at set),
-// so it no longer matches. The rest is ConsumeAuthCode's write: used_at and
+// earlier: the confirm window is counted from verified_at (verified_after is
+// that moment minus the window, 5 minutes), not from the send, so a person who
+// typed the code just before it would have expired still has the whole window
+// to choose a password. A newer code retires the row (used_at set), so it no
+// longer matches. Review fix IN-07: the row must also still be the newest row of
+// this browser's session, checked here inside the spend's own transaction, so a
+// code written in the same session while the new password was being hashed
+// makes the spend write 0 rows. The rest is ConsumeAuthCode's write: used_at and
 // expires_at set to the same now() (SpentCode's pair), the hash cleared. 0 rows
 // means a parallel call won, the confirm ran out or a newer code replaced it.
 func (q *Queries) ConsumeVerifiedResetCode(ctx context.Context, arg ConsumeVerifiedResetCodeParams) (int64, error) {
-	result, err := q.db.Exec(ctx, consumeVerifiedResetCode, arg.ID, arg.VerifiedAfter)
+	result, err := q.db.Exec(ctx, consumeVerifiedResetCode, arg.ID, arg.SessionID, arg.VerifiedAfter)
 	if err != nil {
 		return 0, err
 	}
@@ -286,8 +318,10 @@ func (q *Queries) MarkAuthCodePasswordSet(ctx context.Context, id int64) error {
 
 const markAuthCodeVerified = `-- name: MarkAuthCodeVerified :execrows
 UPDATE auth_codes
-SET verified_at = COALESCE(verified_at, $1::timestamptz)
-WHERE id = $2
+SET verified_at = $1::timestamptz,
+    session_id = $2
+WHERE id = $3
+  AND session_id = $4
   AND used_at IS NULL
   AND expires_at > now()
   AND purpose = 'reset'
@@ -295,18 +329,33 @@ WHERE id = $2
 `
 
 type MarkAuthCodeVerifiedParams struct {
-	VerifiedAt time.Time
-	ID         int64
+	VerifiedAt   time.Time
+	NewSessionID string
+	ID           int64
+	OldSessionID string
 }
 
 // Quick 261113-r5w, step one of Forgot password: this browser typed the right
 // code. Only a live reset row that was emailed a code can be marked, and only
 // while it is unused and unexpired, so 0 rows means the row cannot be verified
 // (the service answers ErrWrongCode). verified_at is the service clock's moment
-// of the first right code and is never moved by a second one (COALESCE), so a
-// right code typed twice, or by two parallel requests, is still one verify.
+// of this right code. A right code typed again restarts the confirm window, and
+// has to: with the window shorter than the code's life, a confirm that ran out
+// while the code is still live must be renewable by typing the code once more,
+// or step two would stay refused until a Resend. The person holds the code each
+// time, so a renewal gives nobody anything.
+// The same statement moves the row to a freshly drawn session id (review fix
+// WR-02): the confirm is then held only by the browser that gets the new cookie
+// with the answer, so a session id planted in a browser before the code was
+// typed cannot open step two. The guard session_id = old_session_id gives one
+// winner to two parallel right codes: the loser writes 0 rows.
 func (q *Queries) MarkAuthCodeVerified(ctx context.Context, arg MarkAuthCodeVerifiedParams) (int64, error) {
-	result, err := q.db.Exec(ctx, markAuthCodeVerified, arg.VerifiedAt, arg.ID)
+	result, err := q.db.Exec(ctx, markAuthCodeVerified,
+		arg.VerifiedAt,
+		arg.NewSessionID,
+		arg.ID,
+		arg.OldSessionID,
+	)
 	if err != nil {
 		return 0, err
 	}

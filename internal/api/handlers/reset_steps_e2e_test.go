@@ -5,10 +5,47 @@
 package handlers_test
 
 import (
+	"context"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// sessionAccountIDOrNone is the account a session row is bound to, nil for an
+// unbound row and for an id with no stored row at all (the fresh id step one
+// draws is stored only when something binds it).
+func sessionAccountIDOrNone(t *testing.T, pool *pgxpool.Pool, sessionID string) *int64 {
+	t.Helper()
+	var n int
+	if err := pool.QueryRow(context.Background(), "SELECT count(*) FROM sessions WHERE session_id = $1", sessionID).Scan(&n); err != nil {
+		t.Fatalf("counting the session row %q: %v", sessionID, err)
+	}
+	if n == 0 {
+		return nil
+	}
+	return sessionAccountID(t, pool, sessionID)
+}
+
+// plantedClient is a browser that holds the attacker's session cookie, the way a
+// cookie planted from a sibling subdomain would: the same signed value, copied
+// from the attacker's jar into a fresh one.
+func plantedClient(t *testing.T, srv *httptest.Server, attacker *http.Client) *http.Client {
+	t.Helper()
+	u, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatalf("parsing server URL: %v", err)
+	}
+	victim := newPlainJarClient(t)
+	victim.Jar.SetCookies(u, attacker.Jar.Cookies(u))
+	if got, want := sessionIDFromJar(t, victim, srv.URL), sessionIDFromJar(t, attacker, srv.URL); got != want {
+		t.Fatalf("the planted cookie did not land in the victim's jar")
+	}
+	return victim
+}
 
 func TestResetTwoStepsEndToEnd(t *testing.T) {
 	srv, mail, pool := newE2EServer(t)
@@ -38,12 +75,31 @@ func TestResetTwoStepsEndToEnd(t *testing.T) {
 	// Step one: a wrong code is refused, the right one answers code_ok.
 	wrong := doAuth(t, r, srv, "/api/auth/reset/code", map[string]string{"code": wrongCodeFor(code)})
 	expectError(t, "step one with a wrong code", wrong, http.StatusBadRequest, "code", secWrongCodeSentence)
+	if a := doAuth(t, newLoginClient(t, srv), srv, "/api/auth/reset/code", map[string]string{"code": code}); a.setCookie {
+		t.Errorf("a wrong browser's step one set a cookie")
+	}
+	before := sessionIDFromJar(t, r, srv.URL)
+	if wrong.setCookie {
+		t.Errorf("a wrong code set a cookie")
+	}
 	right := doAuth(t, r, srv, "/api/auth/reset/code", map[string]string{"code": code})
 	if right.status != http.StatusOK || strings.TrimSpace(string(right.body)) != `{"code_ok":true}` {
 		t.Fatalf("step one with the right code = %d %s, want 200 and code_ok", right.status, right.body)
 	}
-	if right.setCookie {
-		t.Errorf("step one set a cookie: it must sign nobody in")
+	// Review fix WR-02: a right code moves the browser to a freshly drawn session
+	// id, which is still bound to no account, so step one signs nobody in.
+	if !right.setCookie {
+		t.Errorf("step one set no cookie: the browser must move to a fresh session id")
+	}
+	after := sessionIDFromJar(t, r, srv.URL)
+	if after == before {
+		t.Errorf("the session id did not change at step one: still %q", after)
+	}
+	if id := sessionAccountIDOrNone(t, pool, after); id != nil {
+		t.Errorf("the fresh session %q is bound to account %d: step one must sign nobody in", after, *id)
+	}
+	if status := reportsStatus(t, r, srv); status != http.StatusUnauthorized {
+		t.Errorf("GET /api/reports after step one = %d, want 401: step one must sign nobody in", status)
 	}
 
 	// A reload shows step two, with the address as page text only.
