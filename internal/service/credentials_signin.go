@@ -471,6 +471,10 @@ func (s *CredentialService) endSessionID(ctx context.Context, q CredentialQuerie
 // is no longer the newest and this refuses; that is intended. Without the
 // check the route would be a way to set a password with no code at all.
 //
+// The newest row is read once up front, before the hash, and checked again by the
+// spend itself inside the transaction (review fix IN-07): a code written in this
+// session while the password was hashed makes the spend write 0 rows.
+//
 // A bad new password is refused before anything is hashed, written or spent
 // (and keeps the confirm), a right one sets the NFKC form of the new password,
 // deletes the address's other code rows, ends every session and push
@@ -528,7 +532,7 @@ func (s *CredentialService) ConfirmReset(ctx context.Context, sessionID, newPass
 		}
 		verifiedAfter := s.now().Add(-ResetConfirmWindow)
 		consume := func() (int64, error) {
-			return q.ConsumeVerifiedResetCode(ctx, sqlcgen.ConsumeVerifiedResetCodeParams{ID: latest.ID, VerifiedAfter: verifiedAfter})
+			return q.ConsumeVerifiedResetCode(ctx, sqlcgen.ConsumeVerifiedResetCodeParams{ID: latest.ID, SessionID: sessionID, VerifiedAfter: verifiedAfter})
 		}
 		if err := spend(ctx, q, latest.ID, latest.Email, consume); err != nil {
 			return err

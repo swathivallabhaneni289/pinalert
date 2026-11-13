@@ -115,30 +115,36 @@ func (q *Queries) ConsumeAuthCode(ctx context.Context, id int64) (int64, error) 
 const consumeVerifiedResetCode = `-- name: ConsumeVerifiedResetCode :execrows
 UPDATE auth_codes
 SET used_at = now(), expires_at = now(), password_hash = NULL
-WHERE id = $1
+WHERE auth_codes.id = $1
+  AND auth_codes.session_id = $2
+  AND auth_codes.id = (SELECT max(c.id) FROM auth_codes c WHERE c.session_id = $2)
   AND used_at IS NULL
   AND purpose = 'reset'
   AND delivery = 'code'
   AND verified_at IS NOT NULL
-  AND verified_at > $2::timestamptz
+  AND verified_at > $3::timestamptz
 `
 
 type ConsumeVerifiedResetCodeParams struct {
 	ID            int64
+	SessionID     string
 	VerifiedAfter time.Time
 }
 
 // Quick 261113-r5w, step two of Forgot password: spends a verified reset code
 // exactly once. It is ConsumeAuthCode for a row whose right code was typed
-// earlier: the confirm window is the code lifetime counted from verified_at
-// (verified_after is that moment minus the lifetime), not from the send, so a
-// person who typed the code just before it would have expired still has the
-// whole window to choose a password. A newer code retires the row (used_at set),
-// so it no longer matches. The rest is ConsumeAuthCode's write: used_at and
+// earlier: the confirm window is counted from verified_at (verified_after is
+// that moment minus the window, 5 minutes), not from the send, so a person who
+// typed the code just before it would have expired still has the whole window
+// to choose a password. A newer code retires the row (used_at set), so it no
+// longer matches. Review fix IN-07: the row must also still be the newest row of
+// this browser's session, checked here inside the spend's own transaction, so a
+// code written in the same session while the new password was being hashed
+// makes the spend write 0 rows. The rest is ConsumeAuthCode's write: used_at and
 // expires_at set to the same now() (SpentCode's pair), the hash cleared. 0 rows
 // means a parallel call won, the confirm ran out or a newer code replaced it.
 func (q *Queries) ConsumeVerifiedResetCode(ctx context.Context, arg ConsumeVerifiedResetCodeParams) (int64, error) {
-	result, err := q.db.Exec(ctx, consumeVerifiedResetCode, arg.ID, arg.VerifiedAfter)
+	result, err := q.db.Exec(ctx, consumeVerifiedResetCode, arg.ID, arg.SessionID, arg.VerifiedAfter)
 	if err != nil {
 		return 0, err
 	}

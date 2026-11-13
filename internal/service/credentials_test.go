@@ -311,9 +311,16 @@ func (f *credFakeQuerier) ConsumeVerifiedResetCode(_ context.Context, arg sqlcge
 	if f.consumeZero {
 		return 0, nil
 	}
+	newest := int64(-1) // the newest row of the session, used or not (review fix IN-07)
+	for i := range f.codes {
+		if f.codes[i].session == arg.SessionID && f.codes[i].id > newest {
+			newest = f.codes[i].id
+		}
+	}
 	for i := range f.codes {
 		r := &f.codes[i]
-		if r.id == arg.ID && r.used == nil && r.purpose == service.PurposeReset && r.delivery == service.DeliveryCode &&
+		if r.id == arg.ID && r.id == newest && r.session == arg.SessionID && r.used == nil &&
+			r.purpose == service.PurposeReset && r.delivery == service.DeliveryCode &&
 			r.verified != nil && r.verified.After(arg.VerifiedAfter) {
 			u := f.clk.Now()
 			r.used = &u
