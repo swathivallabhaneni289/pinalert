@@ -33,9 +33,9 @@ How confirmations are counted, why a place is a precision 7 geohash cell, the 1 
    export ENV=development                          # unlocks the SESSION_SECRET/SMTP dev fallbacks below
    # export SMTP_HOST="smtp.gmail.com"               # optional when ENV=development (codes print to the server log), required otherwise; set all three of host, user name and password together, see Email delivery below
    # export SMTP_PORT="587"                          # optional, default 587 (STARTTLS); 465 starts TLS at the first byte
-   # export SMTP_USERNAME="pinalert.sender@gmail.com"  # the Gmail account that sends the emails
+   # export SMTP_USERNAME="YOUR_PINALERT_GMAIL_ADDRESS"  # the Gmail account that sends the emails
    # export SMTP_PASSWORD="abcdefghijklmnop"         # a Google app password for that account, never the account password; keep it as a host secret
-   # export MAIL_FROM="Pinalert <pinalert.sender@gmail.com>"  # optional; defaults to Pinalert <SMTP_USERNAME>
+   # export MAIL_FROM="Pinalert <YOUR_PINALERT_GMAIL_ADDRESS>"  # optional; defaults to Pinalert <SMTP_USERNAME>
    export NOMINATIM_CONTACT_EMAIL="you@example.com"  # optional, safe to leave unset; see below
    # export OPENAI_API_KEY="sk-..."                  # optional when ENV=development (each text check passes with a WARNING), required otherwise: the server will not start without it
    # export MODERATION_MODEL="omni-moderation-2024-09-26"  # optional, that pinned snapshot is the default
@@ -155,8 +155,8 @@ password, the user name, an address or a code.
    ```sh
    read -s SMTP_PASSWORD     # paste the app password, nothing is shown, press Return
    export SMTP_PASSWORD
-   export SMTP_HOST=smtp.gmail.com SMTP_USERNAME=pinalert.sender@gmail.com
-   go run ./cmd/mailcheck -to your.own@address.example
+   export SMTP_HOST=smtp.gmail.com SMTP_USERNAME=YOUR_PINALERT_GMAIL_ADDRESS
+   go run ./cmd/mailcheck -to YOUR_OWN_EMAIL_ADDRESS
    exit
    ```
 
