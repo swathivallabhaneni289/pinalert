@@ -144,7 +144,7 @@
         },
         "/auth/reset/code": {
             "post": {
-                "description": "Checks the 6 digit code typed on the Forgot password screen. A right code is\nremembered for this browser for a short time, so the next call can set the new\npassword. It sets no password and signs nobody in. A wrong, expired or replaced\ncode gets the same answer, whether or not the address has an account.",
+                "description": "Checks the 6 digit code typed on the Forgot password screen. A right code is\nremembered for this browser for a short time, so the next call can set the new\npassword, and this browser is moved to a new session in the same answer. It sets\nno password and signs nobody in. A wrong, expired or replaced code gets the same\nanswer, whether or not the address has an account, and changes no cookie.",
                 "consumes": [
                     "application/json"
                 ],

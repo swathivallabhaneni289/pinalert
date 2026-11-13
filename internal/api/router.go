@@ -899,7 +899,7 @@ func NewRouter(deps Deps) *chi.Mux {
 	r.With(cop.Handler).Post("/api/auth/code/resend", handlers.ResendCode(deps.Credentials, authGate))
 	r.With(cop.Handler).Post("/api/auth/sign-in", handlers.SignIn(deps.Credentials, authGate, deps.Session))
 	r.With(cop.Handler).Post("/api/auth/reset", handlers.RequestReset(deps.Credentials, authGate))
-	r.With(cop.Handler).Post("/api/auth/reset/code", handlers.ConfirmResetCode(deps.Credentials, authGate))
+	r.With(cop.Handler).Post("/api/auth/reset/code", handlers.ConfirmResetCode(deps.Credentials, authGate, deps.Session))
 	r.With(cop.Handler).Post("/api/auth/reset/password", handlers.SetResetPassword(deps.Credentials, authGate))
 
 	// The external cron's door (plan 05-12, D-15, research G1). Outside the gate,

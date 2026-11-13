@@ -106,9 +106,16 @@ func TestLoginGateSpentCode(t *testing.T) {
 		if status := requestResetRequest(t, browser, srv, email); status != http.StatusOK {
 			t.Fatalf("reset request status = %d, want 200", status)
 		}
+		// Step one moves the browser to a fresh session id (review fix WR-02), so
+		// the browser takes step one's answer and the lost answer is step two's:
+		// a copy of the browser with that fresh cookie sets the password, and the
+		// browser itself never hears of it.
+		if status := confirmResetCodeRequest(t, browser, srv, mailer.codeFor(t, email)); status != http.StatusOK {
+			t.Fatalf("reset code status = %d, want 200", status)
+		}
 		lost := revCookieCopy(t, browser, srv)
-		if status := confirmResetRequest(t, lost, srv, mailer.codeFor(t, email), "a brand new password 77"); status != http.StatusOK {
-			t.Fatalf("reset confirm status = %d, want 200", status)
+		if status := setResetPasswordRequest(t, lost, srv, "a brand new password 77"); status != http.StatusOK {
+			t.Fatalf("reset password status = %d, want 200", status)
 		}
 
 		resp, body := loginGatePage(t, revNoFollow(browser), srv, "")

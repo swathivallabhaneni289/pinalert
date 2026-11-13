@@ -286,8 +286,10 @@ func (q *Queries) MarkAuthCodePasswordSet(ctx context.Context, id int64) error {
 
 const markAuthCodeVerified = `-- name: MarkAuthCodeVerified :execrows
 UPDATE auth_codes
-SET verified_at = COALESCE(verified_at, $1::timestamptz)
-WHERE id = $2
+SET verified_at = COALESCE(verified_at, $1::timestamptz),
+    session_id = $2
+WHERE id = $3
+  AND session_id = $4
   AND used_at IS NULL
   AND expires_at > now()
   AND purpose = 'reset'
@@ -295,8 +297,10 @@ WHERE id = $2
 `
 
 type MarkAuthCodeVerifiedParams struct {
-	VerifiedAt time.Time
-	ID         int64
+	VerifiedAt   time.Time
+	NewSessionID string
+	ID           int64
+	OldSessionID string
 }
 
 // Quick 261113-r5w, step one of Forgot password: this browser typed the right
@@ -304,9 +308,19 @@ type MarkAuthCodeVerifiedParams struct {
 // while it is unused and unexpired, so 0 rows means the row cannot be verified
 // (the service answers ErrWrongCode). verified_at is the service clock's moment
 // of the first right code and is never moved by a second one (COALESCE), so a
-// right code typed twice, or by two parallel requests, is still one verify.
+// right code typed twice is still one verify.
+// The same statement moves the row to a freshly drawn session id (review fix
+// WR-02): the confirm is then held only by the browser that gets the new cookie
+// with the answer, so a session id planted in a browser before the code was
+// typed cannot open step two. The guard session_id = old_session_id gives one
+// winner to two parallel right codes: the loser writes 0 rows.
 func (q *Queries) MarkAuthCodeVerified(ctx context.Context, arg MarkAuthCodeVerifiedParams) (int64, error) {
-	result, err := q.db.Exec(ctx, markAuthCodeVerified, arg.VerifiedAt, arg.ID)
+	result, err := q.db.Exec(ctx, markAuthCodeVerified,
+		arg.VerifiedAt,
+		arg.NewSessionID,
+		arg.ID,
+		arg.OldSessionID,
+	)
 	if err != nil {
 		return 0, err
 	}

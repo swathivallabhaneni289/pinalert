@@ -76,10 +76,17 @@ WHERE id = sqlc.arg(id)
 -- while it is unused and unexpired, so 0 rows means the row cannot be verified
 -- (the service answers ErrWrongCode). verified_at is the service clock's moment
 -- of the first right code and is never moved by a second one (COALESCE), so a
--- right code typed twice, or by two parallel requests, is still one verify.
+-- right code typed twice is still one verify.
+-- The same statement moves the row to a freshly drawn session id (review fix
+-- WR-02): the confirm is then held only by the browser that gets the new cookie
+-- with the answer, so a session id planted in a browser before the code was
+-- typed cannot open step two. The guard session_id = old_session_id gives one
+-- winner to two parallel right codes: the loser writes 0 rows.
 UPDATE auth_codes
-SET verified_at = COALESCE(verified_at, sqlc.arg(verified_at)::timestamptz)
+SET verified_at = COALESCE(verified_at, sqlc.arg(verified_at)::timestamptz),
+    session_id = sqlc.arg(new_session_id)
 WHERE id = sqlc.arg(id)
+  AND session_id = sqlc.arg(old_session_id)
   AND used_at IS NULL
   AND expires_at > now()
   AND purpose = 'reset'

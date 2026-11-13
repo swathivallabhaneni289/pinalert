@@ -374,6 +374,17 @@ func (s *CredentialService) reserveTry(ctx context.Context, key string) (sqlcgen
 // let to step two, ConfirmReset. A wrong code is counted against the same try
 // budget as ever, and the fifth switches the code off as today.
 //
+// A right code also moves the browser to a freshly drawn session id (review fix
+// WR-02, the way SignIn draws one): the verified row is re-keyed to the new id in
+// the same statement that marks it, the request's own id is revoked, and the
+// handler sets the new cookie on the answer. The confirm is then held only by the
+// browser that received that answer, so a session id planted in the browser
+// before the code was typed (which an attacker may hold) can never open step two.
+// It returns the new id. A wrong code returns no id and rotates nothing, so an
+// address with no account, whose row can never hold a right code, behaves exactly
+// like a wrong code. Two parallel right codes give one winner: the mark is guarded
+// by the old session id, and the loser gets ErrWrongCode.
+//
 // It is the same front half the whole flow has always had. The latest row of
 // this browser inside the resume window must be a reset row that is still
 // unused (a sign up row is never read as a reset); the typed code is cleaned,
@@ -383,34 +394,70 @@ func (s *CredentialService) reserveTry(ctx context.Context, key string) (sqlcgen
 // can never be verified. A right code typed again on a row already verified is
 // still one verify (the mark keeps the first moment), and is refused as soon as
 // the row is spent, replaced or past its life.
-func (s *CredentialService) CheckResetCode(ctx context.Context, sessionID, rawCode string) error {
+func (s *CredentialService) CheckResetCode(ctx context.Context, sessionID, rawCode string, newID func() string) (string, error) {
 	latest, err := s.q.GetLatestAuthCode(ctx, sqlcgen.GetLatestAuthCodeParams{
 		SessionID: sessionID,
 		Since:     s.now().Add(-s.limits.ResumeWindow),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrWrongCode
+			return "", ErrWrongCode
 		}
-		return fmt.Errorf("service: reading latest code: %w", err)
+		return "", fmt.Errorf("service: reading latest code: %w", err)
 	}
 	if latest.Purpose != PurposeReset || latest.UsedAt.Valid {
-		return ErrWrongCode
+		return "", ErrWrongCode
 	}
 	code, ok := cleanTypedCode(rawCode)
 	if !ok {
-		return ErrWrongCode
+		return "", ErrWrongCode
 	}
 	row, err := s.proveCode(ctx, sessionID, PurposeReset, code)
 	if err != nil {
-		return err
+		return "", err
 	}
-	n, err := s.q.MarkAuthCodeVerified(ctx, sqlcgen.MarkAuthCodeVerifiedParams{ID: row.ID, VerifiedAt: s.now()})
+	fresh := newID()
+	// The move and the end of the old id are one transaction, so a failure
+	// leaves the row on the old id and the browser on its old cookie.
+	err = s.inTx(ctx, func(q CredentialQuerier) error {
+		n, err := q.MarkAuthCodeVerified(ctx, sqlcgen.MarkAuthCodeVerifiedParams{
+			ID: row.ID, VerifiedAt: s.now(), OldSessionID: sessionID, NewSessionID: fresh,
+		})
+		if err != nil {
+			return fmt.Errorf("service: marking code verified: %w", err)
+		}
+		if n == 0 {
+			return ErrWrongCode
+		}
+		return s.endSessionID(ctx, q, sessionID)
+	})
 	if err != nil {
-		return fmt.Errorf("service: marking code verified: %w", err)
+		return "", err
 	}
-	if n == 0 {
-		return ErrWrongCode
+	return fresh, nil
+}
+
+// endSessionID ends the id a browser is leaving at step one of Forgot password:
+// the phone alert subscriptions of an id bound to an account are deleted, and the
+// session is revoked (a session that was never stored, or is already revoked,
+// changes nothing). It never clears sessions.account_id, so authorship stays.
+func (s *CredentialService) endSessionID(ctx context.Context, q CredentialQuerier, oldID string) error {
+	binding, err := q.GetSessionBinding(ctx, oldID)
+	switch {
+	case err == nil:
+		if binding.AccountID != nil {
+			if _, err := q.DeletePushSubscriptionsForSession(ctx, oldID); err != nil {
+				return fmt.Errorf("service: deleting push subscriptions of the left session: %w", err)
+			}
+		}
+	case errors.Is(err, pgx.ErrNoRows):
+		// The session row was never stored: nothing to end.
+		return nil
+	default:
+		return fmt.Errorf("service: reading session binding: %w", err)
+	}
+	if _, err := q.RevokeSession(ctx, sqlcgen.RevokeSessionParams{Now: s.now(), SessionID: oldID}); err != nil {
+		return fmt.Errorf("service: revoking the left session: %w", err)
 	}
 	return nil
 }

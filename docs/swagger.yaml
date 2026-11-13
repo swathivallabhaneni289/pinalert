@@ -2084,8 +2084,9 @@ paths:
       description: |-
         Checks the 6 digit code typed on the Forgot password screen. A right code is
         remembered for this browser for a short time, so the next call can set the new
-        password. It sets no password and signs nobody in. A wrong, expired or replaced
-        code gets the same answer, whether or not the address has an account.
+        password, and this browser is moved to a new session in the same answer. It sets
+        no password and signs nobody in. A wrong, expired or replaced code gets the same
+        answer, whether or not the address has an account, and changes no cookie.
       parameters:
       - description: The typed code
         in: body

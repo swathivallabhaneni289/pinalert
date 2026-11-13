@@ -473,16 +473,18 @@ func RequestReset(creds *service.CredentialService, gate *AuthGate) http.Handler
 
 // ConfirmResetCode handles POST /api/auth/reset/code, step one of Forgot
 // password: the typed code and nothing else. A right code is remembered for this
-// browser and for a code lifetime, and opens step two; it sets no password and
-// ends no session. A wrong code is counted against the same budget of five tries
-// as ever, and the answer is the same for an address with an account and one
-// without.
+// browser for a short time and opens step two, and the browser moves to a freshly
+// drawn session id (the new cookie rides on the answer); it sets no password and
+// signs nobody in. A wrong code is counted against the same budget of five tries
+// as ever, sets no cookie, and the answer is the same for an address with an
+// account and one without.
 //
 // @Summary      Confirm the reset code
 // @Description  Checks the 6 digit code typed on the Forgot password screen. A right code is
 // @Description  remembered for this browser for a short time, so the next call can set the new
-// @Description  password. It sets no password and signs nobody in. A wrong, expired or replaced
-// @Description  code gets the same answer, whether or not the address has an account.
+// @Description  password, and this browser is moved to a new session in the same answer. It sets
+// @Description  no password and signs nobody in. A wrong, expired or replaced code gets the same
+// @Description  answer, whether or not the address has an account, and changes no cookie.
 // @Tags         auth
 // @Accept       json
 // @Produce      json
@@ -494,7 +496,7 @@ func RequestReset(creds *service.CredentialService, gate *AuthGate) http.Handler
 // @Failure      429   {object}  RateLimitResponse
 // @Failure      503   {object}  ErrorResponse
 // @Router       /auth/reset/code [post]
-func ConfirmResetCode(creds *service.CredentialService, gate *AuthGate) http.HandlerFunc {
+func ConfirmResetCode(creds *service.CredentialService, gate *AuthGate, mgr *session.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionID, ok := authReady(w, r, creds)
 		if !ok {
@@ -509,11 +511,15 @@ func ConfirmResetCode(creds *service.CredentialService, gate *AuthGate) http.Han
 			writeAuthRateLimited(w, authRateLimitedMessage, try.RetryAfter)
 			return
 		}
-		if err := creds.CheckResetCode(r.Context(), sessionID, req.Code); err != nil {
+		fresh, err := creds.CheckResetCode(r.Context(), sessionID, req.Code, mgr.NewID)
+		if err != nil {
 			writeCredentialError(w, "ConfirmResetCode", err)
 			return
 		}
 		try.Cancel()
+		// The confirmed code now belongs to a freshly drawn session id, which only
+		// this answer carries (review fix WR-02); a wrong code sets no cookie.
+		mgr.SetCookie(w, fresh)
 		writeJSON(w, http.StatusOK, CodeOKResponse{CodeOK: true})
 	}
 }
