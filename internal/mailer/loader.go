@@ -7,19 +7,34 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // defaultSMTPPort is the submission port, where the connection starts plain
 // and is upgraded with STARTTLS before any password is sent.
 const defaultSMTPPort = 587
 
+// isPlainHostName reports whether host is a bare host name: no colon (a port,
+// or a scheme such as smtps://), no slash, and no space or control character
+// anywhere. Such a value cannot be dialed, and without this check every send
+// would fail later as "could not reach the mail server".
+func isPlainHostName(host string) bool {
+	for _, r := range host {
+		if r == ':' || r == '/' || unicode.IsSpace(r) || unicode.IsControl(r) {
+			return false
+		}
+	}
+	return host != ""
+}
+
 // LoadMailer selects a Mailer implementation from the process environment,
 // mirroring cmd/server/main.go's loadSessionSecret fail-fast shape exactly.
 // The settings are SMTP_HOST, SMTP_PORT (default 587), SMTP_USERNAME,
 // SMTP_PASSWORD and MAIL_FROM (default "Pinalert <SMTP_USERNAME>"):
 //
-//   - SMTP_HOST set: SMTP_USERNAME and SMTP_PASSWORD are required too, and the
-//     SMTP implementation is returned, regardless of env.
+//   - SMTP_HOST set: it must be a bare host name (no port, scheme, slash or
+//     space), SMTP_USERNAME and SMTP_PASSWORD are required too, and the SMTP
+//     implementation is returned, regardless of env.
 //   - No SMTP setting set and env == "development": return the log-only
 //     implementation and warn, so local development and CI never touch the
 //     network.
@@ -59,6 +74,10 @@ func LoadMailer(env string) (Mailer, error) {
 			return nil, fmt.Errorf("mailer: SMTP_HOST must be set when other SMTP settings are set")
 		}
 		return nil, fmt.Errorf("mailer: SMTP_HOST, SMTP_USERNAME and SMTP_PASSWORD must be set outside ENV=development")
+	}
+
+	if !isPlainHostName(host) {
+		return nil, fmt.Errorf("mailer: SMTP_HOST must be a host name such as smtp.gmail.com, with no port, scheme or space")
 	}
 
 	var missing []string
