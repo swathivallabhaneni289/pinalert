@@ -134,7 +134,8 @@ delivers to anyone.
 The connection is always encrypted before the password is sent: the server refuses to send if it
 does not offer STARTTLS, it needs TLS 1.2 or newer, and it checks the server's certificate and
 name. A failed send shows only the kind of failure in the server log (could not reach the server,
-could not secure the connection, sign in refused, try again later, message refused), never the
+could not secure the connection, the server did not start encryption, sign in refused, try again
+later, message refused), never the
 password, the user name, an address or a code.
 
 **Owner steps for Gmail:**

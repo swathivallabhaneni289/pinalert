@@ -33,6 +33,10 @@ type Options struct {
 	// AdvertiseAuthAlways lists AUTH PLAIN in the EHLO answer before TLS too,
 	// like a careless server, to prove that the client does not use it.
 	AdvertiseAuthAlways bool
+	// STARTTLSReply makes the server advertise STARTTLS and then answer the
+	// command with this line (such as "454 4.7.0 TLS not available") instead of
+	// "220 Ready to start TLS", and stay on the plain connection.
+	STARTTLSReply string
 	// Greeting replaces the "220 ..." greeting line.
 	Greeting string
 	// AuthReply, MailReply, RcptReply and DataReply replace the answer to that
@@ -225,6 +229,12 @@ func (s *Server) serve(raw net.Conn) {
 		case "STARTTLS":
 			if s.opts.NoSTARTTLS || overTLS {
 				if !write("502 5.5.1 STARTTLS not available") {
+					return
+				}
+				continue
+			}
+			if s.opts.STARTTLSReply != "" {
+				if !write(s.opts.STARTTLSReply) {
 					return
 				}
 				continue

@@ -70,7 +70,7 @@ const smtpImplicitTLSPort = 465
 var (
 	errSMTPNetwork   = errors.New("could not reach the mail server")
 	errSMTPTLS       = errors.New("could not secure the connection to the mail server")
-	errSMTPNoTLS     = errors.New("the mail server does not offer an encrypted connection")
+	errSMTPNoTLS     = errors.New("the mail server did not start encryption")
 	errSMTPTemporary = errors.New("the mail server asked to try again later")
 	errSMTPAuth      = errors.New("the mail server refused the sign in")
 	errSMTPPermanent = errors.New("the mail server refused the message")
@@ -360,6 +360,11 @@ func smtpFailure(ctx context.Context, err error, stage smtpStage) error {
 	var reply *textproto.Error
 	if errors.As(err, &reply) {
 		switch {
+		case stage == stageTLS:
+			// The server answered STARTTLS with something other than "go
+			// ahead" (454, 502, 554 and so on). That is a refused encryption,
+			// not a refused message, whatever the reply code says.
+			return fmt.Errorf("%w (reply %d)", errSMTPNoTLS, reply.Code)
 		case stage == stageAuth:
 			return fmt.Errorf("%w (reply %d)", errSMTPAuth, reply.Code)
 		case reply.Code >= 400 && reply.Code < 500:
