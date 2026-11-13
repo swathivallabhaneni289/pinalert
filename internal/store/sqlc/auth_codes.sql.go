@@ -318,7 +318,7 @@ func (q *Queries) MarkAuthCodePasswordSet(ctx context.Context, id int64) error {
 
 const markAuthCodeVerified = `-- name: MarkAuthCodeVerified :execrows
 UPDATE auth_codes
-SET verified_at = COALESCE(verified_at, $1::timestamptz),
+SET verified_at = $1::timestamptz,
     session_id = $2
 WHERE id = $3
   AND session_id = $4
@@ -339,8 +339,11 @@ type MarkAuthCodeVerifiedParams struct {
 // code. Only a live reset row that was emailed a code can be marked, and only
 // while it is unused and unexpired, so 0 rows means the row cannot be verified
 // (the service answers ErrWrongCode). verified_at is the service clock's moment
-// of the first right code and is never moved by a second one (COALESCE), so a
-// right code typed twice is still one verify.
+// of this right code. A right code typed again restarts the confirm window, and
+// has to: with the window shorter than the code's life, a confirm that ran out
+// while the code is still live must be renewable by typing the code once more,
+// or step two would stay refused until a Resend. The person holds the code each
+// time, so a renewal gives nobody anything.
 // The same statement moves the row to a freshly drawn session id (review fix
 // WR-02): the confirm is then held only by the browser that gets the new cookie
 // with the answer, so a session id planted in a browser before the code was

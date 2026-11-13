@@ -391,8 +391,9 @@ func (s *CredentialService) reserveTry(ctx context.Context, key string) (sqlcgen
 // the try is counted before the compare (proveCode, one atomic statement), and
 // every refusal is ErrWrongCode, so an address with no account, whose row is a
 // no_account one that never held a code, answers exactly like a wrong code and
-// can never be verified. A right code typed again on a row already verified is
-// still one verify (the mark keeps the first moment), and is refused as soon as
+// can never be verified. A right code typed again on a row already verified
+// restarts the confirm window (so a confirm that ran out while the code is still
+// live can be renewed by typing the code once more), and is refused as soon as
 // the row is spent, replaced or past its life.
 func (s *CredentialService) CheckResetCode(ctx context.Context, sessionID, rawCode string, newID func() string) (string, error) {
 	latest, err := s.q.GetLatestAuthCode(ctx, sqlcgen.GetLatestAuthCodeParams{

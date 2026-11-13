@@ -267,18 +267,16 @@ func (f *credFakeQuerier) ConsumeAuthCode(_ context.Context, id int64) (int64, e
 }
 
 // MarkAuthCodeVerified follows the real query: a live reset row of the old
-// session that was emailed a code gets verified_at once (a second mark keeps the
-// first moment) and moves to the new session id.
+// session that was emailed a code gets verified_at (a second mark restarts the
+// window) and moves to the new session id.
 func (f *credFakeQuerier) MarkAuthCodeVerified(_ context.Context, arg sqlcgen.MarkAuthCodeVerifiedParams) (int64, error) {
 	f.log("MarkAuthCodeVerified")
 	for i := range f.codes {
 		r := &f.codes[i]
 		if r.id == arg.ID && r.session == arg.OldSessionID && r.used == nil && r.expires.After(f.clk.Now()) &&
 			r.purpose == service.PurposeReset && r.delivery == service.DeliveryCode {
-			if r.verified == nil {
-				v := arg.VerifiedAt
-				r.verified = &v
-			}
+			v := arg.VerifiedAt
+			r.verified = &v
 			r.session = arg.NewSessionID
 			return 1, nil
 		}
@@ -1986,15 +1984,15 @@ func TestCheckResetCode(t *testing.T) {
 		if r.q.count("BindSessionAccount") != 0 {
 			t.Error("step one never signs the browser in")
 		}
-		// The same right code again is still one verify.
+		// The same right code again restarts the confirm window.
 		first := *row.verified
 		r.clk.Advance(time.Minute)
 		again, err := checkReset(r.svc, fresh, code)
 		if err != nil {
 			t.Fatalf("the right code twice: %v", err)
 		}
-		if !row.verified.Equal(first) {
-			t.Errorf("verified_at moved from %v to %v; the first moment must stay", first, *row.verified)
+		if !row.verified.Equal(first.Add(time.Minute)) {
+			t.Errorf("verified_at is %v after the second right code, want %v (the window restarts)", *row.verified, first.Add(time.Minute))
 		}
 		// Each right code moves the browser on again; only the newest id holds the row.
 		if row.session != again || again == fresh {
@@ -2228,6 +2226,31 @@ func TestConfirmResetNeedsAConfirmedCode(t *testing.T) {
 		}
 		if err := r.svc.ConfirmReset(ctx, fresh, newPassword); err != nil {
 			t.Fatalf("ConfirmReset inside the confirm window: %v", err)
+		}
+	})
+
+	// A confirm that ran out while the code is still live is renewed by typing the
+	// code once more; without that, step two would stay refused until a Resend,
+	// because the window (5 minutes) is shorter than the code's life (10).
+	t.Run("a confirm that ran out while the code is live is renewed by typing the code again", func(t *testing.T) {
+		r := newCredRig(t)
+		a := r.addPasswordAccount(t, credEmail, credPassword)
+		code := r.resetCodeFor(t, "sess-d")
+		fresh, err := checkReset(r.svc, "sess-d", code)
+		if err != nil {
+			t.Fatalf("CheckResetCode: %v", err)
+		}
+		r.clk.Advance(service.ResetConfirmWindow + time.Minute) // 6 minutes: the code has 4 left
+		refused(t, r, a, fresh)
+		if lc, ok, _ := r.svc.LiveCode(ctx, fresh); !ok || lc.Verified || lc.SecondsLeft <= 0 {
+			t.Fatalf("LiveCode = %+v ok=%v; want a live code that is not confirmed", lc, ok)
+		}
+		again, err := checkReset(r.svc, fresh, code)
+		if err != nil {
+			t.Fatalf("the code typed again: %v", err)
+		}
+		if err := r.svc.ConfirmReset(ctx, again, newPassword); err != nil {
+			t.Fatalf("ConfirmReset after the renewal: %v", err)
 		}
 	})
 
