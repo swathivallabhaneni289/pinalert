@@ -104,23 +104,25 @@ function load({ route, online = true, dialogSupport = true, followsYou = true, r
   add('notice-live');
   const header = add('person-header');
   add('person-reports-section');
-  // Amended 2026-11-08 by quick 261108-fku (owner decision 2026-11-08): the
-  // action error line and the rating box sit in the band inside the header, as
-  // the page now draws them, so the band is their parent and not the header.
-  const bandNode = add('person-band');
-  header.children.push(bandNode);
-  bandNode.parentNode = header;
+  // Amended 2026-11-13 by quick 261113-k9t (owner decision 2026-11-13, the
+  // centred profile): the band wrapper is gone, so the action error line and the
+  // rating box are direct children of the header again, the box right before
+  // the error line.
   const actionError = add('person-action-error', { hidden: true });
-  bandNode.children.push(actionError);
-  actionError.parentNode = bandNode;
+  header.children.push(actionError);
+  actionError.parentNode = header;
   if (rating) {
     const box = add('person-rating', { attrs: { 'data-your-rating': String(rating.yours) } });
-    bandNode.insertBefore(box, actionError);
+    header.insertBefore(box, actionError);
   }
-  // The stars group and the tag group sit in a body of their own (not in the
-  // header), as the page draws them. A group built by the script is found by
-  // id through the body, so a removed one is gone.
+  // The counts row (the stars group, Followers, Following, the reporter cell)
+  // sits in a body of its own, as the page draws it. A group built by the script
+  // is found by id through the body, so a removed one is gone.
   const body = fakeEl('header-body');
+  const followersCell = fakeEl('followers-cell');
+  const followingCell = fakeEl('following-cell');
+  body.appendChild(followersCell);
+  body.appendChild(followingCell);
   const tagGroup = fakeEl('tag-group');
   body.appendChild(tagGroup);
   tagGroup.appendChild(add('person-tag', { textContent: 'Reliable reporter' }));
@@ -132,7 +134,7 @@ function load({ route, online = true, dialogSupport = true, followsYou = true, r
     const total = fakeEl('total', { className: 'person-stars__total' });
     total.appendChild(fakeEl('number', { className: 'person-stars__number', textContent: '4.0' }));
     group.appendChild(total);
-    body.insertBefore(group, tagGroup);
+    body.insertBefore(group, followersCell);
   }
   const findById = (node, id) => {
     for (const c of node.children || []) {
@@ -507,9 +509,10 @@ test('the star control mounts when the server drew the rating box, with the serv
 test('no rating box from the server means no control and nothing explaining why', () => {
   const m = load({ route: RATE_ROUTE(PROFILE_FOLLOWING) });
   assert.equal(m.els['person-rating'], undefined);
-  // Amended 2026-11-08 by quick 261108-fku (owner decision 2026-11-08): the band
-  // holds the action error line now, so its children are counted.
-  assert.equal(m.els['person-band'].children.length, 1, 'only the action error line is in the band');
+  // Amended 2026-11-13 by quick 261113-k9t (owner decision 2026-11-13, the
+  // centred profile): the header holds the action error line directly again, so
+  // its children are counted.
+  assert.equal(m.els['person-header'].children.length, 1, 'only the action error line is in the header');
   assert.equal(m.els['person-action-error'].hidden, true);
 });
 
@@ -581,14 +584,14 @@ test('a refetch that turns may_rate true on a page with no box builds the box ab
   const m = load({ route: FOLLOW_ROUTE({ ...PROFILE_FOLLOWING, may_rate: true, your_rating: 0 }) });
   m.click('person-follow');
   await flush();
-  // Amended 2026-11-08 by quick 261108-fku (owner decision 2026-11-08): the box
-  // is built in the band, right before the action error line, not in the header.
-  const band = m.els['person-band'];
-  assert.equal(band.children.length, 2);
-  const host = band.children[0];
+  // Amended 2026-11-13 by quick 261113-k9t (owner decision 2026-11-13, the
+  // centred profile): the band wrapper is gone, so the box is built in the
+  // header, right before the action error line.
+  const head = m.els['person-header'];
+  assert.equal(head.children.length, 2);
+  const host = head.children[0];
   assert.equal(host.id, 'person-rating');
-  assert.equal(band.children[1], m.els['person-action-error']);
-  assert.equal(m.els['person-header'].children.length, 1, 'the header holds only the band');
+  assert.equal(head.children[1], m.els['person-action-error']);
   assert.equal(host.children[0].id, 'fieldset');
 });
 
@@ -670,7 +673,13 @@ test('the stars group goes when the server sends no number and is built when one
   const wrap2 = back.els['person-tag'].parentNode.parentNode;
   const built = wrap2.children.find((c) => c.id === 'person-stars');
   assert.ok(built, 'built from the server strings');
-  assert.equal(wrap2.children.indexOf(built), wrap2.children.indexOf(back.els['person-tag'].parentNode) - 1);
+  // Amended 2026-11-13 (quick 261113-k9t, the centred profile): the stars total is
+  // the first cell of the counts row, in front of Followers and Following, and not
+  // just in front of the reporter cell.
+  assert.equal(wrap2.children.indexOf(built), 0, 'the stars group is the first cell of the counts row');
+  assert.equal(wrap2.children.length, 4, 'stars, Followers, Following, the reporter cell');
+  assert.equal(wrap2.children[3], back.els['person-tag'].parentNode);
+  assert.equal(built.querySelector('.person-stars__word').textContent, 'Stars');
   assert.equal(built.getAttribute('role'), 'group');
   assert.equal(built.getAttribute('aria-label'), '2.8 stars');
   assert.equal(built.querySelector('.person-stars__number').textContent, '2.8');

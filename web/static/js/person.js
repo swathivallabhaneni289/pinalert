@@ -279,8 +279,9 @@ window.PinalertPerson = (function () {
       control.set(yours);
       return;
     }
-    // Quick 261108-fku (owner decision 2026-11-08): the error line now sits in the
-    // band, not straight in the header, so the box goes in beside it wherever it is.
+    // Quick 261108-fku (owner decision 2026-11-08): the box goes in beside the
+    // error line wherever it is. Quick 261113-k9t: the error line is a direct
+    // child of the header again, and Your rating sits right before it.
     if (!els.rating && els.error && els.error.parentNode) {
       var host = document.createElement('div');
       host.id = 'person-rating';
@@ -333,10 +334,14 @@ window.PinalertPerson = (function () {
       if (typeof document.createTextNode === 'function') {
         total.appendChild(document.createTextNode(' '));
       }
-      total.appendChild(makeSpan('person-stars__word', 'stars'));
+      total.appendChild(makeSpan('person-stars__word', 'Stars'));
       group.appendChild(icon);
       group.appendChild(total);
-      tagGroup.parentNode.insertBefore(group, tagGroup);
+      // Quick 261113-k9t (owner decision 2026-11-13, the centred profile): the
+      // stars total is the first cell of the counts row, before Followers, so the
+      // group goes in front of the first cell and not in front of the tag cell.
+      var row = tagGroup.parentNode;
+      row.insertBefore(group, row.firstChild || tagGroup);
     }
     if (typeof profile.stars_label === 'string' && profile.stars_label !== '') {
       group.setAttribute('aria-label', profile.stars_label);

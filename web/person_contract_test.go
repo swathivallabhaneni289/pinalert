@@ -18,31 +18,36 @@ import (
 // buttons and the actions, in that order.
 func TestPersonPageHeaderOrder(t *testing.T) {
 	tmpl := p421ReadTemplate(t, "person.html.tmpl")
-	// Amended 2026-11-08 by quick 261108-fku (owner decision 2026-11-08): the
-	// band and the record wrapper are in their places, and the own page state
-	// line is after the action error line, outside the band.
+	// Amended 2026-11-13 by quick 261113-k9t (owner decision 2026-11-13, the
+	// centred profile, "lets do the centered"): the 261108-fku band and record
+	// wrappers are gone and the DOM order is the drawn order, so Tab and a screen
+	// reader follow what the eye sees: the letter, the username, the name, the
+	// action row, the counts row (the stars, Followers, Following, the reporter
+	// tag with its sentence), the details line (Member since, the home area), the
+	// state line on the own page or Your rating on another page, then the action
+	// error line.
 	p421InOrder(t, "the profile header order", tmpl,
 		`id="person-header"`,
-		`id="person-band"`,
 		`id="person-disc"`,
 		`<h1 id="person-username"`,
 		`id="person-name"`,
-		`id="person-record"`,
-		`id="person-stars"`,
-		`id="person-tag"`,
-		`id="person-tag-sentence"`,
-		`id="person-member-since"`,
-		`id="person-home-area"`,
-		`id="person-followers-button"`,
-		`id="person-following-button"`,
 		`id="person-actions"`,
 		`id="person-edit"`,
 		`id="person-follow"`,
 		`id="person-unfollow"`,
 		`id="person-more"`,
 		`id="person-more-menu"`,
-		`id="person-action-error"`,
+		`id="person-stats"`,
+		`id="person-stars"`,
+		`id="person-followers-button"`,
+		`id="person-following-button"`,
+		`id="person-tag"`,
+		`id="person-tag-sentence"`,
+		`id="person-member-since"`,
+		`id="person-home-area"`,
 		`id="person-state-line"`,
+		`id="person-rating"`,
+		`id="person-action-error"`,
 		`id="person-reports-section"`,
 		`id="person-blocked"`,
 		`id="person-confirm"`,
@@ -120,7 +125,9 @@ func TestPersonPageCopy(t *testing.T) {
 		// (quick 261109-n25, fewer words): the line "Reports from the last 30 days,
 		// newest first." under the title is cut, so only the title is pinned.
 		"Recent reports",
-		`person-stars__word">stars</span>`,
+		// Amended 2026-11-13 (quick 261113-k9t, the centred profile): the word under
+		// the stars number is drawn as the mockup draws it, Stars.
+		`person-stars__word">Stars</span>`,
 	} {
 		if !strings.Contains(tmpl, want) {
 			t.Errorf("person.html.tmpl lacks the sentence %q", want)
@@ -401,9 +408,12 @@ func TestPersonStarsParts(t *testing.T) {
 	}
 	// The rating box: only when MayRate, under the action row, in the branch of
 	// another person's page, above the action error line.
+	// Amended 2026-11-13 (quick 261113-k9t): the mount sits under the details
+	// line, in the else branch of the own page's state line, and the stars group
+	// is the first cell of the counts row.
 	p421InOrder(t, "the rating mount", tmpl,
 		`id="person-more-menu"`,
-		`{{if .Profile.MayRate}}`,
+		`{{else if .Profile.MayRate}}`,
 		`id="person-rating"`,
 		`data-your-rating="{{.Profile.YourRating}}"`,
 		`id="person-action-error"`,
