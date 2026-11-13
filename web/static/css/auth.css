@@ -211,11 +211,10 @@
   width: 100%;
 }
 
-/* Step two of Forgot password hides Resend. The shared .btn sets a display, which
- * would beat the hidden attribute, so the hidden state is named here. */
-.login-actions .btn[hidden] {
-  display: none;
-}
+/* Step two of Forgot password hides Resend with the hidden attribute. The shared
+ * .btn sets a display, but chrome.css (loaded on this page) already has
+ * .btn[hidden] { display: none }, which is more specific, so nothing is needed
+ * here. */
 
 /* A 20px arrow at the left of Change email and Back to sign in. */
 .login-card .btn .auth-icon {

@@ -180,10 +180,24 @@ func TestResetStepsAuthJS(t *testing.T) {
 }
 
 // TestResetResendHiddenGuard: the shared .btn sets a display, which would beat
-// the hidden attribute on Resend, so auth.css names the hidden state.
+// the hidden attribute on Resend, but chrome.css already hides a hidden .btn with
+// a more specific rule and the sign in page loads it after main.css. So auth.css
+// needs no rule of its own (review fix IN-03), and must not set a display on the
+// buttons of the card that would beat the chrome.css one.
 func TestResetResendHiddenGuard(t *testing.T) {
-	css := p421ReadStatic(t, "css/auth.css")
-	if !regexp.MustCompile(`\.login-actions\s+\.btn\[hidden\]\s*\{\s*display:\s*none;`).MatchString(css) {
-		t.Errorf("auth.css has no rule hiding a .btn with the hidden attribute inside .login-actions")
+	chrome := p421ReadStatic(t, "css/chrome.css")
+	if !regexp.MustCompile(`\.btn\[hidden\]\s*\{\s*display:\s*none;`).MatchString(chrome) {
+		t.Errorf("chrome.css has no .btn[hidden] rule")
+	}
+	page := readLoginGateTemplate(t)
+	main, chromeAt := strings.Index(page, "/static/css/main.css"), strings.Index(page, "/static/css/chrome.css")
+	if main < 0 || chromeAt < main {
+		t.Errorf("the sign in page must load chrome.css after main.css")
+	}
+	auth := p421ReadStatic(t, "css/auth.css")
+	for _, m := range regexp.MustCompile(`(?s)\.login-actions\s+\.btn[^{,]*\{([^}]*)\}`).FindAllStringSubmatch(auth, -1) {
+		if regexp.MustCompile(`(^|[;\s])display\s*:`).MatchString(m[1]) {
+			t.Errorf("auth.css sets a display on .login-actions .btn, which would beat .btn[hidden]: %s", m[0])
+		}
 	}
 }
