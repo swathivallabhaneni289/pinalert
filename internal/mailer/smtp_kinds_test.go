@@ -63,3 +63,47 @@ func TestSMTPRefusedSTARTTLSIsAnEncryptionFailure(t *testing.T) {
 		})
 	}
 }
+
+// TestSMTPSignInFailureKinds pins IN-02: a refused password, a server with no
+// PLAIN sign in and a connection lost during the sign in are three different
+// kinds, so the owner is not sent to revoke a good app password for a failure
+// that was not a refusal.
+func TestSMTPSignInFailureKinds(t *testing.T) {
+	words := " 5.7.8 Username and Password not accepted for " + testSMTPUser + " SERVERWORDS"
+	kinds := []error{errSMTPAuth, errSMTPNoAuth, errSMTPAuthLost}
+	for _, tc := range []struct {
+		name string
+		opts smtptest.Options
+		kind error
+		say  string
+	}{
+		{"a refused password is the sign in refused kind", smtptest.Options{AuthReply: "535" + words}, errSMTPAuth, "refused the sign in (reply 535)"},
+		{"no PLAIN offered is the no password sign in kind", smtptest.Options{AuthMechanisms: "LOGIN XOAUTH2"}, errSMTPNoAuth, "offers no password sign in"},
+		{"a connection lost during sign in is the dropped kind", smtptest.Options{DropAtAuth: true}, errSMTPAuthLost, "dropped the connection during sign in"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := smtptest.Start(t, tc.opts)
+			m := testSMTPMailer(srv, false)
+
+			err := m.SendAuthEmail(context.Background(), testSMTPTo, testSMTPEmail())
+			if !errors.Is(err, tc.kind) {
+				t.Fatalf("err = %v, want %v", err, tc.kind)
+			}
+			for _, other := range kinds {
+				if other != tc.kind && errors.Is(err, other) {
+					t.Errorf("err = %v also matches %v", err, other)
+				}
+			}
+			if !strings.Contains(err.Error(), tc.say) {
+				t.Errorf("err = %q, want it to say %q", err, tc.say)
+			}
+			if len(srv.Logins()) != 0 && tc.kind == errSMTPNoAuth {
+				t.Errorf("a login reached a server that offers no PLAIN: %+v", srv.Logins())
+			}
+			if hasCommandPrefix(srv.Commands(), "tls MAIL") {
+				t.Errorf("the message was started after a failed sign in: %v", srv.Commands())
+			}
+			assertNoSecrets(t, "error", err.Error(), "SERVERWORDS", "not accepted")
+		})
+	}
+}

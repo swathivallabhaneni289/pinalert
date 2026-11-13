@@ -33,6 +33,13 @@ type Options struct {
 	// AdvertiseAuthAlways lists AUTH PLAIN in the EHLO answer before TLS too,
 	// like a careless server, to prove that the client does not use it.
 	AdvertiseAuthAlways bool
+	// AuthMechanisms replaces the mechanisms listed after AUTH once the
+	// connection is encrypted ("PLAIN LOGIN" by default). "LOGIN" alone is a
+	// server that offers no PLAIN sign in.
+	AuthMechanisms string
+	// DropAtAuth closes the connection, with no answer, when the AUTH command
+	// arrives.
+	DropAtAuth bool
 	// STARTTLSReply makes the server advertise STARTTLS and then answer the
 	// command with this line (such as "454 4.7.0 TLS not available") instead of
 	// "220 Ready to start TLS", and stay on the plain connection.
@@ -220,7 +227,7 @@ func (s *Server) serve(raw net.Conn) {
 				lines = append(lines, "250-STARTTLS")
 			}
 			if overTLS || s.opts.AdvertiseAuthAlways {
-				lines = append(lines, "250-AUTH PLAIN LOGIN")
+				lines = append(lines, "250-AUTH "+orDefault(s.opts.AuthMechanisms, "PLAIN LOGIN"))
 			}
 			lines = append(lines, "250 SIZE 35882577")
 			if !write(lines...) {
@@ -250,6 +257,9 @@ func (s *Server) serve(raw net.Conn) {
 			r = bufio.NewReader(conn)
 			overTLS = true
 		case "AUTH":
+			if s.opts.DropAtAuth {
+				return // closes the connection with no answer
+			}
 			fields := strings.Fields(line)
 			if len(fields) >= 3 && strings.EqualFold(fields[1], "PLAIN") {
 				if dec, err := base64.StdEncoding.DecodeString(fields[2]); err == nil {

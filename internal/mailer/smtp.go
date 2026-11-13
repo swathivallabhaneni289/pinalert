@@ -73,6 +73,8 @@ var (
 	errSMTPNoTLS     = errors.New("the mail server did not start encryption")
 	errSMTPTemporary = errors.New("the mail server asked to try again later")
 	errSMTPAuth      = errors.New("the mail server refused the sign in")
+	errSMTPNoAuth    = errors.New("the mail server offers no password sign in")
+	errSMTPAuthLost  = errors.New("the mail server dropped the connection during sign in")
 	errSMTPPermanent = errors.New("the mail server refused the message")
 
 	// errBadRecipient and errBadSender name no address.
@@ -317,7 +319,8 @@ func (m *smtpMailer) deliver(ctx context.Context, envelopeFrom, rcpt string, dat
 	}
 
 	if ok, mechs := client.Extension("AUTH"); !ok || !strings.Contains(" "+strings.ToUpper(mechs)+" ", " PLAIN ") {
-		return errSMTPAuth
+		// Not a refused password: no sign in was tried.
+		return errSMTPNoAuth
 	}
 	auth := smtp.PlainAuth("", m.cfg.Username, m.cfg.Password, m.cfg.Host)
 	if err := client.Auth(auth); err != nil {
@@ -377,7 +380,9 @@ func smtpFailure(ctx context.Context, err error, stage smtpStage) error {
 	case stageTLS:
 		return errSMTPTLS
 	case stageAuth:
-		return errSMTPAuth
+		// No reply from the server: the connection broke in the middle of the
+		// sign in. The password was not refused, so it is not errSMTPAuth.
+		return errSMTPAuthLost
 	}
 	return errSMTPNetwork
 }
