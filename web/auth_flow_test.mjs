@@ -919,6 +919,111 @@ test('step two answered with the wrong code error goes back to step one with Res
   assertClean(page);
 });
 
+// Review fix IN-04: the right code is a counted try on the server, so the page's
+// count goes up by one at step two and is carried back to step one. Two wrong
+// codes, the right one and then two more wrong ones after the way back are five
+// tries on the server, and the page switches the button off with them.
+test('going back from step two keeps the try count: the budget the server holds', async () => {
+  const page = load({ start: 'code', mode: 'reset', email: 'priya@example.com', secondsLeft: 300, resend: 0 });
+  const wrongCode = { error: { field: 'code', message: 'That code is wrong or has expired.' } };
+  const tryCode = async (value, status, payload) => {
+    byId(page, 'code-input').value = value;
+    submit(page, 'code');
+    answer(page.requests[page.requests.length - 1], status, payload);
+    await flush();
+  };
+  await tryCode('111111', 400, wrongCode);
+  await tryCode('222222', 400, wrongCode);
+  await tryCode('333333', 200, { code_ok: true });
+  assert.equal(byId(page, 'code-new-wrap').hidden, false, 'step two');
+
+  byId(page, 'code-new-password').value = 'a new long password';
+  submit(page, 'code');
+  answer(page.requests[page.requests.length - 1], 400, wrongCode);
+  await flush();
+  assert.equal(byId(page, 'code-new-wrap').hidden, true, 'back on step one');
+  assert.equal(isOff(page, 'code-submit'), false, 'three tries are spent, not five');
+
+  await tryCode('444444', 400, wrongCode);
+  assert.equal(isOff(page, 'code-submit'), false, 'the fourth try on the server');
+  await tryCode('555555', 400, wrongCode);
+  assert.equal(isOff(page, 'code-submit'), true, 'the fifth try switches the button off');
+  assert.equal(text(page, 'code-error'), 'Too many wrong tries. Get a new code.');
+  assertClean(page);
+});
+
+test('a budget already spent at step two switches Confirm code off on the way back', async () => {
+  const page = load({ start: 'code', mode: 'reset', email: 'priya@example.com', secondsLeft: 300, resend: 0 });
+  const wrongCode = { error: { field: 'code', message: 'That code is wrong or has expired.' } };
+  for (let n = 0; n < 4; n++) {
+    byId(page, 'code-input').value = '123456';
+    submit(page, 'code');
+    answer(page.requests[page.requests.length - 1], 400, wrongCode);
+    await flush();
+  }
+  byId(page, 'code-input').value = '654321';
+  submit(page, 'code');
+  answer(page.requests[page.requests.length - 1], 200, { code_ok: true });
+  await flush();
+  byId(page, 'code-new-password').value = 'a new long password';
+  submit(page, 'code');
+  answer(page.requests[page.requests.length - 1], 400, wrongCode);
+  await flush();
+  assert.equal(isOff(page, 'code-submit'), true, 'five tries are spent on the server');
+  assert.equal(text(page, 'code-error'), 'Too many wrong tries. Get a new code.');
+  assert.equal(isOff(page, 'code-resend'), false, 'Resend is ready');
+  assert.ok(isFocused(page, 'code-resend'));
+  assertClean(page);
+});
+
+// Review fix IN-04: the way back to step one starts the expiry notice again from the
+// code's own deadline, so a code that ran out while step two was open says so, and
+// one that is still good is timed.
+test('going back from step two restarts the expiry notice from the code deadline', async () => {
+  const wrongCode = { error: { field: 'code', message: 'That code is wrong or has expired.' } };
+  const walk = async (secondsLeft, waitMs) => {
+    const page = load({ start: 'code', mode: 'reset', email: 'priya@example.com', secondsLeft, resend: 0 });
+    byId(page, 'code-input').value = '123456';
+    submit(page, 'code');
+    answer(page.requests[0], 200, { code_ok: true });
+    await flush();
+    assert.equal(page.timers.size, 0, 'no clock on step two');
+    page.advance(waitMs);
+    assert.equal(byId(page, 'code-status').hidden, true, 'step two shows no expiry notice');
+    byId(page, 'code-new-password').value = 'a new long password';
+    submit(page, 'code');
+    answer(page.requests[1], 400, wrongCode);
+    await flush();
+    return page;
+  };
+
+  const ranOut = await walk(60, 70000);
+  assert.equal(text(ranOut, 'code-status'), 'The code has expired. Get a new one.');
+  assert.equal(byId(ranOut, 'code-status').hidden, false);
+  assertClean(ranOut);
+
+  const stillGood = await walk(300, 100000);
+  assert.equal(byId(stillGood, 'code-status').hidden, true, 'a live code shows no expiry notice yet');
+  assert.ok(stillGood.timers.size > 0, 'the expiry clock runs again');
+  stillGood.advance(199000);
+  assert.equal(byId(stillGood, 'code-status').hidden, true, 'one second before the end');
+  stillGood.advance(1000);
+  assert.equal(text(stillGood, 'code-status'), 'The code has expired. Get a new one.');
+  assertClean(stillGood);
+
+  // A page reloaded on step two keeps the deadline the server drew.
+  const reloaded = load({ start: 'code', mode: 'reset', step: 'password', email: 'priya@example.com', secondsLeft: 120, resend: 0 });
+  reloaded.advance(60000);
+  byId(reloaded, 'code-new-password').value = 'a new long password';
+  submit(reloaded, 'code');
+  answer(reloaded.requests[0], 400, wrongCode);
+  await flush();
+  assert.equal(byId(reloaded, 'code-status').hidden, true);
+  reloaded.advance(60000);
+  assert.equal(text(reloaded, 'code-status'), 'The code has expired. Get a new one.');
+  assertClean(reloaded);
+});
+
 test('step one counts a wrong code and the fifth switches Confirm code off', async () => {
   const page = load({ start: 'code', mode: 'reset', email: 'priya@example.com', secondsLeft: 400, resend: 0 });
   for (let n = 1; n <= 5; n++) {

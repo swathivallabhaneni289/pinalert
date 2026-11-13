@@ -621,7 +621,10 @@
     codeInput.value = '';
     codeNewPassword.value = '';
     lockCodeButton(false);
-    state.tries = 0;
+    // The server counted the right code as a try too, so the page's count goes up
+    // by one and is kept, not zeroed (review fix IN-04). Going back to step one
+    // then shows the same budget the server holds.
+    state.tries += 1;
     state.resendBusy = false;
     setCodeMode('reset', 'password');
     state.generation += 1;
@@ -632,7 +635,12 @@
 
   // backToCodeStep is what step two does when the server no longer holds the
   // confirm (it ran out, or a newer code replaced it): the code screen again, with
-  // the wrong code sentence and Resend ready. The server counted no try.
+  // the wrong code sentence and Resend ready. The server counted no try for step
+  // two itself. The expiry notice starts again from the code's own deadline (kept
+  // in state.expiresAt, and still true after step two), so a code that has run out
+  // says so, and the page's try count is the one carried over from step one: when
+  // the budget is spent the button is switched off and the person is steered to
+  // Resend (review fix IN-04).
   function backToCodeStep() {
     resetShow();
     codeNewPassword.value = '';
@@ -640,6 +648,18 @@
     setCodeMode('reset', 'code');
     state.generation += 1;
     startResendWait(0);
+    var left = secondsUntil(state.expiresAt);
+    if (left > 0) {
+      startExpiry(left);
+    } else {
+      expireNow();
+    }
+    if (state.tries >= MAX_CLIENT_TRIES) {
+      showError(codeError, codeInput, CODE_TRIES_MESSAGE);
+      lockCodeButton(true);
+      codeResend.focus();
+      return;
+    }
     showError(codeError, codeInput, CODE_WRONG_MESSAGE);
     codeInput.focus();
   }
@@ -979,6 +999,9 @@
     if (startStep === 'password') {
       codeNewPassword.focus();
       setText(codeReadyLive, STEP_TWO_ANNOUNCEMENT);
+      // No clock runs on step two, but the code's own deadline is kept for the
+      // way back to step one (review fix IN-04).
+      state.expiresAt = Date.now() + numberAttr('data-code-seconds-left') * 1000;
     } else {
       startResendWait(numberAttr('data-resend-seconds'));
       var left = numberAttr('data-code-seconds-left');
