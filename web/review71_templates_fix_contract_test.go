@@ -329,7 +329,7 @@ func TestPolicyNamesNearbyCentre(t *testing.T) {
 // kept and who sees it, in plain words. Pinalert keeps a 5 character geohash of
 // the home area (about 5 km wide, migration 00008, HomeAreaCellPrecision 5)
 // beside its name, new usernames go to OpenAI's moderation service as the
-// report text does, and every sign in email goes out through Resend, which sees
+// report text does, and every sign in email goes out through Google (Gmail), which sees
 // the address and the email, codes included.
 func TestPolicyNamesHomeSquareScreeningAndMail(t *testing.T) {
 	keeps := r71tPolicySection(t, "What Pinalert keeps")
@@ -350,9 +350,12 @@ func TestPolicyNamesHomeSquareScreeningAndMail(t *testing.T) {
 	if strings.Contains(others, "<li>Report, comment and username checks: OpenAI, as described above.</li>") {
 		t.Errorf("the other services list names OpenAI for report, comment and username checks only; names are checked too")
 	}
+	// Amended 2026-11-13 (quick 261113-l9x): the sign in emails go out through
+	// a Gmail account, so the line names Google (Gmail) and not the email
+	// service used before.
 	for _, line := range []string{
 		"<li>Report, comment, username and name checks: OpenAI, as described above.</li>",
-		"<li>Sign in emails: Resend sends them, so it sees your email address and the email, including any code.</li>",
+		"<li>Sign in emails: Google (Gmail) sends them, so it sees your email address and the email, including any code.</li>",
 	} {
 		if !strings.Contains(others, line) {
 			t.Errorf("the Policy's other services list lacks:\n%s", line)
