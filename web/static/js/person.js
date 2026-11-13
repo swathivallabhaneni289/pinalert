@@ -318,9 +318,12 @@ window.PinalertPerson = (function () {
       return;
     }
     if (!group) {
-      var tag = byId('person-tag');
-      var tagGroup = tag ? tag.parentNode : null;
-      if (!tagGroup || !tagGroup.parentNode) {
+      // Quick 261113-t4y (owner decision 2026-11-13, the compact profile): the
+      // counts group holds the stars total, Followers and Following, and the
+      // reporter tag is on its own line under it, so the group is found by its
+      // id and no longer through the tag.
+      var row = byId('person-stats');
+      if (!row) {
         return;
       }
       group = document.createElement('div');
@@ -337,11 +340,8 @@ window.PinalertPerson = (function () {
       total.appendChild(makeSpan('person-stars__word', 'Stars'));
       group.appendChild(icon);
       group.appendChild(total);
-      // Quick 261113-k9t (owner decision 2026-11-13, the centred profile): the
-      // stars total is the first cell of the counts row, before Followers, so the
-      // group goes in front of the first cell and not in front of the tag cell.
-      var row = tagGroup.parentNode;
-      row.insertBefore(group, row.firstChild || tagGroup);
+      // The stars total is the first cell of the counts group, before Followers.
+      row.insertBefore(group, row.firstChild);
     }
     if (typeof profile.stars_label === 'string' && profile.stars_label !== '') {
       group.setAttribute('aria-label', profile.stars_label);
@@ -1004,6 +1004,19 @@ window.PinalertPerson = (function () {
     }
     if (username === '') {
       return;
+    }
+
+    // Quick 261113-t4y (owner decision 2026-11-13): on your own page a username
+    // saved from the edit window (profile-edit.js) changes the name every call
+    // here is sent under, so the copy this script holds follows it. Nothing else
+    // on the page holds the old name.
+    if (typeof document.addEventListener === 'function') {
+      document.addEventListener('pinalert:username-changed', function (evt) {
+        var next = evt && evt.detail && evt.detail.username;
+        if (typeof next === 'string' && next !== '') {
+          username = next;
+        }
+      });
     }
 
     // The server drew the rating box only because it said this reader may rate,

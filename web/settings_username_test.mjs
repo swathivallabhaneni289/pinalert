@@ -1,5 +1,5 @@
 // settings_username_test.mjs - runs the real web/static/js/username-check.js and
-// web/static/js/settings.js in a Node sandbox and checks the Username window of
+// web/static/js/profile-edit.js in a Node sandbox and checks the Username window of
 // the Settings page (Phase 7.1, plan 15, IDENT-07, D-07, UI-SPEC Surface 8):
 //
 //   - the Username row opens the built edit window with the stored name filled
@@ -25,7 +25,7 @@ import url from 'node:url';
 import vm from 'node:vm';
 
 const here = path.dirname(url.fileURLToPath(import.meta.url));
-const settingsSource = fs.readFileSync(path.join(here, 'static', 'js', 'settings.js'), 'utf8');
+const settingsSource = fs.readFileSync(path.join(here, 'static', 'js', 'profile-edit.js'), 'utf8');
 const checkSource = fs.readFileSync(path.join(here, 'static', 'js', 'username-check.js'), 'utf8');
 
 class FakeEl {
@@ -91,7 +91,7 @@ class FakeEl {
   select() { this.selected = true; }
 }
 
-// The markup of settings.html.tmpl, as the ids and nesting settings.js reads.
+// The markup of settings.html.tmpl, as the ids and nesting profile-edit.js reads.
 // Amended 2026-11-08 by quick 261108-fku (owner decision 2026-11-08): the page
 // can carry the moment the rename wait ends on the Username window, and draws the
 // hidden OK button after Save username. Amended again 2026-11-08 by the review fix
@@ -176,7 +176,7 @@ function buildPage({ username = '', name = '', home = '', waitIn = null, waitRaw
   return { doc, bar, main, bottom, usernameWin };
 }
 
-// loadSettings evaluates username-check.js and then settings.js against a page.
+// loadSettings evaluates username-check.js and then profile-edit.js against a page.
 // One fetch keeps every call (the live check and the save) for the test to
 // answer; one set of fake timers is moved by hand.
 function loadSettings(options) {
@@ -219,14 +219,14 @@ function loadSettings(options) {
     AbortController: FakeAbortController,
     Date: class FakeDate extends Date { static now() { return clock.ms; } },
     navigator: {
-      get geolocation() { throw new Error('settings.js asked for the device position'); }
+      get geolocation() { throw new Error('profile-edit.js asked for the device position'); }
     },
     location: {}
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(checkSource, sandbox, { filename: 'username-check.js' });
-  vm.runInContext(settingsSource, sandbox, { filename: 'settings.js' });
+  vm.runInContext(settingsSource, sandbox, { filename: 'profile-edit.js' });
   const checks = () => requests.filter((r) => r.url.startsWith('/api/username/check'));
   const saves = () => requests.filter((r) => r.url === '/api/me/profile');
   return { ...page, api: sandbox.PinalertSettings, requests, checks, saves, advance, sandbox, clock };
@@ -549,7 +549,7 @@ test('the Username window is not a login field: no autocomplete value, no passwo
 // Amended 2026-11-08 by the review fix WR-02: the page now carries the moment the
 // wait ends (data-wait-until, drawn here by the waitIn option) instead of a
 // sentence, and every opening works out the days left from it against the clock
-// the sandbox gives settings.js (page.clock.ms). The tests below that used
+// the sandbox gives profile-edit.js (page.clock.ms). The tests below that used
 // waitMessage and waitAfterChange use waitIn: 7 * DAY, or nothing, to the same
 // effect. The D11 test keeps its first half; its reopen half changed (a live wait
 // answer locks only the window open now, see the Amended line on that test).
@@ -866,7 +866,7 @@ test('IN-06: Enter on OK is left to the button, which closes the window by its o
   assert.equal(page.doc.activeElement, byId(page, 'settings-username-row'));
 });
 
-test('WR-02: the fake clock really drives Date.now() inside settings.js', () => {
+test('WR-02: the fake clock really drives Date.now() inside profile-edit.js', () => {
   const page = loadSettings({ username: 'ravi.k', waitIn: 3 * DAY });
   open(page);
   assert.equal(line(page).textContent, 'You can change your username again in 3 days.');

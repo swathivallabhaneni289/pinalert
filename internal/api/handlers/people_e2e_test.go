@@ -142,7 +142,7 @@ func TestProfileOptIn(t *testing.T) {
 		t.Fatalf("a refused Name: status = %d, want 422, body %s", status, body)
 	}
 	field, message := p907ErrorOf(t, body)
-	if field != "profile_public" || message != "Your name can't be shown on a public profile. Change it in About you." {
+	if field != "profile_public" || message != "Your name can't be shown on a public profile. Change it with Edit profile." {
 		t.Fatalf("a refused Name: field %q message %q", field, message)
 	}
 	var public bool

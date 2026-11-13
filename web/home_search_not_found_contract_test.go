@@ -14,7 +14,7 @@ import (
 const notFoundLine = "'Not found. Add your town, for example: Gayathri Nagar, Vijayawada'"
 
 func TestHomeAreaSearchesUseTheNotFoundLine(t *testing.T) {
-	for _, file := range []string{"js/welcome.js", "js/settings.js"} {
+	for _, file := range []string{"js/welcome.js", "js/profile-edit.js"} {
 		t.Run(file, func(t *testing.T) {
 			src := p421ReadStatic(t, file)
 			if n := strings.Count(src, notFoundLine); n != 1 {
@@ -36,7 +36,7 @@ func TestHomeAreaSearchesUseTheNotFoundLine(t *testing.T) {
 }
 
 func TestHomeAreaSearchesNeverSendACentre(t *testing.T) {
-	for _, file := range []string{"js/welcome.js", "js/settings.js"} {
+	for _, file := range []string{"js/welcome.js", "js/profile-edit.js"} {
 		t.Run(file, func(t *testing.T) {
 			src := p421ReadStatic(t, file)
 			p13MustContain(t, file, src, "'/api/geocode/place?kind=area&q='")

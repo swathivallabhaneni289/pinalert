@@ -26,17 +26,17 @@ func TestPersonPageHeaderOrder(t *testing.T) {
 	// tag with its sentence), the details line (Member since, the home area), the
 	// state line on the own page or Your rating on another page, then the action
 	// error line.
+	// Amended 2026-11-13 by quick 261113-t4y (owner decision 2026-11-13, the
+	// compact profile): the edit panel of your own page comes right after the name,
+	// the counts group holds the stars, Followers and Following only, the tag line
+	// follows it, and the action row moves under the details line and the private
+	// line, with Your rating under it.
 	p421InOrder(t, "the profile header order", tmpl,
 		`id="person-header"`,
 		`id="person-disc"`,
 		`<h1 id="person-username"`,
 		`id="person-name"`,
-		`id="person-actions"`,
-		`id="person-edit"`,
-		`id="person-follow"`,
-		`id="person-unfollow"`,
-		`id="person-more"`,
-		`id="person-more-menu"`,
+		`id="person-edit-panel"`,
 		`id="person-stats"`,
 		`id="person-stars"`,
 		`id="person-followers-button"`,
@@ -46,6 +46,12 @@ func TestPersonPageHeaderOrder(t *testing.T) {
 		`id="person-member-since"`,
 		`id="person-home-area"`,
 		`id="person-state-line"`,
+		`id="person-actions"`,
+		`id="person-edit"`,
+		`id="person-follow"`,
+		`id="person-unfollow"`,
+		`id="person-more"`,
+		`id="person-more-menu"`,
 		`id="person-rating"`,
 		`id="person-action-error"`,
 		`id="person-reports-section"`,
@@ -120,7 +126,7 @@ func TestPersonPageCopy(t *testing.T) {
 		// a field name or an aria-label that happens to hold the word cannot
 		// satisfy it.
 		">Follow</button>", ">Following</button>", "<span>More</span>",
-		">Edit in Settings</a>", ">Remove follower</button>", ">Block</button>",
+		">Edit profile</button>", ">Done</button>", ">Remove follower</button>", ">Block</button>",
 		// Surface 5, the part of the section this plan draws. Amended 2026-11-09
 		// (quick 261109-n25, fewer words): the line "Reports from the last 30 days,
 		// newest first." under the title is cut, so only the title is pinned.
@@ -394,8 +400,11 @@ func TestPersonStarsParts(t *testing.T) {
 			t.Errorf("person.html.tmpl still draws %q", gone)
 		}
 	}
-	if strings.Count(group, "</div>") != 1 {
-		t.Errorf("the stars group holds %d closing divs before the tag chip, want 1", strings.Count(group, "</div>"))
+	// Amended 2026-11-13 (quick 261113-t4y): the tag chip is no longer a cell of the
+	// counts group, so the closing divs before it are the stars group and the counts
+	// group.
+	if strings.Count(group, "</div>") != 2 {
+		t.Errorf("the stars group holds %d closing divs before the tag chip, want 2", strings.Count(group, "</div>"))
 	}
 	for _, sep := range []string{"&middot;", string(rune(0xb7)), "&bull;", string(rune(0x2022)), "|"} {
 		if strings.Contains(group, sep) {
@@ -413,12 +422,12 @@ func TestPersonStarsParts(t *testing.T) {
 	// is the first cell of the counts row.
 	p421InOrder(t, "the rating mount", tmpl,
 		`id="person-more-menu"`,
-		`{{else if .Profile.MayRate}}`,
+		`{{if .Profile.MayRate}}`,
 		`id="person-rating"`,
 		`data-your-rating="{{.Profile.YourRating}}"`,
 		`id="person-action-error"`,
 	)
-	selfStart := strings.Index(tmpl, `{{if .Profile.IsSelf}}`)
+	selfStart := strings.Index(tmpl, `id="person-edit"`)
 	selfBranch := tmpl[selfStart : selfStart+strings.Index(tmpl[selfStart:], `{{else}}`)]
 	if strings.Contains(selfBranch, "person-rating") {
 		t.Errorf("the own page branch draws the rating box")

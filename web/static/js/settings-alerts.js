@@ -16,17 +16,18 @@
 // this account. It does not clear the intent flag when a person logs out: that
 // flag lives in notify.js, and this file stores nothing in the browser.
 //
-// A separate file from settings.js on purpose, so settings.js and its contract
-// stay as built. It is self contained like settings.js: it needs no other
-// script of the app, only the ids settings.html.tmpl renders, and it leaves
-// quietly on a page that does not have them. Its small helpers are copies of
-// settings.js's own, not imports.
+// A separate file from profile-edit.js (settings.js before quick 261113-t4y) on
+// purpose, so the two and their contracts stay apart. It is self contained like
+// profile-edit.js: it needs no other script of the app, only the ids
+// settings.html.tmpl renders, and it leaves quietly on a page that does not
+// have them. Its small helpers are copies of profile-edit.js's own, not imports.
 //
 // What it never does:
 //   - It never parses markup. A muted report's text is a reporter's words, and
 //     it reaches the page through textContent; every node is made with
 //     createElement (T-03.2-08).
-//   - It never sends a person anywhere but the two fixed sign in addresses, and
+//   - It never sends a person anywhere but the two fixed sign in addresses and,
+//     since quick 261113-t4y, the profile page (/me) for Add a home area first, and
 //     the only thing from a response that reaches a URL is a report id that was
 //     checked to be digits (T-03.2-22).
 //   - It never closes a window except through the X or Escape: there is no
@@ -590,13 +591,15 @@
   // The select "How far from my home area" saves at once through PATCH
   // /api/me/alerts, with no Save button. A change that fails puts the old value
   // back and says so in one line. Without a home area the select is replaced by
-  // an Add a home area first button that opens the Home area window. The section
-  // follows the home area: settings.js writes the Home area row's data-value when
-  // a home area is saved, and a MutationObserver on that attribute redraws the
-  // row, so settings.js stays as it was built. The other rows of the section are
-  // gone (owner decision 2026-11-03): the device row below is the only switch.
+  // an Add a home area first button. Quick 261113-t4y (owner decision 2026-11-13):
+  // the Home area window moved from Settings to the profile page behind Edit
+  // profile, so the button now goes to /me, and the server draws the select or the
+  // button from the home area it holds on each load. The other rows of the section
+  // are gone (owner decision 2026-11-03): the device row below is the only switch.
 
   var ALERTS_URL = '/api/me/alerts';
+  // The one fixed address the Add a home area first button goes to (quick 261113-t4y).
+  var PROFILE_PAGE = '/me';
   var MESSAGE_ALERTS_FAILED = 'Couldn\'t save that. Try again.';
   var MESSAGE_ALERTS_OFFLINE = 'You\'re offline, so this wasn\'t saved. Try again when you have a signal.';
   var RADIUS_PATTERN = /^[1-9][0-9]{0,2}$/;
@@ -609,10 +612,8 @@
   var radiusNoHome = el('settings-radius-nohome');
   var alertsError = el('settings-alerts-error');
   var deviceError = el('settings-device-error');
-  var homeRowNode = el('settings-home-row');
-  var homeWindow = el('settings-home-window');
   var alertsReady = !!(radiusRow && radiusSelect && radiusNoHome &&
-    alertsError && deviceError && homeRowNode && homeWindow);
+    alertsError && deviceError);
 
   // The one field the alert route takes from this page, with the control that
   // sends it. The select holds the option text.
@@ -624,11 +625,8 @@
   if (alertsReady) {
     saved.alert_radius_km = String(radiusSelect.value);
   }
-  var homeIsSet = alertsReady ? (homeRowNode.getAttribute('data-value') || '') !== '' : false;
-  // openedFromAlerts is true while the Home area window was opened from the
-  // distance row's button, so focus goes back to the matching control when it
-  // closes.
-  var openedFromAlerts = false;
+  // The server draws the select (the row not hidden) only with a home area.
+  var homeIsSet = alertsReady ? radiusRow.hidden !== true : false;
 
   function putBack() {
     radiusSelect.value = saved.alert_radius_km;
@@ -690,22 +688,10 @@
     radiusNoHome.hidden = homeIsSet;
   }
 
-  // syncHome follows the Home area row: it redraws only when the home area
-  // went from none to some or from some to none, never when it changed place.
-  function syncHome() {
-    var now = (homeRowNode.getAttribute('data-value') || '') !== '';
-    if (now !== homeIsSet) {
-      redrawAlerts(now);
-    }
-  }
-
-  // openHomeFromRadius opens the Home area window from the distance row's button
-  // and remembers it, so focus can go back to the matching control.
+  // openHomeFromRadius takes the person to their profile page, where Edit profile
+  // opens the Home area window (quick 261113-t4y).
   function openHomeFromRadius() {
-    if (window.PinalertSettings && typeof window.PinalertSettings.openWindow === 'function') {
-      openedFromAlerts = true;
-      window.PinalertSettings.openWindow('home');
-    }
+    window.location.assign(PROFILE_PAGE);
   }
 
   function wireAlerts() {
@@ -717,18 +703,6 @@
       saveAlerts({ alert_radius_km: parseInt(radiusSelect.value, 10) });
     });
     radiusNoHome.addEventListener('click', openHomeFromRadius);
-    if (typeof MutationObserver === 'function') {
-      new MutationObserver(syncHome).observe(homeRowNode, { attributes: true, attributeFilter: ['data-value'] });
-      // When the Home area window opened from the button closes, focus goes to
-      // the select if a home area now exists, or back to the button.
-      new MutationObserver(function () {
-        syncHome();
-        if (homeWindow.hidden && openedFromAlerts) {
-          openedFromAlerts = false;
-          (homeIsSet ? radiusSelect : radiusNoHome).focus();
-        }
-      }).observe(homeWindow, { attributes: true, attributeFilter: ['hidden'] });
-    }
   }
 
   if (alertsReady) {

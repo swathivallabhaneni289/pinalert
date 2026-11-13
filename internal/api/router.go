@@ -1125,7 +1125,7 @@ func NewRouter(deps Deps) *chi.Mux {
 		// door with no bucket would let a loop over a wordlist skip the throttle.
 		// A refusal is a 429 page, never JSON. Its actions pass through the
 		// people buckets of the JSON routes above.
-		r.With(rateGate.PeopleReadPageMiddleware(page.AssetVersion)).Get("/u/{username}", handlers.PersonPage(deps.Template, people, deps.Reports, page))
+		r.With(rateGate.PeopleReadPageMiddleware(page.AssetVersion)).Get("/u/{username}", handlers.PersonPage(deps.Template, people, deps.Reports, accounts, page))
 		r.Get("/me", handlers.MyProfilePage(people))
 		// Phase 3.4 (D-27, plan 10): the first-time flow. It sits in this gated
 		// group because it belongs to the signed in account, and the onboarding

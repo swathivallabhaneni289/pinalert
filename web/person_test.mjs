@@ -115,16 +115,16 @@ function load({ route, online = true, dialogSupport = true, followsYou = true, r
     const box = add('person-rating', { attrs: { 'data-your-rating': String(rating.yours) } });
     header.insertBefore(box, actionError);
   }
-  // The counts row (the stars group, Followers, Following, the reporter cell)
-  // sits in a body of its own, as the page draws it. A group built by the script
-  // is found by id through the body, so a removed one is gone.
-  const body = fakeEl('header-body');
+  // The counts group (the stars group, Followers, Following) is #person-stats, as
+  // the page draws it since quick 261113-t4y (owner decision 2026-11-13, the
+  // compact profile). A group built by the script is found by id through it, so a
+  // removed one is gone. The reporter tag is on its own line under it.
+  const body = add('person-stats');
   const followersCell = fakeEl('followers-cell');
   const followingCell = fakeEl('following-cell');
   body.appendChild(followersCell);
   body.appendChild(followingCell);
-  const tagGroup = fakeEl('tag-group');
-  body.appendChild(tagGroup);
+  const tagGroup = fakeEl('tag-line');
   tagGroup.appendChild(add('person-tag', { textContent: 'Reliable reporter' }));
   tagGroup.appendChild(add('person-tag-sentence', { textContent: 'old sentence' }));
   if (starsGroup) {
@@ -245,6 +245,27 @@ test('Follow sends one POST and redraws from the refetched profile', async () =>
   assert.equal(m.els['person-unfollow'].focused, 1, 'focus lands on the button now in its place');
   assert.equal(m.els['person-follow'].disabled, false);
   assert.equal(m.els['person-follow'].getAttribute('aria-busy'), null);
+});
+
+// Quick 261113-t4y (owner decision 2026-11-13, the compact profile): a username
+// saved from the edit window on your own page changes the name every call is sent
+// under, and profile-edit.js tells this script through one document event.
+test('a username changed from the edit window changes the address the calls go to', async () => {
+  const m = load({ route: FOLLOW_ROUTE(PROFILE_FOLLOWING) });
+  const listener = m.docListeners.find((l) => l.type === 'pinalert:username-changed');
+  assert.ok(listener, 'person.js listens for the username change');
+  listener.fn({ detail: { username: 'asha.new' } });
+  m.click('person-follow');
+  await flush();
+  assert.deepEqual(m.calls.map((c) => c.method + ' ' + c.address), [
+    'POST /api/people/asha.new/follow',
+    'GET /api/people/asha.new'
+  ]);
+  // An event with no name changes nothing.
+  listener.fn({ detail: {} });
+  m.click('person-unfollow');
+  await flush();
+  assert.equal(m.calls[2].address, '/api/people/asha.new/unfollow');
 });
 
 test('the button is disabled with aria-busy while the call is out and its label stays', async () => {
@@ -642,7 +663,7 @@ test('a saved rating redraws the stars, the tag and the follow from the server',
   const parts = ratingParts(m);
   parts.stars[0].fire('click', {});
   await flush();
-  const group = m.els['person-tag'].parentNode.parentNode.children.find((c) => c.id === 'person-stars');
+  const group = m.els['person-stats'].children.find((c) => c.id === 'person-stars');
   assert.ok(group, 'the stars group is still drawn');
   assert.equal(group.getAttribute('aria-label'), '2.8 stars');
   assert.equal(group.querySelector('.person-stars__number').textContent, '2.8');
@@ -663,22 +684,23 @@ test('the stars group goes when the server sends no number and is built when one
   const parts = ratingParts(m);
   parts.stars[0].fire('click', {});
   await flush();
-  const wrap = m.els['person-tag'].parentNode.parentNode;
+  const wrap = m.els['person-stats'];
   assert.equal(wrap.children.some((c) => c.id === 'person-stars'), false);
 
   const back = load({ route: RATE_ROUTE(AFTER_RATING), rating: { yours: 0 } });
   const p2 = ratingParts(back);
   p2.stars[0].fire('click', {});
   await flush();
-  const wrap2 = back.els['person-tag'].parentNode.parentNode;
+  const wrap2 = back.els['person-stats'];
   const built = wrap2.children.find((c) => c.id === 'person-stars');
   assert.ok(built, 'built from the server strings');
   // Amended 2026-11-13 (quick 261113-k9t, the centred profile): the stars total is
   // the first cell of the counts row, in front of Followers and Following, and not
   // just in front of the reporter cell.
   assert.equal(wrap2.children.indexOf(built), 0, 'the stars group is the first cell of the counts row');
-  assert.equal(wrap2.children.length, 4, 'stars, Followers, Following, the reporter cell');
-  assert.equal(wrap2.children[3], back.els['person-tag'].parentNode);
+  // Amended 2026-11-13 (quick 261113-t4y): the reporter tag is not a cell of the
+  // counts group, so it holds three cells.
+  assert.equal(wrap2.children.length, 3, 'stars, Followers, Following');
   assert.equal(built.querySelector('.person-stars__word').textContent, 'Stars');
   assert.equal(built.getAttribute('role'), 'group');
   assert.equal(built.getAttribute('aria-label'), '2.8 stars');

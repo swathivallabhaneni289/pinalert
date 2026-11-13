@@ -183,14 +183,16 @@ func TestSettingsRows(t *testing.T) {
 	// are gone. The one that is left is the distance row's button, which sits
 	// after the install row, so the list holds settings-device-install and then
 	// settings-radius-nohome where the three were.
-	if strings.Join(buttonIDs, ",") != "settings-username-row,settings-name-row,settings-home-row,settings-device-install,settings-radius-nohome,settings-following-row,settings-followers-row,settings-muted-row,settings-muted-people-row,settings-blocked-row,settings-logout-all-row,settings-delete-row" {
-		t.Errorf("Settings button rows are %v, want Username, Name, Home area, the Alerts on this device install row, the distance row's Add a home area first, Following, Followers, Muted reports, Muted people, Blocked people, Log out of all devices, Delete my account", buttonIDs)
+		// Amended 2026-11-13 by quick 261113-t4y (owner decision 2026-11-13, the compact
+	// profile): About you left Settings, so the Username, Name and Home area button
+	// rows are on the profile page behind Edit profile and the list starts with the
+	// install row.
+	if strings.Join(buttonIDs, ",") != "settings-device-install,settings-radius-nohome,settings-following-row,settings-followers-row,settings-muted-row,settings-muted-people-row,settings-blocked-row,settings-logout-all-row,settings-delete-row" {
+		t.Errorf("Settings button rows are %v, want the Alerts on this device install row, the distance row's Add a home area first, Following, Followers, Muted reports, Muted people, Blocked people, Log out of all devices, Delete my account", buttonIDs)
 	}
 	for _, want := range []string{
 		// Amended 2026-10-22 (owner: "too much details under the heading for
 		// each section"): the lines under the section headings are gone.
-		"About you",
-		"Shown only if you let others follow you", "Used for alerts, never your exact spot", "Not set",
 		"About Pinalert", "Disclaimer", "Policy", "Low data view", "Text only, no map",
 		// Amended 2026-10-21 when Phase 3.4 plan 43 met Phase 3.2: the owner put
 		// Log out on the laptop too ("I don't see a logout option on my laptop
@@ -404,55 +406,69 @@ func TestSettingsBackAndNoGear(t *testing.T) {
 	}
 }
 
-// TestSettingsAboutYouValues proves D-24b and T-34-26: About you is the first
-// section of /settings, it shows Not set for a person with no name and no home
-// area, and after the person saves both through the route of plan 01 it shows
-// the stored text, escaped, in the rows, in the data-value attributes the
-// windows prefill from. Amended 2026-10-29 by Phase 7.1 plan 15 (D-07, D-15):
-// the Username row is the first of About you, and there is no Remove home area
-// button, stored or not.
+// TestSettingsAboutYouValues proves D-24b and T-34-26: the three rows of the edit
+// panel show Not set for a person with no name and no home area, and after the
+// person saves both through the route of plan 01 they show the stored text,
+// escaped, in the rows, in the data-value attributes the windows prefill from.
+// Amended 2026-10-29 by Phase 7.1 plan 15 (D-07, D-15): the Username row is the
+// first, and there is no Remove home area button, stored or not.
+//
+// Amended 2026-11-13 by quick 261113-t4y (owner decision 2026-11-13, the compact
+// profile): About you left Settings. The rows and the three windows are on your
+// own profile page behind Edit profile, so /settings holds none of them (it keeps
+// the phone's View my profile row), and the values are read from /u/yourname,
+// which needs a username, so the username is saved first.
 func TestSettingsAboutYouValues(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
 	client := newVerifiedClient(t, srv, mailer, "places-about-you@example.com")
 
 	_, body := getPlacePage(t, client, srv.URL, "/settings")
-	for _, want := range []string{
-		"About you",
+	for _, gone := range []string{
+		"About you", "settings-you-title",
 		"Shown only if you let others follow you", "Used for alerts, never your exact spot",
+		`id="settings-name-row"`, `id="settings-home-row"`, `id="settings-username-row"`,
+		`id="settings-name-window"`, `id="settings-home-window"`, `id="settings-username-window"`,
+		"/static/js/profile-edit.js", "/static/js/username-check.js",
+	} {
+		if strings.Contains(body, gone) {
+			t.Errorf("/settings still holds %q, About you moved to the profile page", gone)
+		}
+	}
+	// View my profile is the phone row, a link to /me, now the last row of People and
+	// reports.
+	if people, view := strings.Index(body, `id="settings-blocked-row"`), strings.Index(body, `id="settings-view-profile-row" href="/me"`); people == -1 || view == -1 || view < people {
+		t.Errorf("/settings must draw View my profile after Blocked people (blocked at %d, view at %d)", people, view)
+	}
+
+	// A first username is free; the page exists from then on.
+	meWant(t, "PATCH username", meSend(t, client, http.MethodPatch, srv.URL+"/api/me/profile",
+		`{"username":"about_you"}`), http.StatusOK)
+	_, body = getPlacePage(t, client, srv.URL, "/u/about_you")
+	for _, want := range []string{
+		`id="person-edit-panel"`,
+		`id="settings-username-value">about_you</span>`,
 		`id="settings-name-value">Not set</span>`, `id="settings-home-value">Not set</span>`,
+		`id="settings-username-row" aria-haspopup="dialog" data-value="about_you"`,
 		`id="settings-name-row" aria-haspopup="dialog" data-value=""`,
 		`id="settings-home-row" aria-haspopup="dialog" data-value=""`,
 		`id="settings-name-window"`, `id="settings-home-window"`,
 		`id="settings-username-window"`,
-		`id="settings-username-row" aria-haspopup="dialog" data-value=""`,
-		`id="settings-username-value">Not set</span>`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("/settings (nothing stored) lacks %q", want)
+			t.Errorf("/u/about_you (nothing stored) lacks %q", want)
 		}
 	}
 	if strings.Contains(body, "settings-home-remove") || strings.Contains(body, "Remove home area") {
-		t.Errorf("/settings (nothing stored) draws a Remove home area button")
-	}
-	if you, about := strings.Index(body, "settings-you-title"), strings.Index(body, "settings-about-title"); you == -1 || about == -1 || you > about {
-		t.Errorf("About you must come before About Pinalert (you at %d, about at %d)", you, about)
-	}
-	// Amended 2026-10-29 by Phase 9 plan 12 (D-04, UI-SPEC 7c): View my profile is
-	// the phone row of About you, a link to /me, so the old ban is replaced by the
-	// check that it is there and comes after Home area.
-	if home, view := strings.Index(body, `id="settings-home-row"`), strings.Index(body, `id="settings-view-profile-row" href="/me"`); home == -1 || view == -1 || view < home {
-		t.Errorf("/settings must draw View my profile after Home area (home at %d, view at %d)", home, view)
+		t.Errorf("/u/about_you (nothing stored) draws a Remove home area button")
 	}
 
 	// Save a name and a home area with markup in them, the way the windows do.
 	meWant(t, "PATCH name", meSend(t, client, http.MethodPatch, srv.URL+"/api/me/profile",
 		`{"display_name":"<b>Ravi</b> & \"Co\""}`), http.StatusOK)
-	meWant(t, "PATCH username", meSend(t, client, http.MethodPatch, srv.URL+"/api/me/profile",
-		`{"username":"about_you"}`), http.StatusOK)
 	meWant(t, "PATCH home area", meSend(t, client, http.MethodPatch, srv.URL+"/api/me/profile",
 		`{"home_area":{"name":"Indiranagar <i>x</i>, Bengaluru","lat":12.9784,"lon":77.6408}}`), http.StatusOK)
 
-	_, body = getPlacePage(t, client, srv.URL, "/settings")
+	_, body = getPlacePage(t, client, srv.URL, "/u/about_you")
 	for _, want := range []string{
 		`id="settings-name-value">&lt;b&gt;Ravi&lt;/b&gt; &amp; &#34;Co&#34;</span>`,
 		`id="settings-home-value">Indiranagar &lt;i&gt;x&lt;/i&gt;, Bengaluru</span>`,
@@ -460,20 +476,23 @@ func TestSettingsAboutYouValues(t *testing.T) {
 		`data-value="Indiranagar &lt;i&gt;x&lt;/i&gt;, Bengaluru"`,
 		`id="settings-username-value">about_you</span>`,
 		`id="settings-username-row" aria-haspopup="dialog" data-value="about_you"`,
+		// The header shows the same stored text, escaped.
+		`id="person-name" class="person-name">&lt;b&gt;Ravi&lt;/b&gt; &amp; &#34;Co&#34;</p>`,
+		`id="person-home-area" class="person-meta person-meta--area">Indiranagar &lt;i&gt;x&lt;/i&gt;, Bengaluru</span>`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("/settings (stored values) lacks %q", want)
+			t.Errorf("/u/about_you (stored values) lacks %q", want)
 		}
 	}
 	for _, banned := range []string{"<b>Ravi</b>", "<i>x</i>", `id="settings-name-value">Not set`, `id="settings-home-value">Not set`} {
 		if strings.Contains(body, banned) {
-			t.Errorf("/settings holds %q", banned)
+			t.Errorf("/u/about_you holds %q", banned)
 		}
 	}
 	// Only the place name is ever drawn: no coordinate reaches the page.
 	for _, banned := range []string{"12.9784", "77.6408"} {
 		if strings.Contains(body, banned) {
-			t.Errorf("/settings holds the coordinate %q", banned)
+			t.Errorf("/u/about_you holds the coordinate %q", banned)
 		}
 	}
 }

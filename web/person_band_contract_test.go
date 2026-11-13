@@ -3,8 +3,10 @@ package web
 // Quick 261108-fku (owner decision 2026-11-08, testing on the laptop) drew the
 // profile page header as one band across the top from 900px. Amended
 // 2026-11-13 by quick 261113-k9t (owner decision 2026-11-13, the centred
-// profile): the band is replaced on both sizes by the centred header, and the
-// pins below describe that. These tests read the shipped template and
+// profile): the band is replaced on both sizes by the centred header. Amended
+// again 2026-11-13 by quick 261113-t4y (the compact profile): the centred header
+// keeps its shape and takes about half the height, and the pins below describe
+// that. These tests read the shipped template and
 // stylesheet from the embedded trees, never a copy. How the header looks in a
 // forced colours theme is pinned here by the declared rules only, because
 // WebKit cannot emulate forced colours.
@@ -91,25 +93,38 @@ func fkuPhoneOnly(rules []p16CSSRule) []p16CSSRule {
 	return out
 }
 
-// TestPersonProfileCentred pins quick 261113-k9t (owner decision 2026-11-13,
-// the centred profile, option D of the mockup, "lets do the centered"). It
-// replaces the TestPersonProfileBand pins of quick 261108-fku, 261108-hm7 and
-// 261109-n25: the band, its record wrapper, the grid areas, the display
-// contents wrappers, the band placement rules and the hm7 Tab order note are
-// gone, and the header is one centred column on the laptop and on the phone.
-// Amended 2026-11-13 by that decision.
-func TestPersonProfileCentred(t *testing.T) {
+// TestPersonProfileCompact pins quick 261113-t4y (owner decision 2026-11-13,
+// the compact profile, mockup profile-compact: "instead of taking more than
+// half of the page for just personal info we can reduce it"). It replaces the
+// TestPersonProfileCentred pins of quick 261113-k9t: the header stays one
+// centred column on the laptop and on the phone, but it is about half as tall:
+// a 64px letter, a 20px username, one bordered group of three counts, the
+// reporter tag and its sentence on one line under it, Member since and the home
+// area on one line joined by a dot, and the action row last. Amended
+// 2026-11-13 by that decision.
+func TestPersonProfileCompact(t *testing.T) {
 	tmpl := p421ReadTemplate(t, "person.html.tmpl")
-	// The DOM order is the reading order (this ends the hm7 conflict between the
-	// Tab order and the drawing): the letter, the username, the name, the action
-	// row, the counts row, the details line, then the state line or Your rating,
-	// then the action error line.
+	// The DOM order is the reading order: the letter, the username, the name, the
+	// edit panel (your own page), the counts group, the tag line, the details line,
+	// the private line, the action row, Your rating, then the action error line.
 	fkuIDs(t, "the header order", tmpl,
 		`id="person-header"`,
 		`id="person-disc"`,
 		`<h1 id="person-username"`,
 		`class="person-username person-username--phone"`,
 		`id="person-name"`,
+		`id="person-edit-panel"`,
+		`id="person-stats" class="person-stats"`,
+		`id="person-stars"`,
+		`id="person-followers-button"`,
+		`id="person-following-button"`,
+		`id="person-tag-line" class="person-tag-line"`,
+		`id="person-tag"`,
+		`id="person-tag-sentence"`,
+		`id="person-facts" class="person-facts"`,
+		`id="person-member-since"`,
+		`id="person-home-area"`,
+		`id="person-state-line"`,
 		`id="person-actions"`,
 		`id="person-edit"`,
 		`id="person-follow"`,
@@ -117,47 +132,47 @@ func TestPersonProfileCentred(t *testing.T) {
 		`id="person-bell"`,
 		`id="person-more"`,
 		`id="person-more-menu"`,
-		`id="person-stats" class="person-stats"`,
-		`id="person-stars"`,
-		`id="person-followers-button"`,
-		`id="person-following-button"`,
-		`class="person-tag-group"`,
-		`id="person-tag"`,
-		`id="person-tag-sentence"`,
-		`class="person-facts"`,
-		`id="person-member-since"`,
-		`id="person-home-area"`,
-		`id="person-state-line"`,
 		`id="person-rating"`,
 		`id="person-action-error"`,
 		`</header>`,
 	)
-	// The counts row holds the stars group (when present), the two count buttons
-	// and the reporter cell, in that order, and nothing else.
+	// The counts group holds the stars group (when present) and the two count
+	// buttons, and nothing else: the reporter tag has its own line under it.
 	statsAt := strings.Index(tmpl, `id="person-stats"`)
-	factsAt := strings.Index(tmpl, `class="person-facts"`)
-	if statsAt < 0 || factsAt < statsAt {
-		t.Fatalf("the counts row or the details line was not found")
+	tagLineAt := strings.Index(tmpl, `id="person-tag-line"`)
+	if statsAt < 0 || tagLineAt < statsAt {
+		t.Fatalf("the counts group or the tag line was not found")
 	}
-	stats := tmpl[statsAt:factsAt]
-	for _, id := range []string{"person-stars", "person-followers-button", "person-following-button", "person-tag"} {
+	stats := tmpl[statsAt:tagLineAt]
+	for _, id := range []string{"person-stars", "person-followers-button", "person-following-button"} {
 		if strings.Count(stats, `id="`+id+`"`) != 1 {
-			t.Errorf("the counts row draws %s %d times, want once", id, strings.Count(stats, `id="`+id+`"`))
+			t.Errorf("the counts group draws %s %d times, want once", id, strings.Count(stats, `id="`+id+`"`))
 		}
 	}
-	// The details line has the clock and the map pin, both hidden from a screen reader.
-	facts := tmpl[factsAt:strings.Index(tmpl, `id="person-state-line"`)]
-	for _, want := range []string{`app-icon--clock`, `app-icon--map-pin`} {
+	if strings.Contains(stats, `id="person-tag"`) {
+		t.Errorf("the reporter tag is inside the counts group, want its own line under it")
+	}
+	// The details line joins the two facts by a dot and draws no icon.
+	factsAt := strings.Index(tmpl, `id="person-facts"`)
+	factsEnd := strings.Index(tmpl[factsAt:], "</p>")
+	if factsAt < 0 || factsEnd < 0 {
+		t.Fatalf("the details line was not found")
+	}
+	facts := tmpl[factsAt : factsAt+factsEnd]
+	for _, want := range []string{`id="person-member-since"`, `id="person-facts-dot"`, `id="person-home-area"`, "·"} {
 		if !strings.Contains(facts, want) {
-			t.Errorf("the details line lacks %s", want)
+			t.Errorf("the details line lacks %q", want)
 		}
 	}
-	if strings.Count(facts, `aria-hidden="true"`) < 2 {
-		t.Errorf("the details line icons are not aria-hidden")
+	if strings.Contains(facts, "app-icon") {
+		t.Errorf("the details line draws an icon, want none (the mockup has none)")
+	}
+	if !strings.Contains(facts, `id="person-facts-dot" class="person-facts__dot" aria-hidden="true"`) {
+		t.Errorf("the dot between the two facts is not aria-hidden")
 	}
 	// No wrapper of the earlier layouts is left in the markup or the stylesheet.
 	css := stripCSSComments(p421ReadStatic(t, "css/person.css"))
-	for _, gone := range []string{"person-band", "person-record", "person-ident", "person-counts"} {
+	for _, gone := range []string{"person-band", "person-record", "person-ident", "person-counts", "person-tag-group", "person-meta__icon"} {
 		if strings.Contains(tmpl, gone) {
 			t.Errorf("person.html.tmpl still names %s", gone)
 		}
@@ -169,16 +184,13 @@ func TestPersonProfileCentred(t *testing.T) {
 	rules := p26Rules(t, "person.css")
 	base := fkuBase(rules)
 	laptop := fkuLaptop(rules)
-	phoneOnly := fkuPhoneOnly(rules)
 	forced := fkuForced(rules)
 	if len(laptop) == 0 {
 		t.Fatalf("person.css has no min-width: 900px block")
 	}
-	if len(phoneOnly) == 0 {
-		t.Fatalf("person.css has no phone only block")
-	}
 
-	// The page: still a full width column (03.4 R6), never a grid.
+	// The page: still a full width column (03.4 R6), never a grid. 20px above the
+	// letter, 16px between the header's line and Recent reports.
 	if v, ok := fkuDecl(laptop, ".person-page", "grid-template-columns"); ok {
 		t.Errorf("the laptop .person-page declares grid-template-columns %q (one full width column, 03.4 R6)", v)
 	}
@@ -187,25 +199,38 @@ func TestPersonProfileCentred(t *testing.T) {
 	}
 	fkuWant(t, "phone page", base, ".person-page", "display", "flex")
 	fkuWant(t, "phone page", base, ".person-page", "flex-direction", "column")
-	fkuWant(t, "phone page gap", base, ".person-page", "gap", "var(--space-xl)")
-	fkuWant(t, "phone page", base, ".person-page", "padding", "var(--space-lg) var(--space-md) var(--space-md)")
-	fkuWant(t, "laptop page gap", laptop, ".person-page", "gap", "var(--space-2xl)")
-	fkuWant(t, "laptop page", laptop, ".person-page", "padding", "var(--space-2xl) var(--space-lg) var(--space-lg)")
+	fkuWant(t, "page gap", base, ".person-page", "gap", "var(--space-md)")
+	fkuWant(t, "phone page", base, ".person-page", "padding", "calc(var(--space-md) + var(--space-xs)) var(--space-md) var(--space-md)")
+	fkuWant(t, "laptop page", laptop, ".person-page", "padding", "calc(var(--space-md) + var(--space-xs)) var(--space-lg) var(--space-lg)")
+	if v, ok := fkuDecl(laptop, ".person-page", "gap"); ok {
+		t.Errorf("the laptop .person-page declares gap %q, the gap is the same on both sizes", v)
+	}
 
-	// The header is a centred column on both sizes.
+	// The header is a centred column on both sizes, with a line under it that runs
+	// to the page edges (negative side margins equal to the page padding).
 	fkuWant(t, "header", base, ".person-header:not([hidden])", "display", "flex")
 	fkuWant(t, "header", base, ".person-header:not([hidden])", "flex-direction", "column")
 	fkuWant(t, "header", base, ".person-header:not([hidden])", "align-items", "center")
 	fkuWant(t, "header", base, ".person-header:not([hidden])", "text-align", "center")
-	// The letter is 88px on the phone and 104px on the laptop, from tokens.
-	fkuWant(t, "phone letter", base, ".person-disc", "width", "calc(var(--space-3xl) + var(--space-lg))")
-	fkuWant(t, "phone letter", base, ".person-disc", "height", "calc(var(--space-3xl) + var(--space-lg))")
-	fkuWant(t, "laptop letter", laptop, ".person-disc", "width", "calc(var(--space-3xl) + var(--space-xl) + var(--space-sm))")
-	fkuWant(t, "laptop letter", laptop, ".person-disc", "height", "calc(var(--space-3xl) + var(--space-xl) + var(--space-sm))")
-	// The username: heading size on the phone, display size on the laptop h1.
-	fkuWant(t, "phone username", base, ".person-username", "font-size", "var(--font-size-heading)")
-	fkuWant(t, "phone username", base, ".person-username", "font-weight", "var(--font-weight-semibold)")
-	fkuWant(t, "laptop username", laptop, "h1.person-username", "font-size", "var(--font-size-display)")
+	fkuWant(t, "header", base, ".person-header:not([hidden])", "border-bottom", "1px solid var(--color-border)")
+	fkuWant(t, "header", base, ".person-header:not([hidden])", "padding", "0 var(--space-md) var(--space-md)")
+	fkuWant(t, "header", base, ".person-header:not([hidden])", "margin", "0 calc(var(--space-md) * -1)")
+	fkuWant(t, "laptop header", laptop, ".person-header:not([hidden])", "padding", "0 var(--space-lg) var(--space-md)")
+	fkuWant(t, "laptop header", laptop, ".person-header:not([hidden])", "margin", "0 calc(var(--space-lg) * -1)")
+	// The letter is 64px with 8px under it on both sizes; the username is 20px.
+	fkuWant(t, "letter", base, ".person-disc", "width", "var(--space-3xl)")
+	fkuWant(t, "letter", base, ".person-disc", "height", "var(--space-3xl)")
+	fkuWant(t, "letter", base, ".person-disc", "margin-bottom", "var(--space-sm)")
+	for _, prop := range []string{"width", "height"} {
+		if v, ok := fkuDecl(laptop, ".person-disc", prop); ok {
+			t.Errorf("the laptop letter declares %s %q, the letter is 64px on both sizes", prop, v)
+		}
+	}
+	fkuWant(t, "username", base, ".person-username", "font-size", "1.25rem")
+	fkuWant(t, "username", base, ".person-username", "font-weight", "var(--font-weight-semibold)")
+	if v, ok := fkuDecl(laptop, "h1.person-username", "font-size"); ok {
+		t.Errorf("the laptop h1 declares font-size %q, the username is 20px on both sizes", v)
+	}
 	fkuWant(t, "laptop username", laptop, "h1.person-username", "display", "block")
 	fkuWant(t, "phone h1", base, "h1.person-username", "display", "none")
 	fkuWant(t, "laptop phone line", laptop, ".person-username--phone", "display", "none")
@@ -215,12 +240,14 @@ func TestPersonProfileCentred(t *testing.T) {
 	// stays: 32px, the label font size, the radius of .btn left alone) and the
 	// phone buttons keep the 44px of .btn and the bell.
 	fkuWant(t, "action row", base, ".person-actions", "justify-content", "center")
+	fkuWant(t, "action row", base, ".person-actions", "margin-top", "var(--space-12)")
 	fkuWant(t, "small buttons", laptop, ".person-header .person-actions .btn", "min-height", "32px")
 	fkuWant(t, "small buttons", laptop, ".person-header .person-actions .btn", "padding", "0 var(--space-12)")
 	fkuWant(t, "small buttons", laptop, ".person-header .person-actions .btn", "font-size", "var(--font-size-label)")
 	if v, ok := fkuDecl(laptop, ".person-header .person-actions .btn", "border-radius"); ok {
 		t.Errorf("the small buttons change the radius: %s", v)
 	}
+	fkuWant(t, "small done", laptop, ".person-header .person-edit__done", "min-height", "32px")
 	for _, prop := range []string{"width", "height", "min-width", "min-height"} {
 		fkuWant(t, "small bell", laptop, ".person-header .person-bell:not([hidden])", prop, "32px")
 		fkuWant(t, "phone bell", base, ".person-bell:not([hidden])", prop, "var(--touch-target-min)")
@@ -231,24 +258,22 @@ func TestPersonProfileCentred(t *testing.T) {
 	fkuWant(t, "menu", base, ".person-menu:not([hidden])", "left", "auto")
 	fkuWant(t, "menu", base, ".person-menu:not([hidden])", "min-width", "200px")
 
-	// The counts row: a flex row with no outer box, a 1px line between the cells,
-	// the count buttons 44px or more tall with no box of their own.
-	fkuWant(t, "counts row", base, ".person-stats", "display", "flex")
-	fkuWant(t, "counts row", base, ".person-stats", "flex-wrap", "wrap")
-	fkuWant(t, "counts row", base, ".person-stats", "justify-content", "center")
-	for _, prop := range []string{"border", "border-width", "border-style", "border-color", "border-radius", "padding", "background", "background-color"} {
-		for label, set := range map[string][]p16CSSRule{"base": base, "laptop": laptop} {
-			if v, ok := fkuDecl(set, ".person-stats", prop); ok {
-				t.Errorf("the %s .person-stats declares %s: %s (no outer box on the counts row)", label, prop, v)
-			}
-		}
-	}
+	// The counts group: one bordered group of three cells (a 10px radius, never a
+	// pill), each at least 44px tall, a 1px line between the cells, the number
+	// above its word, the whole group centred.
+	fkuWant(t, "counts group", base, ".person-stats", "display", "inline-flex")
+	fkuWant(t, "counts group", base, ".person-stats", "align-self", "center")
+	fkuWant(t, "counts group", base, ".person-stats", "border", "1px solid var(--color-border)")
+	fkuWant(t, "counts group", base, ".person-stats", "border-radius", "10px")
+	fkuWant(t, "counts group", base, ".person-stats", "margin-top", "var(--space-12)")
 	fkuWant(t, "cell line", base, ".person-stats > * + *", "border-left", "1px solid var(--color-border)")
 	fkuWant(t, "cell", base, ".person-stats > *", "flex-direction", "column")
 	fkuWant(t, "cell", base, ".person-stats > *", "align-items", "center")
+	fkuWant(t, "cell", base, ".person-stats > *", "min-height", "var(--touch-target-min)")
 	fkuWant(t, "count button", base, ".person-count", "min-height", "var(--touch-target-min)")
 	fkuWant(t, "count button", base, ".person-count", "border", "0")
 	fkuWant(t, "count button", base, ".person-count", "background", "transparent")
+	fkuWant(t, "count button focus", base, ".person-count:focus-visible", "outline-offset", "-2px")
 	fkuWant(t, "count number", base, ".person-count__number", "font-weight", "var(--font-weight-semibold)")
 	fkuWant(t, "count word", base, ".person-count__word", "color", "var(--color-text-muted)")
 	if v, ok := fkuDecl(laptop, ".person-count", "min-height"); ok {
@@ -257,42 +282,33 @@ func TestPersonProfileCentred(t *testing.T) {
 	// The stars cell draws the star and the number with Stars under them.
 	fkuWant(t, "stars cell", base, ".person-stars:not([hidden])", "display", "grid")
 	fkuWant(t, "stars word", base, ".person-stars__word", "grid-column", "1 / -1")
-	// The reporter cell: the chip with its sentence under it, the chip allowed to
-	// wrap in a narrow phone cell and kept on one line on the laptop.
+	// The tag line: the chip and its sentence, 10px under the counts group. The
+	// sentence wraps under the chip on the phone and sits beside it on the laptop.
+	fkuWant(t, "tag line", base, ".person-tag-line", "margin-top", "10px")
 	fkuWant(t, "tag sentence", base, ".person-tag-sentence", "color", "var(--color-text-muted)")
 	fkuWant(t, "tag chip", base, ".person-tag", "overflow-wrap", "anywhere")
 	fkuWant(t, "laptop tag chip", laptop, ".person-tag", "white-space", "nowrap")
-	// Laptop cells: at least 140px wide, the reporter cell at most 260px, one row.
-	fkuWant(t, "laptop cells", laptop, ".person-stats > *", "min-width", "140px")
-	fkuWant(t, "laptop cells", laptop, ".person-stats > *", "padding", "var(--space-sm) var(--space-lg)")
-	fkuWant(t, "laptop reporter cell", laptop, ".person-stats > .person-tag-group", "max-width", "260px")
-	fkuWant(t, "laptop counts row", laptop, ".person-stats", "flex-wrap", "nowrap")
-	// Phone: the cells share the width; with the stars cell there are four cells
-	// and the reporter cell takes a row of its own, with no line on its left.
-	fkuWant(t, "phone cells", base, ".person-stats > *", "flex", "1 1 0")
-	fkuWant(t, "phone four cells", phoneOnly, ".person-stats:has(> .person-stars) > .person-tag-group", "flex", "1 0 100%")
-	fkuWant(t, "phone four cells", phoneOnly, ".person-stats:has(> .person-stars) > .person-tag-group", "border-left", "0")
-	// The three cells of the phone share the width equally: the reporter cell has
-	// no flex-grow override of its own, and the chip is drawn at the caption size
-	// so it fits (the mockup draws it at 12px on the phone).
-	for _, r := range phoneOnly {
-		if _, ok := r.Decls["flex-grow"]; ok {
-			t.Errorf("phone only rule %q declares flex-grow, the cells share the width equally", r.Head)
-		}
-	}
-	fkuWant(t, "phone chip", phoneOnly, ".person-stats .person-tag", "font-size", "var(--font-size-caption)")
-	fkuWant(t, "phone chip", phoneOnly, ".person-stats .person-tag", "line-height", "var(--line-height-caption)")
+	fkuWant(t, "laptop tag sentence", laptop, ".person-tag-sentence", "display", "inline")
 
-	// The details line: stacked on the phone, side by side on the laptop, muted.
-	fkuWant(t, "phone details", base, ".person-facts", "flex-direction", "column")
-	fkuWant(t, "laptop details", laptop, ".person-facts", "flex-direction", "row")
-	fkuWant(t, "laptop details", laptop, ".person-facts", "justify-content", "center")
-	fkuWant(t, "details", base, ".person-meta", "color", "var(--color-text-muted)")
-	fkuWant(t, "clock icon", base, "main.person-page .app-icon--clock", "mask-image", `url("/static/icons/clock.svg")`)
+	// The details line: one muted line, 10px under the tag line, no icons.
+	fkuWant(t, "details", base, ".person-facts", "color", "var(--color-text-muted)")
+	fkuWant(t, "details", base, ".person-facts", "margin", "10px 0 0")
 	// The state line and Your rating are centred (the header centres its text).
 	fkuWant(t, "state line", base, ".person-state-line", "color", "var(--color-text-muted)")
 	fkuWant(t, "rating", base, ".person-rating", "align-items", "center")
 	fkuWant(t, "rating row", base, ".person-rating .stars-control__row", "justify-content", "center")
+
+	// The edit panel: a bordered list of three rows and Done, 480px at most, and
+	// while it is open the counts, the tag line, the details, the private line,
+	// the action row and Your rating are not drawn.
+	fkuWant(t, "edit panel", base, ".person-edit:not([hidden])", "display", "flex")
+	fkuWant(t, "edit panel", base, ".person-edit:not([hidden])", "flex-direction", "column")
+	fkuWant(t, "edit box", base, ".person-edit__box", "max-width", "480px")
+	fkuWant(t, "edit row", base, ".person-edit .place-row", "min-height", "48px")
+	fkuWant(t, "edit row line", base, ".person-edit .place-box > * + *", "border-top", "1px solid var(--color-border)")
+	for _, part := range []string{".person-stats", ".person-tag-line", ".person-facts", ".person-state-line", ".person-actions", ".person-rating"} {
+		fkuWant(t, "editing", base, ".person-header--editing > "+part, "display", "none")
+	}
 
 	// Recent reports: its heading stays left aligned, the rows box is unchanged,
 	// and the empty and the error state sit in a bordered box on both sizes.
@@ -315,12 +331,14 @@ func TestPersonProfileCentred(t *testing.T) {
 	fkuWant(t, "rows box", laptop, ".person-report-box", "border", "1px solid var(--color-border)")
 	fkuWant(t, "rows box", laptop, ".person-report-box", "border-radius", "12px")
 
-	// Forced colours keeps the lines between the cells, the box edge and the
-	// button borders.
+	// Forced colours keeps the lines between the cells, the group edge, the box
+	// edge and the button borders.
 	if len(forced) == 0 {
 		t.Errorf("person.css has no forced-colors block")
 	}
 	fkuWant(t, "forced cell line", forced, ".person-stats > * + *", "border-left", "1px solid CanvasText")
+	fkuWant(t, "forced group edge", forced, ".person-stats", "border-color", "CanvasText")
+	fkuWant(t, "forced header line", forced, ".person-header:not([hidden])", "border-color", "CanvasText")
 	fkuWant(t, "forced state box", forced, ".person-reports__state", "border", "1px solid CanvasText")
 	fkuWant(t, "forced buttons", forced, ".person-actions .btn", "border", "1px solid ButtonText")
 	fkuWant(t, "forced bell", forced, ".person-bell", "border", "1px solid ButtonText")

@@ -28,47 +28,6 @@
   <main class="place-page place-page--settings" data-account-id="{{.AccountID}}" data-push-key="{{.PushPublicKey}}">
     <h1 class="place-head">Settings</h1>
 
-    <section class="place-section" aria-labelledby="settings-you-title">
-      <div class="place-section__intro">
-        <h2 class="place-section__title" id="settings-you-title">About you</h2>
-        <p class="place-section__line">Your username, name and home area.</p>
-      </div>
-      <div class="place-box">
-        {{/* Phase 7.1 plan 15 (D-07, UI-SPEC Surface 8): the Username comes first, then Name and Home area. The value is the stored name, without the @. */}}
-        <button type="button" class="place-row" id="settings-username-row" aria-haspopup="dialog" data-value="{{.Username}}">
-          <span class="place-row__text">
-            <span class="place-row__label">Username</span>
-            <span class="place-row__sub">Shown on your comments, to everyone</span>
-          </span>
-          <span class="place-row__value" id="settings-username-value">{{if .Username}}{{.Username}}{{else}}Not set{{end}}</span>
-          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
-        </button>
-        <button type="button" class="place-row" id="settings-name-row" aria-haspopup="dialog" data-value="{{.DisplayName}}">
-          <span class="place-row__text">
-            <span class="place-row__label">Name</span>
-            <span class="place-row__sub">Shown only if you let others follow you</span>
-          </span>
-          <span class="place-row__value" id="settings-name-value">{{if .DisplayName}}{{.DisplayName}}{{else}}Not set{{end}}</span>
-          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
-        </button>
-        <button type="button" class="place-row" id="settings-home-row" aria-haspopup="dialog" data-value="{{.HomeAreaName}}">
-          <span class="place-row__text">
-            <span class="place-row__label">Home area</span>
-            <span class="place-row__sub">Used for alerts, never your exact spot</span>
-          </span>
-          <span class="place-row__value" id="settings-home-value">{{if .HomeAreaName}}{{.HomeAreaName}}{{else}}Not set{{end}}</span>
-          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
-        </button>
-        {{/* Phase 9 plan 12 (D-04, UI-SPEC 7c): View my profile is the phone's way to the profile page; the laptop reaches the same page from the first item of the person menu, so this row is hidden at 900px and up and named in sizeOnlyNamed. It is a link to /me, which goes on to the profile page. */}}
-        <a class="place-row place-row--phone-only" id="settings-view-profile-row" href="/me">
-          <span class="place-row__text">
-            <span class="place-row__label">View my profile</span>
-          </span>
-          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
-        </a>
-      </div>
-    </section>
-
     <section class="place-section" id="settings-alerts-section" aria-labelledby="settings-phone-title">
       <div class="place-section__intro">
         <h2 class="place-section__title" id="settings-phone-title">Notifications</h2>
@@ -185,6 +144,13 @@
           <span class="place-row__value" id="settings-blocked-value">{{.BlockedCount}}</span>
           <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
         </button>
+        {{/* Phase 9 plan 12 (D-04, UI-SPEC 7c): View my profile is the phone's way to the profile page; the laptop reaches the same page from the first item of the person menu, so this row is hidden at 900px and up and named in sizeOnlyNamed. It is a link to /me, which goes on to the profile page. Quick 261113-t4y (owner decision 2026-11-13): it moved here, the last row of People and reports, from the About you box, which left Settings; the Username, Name and Home area rows are now on your profile page behind Edit profile. */}}
+        <a class="place-row place-row--phone-only" id="settings-view-profile-row" href="/me">
+          <span class="place-row__text">
+            <span class="place-row__label">View my profile</span>
+          </span>
+          <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+        </a>
       </div>
       <p class="inline-error" id="settings-people-error" role="alert" hidden></p>
       </div>
@@ -285,71 +251,6 @@
   {{/* Phase 9 plan 12 (D-04): the shared list window of Following, Followers, Muted people and Blocked people, opened from the four rows by settings-people.js. It must sit at the body level. */}}
   {{template "people_list_window" .}}
 
-  {{/* Phase 7.1 plan 15 (D-07, UI-SPEC Surface 8): the Username window is the built edit window. The field, the live line and the small line are step 4's (username-check.js). The input is named handle with autocomplete off, so a password manager never takes it for the login (T-07.1-30). Save username starts switched off with aria-disabled and the btn--off look, never the disabled attribute. Quick 261108-fku (owner decision 2026-11-08): inside the 7 day rename wait the server writes the moment the wait ends into data-wait-until (an RFC 3339 UTC time, and nothing outside the wait); on each opening settings.js works out the days left from it, and the window opens read only with the wait sentence and one OK button, in place of Save username, or opens as usual when none are left. Review fix WR-02. */}}
-  <div class="app-window app-window--edit" id="settings-username-window" hidden{{if .UsernameWaitUntil}} data-wait-until="{{.UsernameWaitUntil}}"{{end}}>
-    <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="settings-username-title">
-      <div class="app-window__head">
-        <h2 class="app-window__title" id="settings-username-title">Username</h2>
-        <button type="button" class="app-window__close" id="settings-username-close" aria-label="Close"><span class="app-icon app-icon--x" aria-hidden="true"></span></button>
-      </div>
-      <form class="app-window__body" id="settings-username-form" novalidate>
-        <label class="app-window__label" for="settings-username-input">Username</label>
-        <div class="username-field">
-          <span class="username-field__at" aria-hidden="true">@</span>
-          <input class="username-field__input" type="text" id="settings-username-input" name="handle" maxlength="20" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" enterkeyhint="done" placeholder="ravi.k" aria-describedby="settings-username-status settings-username-help">
-        </div>
-        <p class="username-status" id="settings-username-status" role="status" aria-live="polite"></p>
-        <p class="app-window__help" id="settings-username-help">Shown on your comments, to everyone.</p>
-        <p class="inline-error" id="settings-username-error" role="alert" hidden></p>
-        <div class="app-window__actions">
-          <button type="submit" class="btn btn--off" id="settings-username-save" aria-disabled="true">Save username</button>
-          <button type="button" class="btn btn--primary" id="settings-username-ok" aria-describedby="settings-username-status" hidden>OK</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <div class="app-window app-window--edit" id="settings-name-window" hidden>
-    <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="settings-name-title">
-      <div class="app-window__head">
-        <h2 class="app-window__title" id="settings-name-title">Name</h2>
-        <button type="button" class="app-window__close" id="settings-name-close" aria-label="Close"><span class="app-icon app-icon--x" aria-hidden="true"></span></button>
-      </div>
-      <form class="app-window__body" id="settings-name-form" novalidate>
-        {{/* Amended 2026-10-29 by Phase 7.1 plan 15 (UI-SPEC P71-C4, sketch 010 note): the label reads Name, like step 4 and the row. */}}
-        <label class="app-window__label" for="settings-name-input">Name</label>
-        <input class="app-window__field" type="text" id="settings-name-input" name="display_name" maxlength="60" autocomplete="name" placeholder="For example: Ravi Kumar">
-        <p class="inline-error" id="settings-name-error" role="alert" hidden></p>
-        <div class="app-window__actions">
-          <button type="submit" class="btn btn--primary" id="settings-name-save">Save name</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <div class="app-window app-window--edit" id="settings-home-window" hidden>
-    <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="settings-home-title">
-      <div class="app-window__head">
-        <h2 class="app-window__title" id="settings-home-title">Home area</h2>
-        <button type="button" class="app-window__close" id="settings-home-close" aria-label="Close"><span class="app-icon app-icon--x" aria-hidden="true"></span></button>
-      </div>
-      <div class="app-window__body">
-        <form id="settings-home-form" novalidate>
-          <label class="app-window__label" for="settings-home-input">Home area</label>
-          <input class="app-window__field" type="search" id="settings-home-input" name="q" maxlength="200" autocomplete="off" enterkeyhint="search" placeholder="Search a place" aria-describedby="settings-home-help settings-home-status">
-        </form>
-        <p class="app-window__help" id="settings-home-help">A town or area, never your street. Used for alerts.</p>
-        <p class="app-window__status" id="settings-home-status" role="status" aria-live="polite" hidden></p>
-        <ul class="app-window__results" id="settings-home-results" role="listbox" aria-label="Places found" hidden></ul>
-        <p class="inline-error" id="settings-home-error" role="alert" hidden></p>
-        {{/* Amended 2026-10-29 by Phase 7.1 plan 15 (D-15, UI-SPEC Surface 8): a home area can be changed but not removed, so the removal button and the sentence about removing it are gone, and Save home area is pressable: with nothing picked it says Choose a home area. */}}
-        <div class="app-window__actions">
-          <button type="button" class="btn btn--primary" id="settings-home-save">Save home area</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <div class="app-window app-window--edit" id="settings-muted-window" hidden>
     <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="settings-muted-title">
       <div class="app-window__head">
@@ -417,8 +318,6 @@
   <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/app-bar.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/updates.js?v={{.AssetVersion}}" defer></script>
-  <script src="/static/js/username-check.js?v={{.AssetVersion}}" defer></script>
-  <script src="/static/js/settings.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/settings-alerts.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/people-list.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/settings-people.js?v={{.AssetVersion}}" defer></script>

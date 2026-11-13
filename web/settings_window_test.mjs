@@ -1,4 +1,4 @@
-// settings_window_test.mjs - runs the real web/static/js/settings.js in a Node
+// settings_window_test.mjs - runs the real web/static/js/profile-edit.js in a Node
 // sandbox and checks the Name and Home area edit windows of the Settings page
 // (Phase 3.4, plan 06, D-24b, D-02):
 //
@@ -16,7 +16,7 @@
 //
 // Run it with: node --test web/settings_window_test.mjs
 // CI runs it with the other web/*.mjs files. It is not embedded in the server.
-// The fakes cover only what settings.js calls: a minimal element model, fake
+// The fakes cover only what profile-edit.js calls: a minimal element model, fake
 // timers the test moves by hand and a fetch the test answers by hand.
 
 import test from 'node:test';
@@ -27,7 +27,7 @@ import url from 'node:url';
 import vm from 'node:vm';
 
 const here = path.dirname(url.fileURLToPath(import.meta.url));
-const source = fs.readFileSync(path.join(here, 'static', 'js', 'settings.js'), 'utf8');
+const source = fs.readFileSync(path.join(here, 'static', 'js', 'profile-edit.js'), 'utf8');
 
 class FakeEl {
   constructor(doc, tag, id) {
@@ -90,7 +90,7 @@ class FakeEl {
   focus() { this.doc.activeElement = this; }
 }
 
-// The markup of settings.html.tmpl, as the ids and nesting settings.js reads.
+// The markup of settings.html.tmpl, as the ids and nesting profile-edit.js reads.
 function buildPage({ name = '', home = '' } = {}) {
   const doc = {
     activeElement: null,
@@ -144,7 +144,7 @@ function buildPage({ name = '', home = '' } = {}) {
   return { doc, bar, main, bottom, nameWin, homeWin };
 }
 
-// loadSettings evaluates settings.js against a page. fetch keeps every call
+// loadSettings evaluates profile-edit.js against a page. fetch keeps every call
 // for the test to answer. Any use of the device position throws.
 function loadSettings(options) {
   const page = buildPage(options);
@@ -182,13 +182,13 @@ function loadSettings(options) {
     clearTimeout(id) { timers.delete(id); },
     AbortController: FakeAbortController,
     navigator: {
-      get geolocation() { throw new Error('settings.js asked for the device position'); }
+      get geolocation() { throw new Error('profile-edit.js asked for the device position'); }
     },
     location: {}
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
-  vm.runInContext(source, sandbox, { filename: 'settings.js' });
+  vm.runInContext(source, sandbox, { filename: 'profile-edit.js' });
   return { ...page, api: sandbox.PinalertSettings, requests, advance, sandbox };
 }
 
@@ -518,7 +518,7 @@ test('the script leaves quietly on a page without the windows', () => {
   const sandbox = { console, document: { getElementById() { return null; } }, window: {} };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
-  vm.runInContext(source, sandbox, { filename: 'settings.js' });
+  vm.runInContext(source, sandbox, { filename: 'profile-edit.js' });
   assert.equal(sandbox.PinalertSettings, undefined);
 });
 

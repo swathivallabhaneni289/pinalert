@@ -1,13 +1,18 @@
-// settings.js: the Username, Name and Home area edit windows of the Settings
-// page (Phase 3.4, plan 06, UI-SPEC Surface 6, D-24b, D-02; the Username window
-// and the rule that a name or a home area is never emptied or removed are
-// Phase 7.1, plan 15).
+// profile-edit.js: Edit profile on your own profile page, and the Username, Name
+// and Home area edit windows its three rows open (Phase 3.4, plan 06, UI-SPEC
+// Surface 6, D-24b, D-02; the Username window and the rule that a name or a home
+// area is never emptied or removed are Phase 7.1, plan 15). Quick 261113-t4y
+// (owner decision 2026-11-13, the compact profile): this file was settings.js and
+// drove the About you rows of Settings; those moved to the profile page behind
+// the Edit profile button, and this file now also opens and closes the edit panel
+// (Edit profile, Done, Escape) and redraws the profile header at once after a
+// save, with no reload. The windows, their rules and their ids are unchanged.
 //
 // Self contained, like account-menu.js: it needs no other script of the app,
-// only the ids settings.html.tmpl renders, and it leaves quietly on a page that
-// has no edit windows. The page behind a window is made inert by a small local
-// lock rather than by app.js, which carries the map page's polling and report
-// state and has nothing to do here.
+// only the ids person.html.tmpl and profile_edit_windows.html.tmpl render, and it
+// leaves quietly on a page that has no edit windows. The page behind a
+// window is made inert by a small local lock rather than by app.js, which
+// carries the map page's polling and report state and has nothing to do here.
 //
 // What it never does:
 //   - It never asks the browser where the device is (D-24b). The home area is a
@@ -17,7 +22,7 @@
 //     names from the geocoder included, reaches the page through textContent
 //     (T-34-26).
 //   - It never closes a window except through the X or Escape (D-02): there is
-//     no backdrop handler, no Cancel and no Done. One exception (Quick 261108-fku,
+//     no backdrop handler, no Cancel and no Done in a window. One exception (Quick 261108-fku,
 //     owner decision 2026-11-08): inside the 7 day rename wait the Username window
 //     opens read only with the server's sentence and one OK button, and OK, Enter
 //     and a submit close it the way the X does, since nothing can be saved there.
@@ -751,6 +756,7 @@
       var stored = answer.body && typeof answer.body.username === 'string' && answer.body.username !== '' ? answer.body.username : wanted;
       var before = storedValue(usernameRow);
       setRow(usernameRow, usernameValue, stored);
+      drawUsername(stored);
       usernameConfirmed = stored;
       // Quick 261108-fku (owner decision 2026-11-08, C9; review fix WR-02): a name
       // that replaced an earlier one starts the wait, so the deadline in the page
@@ -809,6 +815,7 @@
       }
       var name = answer.body && typeof answer.body.display_name === 'string' ? answer.body.display_name : '';
       setRow(nameRow, nameValue, name);
+      drawName(name);
       refillAfterEarlierSave('name', sameWindow, name);
       if (sameWindow) {
         closeWindow('name', true);
@@ -1096,6 +1103,7 @@
     }
     var name = answer.body && typeof answer.body.home_area_name === 'string' ? answer.body.home_area_name : '';
     setRow(homeRow, homeValue, name);
+    drawHome(name);
     refillAfterEarlierSave('home', sameWindow, name);
     return true;
   }
@@ -1125,6 +1133,133 @@
         showLine(homeError, MESSAGE_SAVE_FAILED);
       }
     });
+  }
+
+  // ---- The profile page behind the windows (quick 261113-t4y) ----------------
+  //
+  // The edit panel, and the header that shows what was saved. Every piece is
+  // optional, so a page drawn without it (and the older test pages) keeps the
+  // windows working. Nothing is parsed as markup: every value reaches the page
+  // through textContent, an attribute or history.replaceState.
+
+  var headerNode = el('person-header');
+  var editButton = el('person-edit');
+  var editPanel = el('person-edit-panel');
+  var editDone = el('person-edit-done');
+  var hasPanel = !!(headerNode && editButton && editPanel && editDone);
+  var EDITING_CLASS = 'person-header--editing';
+
+  // discLetter is the letter in the round picture: the first ASCII letter of the
+  // username in upper case, as the server draws it (service.initialOf), and the
+  // first character when there is none.
+  function discLetter(name) {
+    var match = /[a-z]/i.exec(name);
+    if (match) {
+      return match[0].toUpperCase();
+    }
+    return name === '' ? '' : name.charAt(0).toUpperCase();
+  }
+
+  // drawUsername shows a username the server confirmed: the heading, the phone
+  // line, the letter, the page's data-username (the script that sends the follow
+  // and list calls reads it), the address and the title. The page is /u/ plus the
+  // username, so the address is replaced in place and a reload still finds it.
+  function drawUsername(value) {
+    if (typeof value !== 'string' || value === '') {
+      return;
+    }
+    var head = el('person-username');
+    if (head) {
+      setText(head, value);
+    }
+    if (typeof document.querySelector === 'function') {
+      var phone = document.querySelector('.person-username--phone');
+      if (phone) {
+        setText(phone, value);
+      }
+      var retry = document.querySelector('#person-reports-error a');
+      if (retry) {
+        retry.setAttribute('href', '/u/' + encodeURIComponent(value));
+      }
+    }
+    var disc = el('person-disc');
+    if (disc) {
+      setText(disc, discLetter(value));
+    }
+    var page = el('person-page');
+    if (page) {
+      page.setAttribute('data-username', value);
+    }
+    document.title = 'Pinalert: ' + value;
+    if (window.history && typeof window.history.replaceState === 'function') {
+      try {
+        window.history.replaceState(window.history.state, '', '/u/' + encodeURIComponent(value));
+      } catch (err) {
+        // A browser that refuses the address change keeps the old address; the
+        // page still works until it is reloaded.
+      }
+    }
+    if (typeof CustomEvent === 'function' && typeof document.dispatchEvent === 'function') {
+      document.dispatchEvent(new CustomEvent('pinalert:username-changed', { detail: { username: value } }));
+    }
+  }
+
+  // drawName shows the saved name under the username, hidden when there is none.
+  function drawName(value) {
+    var line = el('person-name');
+    if (!line) {
+      return;
+    }
+    setText(line, value);
+    line.hidden = typeof value !== 'string' || value === '';
+  }
+
+  // drawHome shows the saved home area on the details line, with its dot.
+  function drawHome(value) {
+    var area = el('person-home-area');
+    var dot = el('person-facts-dot');
+    var none = typeof value !== 'string' || value === '';
+    if (area) {
+      setText(area, value);
+      area.hidden = none;
+    }
+    if (dot) {
+      dot.hidden = none;
+    }
+  }
+
+  function panelOpen() {
+    return hasPanel && editPanel.hidden === false;
+  }
+
+  // openPanel shows the three rows and hides the counts, the tag line, the
+  // details and the action row (person.css, by the editing class). Focus goes to
+  // the first row.
+  function openPanel() {
+    if (!hasPanel || panelOpen()) {
+      return;
+    }
+    headerNode.classList.add(EDITING_CLASS);
+    editPanel.hidden = false;
+    editButton.setAttribute('aria-expanded', 'true');
+    var first = usernameRow || nameRow;
+    if (first) {
+      first.focus();
+    }
+  }
+
+  // closePanel hides the rows and brings the header back. Done and Escape return
+  // focus to Edit profile.
+  function closePanel(restoreFocus) {
+    if (!panelOpen()) {
+      return;
+    }
+    editPanel.hidden = true;
+    headerNode.classList.remove(EDITING_CLASS);
+    editButton.setAttribute('aria-expanded', 'false');
+    if (restoreFocus !== false) {
+      editButton.focus();
+    }
   }
 
   // ---- Wiring ---------------------------------------------------------------
@@ -1177,7 +1312,28 @@
     });
   }
 
-  window.PinalertSettings = {
+  if (hasPanel) {
+    editButton.addEventListener('click', function () {
+      if (panelOpen()) {
+        closePanel(true);
+      } else {
+        openPanel();
+      }
+    });
+    editDone.addEventListener('click', function () { closePanel(true); });
+    // Escape inside the panel does what Done does. The three windows sit outside
+    // the panel, so an Escape that closes a window never reaches this handler.
+    editPanel.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closePanel(true);
+      }
+    });
+  }
+
+  window.PinalertProfileEdit = {
+    openPanel: openPanel,
+    closePanel: closePanel,
     openWindow: openWindow,
     closeWindow: closeWindow,
     saveUsername: saveUsername,

@@ -72,8 +72,10 @@ func TestProfileCopy(t *testing.T) {
 	})
 
 	t.Run("own_state_line", func(t *testing.T) {
-		eq(t, "on and reliable", service.OwnStateLine(true, true), "People can follow you while you hold the Reliable reporter tag.")
-		eq(t, "on not reliable", service.OwnStateLine(true, false), "People can follow you once you hold the Reliable reporter tag.")
+		// Quick 261113-t4y (owner decision 2026-11-13, the compact profile): a public
+		// profile has no state line, so both follow sentences are gone.
+		eq(t, "on and reliable", service.OwnStateLine(true, true), "")
+		eq(t, "on not reliable", service.OwnStateLine(true, false), "")
 		// Amended 2026-11-09 (quick 261109-n25, fewer words): the private line no
 		// longer adds "Turn on Let others follow me in Settings."
 		eq(t, "off", service.OwnStateLine(false, true), "Only you can see this page.")
