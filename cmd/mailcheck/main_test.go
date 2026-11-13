@@ -2,20 +2,18 @@ package main
 
 import (
 	"bytes"
-	"io"
-	"mime/quotedprintable"
+	"context"
+	"errors"
 	"regexp"
 	"strings"
 	"testing"
 
 	"pinalert/internal/mailer"
-	"pinalert/internal/mailer/smtptest"
 )
 
 const (
-	checkUser     = "pinalert.sender@example.com"
-	checkPassword = "s3cretAppPassw0rd"
-	checkTo       = "reader.person@example.com"
+	checkKey = "re_made_up_key_for_tests_only"
+	checkTo  = "reader.person@example.com"
 )
 
 // noLoad fails the test if a run reaches the mailer.
@@ -27,9 +25,9 @@ func noLoad(t *testing.T) func() (mailer.Mailer, error) {
 	}
 }
 
-func clearSMTPEnv(t *testing.T) {
+func clearResendEnv(t *testing.T) {
 	t.Helper()
-	for _, name := range []string{"SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "MAIL_FROM"} {
+	for _, name := range []string{"RESEND_API_KEY", "RESEND_FROM"} {
 		t.Setenv(name, "")
 	}
 	// A run needs no database; make sure none is reachable by accident.
@@ -37,21 +35,31 @@ func clearSMTPEnv(t *testing.T) {
 	t.Setenv("PGDATABASE", "")
 }
 
-func fakeLoad(srv *smtptest.Server) func() (mailer.Mailer, error) {
-	return func() (mailer.Mailer, error) {
-		return mailer.NewSMTPMailerWithRootCAs(mailer.SMTPConfig{
-			Host:     srv.Host,
-			Port:     srv.Port,
-			Username: checkUser,
-			Password: checkPassword,
-			From:     "Pinalert <" + checkUser + ">",
-		}, srv.Roots), nil
-	}
+// sentMail is one call a recordingMailer saw.
+type sentMail struct {
+	to  string
+	msg mailer.AuthEmail
+}
+
+// recordingMailer is a fake mailer.Mailer: it records each send and returns
+// err. It never touches the network.
+type recordingMailer struct {
+	sent []sentMail
+	err  error
+}
+
+func (r *recordingMailer) SendAuthEmail(_ context.Context, to string, msg mailer.AuthEmail) error {
+	r.sent = append(r.sent, sentMail{to: to, msg: msg})
+	return r.err
+}
+
+func fakeLoad(m mailer.Mailer) func() (mailer.Mailer, error) {
+	return func() (mailer.Mailer, error) { return m, nil }
 }
 
 func assertNoSecrets(t *testing.T, what, text string, extra ...string) {
 	t.Helper()
-	for _, secret := range append([]string{checkPassword, checkUser, checkTo, "reader.person"}, extra...) {
+	for _, secret := range append([]string{checkKey, checkTo, "reader.person"}, extra...) {
 		if strings.Contains(text, secret) {
 			t.Errorf("%s holds %q: %s", what, secret, text)
 		}
@@ -59,7 +67,7 @@ func assertNoSecrets(t *testing.T, what, text string, extra ...string) {
 }
 
 func TestRefusesMissingOrBadArguments(t *testing.T) {
-	clearSMTPEnv(t)
+	clearResendEnv(t)
 	cases := []struct {
 		name string
 		args []string
@@ -74,7 +82,7 @@ func TestRefusesMissingOrBadArguments(t *testing.T) {
 		{"a header injection", []string{"-to", checkTo + "\r\nBcc: victim@example.com"}, "-to must be one plain address"},
 		{"a bad kind", []string{"-to", checkTo, "-kind", "welcome"}, "-kind must be signup or reset"},
 		{"a stray argument", []string{"-to", checkTo, "extra"}, "not understood"},
-		{"an unknown flag", []string{"-password", checkPassword}, "not understood"},
+		{"an unknown flag", []string{"-key", checkKey}, "not understood"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -96,7 +104,7 @@ func TestRefusesMissingOrBadArguments(t *testing.T) {
 }
 
 func TestMissingSettingsExitNonZeroAndNameThem(t *testing.T) {
-	clearSMTPEnv(t)
+	clearResendEnv(t)
 	// ENV=development must not matter: mailcheck uses the production rule, so
 	// the log-only mailer is never used.
 	t.Setenv("ENV", "development")
@@ -104,12 +112,10 @@ func TestMissingSettingsExitNonZeroAndNameThem(t *testing.T) {
 	var out, errOut bytes.Buffer
 	code := run([]string{"-to", checkTo}, &out, &errOut, loadProduction)
 	if code == 0 {
-		t.Fatal("exit code 0 with no SMTP settings, want non zero")
+		t.Fatal("exit code 0 with no RESEND_API_KEY, want non zero")
 	}
-	for _, name := range []string{"SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD"} {
-		if !strings.Contains(errOut.String(), name) {
-			t.Errorf("stderr %q does not name %s", errOut.String(), name)
-		}
+	if !strings.Contains(errOut.String(), "RESEND_API_KEY") {
+		t.Errorf("stderr %q does not name RESEND_API_KEY", errOut.String())
 	}
 	if strings.Contains(out.String(), "Sent") {
 		t.Errorf("stdout claims a send: %q", out.String())
@@ -117,71 +123,19 @@ func TestMissingSettingsExitNonZeroAndNameThem(t *testing.T) {
 	assertNoSecrets(t, "stderr", errOut.String())
 }
 
-// TestHalfSetSettingsExitNonZero is the half set group: some SMTP setting is
-// set but SMTP_HOST is not. With ENV=development the server would warn and use
-// the log mailer for such a group; mailcheck must not, because a send check that
-// prints to a log checks nothing. So ENV matters here: it is the setting that
-// would let the group slip through if mailcheck read it.
-func TestHalfSetSettingsExitNonZero(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		set  map[string]string
-	}{
-		{"only the password", map[string]string{"SMTP_PASSWORD": checkPassword}},
-		{"only the user name", map[string]string{"SMTP_USERNAME": checkUser}},
-		{"only the port", map[string]string{"SMTP_PORT": "587"}},
-		{"only the sender", map[string]string{"MAIL_FROM": "Pinalert <" + checkUser + ">"}},
-		{"user name and password, no host", map[string]string{"SMTP_USERNAME": checkUser, "SMTP_PASSWORD": checkPassword}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			clearSMTPEnv(t)
-			t.Setenv("ENV", "development")
-			for k, v := range tc.set {
-				t.Setenv(k, v)
-			}
-
-			var out, errOut bytes.Buffer
-			code := run([]string{"-to", checkTo}, &out, &errOut, loadProduction)
-			if code == 0 || !strings.Contains(errOut.String(), "SMTP_HOST") {
-				t.Fatalf("code %d, stderr %q: want non zero and a message naming SMTP_HOST", code, errOut.String())
-			}
-			if out.Len() != 0 {
-				t.Errorf("stdout %q should be empty", out.String())
-			}
-			assertNoSecrets(t, "stderr", errOut.String())
-		})
-	}
-}
-
-// TestMissingPasswordExitsNonZero is the other case: SMTP_HOST and the user name
-// are set and the password is not.
-func TestMissingPasswordExitsNonZero(t *testing.T) {
-	clearSMTPEnv(t)
-	t.Setenv("SMTP_HOST", "smtp.example.com")
-	t.Setenv("SMTP_USERNAME", checkUser)
-	// no SMTP_PASSWORD
-
-	var out, errOut bytes.Buffer
-	code := run([]string{"-to", checkTo}, &out, &errOut, loadProduction)
-	if code == 0 || !strings.Contains(errOut.String(), "SMTP_PASSWORD") {
-		t.Fatalf("code %d, stderr %q: want non zero and a message naming SMTP_PASSWORD", code, errOut.String())
-	}
-	assertNoSecrets(t, "stderr", errOut.String(), "smtp.example.com")
-}
-
 func TestSendsOneSampleEmail(t *testing.T) {
-	clearSMTPEnv(t)
+	clearResendEnv(t)
 	for _, tc := range []struct {
 		kind string
-		say  string
+		want mailer.AuthEmailKind
 	}{
-		{"signup", "Your Pinalert code is "},
-		{"reset", "Your Pinalert password reset code is "},
+		{"signup", mailer.KindCodeSignup},
+		{"reset", mailer.KindCodeReset},
 	} {
 		t.Run(tc.kind, func(t *testing.T) {
-			srv := smtptest.Start(t, smtptest.Options{})
+			fake := &recordingMailer{}
 			var out, errOut bytes.Buffer
-			code := run([]string{"-to", checkTo, "-kind", tc.kind}, &out, &errOut, fakeLoad(srv))
+			code := run([]string{"-to", checkTo, "-kind", tc.kind}, &out, &errOut, fakeLoad(fake))
 			if code != 0 {
 				t.Fatalf("exit code %d, stderr %q", code, errOut.String())
 			}
@@ -192,30 +146,26 @@ func TestSendsOneSampleEmail(t *testing.T) {
 				t.Errorf("stderr = %q, want empty", errOut.String())
 			}
 
-			// One message, to the address typed, with a 6 digit code and the
-			// real lifetime.
-			raw := srv.Message()
-			if !strings.Contains(raw, "To: "+checkTo+"\r\n") {
-				t.Errorf("the message is not addressed to the -to address:\n%s", raw)
+			// One message, to the address typed, of the kind asked for, with a
+			// 6 digit code and the real lifetime.
+			if len(fake.sent) != 1 {
+				t.Fatalf("the fake mailer saw %d sends, want 1", len(fake.sent))
 			}
-			decoded, err := io.ReadAll(quotedprintable.NewReader(strings.NewReader(raw)))
-			if err != nil {
-				t.Fatalf("decode: %v", err)
+			got := fake.sent[0]
+			if got.to != checkTo {
+				t.Errorf("sent to %q, want the -to address", got.to)
 			}
-			text := string(decoded)
-			match := regexp.MustCompile(regexp.QuoteMeta(tc.say) + `(\d{6})\.`).FindStringSubmatch(text)
-			if match == nil {
-				t.Fatalf("the message lacks %q and a 6 digit code:\n%s", tc.say, text)
+			if got.msg.Kind != tc.want {
+				t.Errorf("kind = %q, want %q", got.msg.Kind, tc.want)
 			}
-			if !strings.Contains(text, "within 10 minutes") {
-				t.Errorf("the message does not carry the real code lifetime:\n%s", text)
+			if !regexp.MustCompile(`^\d{6}$`).MatchString(got.msg.Code) {
+				t.Errorf("code %q is not 6 digits", got.msg.Code)
 			}
-			assertNoSecrets(t, "stdout", out.String(), match[1])
-			assertNoSecrets(t, "stderr", errOut.String(), match[1])
-			logins := srv.Logins()
-			if len(logins) != 1 || !logins[0].OverTLS {
-				t.Errorf("logins = %+v, want one, over TLS", logins)
+			if got.msg.MinutesValid != 10 {
+				t.Errorf("MinutesValid = %d, want 10 (mailer.CodeLifetime)", got.msg.MinutesValid)
 			}
+			assertNoSecrets(t, "stdout", out.String(), got.msg.Code)
+			assertNoSecrets(t, "stderr", errOut.String(), got.msg.Code)
 		})
 	}
 }
@@ -235,23 +185,28 @@ func TestSampleCodesAreSixDigitsAndVary(t *testing.T) {
 }
 
 func TestFailureShowsOnlyTheKind(t *testing.T) {
-	clearSMTPEnv(t)
-	words := " 5.7.8 Username and Password not accepted for " + checkUser + " and " + checkTo + " SERVERWORDS"
-	srv := smtptest.Start(t, smtptest.Options{AuthReply: "535" + words})
+	clearResendEnv(t)
+	// The fake returns what the real sender returns: the kind of failure and
+	// no text from Resend's answer.
+	fake := &recordingMailer{err: errors.New("mailer: sending auth email via resend: resend refused the request (status 403)")}
 
 	var out, errOut bytes.Buffer
-	code := run([]string{"-to", checkTo}, &out, &errOut, fakeLoad(srv))
+	code := run([]string{"-to", checkTo}, &out, &errOut, fakeLoad(fake))
 	if code == 0 {
-		t.Fatal("exit code 0 after a refused sign in")
+		t.Fatal("exit code 0 after a refused send")
 	}
-	if !strings.Contains(errOut.String(), "refused the sign in") {
+	if !strings.Contains(errOut.String(), "resend refused the request") {
 		t.Errorf("stderr %q does not say what kind of failure it was", errOut.String())
 	}
 	if strings.Contains(out.String(), "Sent") {
 		t.Errorf("stdout claims a send: %q", out.String())
 	}
-	assertNoSecrets(t, "stderr", errOut.String(), "SERVERWORDS", "Username and Password")
+	assertNoSecrets(t, "stderr", errOut.String())
 	if m := regexp.MustCompile(`\d{6}`).FindString(errOut.String()); m != "" {
 		t.Errorf("stderr holds a 6 digit number, maybe the code: %q", errOut.String())
 	}
+	if len(fake.sent) != 1 {
+		t.Fatalf("the fake mailer saw %d sends, want 1", len(fake.sent))
+	}
+	assertNoSecrets(t, "stderr", errOut.String(), fake.sent[0].msg.Code)
 }

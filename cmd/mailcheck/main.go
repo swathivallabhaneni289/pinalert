@@ -3,22 +3,27 @@
 //
 // Usage:
 //
-//	go run ./cmd/mailcheck -to someone@gmail.com [-kind signup|reset]
+//	go run ./cmd/mailcheck -to someone@example.com [-kind signup|reset]
 //
-// It reads the same settings as the server (SMTP_HOST, SMTP_PORT,
-// SMTP_USERNAME, SMTP_PASSWORD, MAIL_FROM) with the production rule, so the
-// log-only mailer is never used: with the settings missing it exits with an
-// error that names them. It touches no database, needs no DATABASE_URL and
-// starts no server.
+// It reads the same settings as the server, RESEND_API_KEY (required) and
+// RESEND_FROM (optional), with the production rule, so the log-only mailer is
+// never used: with the key missing it exits with an error that names it. It
+// touches no database, needs no DATABASE_URL and starts no server.
+//
+// Without a verified domain the default sender (Resend's own sandbox address)
+// only delivers to the email address the Resend account was made with, so -to
+// must be that address until the domain is added and RESEND_FROM is set to an
+// address at it.
 //
 // On success it prints "Sent. Check the inbox and the spam folder." On failure
-// it prints the kind of failure. It never prints the password, the address or
+// it prints the kind of failure. It never prints the API key, the address or
 // the code.
 package main
 
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -31,7 +36,7 @@ import (
 	"pinalert/internal/mailer"
 )
 
-const usage = "usage: go run ./cmd/mailcheck -to someone@gmail.com [-kind signup|reset]"
+const usage = "usage: go run ./cmd/mailcheck -to someone@example.com [-kind signup|reset]"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, loadProduction))
@@ -44,7 +49,7 @@ func loadProduction() (mailer.Mailer, error) {
 }
 
 // run is main without the process: it returns the exit code. load is the seam a
-// test replaces to reach a fake server.
+// test replaces with a fake mailer, so no test reaches the network.
 func run(args []string, stdout, stderr io.Writer, load func() (mailer.Mailer, error)) int {
 	fs := flag.NewFlagSet("mailcheck", flag.ContinueOnError)
 	// The flag package echoes what it could not parse; keep that away from the
@@ -81,11 +86,10 @@ func run(args []string, stdout, stderr io.Writer, load func() (mailer.Mailer, er
 	m, err := load()
 	if err != nil {
 		fmt.Fprintf(stderr, "mailcheck: %v\n", err)
-		// The hint is only for a problem with one of the three required
-		// settings. A bad SMTP_PORT or MAIL_FROM is already explained by the
-		// loader's own line, and the three are set.
-		if mailer.IsRequiredSettingError(err) {
-			fmt.Fprintln(stderr, "mailcheck: set SMTP_HOST, SMTP_USERNAME and SMTP_PASSWORD (SMTP_PORT and MAIL_FROM are optional) in this shell, then run it again.")
+		// The hint is only for the missing key; any other load error is
+		// already explained by the loader's own line.
+		if errors.Is(err, mailer.ErrMissingAPIKey) {
+			fmt.Fprintln(stderr, "mailcheck: set RESEND_API_KEY (RESEND_FROM is optional) in this shell, then run it again.")
 		}
 		return 1
 	}
@@ -102,7 +106,7 @@ func run(args []string, stdout, stderr io.Writer, load func() (mailer.Mailer, er
 		MinutesValid: int(mailer.CodeLifetime / time.Minute),
 	}
 	if err := m.SendAuthEmail(context.Background(), *to, msg); err != nil {
-		// The error holds the kind of failure only: no password, address or code.
+		// The error holds the kind of failure only: no key, address or code.
 		fmt.Fprintf(stderr, "mailcheck: %v\n", err)
 		return 1
 	}

@@ -2,48 +2,59 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
+
+	"pinalert/internal/mailer"
 )
 
-// TestSettingsHintOnlyForTheThreeRequiredSettings pins IN-07: the line "set
-// SMTP_HOST, SMTP_USERNAME and SMTP_PASSWORD" follows a load error only when
-// one of those three is the problem. After a bad SMTP_PORT or MAIL_FROM the
-// loader's own line is the whole answer, because the three are set.
-func TestSettingsHintOnlyForTheThreeRequiredSettings(t *testing.T) {
-	const hint = "set SMTP_HOST, SMTP_USERNAME and SMTP_PASSWORD"
-	for _, tc := range []struct {
-		name     string
-		set      map[string]string
-		wantHint bool
-		names    string // the setting the loader's own line must name
-	}{
-		{"nothing set", nil, true, "SMTP_HOST"},
-		{"only the password set", map[string]string{"SMTP_PASSWORD": checkPassword}, true, "SMTP_HOST"},
-		{"host and user name, no password", map[string]string{"SMTP_HOST": "smtp.example.com", "SMTP_USERNAME": checkUser}, true, "SMTP_PASSWORD"},
-		{"host and password, no user name", map[string]string{"SMTP_HOST": "smtp.example.com", "SMTP_PASSWORD": checkPassword}, true, "SMTP_USERNAME"},
-		{"a host with a port", map[string]string{"SMTP_HOST": "smtp.example.com:587", "SMTP_USERNAME": checkUser, "SMTP_PASSWORD": checkPassword}, true, "SMTP_HOST"},
-		{"a bad port", map[string]string{"SMTP_HOST": "smtp.example.com", "SMTP_USERNAME": checkUser, "SMTP_PASSWORD": checkPassword, "SMTP_PORT": "abc"}, false, "SMTP_PORT"},
-		{"a bad sender", map[string]string{"SMTP_HOST": "smtp.example.com", "SMTP_USERNAME": checkUser, "SMTP_PASSWORD": checkPassword, "MAIL_FROM": "not an address"}, false, "MAIL_FROM"},
-		{"a user name that is no address, no sender", map[string]string{"SMTP_HOST": "smtp.example.com", "SMTP_USERNAME": "not-an-email", "SMTP_PASSWORD": checkPassword}, false, "MAIL_FROM"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			clearSMTPEnv(t)
-			for k, v := range tc.set {
-				t.Setenv(k, v)
-			}
-			var out, errOut bytes.Buffer
-			code := run([]string{"-to", checkTo}, &out, &errOut, loadProduction)
-			if code != 1 {
-				t.Fatalf("exit code %d, want 1; stderr %q", code, errOut.String())
-			}
-			if !strings.Contains(errOut.String(), tc.names) {
-				t.Errorf("stderr %q does not name %s", errOut.String(), tc.names)
-			}
-			if got := strings.Contains(errOut.String(), hint); got != tc.wantHint {
-				t.Errorf("hint shown = %v, want %v; stderr %q", got, tc.wantHint, errOut.String())
-			}
-			assertNoSecrets(t, "stderr", errOut.String(), "smtp.example.com", "not-an-email")
-		})
-	}
+const keyHint = "set RESEND_API_KEY (RESEND_FROM is optional) in this shell"
+
+// TestSettingsHintOnlyForTheMissingKey pins that the line "set RESEND_API_KEY"
+// follows a load error only when the key is the problem (errors.Is with
+// mailer.ErrMissingAPIKey). A load error of any other kind gets the loader's
+// own line and no hint, and a send failure gets no hint either.
+func TestSettingsHintOnlyForTheMissingKey(t *testing.T) {
+	t.Run("the key is missing", func(t *testing.T) {
+		clearResendEnv(t)
+		var out, errOut bytes.Buffer
+		code := run([]string{"-to", checkTo}, &out, &errOut, loadProduction)
+		if code != 1 {
+			t.Fatalf("exit code %d, want 1; stderr %q", code, errOut.String())
+		}
+		if !strings.Contains(errOut.String(), "RESEND_API_KEY") {
+			t.Errorf("stderr %q does not name RESEND_API_KEY", errOut.String())
+		}
+		if !strings.Contains(errOut.String(), keyHint) {
+			t.Errorf("stderr %q lacks the hint", errOut.String())
+		}
+	})
+
+	t.Run("a load error of another kind", func(t *testing.T) {
+		clearResendEnv(t)
+		load := func() (mailer.Mailer, error) { return nil, errors.New("mailer: something else is wrong") }
+		var out, errOut bytes.Buffer
+		code := run([]string{"-to", checkTo}, &out, &errOut, load)
+		if code != 1 {
+			t.Fatalf("exit code %d, want 1; stderr %q", code, errOut.String())
+		}
+		if strings.Contains(errOut.String(), keyHint) {
+			t.Errorf("stderr %q shows the key hint for another kind of error", errOut.String())
+		}
+	})
+
+	t.Run("a send failure", func(t *testing.T) {
+		clearResendEnv(t)
+		fake := &recordingMailer{err: errors.New("mailer: sending auth email via resend: could not reach resend")}
+		var out, errOut bytes.Buffer
+		code := run([]string{"-to", checkTo}, &out, &errOut, fakeLoad(fake))
+		if code != 1 {
+			t.Fatalf("exit code %d, want 1; stderr %q", code, errOut.String())
+		}
+		if strings.Contains(errOut.String(), keyHint) {
+			t.Errorf("stderr %q shows the key hint for a send failure", errOut.String())
+		}
+		assertNoSecrets(t, "stderr", errOut.String())
+	})
 }
