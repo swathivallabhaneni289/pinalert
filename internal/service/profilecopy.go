@@ -125,16 +125,14 @@ const ProfileNewSentence = "Not rated yet."
 // off (quick 261109-n25, owner decision 2026-11-09: fewer words).
 const ProfilePrivateStateLine = "Only you can see this page."
 
-// OwnStateLine is the line under the buttons on your own page (UI-SPEC 1g):
-// one for a public profile that holds the tag, one for a public profile that
-// does not, and one for a profile that is off.
+// OwnStateLine is the line on your own page (UI-SPEC 1g). Quick 261113-t4y
+// (owner decision 2026-11-13, the compact profile): a public profile has no
+// line, so both follow sentences are gone and the template draws nothing; only
+// a profile that is off keeps ProfilePrivateStateLine. reliable is no longer
+// read and stays so the callers keep one shape.
 func OwnStateLine(public, reliable bool) string {
-	switch {
-	case !public:
+	if !public {
 		return ProfilePrivateStateLine
-	case reliable:
-		return "People can follow you while you hold the Reliable reporter tag."
-	default:
-		return "People can follow you once you hold the Reliable reporter tag."
 	}
+	return ""
 }

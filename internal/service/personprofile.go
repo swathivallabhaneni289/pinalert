@@ -76,8 +76,9 @@ type PersonProfile struct {
 	FollowersCount int
 	FollowingCount int
 
-	// StateLine is the line under the buttons on your own page (UI-SPEC 1g)
-	// and empty on anyone else's.
+	// StateLine is the line on your own page (UI-SPEC 1g): only the private one
+	// while the profile is off, empty for a public profile since quick 261113-t4y
+	// (owner decision 2026-11-13), and empty on anyone else's.
 	StateLine string
 
 	IsSelf        bool

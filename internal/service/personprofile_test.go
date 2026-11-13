@@ -131,7 +131,7 @@ func TestProfileOwnPageStates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Profile (on, Reliable): %v", err)
 	}
-	if !got.IsSelf || !got.ProfilePublic || !got.Reliable || got.CanFollow || got.StateLine != "People can follow you while you hold the Reliable reporter tag." {
+	if !got.IsSelf || !got.ProfilePublic || !got.Reliable || got.CanFollow || got.StateLine != "" { // Quick 261113-t4y: a public profile has no state line.
 		t.Errorf("on and Reliable: %+v", got)
 	}
 
@@ -141,7 +141,7 @@ func TestProfileOwnPageStates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Profile (on, not Reliable): %v", err)
 	}
-	if !got.IsSelf || got.Reliable || got.StateLine != "People can follow you once you hold the Reliable reporter tag." {
+	if !got.IsSelf || got.Reliable || got.StateLine != "" {
 		t.Errorf("on, not Reliable: %+v", got)
 	}
 
