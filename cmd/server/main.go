@@ -255,9 +255,9 @@ const (
 	usernameSaveEvery     = 10 * time.Second
 )
 
-// The email send ceiling (review CR-S03). A free Gmail account can send to a
-// few hundred recipients a day, so the program stops at 90, well under that cap,
-// counting all four code emails together. Of those, 20 are kept for the two Forgot password emails
+// The email send ceiling (review CR-S03). The Resend free plan allows 100
+// emails a day, so the program stops at 90 for headroom, counting all four code
+// emails together. Of those, 20 are kept for the two Forgot password emails
 // (the reset code and the "no account" note, one class so a refusal never says
 // whether an account exists). Sends are also paced: at most 15 in any 10
 // minutes, 5 of them kept for the Forgot password emails, so a burst cannot
@@ -351,13 +351,12 @@ func main() {
 		log.Fatalf("BASE_URL: %v", err)
 	}
 
-	// LoadMailer selects the SMTP (Gmail) implementation when SMTP_HOST,
-	// SMTP_USERNAME and SMTP_PASSWORD are set (SMTP_PORT and MAIL_FROM are
-	// optional), or the log-only development fallback when none is set,
-	// failing fast outside ENV=development, the same startup contract
-	// loadSessionSecret already establishes above. A misconfigured deploy
-	// must fail loudly at boot rather than silently accept logins nobody
-	// can complete. The error names a setting, never its value.
+	// LoadMailer selects the Resend-backed implementation when
+	// RESEND_API_KEY is set, or the log-only development fallback
+	// otherwise — failing fast outside ENV=development, the same
+	// startup contract loadSessionSecret already establishes above. A
+	// misconfigured deploy must fail loudly at boot rather than silently
+	// accept logins nobody can complete.
 	mail, err := mailer.LoadMailer(env)
 	if err != nil {
 		log.Fatalf("loading mailer: %v", err)
@@ -384,7 +383,7 @@ func main() {
 	// address-search feature's outbound User-Agent to Photon and OSM
 	// Nominatim (and Nominatim's email parameter).
 	// Deliberately NOT a log.Fatal path, unlike SESSION_SECRET and
-	// the SMTP settings above: those two fail fast outside ENV=development
+	// RESEND_API_KEY above: those two fail fast outside ENV=development
 	// because a misconfigured deploy would otherwise boot into a state
 	// where nobody can log in at all, whereas address search is a
 	// secondary convenience whose whole design contract (D-04) is that its

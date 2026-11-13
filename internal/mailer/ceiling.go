@@ -84,8 +84,8 @@ type sendCeiling struct {
 
 // NewSendCeiling wraps next with the send ceiling. now nil means time.Now.
 //
-// A free Gmail account can send to a few hundred recipients a day; the caller
-// wires 90, well under that cap (cmd/server/main.go only). The counts live in
+// The Resend free plan allows 100 emails a day and 3,000 a month; the caller
+// wires 90 so there is headroom (cmd/server/main.go only). The counts live in
 // memory, so a restart, or a free host waking from sleep, resets them. That is
 // accepted as part of T-07.1-09 in docs/TRUST-MODEL.md: after a reset the
 // provider's own day limit is the only cap, and once it is spent the provider
