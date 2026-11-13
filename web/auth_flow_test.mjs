@@ -89,7 +89,7 @@ class FakeEl {
 // Amended 2026-10-29 by the Phase 7.1 review fix round 3 (skeptic SK2-01):
 // signinStatus draws the server's line in signin-status, shown, the way the page
 // is drawn for a code this browser spent.
-function buildPage({ start = 'create', mode = 'create', secondsLeft = 0, ttl = 600, resend = 45, email = '', done = false, cooldown, signinStatus = '' } = {}) {
+function buildPage({ start = 'create', mode = 'create', secondsLeft = 0, ttl = 600, resend = 45, email = '', done = false, cooldown, signinStatus = '', step = 'code' } = {}) {
   const doc = {
     activeElement: null,
     selected: null,
@@ -112,6 +112,7 @@ function buildPage({ start = 'create', mode = 'create', secondsLeft = 0, ttl = 6
   const card = make('div', 'login-form-panel', doc.body, {
     'data-start-panel': start,
     'data-code-mode': mode,
+    'data-code-step': step,
     'data-code-seconds-left': String(secondsLeft),
     'data-code-ttl-seconds': String(ttl),
     'data-resend-seconds': String(resend),
@@ -161,16 +162,30 @@ function buildPage({ start = 'create', mode = 'create', secondsLeft = 0, ttl = 6
   make('button', 'signin-forgot', formSignin).textContent = 'Forgot password';
 
   const formCode = section('code', start === 'code');
-  make('span', 'code-email', formCode).textContent = email;
-  make('input', 'code-input', formCode, { maxlength: '6' }).type = 'text';
+  // Quick 261113-r5w: Forgot password is two steps. `step` draws the page the way
+  // the server does for a reset code the browser already confirmed.
+  const passwordStep = mode === 'reset' && step === 'password';
+  const lead = make('p', 'code-lead', formCode);
+  if (passwordStep) { lead.hidden = true; }
+  make('span', 'code-email', lead).textContent = email;
+  const confirmed = make('p', 'code-lead-confirmed', formCode);
+  confirmed.textContent = 'Code confirmed. Choose a new password.';
+  if (!passwordStep) { confirmed.hidden = true; }
+  const entry = make('div', 'code-entry-wrap', formCode);
+  if (passwordStep) { entry.hidden = true; }
+  const codeBox = make('input', 'code-input', entry, { maxlength: '6' });
+  codeBox.type = 'text';
+  if (!passwordStep) { codeBox.setAttribute('required', ''); }
   const wrap = make('div', 'code-new-wrap', formCode);
-  if (mode !== 'reset') { wrap.hidden = true; }
+  if (!passwordStep) { wrap.hidden = true; }
   make('input', 'code-new-password', wrap, { 'aria-describedby': 'code-new-rule' }).type = 'password';
   make('button', 'code-new-show', wrap, { 'data-show-for': 'code-new-password', 'aria-label': 'Show password' }).textContent = 'Show';
   make('p', 'code-status', formCode, { role: 'status', hidden: '' });
   make('p', 'code-error', formCode, { role: 'alert', hidden: '' });
-  make('button', 'code-submit', formCode).textContent = mode === 'reset' ? 'Set new password' : 'Create account';
-  make('button', 'code-resend', formCode, { 'aria-disabled': 'true' }).textContent = 'Resend in ' + resend + 's';
+  make('button', 'code-submit', formCode).textContent = mode === 'reset' ? (passwordStep ? 'Set new password' : 'Confirm code') : 'Create account';
+  const resendButton = make('button', 'code-resend', formCode, { 'aria-disabled': 'true' });
+  resendButton.textContent = 'Resend in ' + resend + 's';
+  if (passwordStep) { resendButton.hidden = true; }
   make('button', 'code-change-email', formCode).textContent = 'Change email';
   make('span', 'code-ready-live', formCode, { role: 'status' });
 
@@ -750,7 +765,7 @@ test('Sign in posts the email and password; a wrong one shows both sentences on 
   assertClean(page);
 });
 
-test('Forgot password: copies the email, sends it, takes the code and a new password, returns to Sign in', async () => {
+test('Forgot password: copies the email, sends it, confirms the code, then takes the new password, returns to Sign in', async () => {
   const page = load({ start: 'signin' });
   byId(page, 'signin-email').value = 'priya@example.com';
   click(page, 'signin-forgot');
@@ -771,18 +786,44 @@ test('Forgot password: copies the email, sends it, takes the code and a new pass
 
   assert.deepEqual(shownPanel(page), ['code']);
   assert.equal(text(page, 'login-title'), 'Reset your password');
-  assert.equal(byId(page, 'code-new-wrap').hidden, false);
-  assert.equal(text(page, 'code-submit'), 'Set new password');
+  // Step one: the code box and Confirm code, no password box.
+  assert.equal(byId(page, 'code-new-wrap').hidden, true);
+  assert.equal(byId(page, 'code-entry-wrap').hidden, false);
+  assert.equal(text(page, 'code-submit'), 'Confirm code');
   assert.equal(text(page, 'code-email'), 'priya@example.com');
-  assert.equal(byId(page, 'code-new-password').hasAttribute('required'), true);
+  assert.equal(byId(page, 'code-new-password').hasAttribute('required'), false);
+  assert.equal(byId(page, 'code-input').hasAttribute('required'), true);
 
   byId(page, 'code-input').value = '482913';
-  byId(page, 'code-new-password').value = 'a new long password';
   submit(page, 'code');
   const codeReq = page.requests[1];
   assert.equal(codeReq.url, '/api/auth/reset/code');
-  assert.deepEqual(body(codeReq), { code: '482913', password: 'a new long password' });
-  answer(codeReq, 200, { password_set: true });
+  assert.deepEqual(body(codeReq), { code: '482913' });
+  answer(codeReq, 200, { code_ok: true });
+  await flush();
+
+  // Step two: only the new password, its own button, focus on the box.
+  assert.deepEqual(shownPanel(page), ['code']);
+  assert.equal(byId(page, 'code-new-wrap').hidden, false);
+  assert.equal(byId(page, 'code-entry-wrap').hidden, true);
+  assert.equal(byId(page, 'code-lead').hidden, true);
+  assert.equal(byId(page, 'code-lead-confirmed').hidden, false);
+  assert.equal(text(page, 'code-lead-confirmed'), 'Code confirmed. Choose a new password.');
+  assert.equal(byId(page, 'code-resend').hidden, true);
+  assert.equal(byId(page, 'code-change-email').hidden, false);
+  assert.equal(text(page, 'code-submit'), 'Set new password');
+  assert.equal(text(page, 'code-email'), 'priya@example.com', 'the address stays page text');
+  assert.equal(byId(page, 'code-new-password').hasAttribute('required'), true);
+  assert.equal(byId(page, 'code-input').hasAttribute('required'), false, 'a hidden empty required box would block the submit');
+  assert.ok(isFocused(page, 'code-new-password'));
+  assert.equal(page.timers.size, 0, 'no clock runs on step two');
+
+  byId(page, 'code-new-password').value = 'a new long password';
+  submit(page, 'code');
+  const passwordReq = page.requests[2];
+  assert.equal(passwordReq.url, '/api/auth/reset/password');
+  assert.deepEqual(body(passwordReq), { password: 'a new long password' });
+  answer(passwordReq, 200, { password_set: true });
   await flush();
 
   assert.deepEqual(shownPanel(page), ['signin']);
@@ -824,11 +865,11 @@ test('Forgot password refusals stay in forgot-error and Back to sign in keeps th
   assertClean(page);
 });
 
-test('a refused new password in reset mode goes to code-error and does not count as a wrong code', async () => {
-  const page = load({ start: 'code', mode: 'reset', email: 'priya@example.com', secondsLeft: 400 });
-  byId(page, 'code-input').value = '123456';
+test('a refused new password on step two goes to code-error, keeps step two and does not count as a wrong code', async () => {
+  const page = load({ start: 'code', mode: 'reset', step: 'password', email: 'priya@example.com', secondsLeft: 400 });
   byId(page, 'code-new-password').value = 'short';
   submit(page, 'code');
+  assert.equal(page.requests[0].url, '/api/auth/reset/password');
   answer(page.requests[0], 400, { error: { field: 'password', message: 'Use at least 8 characters.' } });
   await flush();
   assert.equal(text(page, 'code-error'), 'Use at least 8 characters.');
@@ -836,6 +877,110 @@ test('a refused new password in reset mode goes to code-error and does not count
   assert.ok(byId(page, 'code-new-password').getAttribute('aria-describedby').split(' ').includes('code-new-rule'));
   assert.ok(isFocused(page, 'code-new-password'));
   assert.equal(byId(page, 'code-input').getAttribute('aria-invalid'), null);
+  assert.equal(byId(page, 'code-new-wrap').hidden, false, 'still on step two');
+  assert.equal(isOff(page, 'code-submit'), false);
+  assertClean(page);
+});
+
+// Quick 261113-r5w: the confirm ran out, or a newer code replaced it. The server
+// answers the wrong code sentence on the code field; the card goes back to step
+// one with that sentence and Resend ready, and counts no try.
+test('step two answered with the wrong code error goes back to step one with Resend ready', async () => {
+  const page = load({ start: 'code', mode: 'reset', step: 'password', email: 'priya@example.com', secondsLeft: 0 });
+  byId(page, 'code-new-password').value = 'a new long password';
+  submit(page, 'code');
+  answer(page.requests[0], 400, { error: { field: 'code', message: 'That code is wrong or has expired.' } });
+  await flush();
+  assert.equal(byId(page, 'code-new-wrap').hidden, true);
+  assert.equal(byId(page, 'code-entry-wrap').hidden, false);
+  assert.equal(byId(page, 'code-lead').hidden, false);
+  assert.equal(byId(page, 'code-lead-confirmed').hidden, true);
+  assert.equal(text(page, 'code-submit'), 'Confirm code');
+  assert.equal(text(page, 'code-error'), 'That code is wrong or has expired.');
+  assert.equal(byId(page, 'code-error').hidden, false);
+  assert.equal(byId(page, 'code-input').getAttribute('aria-invalid'), 'true');
+  assert.equal(byId(page, 'code-input').hasAttribute('required'), true);
+  assert.equal(byId(page, 'code-new-password').hasAttribute('required'), false);
+  assert.equal(byId(page, 'code-new-password').value, '');
+  assert.equal(byId(page, 'code-resend').hidden, false);
+  assert.equal(text(page, 'code-resend'), 'Resend code');
+  assert.equal(isOff(page, 'code-resend'), false, 'Resend is ready');
+  assert.equal(isOff(page, 'code-submit'), false, 'a stale confirm is not a wrong try');
+  assert.ok(isFocused(page, 'code-input'));
+  assert.equal(page.touched.length, 0);
+
+  // The code box takes a new code and posts to step one again.
+  byId(page, 'code-input').value = '654321';
+  submit(page, 'code');
+  assert.equal(page.requests[1].url, '/api/auth/reset/code');
+  assert.deepEqual(body(page.requests[1]), { code: '654321' });
+  assertClean(page);
+});
+
+test('step one counts a wrong code and the fifth switches Confirm code off', async () => {
+  const page = load({ start: 'code', mode: 'reset', email: 'priya@example.com', secondsLeft: 400, resend: 0 });
+  for (let n = 1; n <= 5; n++) {
+    byId(page, 'code-input').value = '123456';
+    submit(page, 'code');
+    assert.equal(page.requests[n - 1].url, '/api/auth/reset/code');
+    answer(page.requests[n - 1], 400, { error: { field: 'code', message: 'That code is wrong or has expired.' } });
+    await flush();
+    assert.equal(isOff(page, 'code-submit'), n === 5, 'try ' + n);
+  }
+  assert.equal(text(page, 'code-error'), 'Too many wrong tries. Get a new code.');
+  assert.equal(byId(page, 'code-new-wrap').hidden, true, 'a wrong code never opens step two');
+  assertClean(page);
+});
+
+test('a reload on step two draws step two with focus in the new password box and no clock', () => {
+  const page = load({ start: 'code', mode: 'reset', step: 'password', email: 'priya@example.com', secondsLeft: 0, resend: 0 });
+  assert.deepEqual(shownPanel(page), ['code']);
+  assert.equal(byId(page, 'code-new-wrap').hidden, false);
+  assert.equal(byId(page, 'code-entry-wrap').hidden, true);
+  assert.equal(byId(page, 'code-resend').hidden, true);
+  assert.equal(text(page, 'code-submit'), 'Set new password');
+  assert.equal(byId(page, 'code-input').hasAttribute('required'), false);
+  assert.equal(byId(page, 'code-new-password').hasAttribute('required'), true);
+  assert.equal(byId(page, 'code-status').hidden, true, 'no "code has expired" line over a confirmed code');
+  assert.ok(isFocused(page, 'code-new-password'));
+  assert.equal(page.timers.size, 0);
+  assert.equal(page.requests.length, 0);
+
+  // Change email still leaves, with the address from the page text.
+  click(page, 'code-change-email');
+  assert.deepEqual(shownPanel(page), ['forgot']);
+  assert.equal(byId(page, 'forgot-email').value, 'priya@example.com');
+  assertClean(page);
+});
+
+// The sign up code screen is unchanged: one step, Create account, no password box.
+test('the sign up code screen has one step and posts to the sign up route', async () => {
+  const page = load({ start: 'create' });
+  await toCodeScreen(page);
+  assert.equal(text(page, 'code-submit'), 'Create account');
+  assert.equal(byId(page, 'code-new-wrap').hidden, true);
+  assert.equal(byId(page, 'code-resend').hidden, false);
+  byId(page, 'code-input').value = '123456';
+  submit(page, 'code');
+  const req = page.requests[page.requests.length - 1];
+  assert.equal(req.url, '/api/auth/sign-up/code');
+  assert.deepEqual(body(req), { code: '123456' });
+  answer(req, 200, { next: '/' });
+  await flush();
+  assert.deepEqual(page.assigned, ['/']);
+  assertClean(page);
+});
+
+// A step two answer that comes after the card moved on only frees the button.
+test('a late step two answer after Change email changes nothing on the new screen', async () => {
+  const page = load({ start: 'code', mode: 'reset', step: 'password', email: 'priya@example.com', secondsLeft: 0 });
+  byId(page, 'code-new-password').value = 'a new long password';
+  submit(page, 'code');
+  click(page, 'code-change-email');
+  answer(page.requests[0], 200, { password_set: true });
+  await flush();
+  assert.deepEqual(shownPanel(page), ['forgot']);
+  assert.equal(byId(page, 'signin-status').hidden, true);
   assertClean(page);
 });
 
@@ -877,14 +1022,15 @@ test('Show and Hide switch the type and the words, and leaving the panel or subm
 test('the page opens on the code screen in reset mode, reading the address from the page text', () => {
   const page = load({ start: 'code', mode: 'reset', email: 'priya@example.com', secondsLeft: 300, resend: 45 });
   assert.deepEqual(shownPanel(page), ['code']);
-  assert.equal(byId(page, 'code-new-wrap').hidden, false);
+  assert.equal(byId(page, 'code-new-wrap').hidden, true, 'step one has no password box');
+  assert.equal(text(page, 'code-submit'), 'Confirm code');
   assert.equal(byId(page, 'code-resend').textContent, 'Resend in 45s');
   assert.equal(page.requests.length, 0);
 
   byId(page, 'code-input').value = '123456';
-  byId(page, 'code-new-password').value = 'a new long password';
   submit(page, 'code');
   assert.equal(page.requests[0].url, '/api/auth/reset/code');
+  assert.deepEqual(body(page.requests[0]), { code: '123456' });
 
   // Change email goes back to Forgot password with the address from the page.
   const again = load({ start: 'code', mode: 'reset', email: 'priya@example.com', secondsLeft: 300 });
@@ -928,6 +1074,9 @@ test('a full walk touches no query string, address rewrite, storage or markup si
   answer(page.requests[page.requests.length - 1], 200, { sent: true });
   await flush();
   byId(page, 'code-input').value = '123456';
+  submit(page, 'code');
+  answer(page.requests[page.requests.length - 1], 200, { code_ok: true });
+  await flush();
   byId(page, 'code-new-password').value = 'a new long password';
   submit(page, 'code');
   answer(page.requests[page.requests.length - 1], 200, { password_set: true });

@@ -80,6 +80,9 @@
   var signinSubmit = byId('signin-submit');
 
   var codeInput = byId('code-input');
+  var codeLead = byId('code-lead');
+  var codeLeadConfirmed = byId('code-lead-confirmed');
+  var codeEntryWrap = byId('code-entry-wrap');
   var codeNewWrap = byId('code-new-wrap');
   var codeNewPassword = byId('code-new-password');
   var codeEmail = byId('code-email');
@@ -109,6 +112,9 @@
   var state = {
     panel: 'create',
     mode: 'create',
+    // Forgot password has two steps: 'code' (type the emailed code) and 'password'
+    // (the code was confirmed, choose the new password). Sign up has only 'code'.
+    step: 'code',
     from: 'create',
     email: '',
     tries: 0,
@@ -571,16 +577,66 @@
     }
   }
 
-  function setCodeMode(mode) {
-    var reset = mode === 'reset';
-    state.mode = mode;
-    codeNewWrap.hidden = !reset;
-    if (reset) {
-      codeNewPassword.setAttribute('required', '');
+  // Only the visible step's field is required: a hidden empty required field makes
+  // the browser refuse the submit before the submit event runs.
+  function setRequired(input, on) {
+    if (on) {
+      input.setAttribute('required', '');
     } else {
-      codeNewPassword.removeAttribute('required');
+      input.removeAttribute('required');
     }
-    setText(codeSubmit, reset ? 'Set new password' : 'Create account');
+  }
+
+  // setCodeMode draws one screen of the code panel. Create account has the code
+  // box and the button Create account. Forgot password step one is the same code
+  // box with the button Confirm code; step two hides the code box, its lead and
+  // Resend and shows the new password box with Set new password. The address stays
+  // in the hidden lead's page text.
+  function setCodeMode(mode, step) {
+    var reset = mode === 'reset';
+    var password = reset && step === 'password';
+    state.mode = mode;
+    state.step = password ? 'password' : 'code';
+    codeLead.hidden = password;
+    codeLeadConfirmed.hidden = !password;
+    codeEntryWrap.hidden = password;
+    codeNewWrap.hidden = !password;
+    codeResend.hidden = password;
+    setRequired(codeInput, !password);
+    setRequired(codeNewPassword, password);
+    setText(codeSubmit, password ? 'Set new password' : (reset ? 'Confirm code' : 'Create account'));
+  }
+
+  // enterPasswordStep is what a right reset code does: the card shows step two. The
+  // clocks stop (Resend is hidden and the confirm window is the server's to keep),
+  // and focus moves to the new password box.
+  function enterPasswordStep() {
+    stopTimers();
+    setText(codeReadyLive, '');
+    setText(codeStatus, '');
+    codeStatus.hidden = true;
+    codeInput.value = '';
+    codeNewPassword.value = '';
+    lockCodeButton(false);
+    state.tries = 0;
+    state.resendBusy = false;
+    setCodeMode('reset', 'password');
+    state.generation += 1;
+    codeNewPassword.focus();
+  }
+
+  // backToCodeStep is what step two does when the server no longer holds the
+  // confirm (it ran out, or a newer code replaced it): the code screen again, with
+  // the wrong code sentence and Resend ready. The server counted no try.
+  function backToCodeStep() {
+    resetShow();
+    codeNewPassword.value = '';
+    codeInput.value = '';
+    setCodeMode('reset', 'code');
+    state.generation += 1;
+    startResendWait(0);
+    showError(codeError, codeInput, CODE_WRONG_MESSAGE);
+    codeInput.focus();
   }
 
   // openCode shows the code screen after a request that sent a code. Every address
@@ -594,7 +650,7 @@
     codeNewPassword.value = '';
     setText(codeStatus, '');
     codeStatus.hidden = true;
-    setCodeMode(mode);
+    setCodeMode(mode, 'code');
     lockCodeButton(false);
     showPanel('code');
     startResendWait(fullResendSeconds);
@@ -724,8 +780,13 @@
     }
     resetShow();
     var reset = state.mode === 'reset';
-    var path = reset ? '/api/auth/reset/code' : '/api/auth/sign-up/code';
-    var payload = reset ? { code: codeInput.value, password: codeNewPassword.value } : { code: codeInput.value };
+    // Forgot password: step one posts the code, step two posts the new password.
+    var password = reset && state.step === 'password';
+    var path = '/api/auth/sign-up/code';
+    if (reset) {
+      path = password ? '/api/auth/reset/password' : '/api/auth/reset/code';
+    }
+    var payload = password ? { password: codeNewPassword.value } : { code: codeInput.value };
     var mine = state.generation;
     setBusy(codeSubmit, CHECKING_LABEL);
     postJSON(path, payload).then(function (result) {
@@ -739,14 +800,22 @@
         return;
       }
       if (result.ok) {
-        finishReset();
+        if (password) {
+          finishReset();
+        } else {
+          enterPasswordStep();
+        }
         return;
       }
       if (askServerAgain(result)) {
         return;
       }
       if (result.status === 400 && fieldOf(result) === 'code') {
-        refuseCode();
+        if (password) {
+          backToCodeStep();
+        } else {
+          refuseCode();
+        }
         return;
       }
       var field = fieldFor(result, { password: codeNewPassword });
@@ -888,13 +957,21 @@
     state.panel = 'code';
     state.from = mode === 'reset' ? 'forgot' : 'create';
     state.email = codeEmail.textContent.trim();
-    setCodeMode(mode);
-    startResendWait(numberAttr('data-resend-seconds'));
-    var left = numberAttr('data-code-seconds-left');
-    if (left > 0) {
-      startExpiry(left);
+    // A reload while the confirmed code is still good opens step two: the server
+    // draws it and names it in data-code-step. It starts no clock: Resend is
+    // hidden, and the confirm window is the server's to keep.
+    var startStep = mode === 'reset' && card.getAttribute('data-code-step') === 'password' ? 'password' : 'code';
+    setCodeMode(mode, startStep);
+    if (startStep === 'password') {
+      codeNewPassword.focus();
     } else {
-      expireNow();
+      startResendWait(numberAttr('data-resend-seconds'));
+      var left = numberAttr('data-code-seconds-left');
+      if (left > 0) {
+        startExpiry(left);
+      } else {
+        expireNow();
+      }
     }
   } else {
     state.panel = start === 'signin' ? 'signin' : 'create';
