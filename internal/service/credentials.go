@@ -186,7 +186,7 @@ type CredentialLimits struct {
 
 // DefaultCredentialLimits are the numbers shown to the owner (D-11).
 var DefaultCredentialLimits = CredentialLimits{
-	CodeTTL:         10 * time.Minute,
+	CodeTTL:         mailer.CodeLifetime,
 	CodeMaxAttempts: 5,
 	SendCooldown:    ResendCooldown,
 	SendsPerHour:    5,

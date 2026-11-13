@@ -29,7 +29,6 @@ import (
 	"time"
 
 	"pinalert/internal/mailer"
-	"pinalert/internal/service"
 )
 
 const usage = "usage: go run ./cmd/mailcheck -to someone@gmail.com [-kind signup|reset]"
@@ -100,7 +99,7 @@ func run(args []string, stdout, stderr io.Writer, load func() (mailer.Mailer, er
 		Kind: emailKind,
 		Code: code,
 		// The real lifetime of a code, so the sample says what a real email says.
-		MinutesValid: int(service.DefaultCredentialLimits.CodeTTL / time.Minute),
+		MinutesValid: int(mailer.CodeLifetime / time.Minute),
 	}
 	if err := m.SendAuthEmail(context.Background(), *to, msg); err != nil {
 		// The error holds the kind of failure only: no password, address or code.
