@@ -51,7 +51,7 @@ Two older tests were adapted because the browser now holds a different id after 
 **Commit:** `d33e11b6` (item 5 is in the WR-01 cancel commit `e658b1d2`, as `TestResetCancelTurnsTheConfirmOff`)
 **Applied fix:**
 1. `TestResetStepsTryBucket` on a bucket of one token: step one answers 429 after a wrong code; step two keeps the token for a wrong code answer (second call 429); step two gives the token back for a refused password (three refusals, then success) and on success. Mutation checked: dropping the refund makes it fail.
-2. `TestResetStepTwoWithResendDuringIt`: a Resend landing between step two's read and its transaction gives the wrong code answer, the password epoch does not move, the old password still signs in, and the Resend's code is live and not confirmed. The held step is a hasher that waits (`holdHasher`).
+2. `TestResetStepTwoWithResendDuringIt`: a Resend landing between step two's read and its transaction gives the wrong code answer, the password epoch does not move, the old password still signs in, and the Resend's code is live and not confirmed. The held step is a hasher that waits (`holdHasher`). This is the Resend before the spend order only; a code asked for after the finished reset is also checked, but that is not a race with the spend.
 3. `TestResetStepOneRaces/two right codes at once...`: both count their try before either marks; exactly one winner, one `ErrWrongCode` with no id, one verified row on the winner's id, nothing on the other ids.
 4. `TestResetStepOneRaces/a Resend between the count and the mark...`: the mark writes nothing, no id is returned, nothing rotated.
 5. Change email then reload: in `e658b1d2`.
@@ -60,8 +60,8 @@ Two older tests were adapted because the browser now holds a different id after 
 
 **Status:** fixed
 **Files modified:** `internal/service/credentials_signin.go`
-**Commit:** `c80f9ea0`
-**Applied fix:** The comment now says a Resend that commits before the spend makes it write 0 rows and rolls everything back, and one that commits after leaves a fresh code for the address; it names the test that pins the first order and the fresh code afterwards.
+**Commits:** `c80f9ea0`, then `fa58ded1` (the first version of the comment said the test pins both orders; it pins only the Resend before the spend)
+**Applied fix:** The comment now says a Resend that commits before the spend makes it write 0 rows and rolls everything back, and one that commits after leaves a fresh code for the address. It names the test that pins the first order and says the second order is not raced in a test and follows from the row lock the spend holds.
 
 ### IN-02: TRUST-MODEL overstated why step two cannot skip the code
 
