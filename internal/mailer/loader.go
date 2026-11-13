@@ -1,6 +1,7 @@
 package mailer
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/mail"
@@ -13,6 +14,27 @@ import (
 // defaultSMTPPort is the submission port, where the connection starts plain
 // and is upgraded with STARTTLS before any password is sent.
 const defaultSMTPPort = 587
+
+// requiredSettingError is a load error about SMTP_HOST, SMTP_USERNAME or
+// SMTP_PASSWORD: one of them is missing, or SMTP_HOST is not a host name. It
+// holds the same text a plain error would, and lets a caller (mailcheck) tell
+// these apart from a bad SMTP_PORT or MAIL_FROM without matching on words.
+type requiredSettingError struct{ msg string }
+
+func (e *requiredSettingError) Error() string { return e.msg }
+
+// requiredSetting builds a requiredSettingError from a format and arguments.
+func requiredSetting(format string, args ...any) error {
+	return &requiredSettingError{msg: fmt.Sprintf(format, args...)}
+}
+
+// IsRequiredSettingError reports whether err, from LoadMailer, is about
+// SMTP_HOST, SMTP_USERNAME or SMTP_PASSWORD (missing, or a host that is not a
+// host name), as opposed to a bad SMTP_PORT or MAIL_FROM.
+func IsRequiredSettingError(err error) bool {
+	var target *requiredSettingError
+	return errors.As(err, &target)
+}
 
 // isPlainHostName reports whether host is a bare host name: no colon (a port,
 // or a scheme such as smtps://), no slash, and no space or control character
@@ -95,13 +117,13 @@ func LoadMailer(env string) (Mailer, error) {
 			return NewLogMailer(), nil
 		}
 		if anySet {
-			return nil, fmt.Errorf("mailer: SMTP_HOST must be set when other SMTP settings are set")
+			return nil, requiredSetting("mailer: SMTP_HOST must be set when other SMTP settings are set")
 		}
-		return nil, fmt.Errorf("mailer: SMTP_HOST, SMTP_USERNAME and SMTP_PASSWORD must be set outside ENV=development")
+		return nil, requiredSetting("mailer: SMTP_HOST, SMTP_USERNAME and SMTP_PASSWORD must be set outside ENV=development")
 	}
 
 	if !isPlainHostName(host) {
-		return nil, fmt.Errorf("mailer: SMTP_HOST must be a host name such as smtp.gmail.com, with no port, scheme or space")
+		return nil, requiredSetting("mailer: SMTP_HOST must be a host name such as smtp.gmail.com, with no port, scheme or space")
 	}
 
 	password = normalizePassword(host, password)
@@ -114,7 +136,7 @@ func LoadMailer(env string) (Mailer, error) {
 		missing = append(missing, "SMTP_PASSWORD")
 	}
 	if len(missing) > 0 {
-		return nil, fmt.Errorf("mailer: %s must be set when SMTP_HOST is set", strings.Join(missing, " and "))
+		return nil, requiredSetting("mailer: %s must be set when SMTP_HOST is set", strings.Join(missing, " and "))
 	}
 
 	port := defaultSMTPPort
