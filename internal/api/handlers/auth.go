@@ -87,6 +87,10 @@ type loginGateViewModel struct {
 	StartPanel string
 	// CodeMode is "create" or "reset" and is read only when StartPanel is code.
 	CodeMode string
+	// CodeVerified is true only for a reset code the browser already confirmed
+	// (Forgot password step one, quick 261113-r5w): the card then opens on step
+	// two, the new password, and not on the code box.
+	CodeVerified bool
 	// CodeEmail is the address a live code was sent to. It is page text only,
 	// never a URL, a form value or an attribute (D-05).
 	CodeEmail       string
@@ -248,6 +252,7 @@ func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 				vm.CodeMode = loginCodeCreate
 				if live.Purpose == service.PurposeReset {
 					vm.CodeMode = loginCodeReset
+					vm.CodeVerified = live.Verified
 				}
 				vm.CodeEmail = live.Email
 				// Review WR-B02: both clocks are the integer seconds left,

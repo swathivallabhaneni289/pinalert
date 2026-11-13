@@ -82,8 +82,28 @@ func requestResetRequest(t *testing.T, client *http.Client, srv *httptest.Server
 	return status
 }
 
+// confirmResetCodeRequest is step one of Forgot password (quick 261113-r5w): the
+// typed code alone.
+func confirmResetCodeRequest(t *testing.T, client *http.Client, srv *httptest.Server, code string) int {
+	t.Helper()
+	status, _, _ := postAuthJSON(t, client, srv, "/api/auth/reset/code", map[string]string{"code": code})
+	return status
+}
+
+// setResetPasswordRequest is step two of Forgot password: the new password alone.
+func setResetPasswordRequest(t *testing.T, client *http.Client, srv *httptest.Server, password string) int {
+	t.Helper()
+	status, _, _ := postAuthJSON(t, client, srv, "/api/auth/reset/password", map[string]string{"password": password})
+	return status
+}
+
+// confirmResetRequest runs both steps of Forgot password for a browser that has
+// asked for a code, and returns the status of the first step that did not answer
+// 200, or 200 when the password was set.
 func confirmResetRequest(t *testing.T, client *http.Client, srv *httptest.Server, code, password string) int {
 	t.Helper()
-	status, _, _ := postAuthJSON(t, client, srv, "/api/auth/reset/code", map[string]string{"code": code, "password": password})
-	return status
+	if status := confirmResetCodeRequest(t, client, srv, code); status != http.StatusOK {
+		return status
+	}
+	return setResetPasswordRequest(t, client, srv, password)
 }

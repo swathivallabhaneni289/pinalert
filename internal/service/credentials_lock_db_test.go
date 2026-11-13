@@ -156,7 +156,10 @@ func TestConfirmLockOrder(t *testing.T) {
 		resetCode := mail.last(t).msg.Code
 
 		resetDone := make(chan error, 1)
-		go func() { resetDone <- svc.ConfirmReset(ctx, "sess-reset", resetCode, "a brand new password 55") }()
+		if err := svc.CheckResetCode(ctx, "sess-reset", resetCode); err != nil {
+			t.Fatalf("CheckResetCode: %v", err)
+		}
+		go func() { resetDone <- svc.ConfirmReset(ctx, "sess-reset", "a brand new password 55") }()
 		select {
 		case <-hold.reached:
 		case err := <-resetDone:

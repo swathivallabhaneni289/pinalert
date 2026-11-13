@@ -86,6 +86,39 @@ func (q *Queries) ConsumeAuthCode(ctx context.Context, id int64) (int64, error) 
 	return result.RowsAffected(), nil
 }
 
+const consumeVerifiedResetCode = `-- name: ConsumeVerifiedResetCode :execrows
+UPDATE auth_codes
+SET used_at = now(), expires_at = now(), password_hash = NULL
+WHERE id = $1
+  AND used_at IS NULL
+  AND purpose = 'reset'
+  AND delivery = 'code'
+  AND verified_at IS NOT NULL
+  AND verified_at > $2::timestamptz
+`
+
+type ConsumeVerifiedResetCodeParams struct {
+	ID            int64
+	VerifiedAfter time.Time
+}
+
+// Quick 261113-r5w, step two of Forgot password: spends a verified reset code
+// exactly once. It is ConsumeAuthCode for a row whose right code was typed
+// earlier: the confirm window is the code lifetime counted from verified_at
+// (verified_after is that moment minus the lifetime), not from the send, so a
+// person who typed the code just before it would have expired still has the
+// whole window to choose a password. A newer code retires the row (used_at set),
+// so it no longer matches. The rest is ConsumeAuthCode's write: used_at and
+// expires_at set to the same now() (SpentCode's pair), the hash cleared. 0 rows
+// means a parallel call won, the confirm ran out or a newer code replaced it.
+func (q *Queries) ConsumeVerifiedResetCode(ctx context.Context, arg ConsumeVerifiedResetCodeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, consumeVerifiedResetCode, arg.ID, arg.VerifiedAfter)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteAuthCodesForEmail = `-- name: DeleteAuthCodesForEmail :exec
 DELETE FROM auth_codes WHERE email = $1
 `
@@ -118,7 +151,7 @@ func (q *Queries) DeleteOtherAuthCodesForEmail(ctx context.Context, arg DeleteOt
 }
 
 const getLatestAuthCode = `-- name: GetLatestAuthCode :one
-SELECT id, purpose, delivery, email, password_hash, created_at, expires_at, attempts, used_at
+SELECT id, purpose, delivery, email, password_hash, created_at, expires_at, attempts, used_at, verified_at
 FROM auth_codes
 WHERE session_id = $1
   AND created_at > $2::timestamptz
@@ -141,6 +174,7 @@ type GetLatestAuthCodeRow struct {
 	ExpiresAt    time.Time
 	Attempts     int32
 	UsedAt       pgtype.Timestamptz
+	VerifiedAt   pgtype.Timestamptz
 }
 
 // The newest row of this session, whatever its purpose, created after since.
@@ -159,6 +193,7 @@ func (q *Queries) GetLatestAuthCode(ctx context.Context, arg GetLatestAuthCodePa
 		&i.ExpiresAt,
 		&i.Attempts,
 		&i.UsedAt,
+		&i.VerifiedAt,
 	)
 	return i, err
 }
@@ -247,6 +282,35 @@ WHERE id = $1
 func (q *Queries) MarkAuthCodePasswordSet(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, markAuthCodePasswordSet, id)
 	return err
+}
+
+const markAuthCodeVerified = `-- name: MarkAuthCodeVerified :execrows
+UPDATE auth_codes
+SET verified_at = COALESCE(verified_at, $1::timestamptz)
+WHERE id = $2
+  AND used_at IS NULL
+  AND expires_at > now()
+  AND purpose = 'reset'
+  AND delivery = 'code'
+`
+
+type MarkAuthCodeVerifiedParams struct {
+	VerifiedAt time.Time
+	ID         int64
+}
+
+// Quick 261113-r5w, step one of Forgot password: this browser typed the right
+// code. Only a live reset row that was emailed a code can be marked, and only
+// while it is unused and unexpired, so 0 rows means the row cannot be verified
+// (the service answers ErrWrongCode). verified_at is the service clock's moment
+// of the first right code and is never moved by a second one (COALESCE), so a
+// right code typed twice, or by two parallel requests, is still one verify.
+func (q *Queries) MarkAuthCodeVerified(ctx context.Context, arg MarkAuthCodeVerifiedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markAuthCodeVerified, arg.VerifiedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const pruneAuthCodes = `-- name: PruneAuthCodes :execrows

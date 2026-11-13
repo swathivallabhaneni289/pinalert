@@ -624,7 +624,7 @@ func TestResetCodeBoundToSession(t *testing.T) {
 	}
 	code := mail.codeFor(t, email)
 
-	got := doAuth(t, b, srv, "/api/auth/reset/code", map[string]string{"code": code, "password": secNewPassword})
+	got := doAuth(t, b, srv, "/api/auth/reset/code", map[string]string{"code": code})
 	expectError(t, "A's reset code typed in browser B", got, http.StatusBadRequest, "code", secWrongCodeSentence)
 
 	if status := confirmResetRequest(t, a, srv, code, secNewPassword); status != http.StatusOK {
@@ -647,7 +647,7 @@ func TestSignUpCodeRefusedOnReset(t *testing.T) {
 	}
 	code := mail.codeFor(t, email)
 
-	a := doAuth(t, c, srv, "/api/auth/reset/code", map[string]string{"code": code, "password": secNewPassword})
+	a := doAuth(t, c, srv, "/api/auth/reset/code", map[string]string{"code": code})
 	expectError(t, "sign up code on the reset route", a, http.StatusBadRequest, "code", secWrongCodeSentence)
 
 	var hasPassword bool
@@ -971,7 +971,10 @@ func TestResetEndsEverySession(t *testing.T) {
 	if status := requestResetRequest(t, third, srv, email); status != http.StatusOK {
 		t.Fatalf("reset request status = %d, want 200", status)
 	}
-	answer := doAuth(t, third, srv, "/api/auth/reset/code", map[string]string{"code": mail.codeFor(t, email), "password": secNewPassword})
+	if status := confirmResetCodeRequest(t, third, srv, mail.codeFor(t, email)); status != http.StatusOK {
+		t.Fatalf("reset code status = %d, want 200", status)
+	}
+	answer := doAuth(t, third, srv, "/api/auth/reset/password", map[string]string{"password": secNewPassword})
 	if answer.status != http.StatusOK {
 		t.Fatalf("reset confirm status = %d, want 200: %s", answer.status, answer.body)
 	}
@@ -1061,7 +1064,8 @@ func TestNoEmailInAddress(t *testing.T) {
 	c := newRecClient()
 	getLoginPage(t, c, srv)
 	post(c, "/api/auth/reset", map[string]string{"email": email})
-	post(c, "/api/auth/reset/code", map[string]string{"code": mail.codeFor(t, email), "password": secNewPassword})
+	post(c, "/api/auth/reset/code", map[string]string{"code": mail.codeFor(t, email)})
+	post(c, "/api/auth/reset/password", map[string]string{"password": secNewPassword})
 	getLoginPage(t, c, srv)
 
 	rec.mu.Lock()

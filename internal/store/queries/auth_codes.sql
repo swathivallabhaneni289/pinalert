@@ -70,6 +70,40 @@ WHERE id = sqlc.arg(id)
   AND used_at IS NOT NULL
   AND password_hash IS NULL;
 
+-- name: MarkAuthCodeVerified :execrows
+-- Quick 261113-r5w, step one of Forgot password: this browser typed the right
+-- code. Only a live reset row that was emailed a code can be marked, and only
+-- while it is unused and unexpired, so 0 rows means the row cannot be verified
+-- (the service answers ErrWrongCode). verified_at is the service clock's moment
+-- of the first right code and is never moved by a second one (COALESCE), so a
+-- right code typed twice, or by two parallel requests, is still one verify.
+UPDATE auth_codes
+SET verified_at = COALESCE(verified_at, sqlc.arg(verified_at)::timestamptz)
+WHERE id = sqlc.arg(id)
+  AND used_at IS NULL
+  AND expires_at > now()
+  AND purpose = 'reset'
+  AND delivery = 'code';
+
+-- name: ConsumeVerifiedResetCode :execrows
+-- Quick 261113-r5w, step two of Forgot password: spends a verified reset code
+-- exactly once. It is ConsumeAuthCode for a row whose right code was typed
+-- earlier: the confirm window is the code lifetime counted from verified_at
+-- (verified_after is that moment minus the lifetime), not from the send, so a
+-- person who typed the code just before it would have expired still has the
+-- whole window to choose a password. A newer code retires the row (used_at set),
+-- so it no longer matches. The rest is ConsumeAuthCode's write: used_at and
+-- expires_at set to the same now() (SpentCode's pair), the hash cleared. 0 rows
+-- means a parallel call won, the confirm ran out or a newer code replaced it.
+UPDATE auth_codes
+SET used_at = now(), expires_at = now(), password_hash = NULL
+WHERE id = sqlc.arg(id)
+  AND used_at IS NULL
+  AND purpose = 'reset'
+  AND delivery = 'code'
+  AND verified_at IS NOT NULL
+  AND verified_at > sqlc.arg(verified_after)::timestamptz;
+
 -- name: RetireAuthCode :exec
 -- Marks a row used when its email did not go out (the ceiling refused it or
 -- the provider failed), so a reload of the sign in page does not show a code
@@ -83,7 +117,7 @@ WHERE id = sqlc.arg(id)
 -- The newest row of this session, whatever its purpose, created after since.
 -- Read by Resend and by the sign in page to show the code screen again after a
 -- reload. The address goes into page text only, never into a URL.
-SELECT id, purpose, delivery, email, password_hash, created_at, expires_at, attempts, used_at
+SELECT id, purpose, delivery, email, password_hash, created_at, expires_at, attempts, used_at, verified_at
 FROM auth_codes
 WHERE session_id = sqlc.arg(session_id)
   AND created_at > sqlc.arg(since)::timestamptz
