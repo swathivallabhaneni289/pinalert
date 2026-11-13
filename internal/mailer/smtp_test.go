@@ -29,7 +29,7 @@ const (
 
 func testSMTPMailer(srv *smtptest.Server, implicit bool) *smtpMailer {
 	return &smtpMailer{
-		cfg: SMTPConfig{
+		cfg: &SMTPConfig{
 			Host:     srv.Host,
 			Port:     srv.Port,
 			Username: testSMTPUser,
@@ -181,11 +181,11 @@ func TestSMTPImplicitTLS(t *testing.T) {
 }
 
 func TestSMTPPort465MeansImplicitTLS(t *testing.T) {
-	if !(&smtpMailer{cfg: SMTPConfig{Port: 465}}).implicitTLS() {
+	if !(&smtpMailer{cfg: &SMTPConfig{Port: 465}}).implicitTLS() {
 		t.Error("port 465 should start TLS at the first byte")
 	}
 	for _, port := range []int{587, 25, 2525} {
-		if (&smtpMailer{cfg: SMTPConfig{Port: port}}).implicitTLS() {
+		if (&smtpMailer{cfg: &SMTPConfig{Port: port}}).implicitTLS() {
 			t.Errorf("port %d should use STARTTLS", port)
 		}
 	}
