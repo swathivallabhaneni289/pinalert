@@ -272,6 +272,16 @@ func TestPersonProfileCentred(t *testing.T) {
 	fkuWant(t, "phone cells", base, ".person-stats > *", "flex", "1 1 0")
 	fkuWant(t, "phone four cells", phoneOnly, ".person-stats:has(> .person-stars) > .person-tag-group", "flex", "1 0 100%")
 	fkuWant(t, "phone four cells", phoneOnly, ".person-stats:has(> .person-stars) > .person-tag-group", "border-left", "0")
+	// The three cells of the phone share the width equally: the reporter cell has
+	// no flex-grow override of its own, and the chip is drawn at the caption size
+	// so it fits (the mockup draws it at 12px on the phone).
+	for _, r := range phoneOnly {
+		if _, ok := r.Decls["flex-grow"]; ok {
+			t.Errorf("phone only rule %q declares flex-grow, the cells share the width equally", r.Head)
+		}
+	}
+	fkuWant(t, "phone chip", phoneOnly, ".person-stats .person-tag", "font-size", "var(--font-size-caption)")
+	fkuWant(t, "phone chip", phoneOnly, ".person-stats .person-tag", "line-height", "var(--line-height-caption)")
 
 	// The details line: stacked on the phone, side by side on the laptop, muted.
 	fkuWant(t, "phone details", base, ".person-facts", "flex-direction", "column")

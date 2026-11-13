@@ -846,14 +846,17 @@ a.person-report__body:hover .person-report__label {
 }
 
 /* Quick 261113-k9t: the counts row on the phone. The cells share the width
-   equally (the reporter cell a little more, for the chip and its words). With
-   the stars cell present there are four cells, and the reporter cell then wraps
-   to a row of its own under the other three, full width and with no line on its
-   left. The rule keys on the stars group, so it also holds after a rating adds
-   or takes away the stars. No CSS order property is used. */
+   equally, as the drawing has it, and the chip is drawn at the caption size so
+   "New reporter" fits its cell; in the narrowest cell the chip may still wrap
+   onto two lines and is never clipped. With the stars cell present there are
+   four cells, and the reporter cell then wraps to a row of its own under the
+   other three, full width and with no line on its left. The rule keys on the
+   stars group, so it also holds after a rating adds or takes away the stars. No
+   CSS order property is used. */
 @media not all and (min-width: 900px) {
-  .person-stats > .person-tag-group {
-    flex-grow: 1.6;
+  .person-stats .person-tag {
+    font-size: var(--font-size-caption);
+    line-height: var(--line-height-caption);
   }
 
   .person-stats:has(> .person-stars) > .person-tag-group {
