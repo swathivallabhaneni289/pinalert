@@ -203,6 +203,15 @@ var DefaultCredentialLimits = CredentialLimits{
 	ResumeWindow:    time.Hour,
 }
 
+// ResetConfirmWindow is how long a confirmed reset code stays good for step two
+// of Forgot password, counted from the confirm and not from the send (quick
+// 261113-r5w, review fix WR-01). It is short on purpose: for this long after the
+// right code was typed, whoever holds the browser's session can set the password
+// without the code, so it is kept well under the code's own 10 minute life. The
+// service, LiveCode (which draws step two) and docs/TRUST-MODEL.md all use this
+// one number.
+const ResetConfirmWindow = 5 * time.Minute
+
 // codeRowRetention is how long an expired code row is kept before the prune
 // deletes it. The prune runs when a code is sent (issueAndSend), so a row can
 // stay longer than this on a site where nobody sends a code (review fix round

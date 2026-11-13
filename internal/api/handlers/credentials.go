@@ -473,7 +473,7 @@ func RequestReset(creds *service.CredentialService, gate *AuthGate) http.Handler
 
 // ConfirmResetCode handles POST /api/auth/reset/code, step one of Forgot
 // password: the typed code and nothing else. A right code is remembered for this
-// browser for a short time and opens step two, and the browser moves to a freshly
+// browser for 5 minutes and opens step two, and the browser moves to a freshly
 // drawn session id (the new cookie rides on the answer); it sets no password and
 // signs nobody in. A wrong code is counted against the same budget of five tries
 // as ever, sets no cookie, and the answer is the same for an address with an
@@ -481,7 +481,7 @@ func RequestReset(creds *service.CredentialService, gate *AuthGate) http.Handler
 //
 // @Summary      Confirm the reset code
 // @Description  Checks the 6 digit code typed on the Forgot password screen. A right code is
-// @Description  remembered for this browser for a short time, so the next call can set the new
+// @Description  remembered for this browser for 5 minutes, so the next call can set the new
 // @Description  password, and this browser is moved to a new session in the same answer. It sets
 // @Description  no password and signs nobody in. A wrong, expired or replaced code gets the same
 // @Description  answer, whether or not the address has an account, and changes no cookie.
@@ -533,7 +533,7 @@ func ConfirmResetCode(creds *service.CredentialService, gate *AuthGate, mgr *ses
 // counts nothing and keeps the confirm.
 //
 // @Summary      Set a new password after the reset code was confirmed
-// @Description  Sets the new password for a browser whose reset code was confirmed a short time
+// @Description  Sets the new password for a browser whose reset code was confirmed less than 5 minutes
 // @Description  ago. A browser with no confirmed code, a confirm that ran out, or a code replaced by
 // @Description  a newer one gets the wrong code answer. A good call ends every session of the
 // @Description  account and does not sign this browser in.

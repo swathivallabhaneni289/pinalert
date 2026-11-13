@@ -35,7 +35,7 @@ type LiveCode struct {
 	// return from the mail app shows the wait that is really left.
 	ResendSecondsLeft int
 	// Verified is true when the row is a reset row whose right code was typed
-	// (Forgot password step one, quick 261113-r5w) less than a code lifetime ago,
+	// (Forgot password step one, quick 261113-r5w) less than ResetConfirmWindow ago,
 	// so a reload shows step two, the new password, and not the code box again.
 	Verified bool
 }
@@ -465,7 +465,7 @@ func (s *CredentialService) endSessionID(ctx context.Context, q CredentialQuerie
 // ConfirmReset is step two of Forgot password, the new password (quick
 // 261113-r5w). It needs the verified row CheckResetCode made: the newest row of
 // this browser must be a reset row that was emailed a code, is unused and was
-// verified less than a code lifetime ago, otherwise ErrWrongCode, the one
+// verified less than ResetConfirmWindow (5 minutes) ago, otherwise ErrWrongCode, the one
 // answer to a wrong, expired, replaced or never confirmed code. A newer code
 // (Resend, or Forgot password again) is a newer row, so the verified older row
 // is no longer the newest and this refuses; that is intended. Without the
@@ -500,7 +500,7 @@ func (s *CredentialService) ConfirmReset(ctx context.Context, sessionID, newPass
 		}
 		return fmt.Errorf("service: reading latest code: %w", err)
 	}
-	if !verifiedResetRow(latest.Purpose, latest.Delivery, latest.UsedAt, latest.VerifiedAt, now, s.limits.CodeTTL) {
+	if !verifiedResetRow(latest.Purpose, latest.Delivery, latest.UsedAt, latest.VerifiedAt, now) {
 		return ErrWrongCode
 	}
 	if err := checkPassword(newPassword, latest.Email); err != nil {
@@ -526,7 +526,7 @@ func (s *CredentialService) ConfirmReset(ctx context.Context, sessionID, newPass
 		if _, err := s.setPasswordNewEpoch(ctx, q, account.ID, hash); err != nil {
 			return err
 		}
-		verifiedAfter := s.now().Add(-s.limits.CodeTTL)
+		verifiedAfter := s.now().Add(-ResetConfirmWindow)
 		consume := func() (int64, error) {
 			return q.ConsumeVerifiedResetCode(ctx, sqlcgen.ConsumeVerifiedResetCodeParams{ID: latest.ID, VerifiedAfter: verifiedAfter})
 		}
@@ -544,12 +544,13 @@ func (s *CredentialService) ConfirmReset(ctx context.Context, sessionID, newPass
 }
 
 // verifiedResetRow is true for a code row that step two may spend: a reset row
-// that was emailed a code, is unused, and was verified less than ttl before now.
-func verifiedResetRow(purpose, delivery string, usedAt, verifiedAt pgtype.Timestamptz, now time.Time, ttl time.Duration) bool {
+// that was emailed a code, is unused, and was verified less than
+// ResetConfirmWindow before now.
+func verifiedResetRow(purpose, delivery string, usedAt, verifiedAt pgtype.Timestamptz, now time.Time) bool {
 	if purpose != PurposeReset || delivery != DeliveryCode || usedAt.Valid || !verifiedAt.Valid {
 		return false
 	}
-	return now.Before(verifiedAt.Time.Add(ttl))
+	return now.Before(verifiedAt.Time.Add(ResetConfirmWindow))
 }
 
 // setPassword stores the first password of a brand new account without moving
@@ -667,7 +668,7 @@ func (s *CredentialService) LiveCode(ctx context.Context, sessionID string) (Liv
 		Email:             row.Email,
 		SecondsLeft:       secondsUntil(now, row.ExpiresAt),
 		ResendSecondsLeft: secondsUntil(now, sentAt.Add(s.limits.SendCooldown)),
-		Verified:          verifiedResetRow(row.Purpose, row.Delivery, row.UsedAt, row.VerifiedAt, now, s.limits.CodeTTL),
+		Verified:          verifiedResetRow(row.Purpose, row.Delivery, row.UsedAt, row.VerifiedAt, now),
 	}, true, nil
 }
 

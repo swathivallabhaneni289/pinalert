@@ -151,7 +151,7 @@ const docTemplate = `{
         },
         "/auth/reset/code": {
             "post": {
-                "description": "Checks the 6 digit code typed on the Forgot password screen. A right code is\nremembered for this browser for a short time, so the next call can set the new\npassword, and this browser is moved to a new session in the same answer. It sets\nno password and signs nobody in. A wrong, expired or replaced code gets the same\nanswer, whether or not the address has an account, and changes no cookie.",
+                "description": "Checks the 6 digit code typed on the Forgot password screen. A right code is\nremembered for this browser for 5 minutes, so the next call can set the new\npassword, and this browser is moved to a new session in the same answer. It sets\nno password and signs nobody in. A wrong, expired or replaced code gets the same\nanswer, whether or not the address has an account, and changes no cookie.",
                 "consumes": [
                     "application/json"
                 ],
@@ -215,7 +215,7 @@ const docTemplate = `{
         },
         "/auth/reset/password": {
             "post": {
-                "description": "Sets the new password for a browser whose reset code was confirmed a short time\nago. A browser with no confirmed code, a confirm that ran out, or a code replaced by\na newer one gets the wrong code answer. A good call ends every session of the\naccount and does not sign this browser in.",
+                "description": "Sets the new password for a browser whose reset code was confirmed less than 5 minutes\nago. A browser with no confirmed code, a confirm that ran out, or a code replaced by\na newer one gets the wrong code answer. A good call ends every session of the\naccount and does not sign this browser in.",
                 "consumes": [
                     "application/json"
                 ],

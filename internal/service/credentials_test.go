@@ -2139,7 +2139,7 @@ func TestConfirmResetNeedsAConfirmedCode(t *testing.T) {
 		r := newCredRig(t)
 		a := r.addPasswordAccount(t, credEmail, credPassword)
 		fresh := r.resetVerified(t, "sess-d")
-		r.clk.Advance(service.DefaultCredentialLimits.CodeTTL + time.Second)
+		r.clk.Advance(service.ResetConfirmWindow + time.Second)
 		refused(t, r, a, fresh)
 	})
 
@@ -2204,6 +2204,38 @@ func TestConfirmResetNeedsAConfirmedCode(t *testing.T) {
 		}
 		if err := r.svc.ConfirmReset(ctx, fresh, newPassword); err != nil {
 			t.Fatalf("ConfirmReset inside the confirm window: %v", err)
+		}
+	})
+
+	// Review fix WR-01: the confirm lasts 5 minutes, not a code lifetime.
+	t.Run("the confirm window is five minutes from the confirm", func(t *testing.T) {
+		if service.ResetConfirmWindow != 5*time.Minute {
+			t.Fatalf("ResetConfirmWindow = %v, want 5m", service.ResetConfirmWindow)
+		}
+		for _, c := range []struct {
+			name string
+			wait time.Duration
+			ok   bool
+		}{
+			{"4 minutes 59 seconds after the confirm", 5*time.Minute - time.Second, true},
+			{"5 minutes after the confirm", 5 * time.Minute, false},
+			{"6 minutes after the confirm", 6 * time.Minute, false},
+		} {
+			r := newCredRig(t)
+			a := r.addPasswordAccount(t, credEmail, credPassword)
+			fresh := r.resetVerified(t, "sess-d")
+			r.clk.Advance(c.wait)
+			lc, live, _ := r.svc.LiveCode(ctx, fresh)
+			if live && lc.Verified != c.ok {
+				t.Errorf("%s: LiveCode.Verified = %v, want %v", c.name, lc.Verified, c.ok)
+			}
+			if c.ok {
+				if err := r.svc.ConfirmReset(ctx, fresh, newPassword); err != nil {
+					t.Errorf("%s: ConfirmReset: %v", c.name, err)
+				}
+				continue
+			}
+			refused(t, r, a, fresh)
 		}
 	})
 }
@@ -2322,7 +2354,7 @@ func TestLiveCode(t *testing.T) {
 		if !ok || !lc.Verified || lc.Purpose != service.PurposeReset {
 			t.Errorf("a confirmed reset code: %+v ok=%v, want live and verified", lc, ok)
 		}
-		r.clk.Advance(service.DefaultCredentialLimits.CodeTTL + time.Second)
+		r.clk.Advance(service.ResetConfirmWindow + time.Second)
 		if lc, _, _ := r.svc.LiveCode(ctx, freshA); lc.Verified {
 			t.Error("the confirm ran out: Verified must be false")
 		}

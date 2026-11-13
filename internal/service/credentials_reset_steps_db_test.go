@@ -130,7 +130,7 @@ func TestResetStepsOnDatabase(t *testing.T) {
 		c := askAndConfirm(t, "steps-c")
 		// Stand the clock back by moving the row: sent 9 minutes ago, confirmed a
 		// minute ago, so the code itself ran out a minute ago and the confirm has
-		// 9 minutes left.
+		// 4 minutes left (the window is 5 minutes).
 		testutil.MustExec(t, pool, `UPDATE auth_codes
 			SET created_at = now() - interval '9 minutes 30 seconds',
 			    expires_at = now() - interval '30 seconds',
@@ -144,9 +144,9 @@ func TestResetStepsOnDatabase(t *testing.T) {
 		}
 	})
 
-	t.Run("a confirm older than the code lifetime is refused", func(t *testing.T) {
+	t.Run("a confirm older than the confirm window is refused", func(t *testing.T) {
 		d := askAndConfirm(t, "steps-d")
-		testutil.MustExec(t, pool, `UPDATE auth_codes SET verified_at = now() - interval '11 minutes' WHERE session_id = 'steps-d-f'`)
+		testutil.MustExec(t, pool, `UPDATE auth_codes SET verified_at = now() - interval '6 minutes' WHERE session_id = 'steps-d-f'`)
 		if err := svc.ConfirmReset(ctx, d, newPassword); !errors.Is(err, service.ErrWrongCode) {
 			t.Fatalf("err = %v, want ErrWrongCode", err)
 		}
