@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"mime/multipart"
 	"mime/quotedprintable"
@@ -34,9 +35,36 @@ type SMTPConfig struct {
 	From string
 }
 
+// String keeps the password, the user name and the sender out of every fmt
+// verb: a config printed by mistake (a debug line, an error that wraps it)
+// shows the host and port only. It formats the fields, never c itself, which
+// would call String again.
+func (c SMTPConfig) String() string {
+	return fmt.Sprintf("SMTPConfig{Host:%s Port:%d Username:[redacted] Password:[redacted] From:[redacted]}", c.Host, c.Port)
+}
+
+// GoString is the %#v form; it is as redacted as String.
+func (c SMTPConfig) GoString() string { return c.String() }
+
+// Format covers every verb, not only the ones a Stringer is asked for: without
+// it %d would walk the fields and print the password as "%!d(string=...)". It
+// takes precedence over String and GoString in fmt.
+func (c SMTPConfig) Format(f fmt.State, _ rune) {
+	_, _ = io.WriteString(f, c.String())
+}
+
 // smtpDefaultTimeout bounds the whole exchange (dial, TLS, login and send)
 // when the caller's context has no deadline of its own.
 const smtpDefaultTimeout = 20 * time.Second
+
+// timeout is the bound used when the caller's context has no deadline: the
+// mailer's own defaultTimeout when a test set one, else smtpDefaultTimeout.
+func (m *smtpMailer) timeout() time.Duration {
+	if m.defaultTimeout > 0 {
+		return m.defaultTimeout
+	}
+	return smtpDefaultTimeout
+}
 
 // smtpHelloName is the name the client introduces itself with.
 const smtpHelloName = "localhost"
@@ -51,9 +79,11 @@ const smtpImplicitTLSPort = 465
 var (
 	errSMTPNetwork   = errors.New("could not reach the mail server")
 	errSMTPTLS       = errors.New("could not secure the connection to the mail server")
-	errSMTPNoTLS     = errors.New("the mail server does not offer an encrypted connection")
+	errSMTPNoTLS     = errors.New("the mail server did not start encryption")
 	errSMTPTemporary = errors.New("the mail server asked to try again later")
 	errSMTPAuth      = errors.New("the mail server refused the sign in")
+	errSMTPNoAuth    = errors.New("the mail server offers no password sign in")
+	errSMTPAuthLost  = errors.New("the mail server dropped the connection during sign in")
 	errSMTPPermanent = errors.New("the mail server refused the message")
 
 	// errBadRecipient and errBadSender name no address.
@@ -76,13 +106,34 @@ const (
 
 // smtpMailer implements Mailer over SMTP using the standard library only.
 type smtpMailer struct {
-	cfg SMTPConfig
+	// cfg is a pointer on purpose. fmt cannot call a method on an unexported
+	// field, so a struct that holds this mailer (the send ceiling, the
+	// service) would print a config held by value, password and all, under a
+	// verb such as %s or %d. A pointer prints as an address there.
+	cfg *SMTPConfig
 	// rootCAs replaces the system roots when not nil. Only tests in this
 	// package set it, to trust the certificate of an in process fake server.
 	rootCAs *x509.CertPool
 	// forceImplicitTLS makes a test server on a random port behave like port
 	// 465. Nothing outside tests sets it.
 	forceImplicitTLS bool
+	// defaultTimeout replaces smtpDefaultTimeout when not zero. Only tests set
+	// it, so the no deadline case does not take 20 seconds to prove.
+	defaultTimeout time.Duration
+}
+
+// String, GoString and Format hide the config (and so the password) when the
+// mailer itself is printed. They sit on the value receiver, so a pointer and a
+// copy are both covered. fmt cannot call a method on the unexported cfg field,
+// which is why the mailer needs its own.
+func (m smtpMailer) String() string { return "smtpMailer{" + m.cfg.String() + "}" }
+
+// GoString is the %#v form of the mailer.
+func (m smtpMailer) GoString() string { return m.String() }
+
+// Format covers every verb, like SMTPConfig.Format.
+func (m smtpMailer) Format(f fmt.State, _ rune) {
+	_, _ = io.WriteString(f, m.String())
 }
 
 // implicitTLS reports whether the connection is encrypted from the first byte
@@ -97,7 +148,8 @@ func (m *smtpMailer) implicitTLS() bool {
 // the connection is encrypted, and the server's certificate is always checked
 // (TLS 1.2 or newer, against the host name in cfg).
 func NewSMTPMailer(cfg SMTPConfig) Mailer {
-	return &smtpMailer{cfg: cfg}
+	c := cfg
+	return &smtpMailer{cfg: &c}
 }
 
 // NewSMTPMailerWithRootCAs is NewSMTPMailer with its own set of trusted root
@@ -105,9 +157,11 @@ func NewSMTPMailer(cfg SMTPConfig) Mailer {
 // checked in full (chain, host name, TLS 1.2 or newer); only the trust anchors
 // differ. It exists so tests in other packages (cmd/mailcheck) can reach an in
 // process fake server with a certificate made in the test. Nothing in the
-// server's own startup path calls it.
+// server's own startup path calls it, and TestTestOnlyHooksStayOutOfProductionCode
+// fails if a non test file outside this package ever does.
 func NewSMTPMailerWithRootCAs(cfg SMTPConfig, roots *x509.CertPool) Mailer {
-	return &smtpMailer{cfg: cfg, rootCAs: roots}
+	c := cfg
+	return &smtpMailer{cfg: &c, rootCAs: roots}
 }
 
 // SendAuthEmail sends one auth email with a plain text part and an HTML part.
@@ -219,7 +273,7 @@ func buildMessage(sender *mail.Address, to, subject, text, htmlBody string, now 
 func (m *smtpMailer) deliver(ctx context.Context, envelopeFrom, rcpt string, data []byte) error {
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, smtpDefaultTimeout)
+		ctx, cancel = context.WithTimeout(ctx, m.timeout())
 		defer cancel()
 	}
 	deadline, _ := ctx.Deadline()
@@ -278,7 +332,8 @@ func (m *smtpMailer) deliver(ctx context.Context, envelopeFrom, rcpt string, dat
 	}
 
 	if ok, mechs := client.Extension("AUTH"); !ok || !strings.Contains(" "+strings.ToUpper(mechs)+" ", " PLAIN ") {
-		return errSMTPAuth
+		// Not a refused password: no sign in was tried.
+		return errSMTPNoAuth
 	}
 	auth := smtp.PlainAuth("", m.cfg.Username, m.cfg.Password, m.cfg.Host)
 	if err := client.Auth(auth); err != nil {
@@ -321,6 +376,11 @@ func smtpFailure(ctx context.Context, err error, stage smtpStage) error {
 	var reply *textproto.Error
 	if errors.As(err, &reply) {
 		switch {
+		case stage == stageTLS:
+			// The server answered STARTTLS with something other than "go
+			// ahead" (454, 502, 554 and so on). That is a refused encryption,
+			// not a refused message, whatever the reply code says.
+			return fmt.Errorf("%w (reply %d)", errSMTPNoTLS, reply.Code)
 		case stage == stageAuth:
 			return fmt.Errorf("%w (reply %d)", errSMTPAuth, reply.Code)
 		case reply.Code >= 400 && reply.Code < 500:
@@ -333,7 +393,9 @@ func smtpFailure(ctx context.Context, err error, stage smtpStage) error {
 	case stageTLS:
 		return errSMTPTLS
 	case stageAuth:
-		return errSMTPAuth
+		// No reply from the server: the connection broke in the middle of the
+		// sign in. The password was not refused, so it is not errSMTPAuth.
+		return errSMTPAuthLost
 	}
 	return errSMTPNetwork
 }

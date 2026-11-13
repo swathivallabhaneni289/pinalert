@@ -117,7 +117,45 @@ func TestMissingSettingsExitNonZeroAndNameThem(t *testing.T) {
 	assertNoSecrets(t, "stderr", errOut.String())
 }
 
+// TestHalfSetSettingsExitNonZero is the half set group: some SMTP setting is
+// set but SMTP_HOST is not. With ENV=development the server would warn and use
+// the log mailer for such a group; mailcheck must not, because a send check that
+// prints to a log checks nothing. So ENV matters here: it is the setting that
+// would let the group slip through if mailcheck read it.
 func TestHalfSetSettingsExitNonZero(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		set  map[string]string
+	}{
+		{"only the password", map[string]string{"SMTP_PASSWORD": checkPassword}},
+		{"only the user name", map[string]string{"SMTP_USERNAME": checkUser}},
+		{"only the port", map[string]string{"SMTP_PORT": "587"}},
+		{"only the sender", map[string]string{"MAIL_FROM": "Pinalert <" + checkUser + ">"}},
+		{"user name and password, no host", map[string]string{"SMTP_USERNAME": checkUser, "SMTP_PASSWORD": checkPassword}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clearSMTPEnv(t)
+			t.Setenv("ENV", "development")
+			for k, v := range tc.set {
+				t.Setenv(k, v)
+			}
+
+			var out, errOut bytes.Buffer
+			code := run([]string{"-to", checkTo}, &out, &errOut, loadProduction)
+			if code == 0 || !strings.Contains(errOut.String(), "SMTP_HOST") {
+				t.Fatalf("code %d, stderr %q: want non zero and a message naming SMTP_HOST", code, errOut.String())
+			}
+			if out.Len() != 0 {
+				t.Errorf("stdout %q should be empty", out.String())
+			}
+			assertNoSecrets(t, "stderr", errOut.String())
+		})
+	}
+}
+
+// TestMissingPasswordExitsNonZero is the other case: SMTP_HOST and the user name
+// are set and the password is not.
+func TestMissingPasswordExitsNonZero(t *testing.T) {
 	clearSMTPEnv(t)
 	t.Setenv("SMTP_HOST", "smtp.example.com")
 	t.Setenv("SMTP_USERNAME", checkUser)

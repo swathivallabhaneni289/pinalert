@@ -41,8 +41,8 @@ func TestLoadMailer(t *testing.T) {
 		if sm.cfg.Username != "pinalert.sender@example.com" {
 			t.Errorf("username = %q", sm.cfg.Username)
 		}
-		if sm.cfg.Password != "apppassword" {
-			t.Errorf("the spaces of an app password should be dropped, got %q", sm.cfg.Password)
+		if sm.cfg.Password != "app password" {
+			t.Errorf("a password for a host other than smtp.gmail.com is used as given, got %q", sm.cfg.Password)
 		}
 		from, err := mail.ParseAddress(sm.cfg.From)
 		if err != nil || from.Name != "Pinalert" || from.Address != "pinalert.sender@example.com" {
@@ -69,7 +69,6 @@ func TestLoadMailer(t *testing.T) {
 
 	t.Run("host set, env development still returns the smtp mailer", func(t *testing.T) {
 		setSMTPEnv(t, "smtp.example.com", "", "pinalert.sender@example.com", "pw", "")
-		t.Setenv("ENV", "development")
 
 		m, err := LoadMailer("development")
 		if err != nil {

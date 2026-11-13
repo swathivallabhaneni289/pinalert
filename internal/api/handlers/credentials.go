@@ -41,7 +41,8 @@ import (
 const maxCredentialBodyBytes = 4096
 
 // authWriteWindow is the write deadline a code sending handler gives its one
-// answer. It is longer than the mailer's one minute client timeout.
+// answer. It is longer than the SMTP mailer's 20 second limit (smtpDefaultTimeout
+// in internal/mailer).
 const authWriteWindow = 75 * time.Second
 
 // The sentences that are not in package service. The rate limit sentence is

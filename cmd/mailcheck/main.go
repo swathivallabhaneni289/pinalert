@@ -29,7 +29,6 @@ import (
 	"time"
 
 	"pinalert/internal/mailer"
-	"pinalert/internal/service"
 )
 
 const usage = "usage: go run ./cmd/mailcheck -to someone@gmail.com [-kind signup|reset]"
@@ -82,7 +81,12 @@ func run(args []string, stdout, stderr io.Writer, load func() (mailer.Mailer, er
 	m, err := load()
 	if err != nil {
 		fmt.Fprintf(stderr, "mailcheck: %v\n", err)
-		fmt.Fprintln(stderr, "mailcheck: set SMTP_HOST, SMTP_USERNAME and SMTP_PASSWORD (SMTP_PORT and MAIL_FROM are optional) in this shell, then run it again.")
+		// The hint is only for a problem with one of the three required
+		// settings. A bad SMTP_PORT or MAIL_FROM is already explained by the
+		// loader's own line, and the three are set.
+		if mailer.IsRequiredSettingError(err) {
+			fmt.Fprintln(stderr, "mailcheck: set SMTP_HOST, SMTP_USERNAME and SMTP_PASSWORD (SMTP_PORT and MAIL_FROM are optional) in this shell, then run it again.")
+		}
 		return 1
 	}
 
@@ -95,7 +99,7 @@ func run(args []string, stdout, stderr io.Writer, load func() (mailer.Mailer, er
 		Kind: emailKind,
 		Code: code,
 		// The real lifetime of a code, so the sample says what a real email says.
-		MinutesValid: int(service.DefaultCredentialLimits.CodeTTL / time.Minute),
+		MinutesValid: int(mailer.CodeLifetime / time.Minute),
 	}
 	if err := m.SendAuthEmail(context.Background(), *to, msg); err != nil {
 		// The error holds the kind of failure only: no password, address or code.

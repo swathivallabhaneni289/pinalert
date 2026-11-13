@@ -128,13 +128,15 @@ delivers to anyone.
 | `SMTP_HOST` | `smtp.gmail.com` |
 | `SMTP_PORT` | `587` (the default, STARTTLS). `465` starts TLS at the first byte. |
 | `SMTP_USERNAME` | The Gmail address that sends the emails. |
-| `SMTP_PASSWORD` | A Google app password for that account (not the account password). The spaces Google shows in it are dropped for you. |
+| `SMTP_PASSWORD` | A Google app password for that account (not the account password). The spaces Google shows in it are dropped for you only when `SMTP_HOST` is `smtp.gmail.com` and what is left is 16 letters; any other password is used exactly as you give it. |
 | `MAIL_FROM` | Optional. Defaults to `Pinalert <SMTP_USERNAME>`. |
 
 The connection is always encrypted before the password is sent: the server refuses to send if it
 does not offer STARTTLS, it needs TLS 1.2 or newer, and it checks the server's certificate and
 name. A failed send shows only the kind of failure in the server log (could not reach the server,
-could not secure the connection, sign in refused, try again later, message refused), never the
+could not secure the connection, the server did not start encryption, sign in refused, no
+password sign in offered, connection lost during sign in, try again later, message refused),
+never the
 password, the user name, an address or a code.
 
 **Owner steps for Gmail:**
@@ -145,11 +147,26 @@ password, the user name, an address or a code.
 3. In the same place, create an app password (name it Pinalert). Google shows it once.
 4. Set `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`, `SMTP_USERNAME` (the Pinalert Gmail) and
    `SMTP_PASSWORD` (the app password) as host secrets. `MAIL_FROM` is optional.
-5. Check it with a real inbox before letting anyone in: set the four settings in your shell and run
-   `go run ./cmd/mailcheck -to your.own@address.example` (add `-kind reset` for the Forgot password
-   wording). It sends one sample code email, touches no database and starts no server, and prints
-   either `Sent. Check the inbox and the spam folder.` or the kind of failure. Look in the spam
-   folder too: a brand new sending account can land there at first.
+5. Check it with a real inbox before letting anyone in. Do it in a new terminal tab that you close
+   afterwards, so the app password stays out of your shell history and out of every later command
+   (in zsh, `read -s` takes the password without showing it and without writing it to the
+   history):
+
+   ```sh
+   read -s SMTP_PASSWORD     # paste the app password, nothing is shown, press Return
+   export SMTP_PASSWORD
+   export SMTP_HOST=smtp.gmail.com SMTP_USERNAME=pinalert.sender@gmail.com
+   go run ./cmd/mailcheck -to your.own@address.example
+   exit
+   ```
+
+   Add `-kind reset` to the `mailcheck` line for the Forgot password wording. `exit` closes the
+   shell and forgets the password. Never start the test copy, `make run` or any server in that
+   shell: it would see the real mail settings and send real email from the Pinalert account to
+   the made up people of the test data. `mailcheck` sends one sample code email, touches no
+   database and starts no server, and prints either `Sent. Check the inbox and the spam folder.`
+   or the kind of failure. Look in the spam folder too: a brand new sending account can land
+   there at first.
 
 **Limits.** A free Gmail account can send to only a few hundred recipients a day, and the server's
 own ceiling (below) stays well under that. Some free hosts block the outgoing mail ports (465 and
