@@ -34,6 +34,10 @@ type Options struct {
 	// AdvertiseAuthAlways lists AUTH PLAIN in the EHLO answer before TLS too,
 	// like a careless server, to prove that the client does not use it.
 	AdvertiseAuthAlways bool
+	// MaxTLSVersion caps the newest TLS version the server speaks, for both the
+	// STARTTLS upgrade and implicit TLS (for example tls.VersionTLS11, an old
+	// server a client that wants TLS 1.2 or newer must refuse). Zero means no cap.
+	MaxTLSVersion uint16
 	// AuthMechanisms replaces the mechanisms listed after AUTH once the
 	// connection is encrypted ("PLAIN LOGIN" by default). "LOGIN" alone is a
 	// server that offers no PLAIN sign in.
@@ -98,7 +102,7 @@ func Start(tb testing.TB, opts Options) *Server {
 	}
 	var ln net.Listener = inner
 	if opts.ImplicitTLS {
-		ln = tls.NewListener(inner, &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12})
+		ln = tls.NewListener(inner, serverTLSConfig(cert, opts.MaxTLSVersion))
 	}
 	addr := inner.Addr().(*net.TCPAddr)
 	s := &Server{Host: "127.0.0.1", Port: addr.Port, Roots: roots, opts: opts, ln: ln, cert: cert}
@@ -250,7 +254,7 @@ func (s *Server) serve(raw net.Conn) {
 			if !write("220 2.0.0 Ready to start TLS") {
 				return
 			}
-			tc := tls.Server(raw, &tls.Config{Certificates: []tls.Certificate{s.cert}, MinVersion: tls.VersionTLS12})
+			tc := tls.Server(raw, serverTLSConfig(s.cert, s.opts.MaxTLSVersion))
 			if err := tc.Handshake(); err != nil {
 				return
 			}
@@ -317,6 +321,20 @@ func (s *Server) serve(raw net.Conn) {
 			}
 		}
 	}
+}
+
+// serverTLSConfig is the server side TLS setup: TLS 1.2 or newer, unless
+// maxVersion is set, in which case the server speaks nothing newer than it
+// (and accepts as old as TLS 1.0, so a cap below 1.2 is a working server).
+func serverTLSConfig(cert tls.Certificate, maxVersion uint16) *tls.Config {
+	cfg := &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
+	if maxVersion != 0 {
+		cfg.MaxVersion = maxVersion
+		if maxVersion < tls.VersionTLS12 {
+			cfg.MinVersion = tls.VersionTLS10
+		}
+	}
+	return cfg
 }
 
 // makeCert makes a self signed certificate for 127.0.0.1 and localhost, valid

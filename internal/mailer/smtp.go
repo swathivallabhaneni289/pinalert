@@ -57,6 +57,15 @@ func (c SMTPConfig) Format(f fmt.State, _ rune) {
 // when the caller's context has no deadline of its own.
 const smtpDefaultTimeout = 20 * time.Second
 
+// timeout is the bound used when the caller's context has no deadline: the
+// mailer's own defaultTimeout when a test set one, else smtpDefaultTimeout.
+func (m *smtpMailer) timeout() time.Duration {
+	if m.defaultTimeout > 0 {
+		return m.defaultTimeout
+	}
+	return smtpDefaultTimeout
+}
+
 // smtpHelloName is the name the client introduces itself with.
 const smtpHelloName = "localhost"
 
@@ -108,6 +117,9 @@ type smtpMailer struct {
 	// forceImplicitTLS makes a test server on a random port behave like port
 	// 465. Nothing outside tests sets it.
 	forceImplicitTLS bool
+	// defaultTimeout replaces smtpDefaultTimeout when not zero. Only tests set
+	// it, so the no deadline case does not take 20 seconds to prove.
+	defaultTimeout time.Duration
 }
 
 // String, GoString and Format hide the config (and so the password) when the
@@ -261,7 +273,7 @@ func buildMessage(sender *mail.Address, to, subject, text, htmlBody string, now 
 func (m *smtpMailer) deliver(ctx context.Context, envelopeFrom, rcpt string, data []byte) error {
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, smtpDefaultTimeout)
+		ctx, cancel = context.WithTimeout(ctx, m.timeout())
 		defer cancel()
 	}
 	deadline, _ := ctx.Deadline()
