@@ -145,7 +145,8 @@ func NewSMTPMailer(cfg SMTPConfig) Mailer {
 // checked in full (chain, host name, TLS 1.2 or newer); only the trust anchors
 // differ. It exists so tests in other packages (cmd/mailcheck) can reach an in
 // process fake server with a certificate made in the test. Nothing in the
-// server's own startup path calls it.
+// server's own startup path calls it, and TestTestOnlyHooksStayOutOfProductionCode
+// fails if a non test file outside this package ever does.
 func NewSMTPMailerWithRootCAs(cfg SMTPConfig, roots *x509.CertPool) Mailer {
 	c := cfg
 	return &smtpMailer{cfg: &c, rootCAs: roots}

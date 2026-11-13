@@ -2,7 +2,8 @@
 // a random port of 127.0.0.1, presents a certificate made on the spot, and
 // records the conversation, so a test can check that the client encrypted the
 // connection before it sent a password. It never reaches any other host, and
-// it is only for tests: nothing outside a _test.go file imports it.
+// it is only for tests: nothing outside a _test.go file imports it, and
+// TestTestOnlyHooksStayOutOfProductionCode in internal/mailer fails if one does.
 package smtptest
 
 import (
