@@ -128,7 +128,7 @@ delivers to anyone.
 | `SMTP_HOST` | `smtp.gmail.com` |
 | `SMTP_PORT` | `587` (the default, STARTTLS). `465` starts TLS at the first byte. |
 | `SMTP_USERNAME` | The Gmail address that sends the emails. |
-| `SMTP_PASSWORD` | A Google app password for that account (not the account password). The spaces Google shows in it are dropped for you. |
+| `SMTP_PASSWORD` | A Google app password for that account (not the account password). The spaces Google shows in it are dropped for you only when `SMTP_HOST` is `smtp.gmail.com` and what is left is 16 letters; any other password is used exactly as you give it. |
 | `MAIL_FROM` | Optional. Defaults to `Pinalert <SMTP_USERNAME>`. |
 
 The connection is always encrypted before the password is sent: the server refuses to send if it
