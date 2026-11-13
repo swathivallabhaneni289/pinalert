@@ -19,7 +19,7 @@ import (
 
 func TestHomeAreaSearchIsAreasOnly(t *testing.T) {
 	const place = "/api/geocode/place"
-	for _, file := range []string{"js/welcome.js", "js/settings.js"} {
+	for _, file := range []string{"js/welcome.js", "js/profile-edit.js"} {
 		js := p421ReadStatic(t, file)
 		if !strings.Contains(js, place+"?kind=area&q=") {
 			t.Errorf("%s does not build its place search with %s?kind=area&q=", file, place)

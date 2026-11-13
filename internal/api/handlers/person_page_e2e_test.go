@@ -52,8 +52,9 @@ func p908Shown(body, id string) bool {
 }
 
 // TestPersonPage is V9 for the page: another person's page shows the h1
-// username, the tag word and Follow; your own page shows Edit in Settings and
-// the state line and no Follow; both are no-store and noindex.
+// username, the tag word and Follow; your own page shows Edit profile, its edit
+// panel with the three rows, the three windows and no Follow, and no state line for
+// a public profile (quick 261113-t4y); both are no-store and noindex.
 func TestPersonPage(t *testing.T) {
 	srv, mailer, pool := p907Server(t)
 	viewer, _ := p907Person(t, srv, mailer, pool, "p908-page-viewer@example.com", "page_viewer", false)
@@ -84,8 +85,15 @@ func TestPersonPage(t *testing.T) {
 	if !p908Shown(body, "person-more") {
 		t.Errorf("More must be on another person's page")
 	}
-	if strings.Contains(body, `id="person-edit"`) || strings.Contains(body, `id="person-state-line"`) {
-		t.Errorf("another person's page must not draw the own page controls")
+	// Quick 261113-t4y: nor the edit panel, the three edit windows or their scripts.
+	for _, banned := range []string{
+		`id="person-edit"`, `id="person-state-line"`, `id="person-edit-panel"`,
+		`id="settings-username-window"`, `id="settings-name-window"`, `id="settings-home-window"`,
+		"/static/js/profile-edit.js", "/static/js/username-check.js", ">Edit profile<",
+	} {
+		if strings.Contains(body, banned) {
+			t.Errorf("another person's page must not draw the own page controls, it holds %q", banned)
+		}
 	}
 	if got := header.Get("Cache-Control"); got != "no-store" {
 		t.Errorf("Cache-Control = %q, want no-store", got)
@@ -107,11 +115,19 @@ func TestPersonPage(t *testing.T) {
 		t.Fatalf("GET own /u/page_owner: status = %d, want 200, body %s", status, own)
 	}
 	for _, want := range []string{
-		"Edit in Settings", `id="person-state-line"`, `data-self="true"`,
-		"People can follow you while you hold the Reliable reporter tag.",
+		">Edit profile</button>", `id="person-edit-panel"`, `aria-controls="person-edit-panel"`, `data-self="true"`,
+		`id="settings-username-row"`, `id="settings-name-row"`, `id="settings-home-row"`, ">Done</button>",
+		`id="settings-username-window"`, `id="settings-name-window"`, `id="settings-home-window"`,
+		`/static/js/username-check.js`, `/static/js/profile-edit.js`,
 	} {
 		if !strings.Contains(own, want) {
 			t.Errorf("your own page lacks %q", want)
+		}
+	}
+	// A public profile has no state line, and the follow sentences are gone.
+	for _, gone := range []string{`id="person-state-line"`, "People can follow you", "Edit in Settings"} {
+		if strings.Contains(own, gone) {
+			t.Errorf("your own page still draws %q", gone)
 		}
 	}
 	for _, banned := range []string{`id="person-follow"`, `id="person-more"`} {
@@ -122,6 +138,46 @@ func TestPersonPage(t *testing.T) {
 	if ownHeader.Get("Cache-Control") != "no-store" || ownHeader.Get("X-Robots-Tag") != "noindex" {
 		t.Errorf("your own page headers = %v, want no-store and noindex", ownHeader)
 	}
+}
+
+// TestPersonPageEditProfile pins quick 261113-t4y (owner decision 2026-11-13, the
+// compact profile) on the server side: Edit profile, its panel and the three
+// windows are drawn on your own page only, with the rename wait written into the
+// Username window; a profile that is off keeps the one private line and a public
+// one draws none; someone else's page draws no part of the editing.
+func TestPersonPageEditProfile(t *testing.T) {
+	srv, mailer, pool := p907Server(t)
+	// p907Person seeds a private profile (public false) with a name.
+	owner, _ := p907Person(t, srv, mailer, pool, "t4y-owner@example.com", "t4y_owner", false)
+
+	_, own, _ := p907Do(t, owner, http.MethodGet, srv.URL+"/u/t4y_owner", "")
+	// A profile that is off keeps the one private line, as a status line.
+	if !strings.Contains(own, `<p id="person-state-line" class="person-state-line" role="status">Only you can see this page.</p>`) {
+		t.Errorf("a private own page lacks the private line")
+	}
+	// The name and the home area line are drawn for you and hidden while empty.
+	for _, want := range []string{
+		`id="person-name" class="person-name">Person t4y_owner</p>`,
+		`id="person-home-area" class="person-meta person-meta--area" hidden></span>`,
+		`id="person-facts-dot" class="person-facts__dot" aria-hidden="true" hidden>`,
+		`data-value="Person t4y_owner"`,
+		`id="settings-home-value">Not set</span>`,
+	} {
+		if !strings.Contains(own, want) {
+			t.Errorf("your own page lacks %q", want)
+		}
+	}
+	// No recent rename: the Username window carries no wait.
+	if tag := regexp.MustCompile(`<div[^>]*id="settings-username-window"[^>]*>`).FindString(own); tag == "" || strings.Contains(tag, "data-wait") {
+		t.Errorf("the Username window of a fresh account is %q, want one with no data-wait-until", tag)
+	}
+	// A rename starts the wait, and the window carries its end.
+	meWant(t, "PATCH username", meSend(t, owner, http.MethodPatch, srv.URL+"/api/me/profile", `{"username":"t4y_owner2"}`), http.StatusOK)
+	_, own, _ = p907Do(t, owner, http.MethodGet, srv.URL+"/u/t4y_owner2", "")
+	if tag := regexp.MustCompile(`<div[^>]*id="settings-username-window"[^>]*>`).FindString(own); !strings.Contains(tag, `data-wait-until="`) {
+		t.Errorf("the Username window after a rename is %q, want data-wait-until", tag)
+	}
+
 }
 
 // TestPersonPageNotFoundIsUniform is T-09-30: an unknown, private, pending,
@@ -489,7 +545,7 @@ func TestPersonPageServerErrorIsAFramedState(t *testing.T) {
 		t.Fatalf("ParsePageTemplate: %v", err)
 	}
 	people := service.NewPeopleService(p908FailingPeople{})
-	h := handlers.PersonPage(tmpl, people, nil, handlers.PageConfig{AssetVersion: "test"})
+	h := handlers.PersonPage(tmpl, people, nil, nil, handlers.PageConfig{AssetVersion: "test"})
 
 	req := httptest.NewRequest(http.MethodGet, "/u/someone", nil)
 	rc := chi.NewRouteContext()
@@ -570,21 +626,24 @@ func TestPersonPageCentred(t *testing.T) {
 		t.Fatalf("GET /u/ctr_owner: status = %d, body %s", status, other)
 	}
 	block := header(other)
+	// Amended 2026-11-13 by quick 261113-t4y (owner decision 2026-11-13, the compact
+	// profile): the counts group comes first, then the tag line, the details line and
+	// the action row, so the reading order is the drawing order.
 	inOrder("someone else's page", block,
-		`id="person-disc"`, `<h1 id="person-username"`, `id="person-actions"`, `id="person-follow"`,
-		`id="person-more-menu"`, `id="person-stats"`, `id="person-followers-button"`,
+		`id="person-disc"`, `<h1 id="person-username"`, `id="person-stats"`, `id="person-followers-button"`,
 		`id="person-following-button"`, `id="person-tag"`, `id="person-tag-sentence"`,
-		`class="person-facts"`, `id="person-member-since"`, `id="person-action-error"`)
+		`class="person-facts"`, `id="person-member-since"`, `id="person-actions"`, `id="person-follow"`,
+		`id="person-more-menu"`, `id="person-action-error"`)
 	if strings.Contains(other, `id="person-state-line"`) {
 		t.Errorf("someone else's page draws the state line")
 	}
 	// The counts row holds the cells in order: the stars group (only with stars),
 	// Followers, Following, the reporter cell.
 	statsAt := strings.Index(block, `id="person-stats"`)
-	factsAt := strings.Index(block, `class="person-facts"`)
-	stats := block[statsAt:factsAt]
+	tagLineAt := strings.Index(block, `id="person-tag-line"`)
+	stats := block[statsAt:tagLineAt]
 	last := -1
-	for _, id := range []string{`id="person-followers-button"`, `id="person-following-button"`, `class="person-tag-group"`} {
+	for _, id := range []string{`id="person-followers-button"`, `id="person-following-button"`} {
 		at := strings.Index(stats, id)
 		if at < 0 || at < last {
 			t.Errorf("someone else's page: the counts row lacks %s or has it out of order", id)
@@ -605,11 +664,16 @@ func TestPersonPageCentred(t *testing.T) {
 		t.Fatalf("GET own /u/ctr_owner: status = %d, body %s", status, own)
 	}
 	block = header(own)
+	// Your own page: the edit panel sits right after the name, and a public profile
+	// draws no state line.
 	inOrder("your own page", block,
-		`id="person-disc"`, `<h1 id="person-username"`, `id="person-actions"`, `id="person-edit"`,
+		`id="person-disc"`, `<h1 id="person-username"`, `id="person-name"`, `id="person-edit-panel"`,
 		`id="person-stats"`, `id="person-followers-button"`, `id="person-following-button"`,
 		`id="person-tag"`, `id="person-tag-sentence"`, `class="person-facts"`,
-		`id="person-member-since"`, `id="person-state-line"`, `id="person-action-error"`)
+		`id="person-member-since"`, `id="person-actions"`, `id="person-edit"`, `id="person-action-error"`)
+	if strings.Contains(own, `id="person-state-line"`) {
+		t.Errorf("a public profile draws the state line, want none")
+	}
 	if strings.Contains(block, `id="person-rating"`) {
 		t.Errorf("your own page draws the rating box")
 	}

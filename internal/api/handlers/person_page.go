@@ -64,6 +64,12 @@ type personViewModel struct {
 	ReportsCut     bool
 	ReportsCutText string
 	ReportsFailed  bool
+
+	// UsernameWaitUntil is the moment this account's rename wait ends, as an RFC
+	// 3339 UTC time, and empty outside the 7 day gap and on anyone else's page. It is
+	// written into the Username window of your own page (data-wait-until), which
+	// moved here from Settings. Quick 261113-t4y.
+	UsernameWaitUntil string
 }
 
 // personReportRow is one row of Recent reports, written by the server like a My
@@ -161,7 +167,7 @@ func personPageHeaders(w http.ResponseWriter) {
 //
 // Deliberately carries no swag annotation: it serves text/html and lives
 // outside @BasePath /api.
-func PersonPage(tmpl *template.Template, people *service.PeopleService, reports *service.ReportService, cfg PageConfig) http.HandlerFunc {
+func PersonPage(tmpl *template.Template, people *service.PeopleService, reports *service.ReportService, accounts *service.AccountService, cfg PageConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acc, ok := account.FromContext(r.Context())
 		if !ok {
@@ -205,6 +211,19 @@ func PersonPage(tmpl *template.Template, people *service.PeopleService, reports 
 			vm.Nav = navFor(navPerson, navTitle(title), navBack("/"))
 			vm.AccountID = acc.ID
 
+			// Quick 261113-t4y (owner decision 2026-11-13): your own page holds the
+			// Username window, so it needs the end of the rename wait. A failed read
+			// is logged and leaves the window drawn as usual; the server still
+			// decides on save.
+			if profile.IsSelf && accounts != nil {
+				own, err := accounts.Profile(r.Context(), acc.ID)
+				if err != nil {
+					log.Printf("handlers: PersonPage: reading the rename wait of account %d: %v", acc.ID, err)
+				} else {
+					vm.UsernameWaitUntil = accounts.UsernameWaitUntil(own)
+				}
+			}
+
 			// Recent reports (plan 09-11): drawn by the server like My activity,
 			// for a profile the viewer may see and has not blocked. The read has
 			// no centre: distances are filled in the browser from the position
@@ -247,8 +266,11 @@ func PersonPage(tmpl *template.Template, people *service.PeopleService, reports 
 
 // MyProfilePage handles GET /me: a 303 to /u/{your username}, so the person
 // menu and the phone Settings row need no username (UI-SPEC Surface 1). An
-// account with no username has no profile page yet, so it goes to Settings,
-// where the username is set.
+// account with no username has no profile page yet, so it goes to Settings. The
+// onboarding gate sends such an account to /welcome first, where step 4 sets the
+// username, so this is only a defensive answer: since quick 261113-t4y (owner
+// decision 2026-11-13) the username is edited on the profile page, not in
+// Settings.
 //
 // Deliberately carries no swag annotation: it is a page redirect, not API.
 func MyProfilePage(people *service.PeopleService) http.HandlerFunc {

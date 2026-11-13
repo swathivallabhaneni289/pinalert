@@ -534,7 +534,7 @@ func TestNewControlsMeetTouchTarget(t *testing.T) {
 
 // phaseScripts are the scripts this phase added.
 var phaseScripts = []string{
-	"app-bar.js", "settings.js", "reader.js", "welcome.js", "position.js",
+	"app-bar.js", "profile-edit.js", "reader.js", "welcome.js", "position.js",
 	"show-menu.js", "ended-cards.js", "ended-nearby.js", "sheet.js",
 	// Amended 2026-10-29 by Phase 8 plan 05: the report page builder joins the
 	// scripts held to the plain punctuation rule. No other entry changed.

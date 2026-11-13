@@ -168,7 +168,7 @@ test('a refusal puts the switch back and shows the server sentence', async () =>
   const page = load({ on: false });
   flip(page);
   await flush();
-  const sentence = 'Your name can\'t be shown on a public profile. Change it in About you.';
+  const sentence = 'Your name can\'t be shown on a public profile. Change it with Edit profile.';
   answer(page.requests[0], 422, { error: { field: 'profile_public', message: sentence } });
   await flush();
   assert.equal(page.requests.length, 1);

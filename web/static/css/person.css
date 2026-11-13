@@ -4,17 +4,20 @@
  * The profile page: the header block, the action row, the options menu, and
  * the not found and You blocked state boxes. Tokens only, no new token. Written
  * mobile first: the phone is the base, and the laptop layout sits in the one
- * min-width 900px block at the end. Quick 261113-k9t (owner decision
- * 2026-11-13, the centred profile, option D of the mockup, "lets do the
- * centered"): on the laptop and on the phone the header is one centred column,
- * top to bottom: the letter, the username, the name, the action row, one row
- * of counts with thin lines between the cells, the details line with small
- * icons, then the private line on your own page or Your rating on someone
- * else's. Recent reports stays a full width section under it. This decision
- * replaces the earlier header layouts on the laptop (quick 261108-fku, the
- * band across the top; quick 261108-hm7, all beside the letter; quick
- * 261109-n25, no boxes and small buttons, whose small buttons and words stay)
- * and it replaces the phone header too. The same features and words show on
+ * min-width 900px block at the end. Quick 261113-t4y (owner decision
+ * 2026-11-13, the compact profile, mockup profile-compact, "instead of taking
+ * more than half of the page for just personal info we can reduce it"): on the
+ * laptop and on the phone the header is one short centred column, top to
+ * bottom: a 64px letter, the username, the name, one bordered group of three
+ * counts (Stars, Followers, Following), the reporter tag with its sentence on
+ * one line, Member since and the home area on one line joined by a dot, the
+ * private line on your own page, then the action row (Edit profile on your own
+ * page; Follow, the bell and More on someone else's) and Your rating on someone
+ * else's. A line under the header separates it from Recent reports, which stays
+ * a full width section. On your own page Edit profile swaps the counts, the tag,
+ * the details and the action row for an edit panel of three rows and Done. This
+ * replaces the spacing of quick 261113-k9t (the centred profile, which stays
+ * centred) and of the layouts before it. The same features and words show on
  * both sizes; nothing here hides a control on one size.
  *
  * Muted text appears on --color-bg only. The letter disc, the tag chip and the
@@ -24,47 +27,53 @@
 
 /* ---- Phone (the base) ----------------------------------------------------- */
 
-/* Quick 261113-k9t (owner decision 2026-11-13, the centred profile): the page is
-   a column, the header is the centred part and Recent reports is the full width
-   part under it. The 32px page gap is the space between the header and Recent
-   reports on the phone; the laptop block makes it 48px. */
+/* The page is a column: the header is the centred part and Recent reports is the
+   full width part under it, 16px below the header's line. The header takes
+   negative side margins equal to the page's side padding and puts the padding
+   back inside, so it runs to the page edges and draws its line across the full
+   width. 20px above the letter. */
 .person-page {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: var(--space-xl);
-  padding: var(--space-lg) var(--space-md) var(--space-md);
+  gap: var(--space-md);
+  padding: calc(var(--space-md) + var(--space-xs)) var(--space-md) var(--space-md);
 }
 
 /* The header: one centred column, the same on both sizes. The DOM order is the
-   drawn order (the letter, the username, the name, the action row, the counts,
-   the details, then the private line or Your rating, then the error line), so
-   Tab and a screen reader follow what the eye sees. No CSS order property is
-   used. Centred text is only for these short lines. */
+   drawn order (the letter, the username, the name, the edit panel, the counts,
+   the tag line, the details, the private line, the action row, Your rating, then
+   the error line), so Tab and a screen reader follow what the eye sees. No CSS
+   order property is used. Centred text is only for these short lines. The gaps
+   between the lines are the top margins of each part, 4 to 12px; the header ends
+   16px under its last line, with a 1px line across the page. */
 .person-header:not([hidden]) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-sm);
+  box-sizing: border-box;
   min-width: 0;
+  margin: 0 calc(var(--space-md) * -1);
+  padding: 0 var(--space-md) var(--space-md);
+  border-bottom: 1px solid var(--color-border);
   text-align: center;
 }
 
-/* 1b part 1: the round letter picture (88px on the phone) and the username. */
+/* 1b part 1: the round letter picture (64px) and the username. */
 .person-disc {
   display: flex;
   flex: none;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  width: calc(var(--space-3xl) + var(--space-lg));
-  height: calc(var(--space-3xl) + var(--space-lg));
-  margin-bottom: var(--space-xs);
+  width: var(--space-3xl);
+  height: var(--space-3xl);
+  margin-bottom: var(--space-sm);
   border: 1px solid var(--color-border);
   border-radius: 50%;
   background: var(--color-surface);
   color: var(--color-text);
-  font-size: calc(var(--font-size-display) * 4 / 3);
+  font-size: calc(var(--font-size-display) * 13 / 12);
   line-height: 1;
   font-weight: var(--font-weight-semibold);
 }
@@ -72,7 +81,7 @@
 .person-username {
   margin: 0;
   color: var(--color-text);
-  font-size: var(--font-size-heading);
+  font-size: 1.25rem;
   line-height: var(--line-height-heading);
   font-weight: var(--font-weight-semibold);
   overflow-wrap: anywhere;
@@ -95,27 +104,31 @@ h1.person-username {
   overflow-wrap: anywhere;
 }
 
-/* The counts row. Each cell is a value with its word under it, and a 1px line
-   separates the cells; the row has no outer box. On the phone the cells share
-   the width, and the reporter cell takes a row of its own when the stars cell is
-   there too (the phone only rule at the end of this sheet). The laptop block
-   draws the cells at a fixed minimum width instead. */
+/* The counts group: one bordered group of three cells, Stars, Followers and
+   Following, each at least 44px tall with the number above its word, thin
+   lines between the cells, the whole group centred. The 10px radius is a small
+   rounded box, never a pill. The group clips its hover fills to the radius. */
 .person-stats {
-  display: flex;
-  flex-wrap: wrap;
-  align-self: stretch;
-  justify-content: center;
-  margin-top: var(--space-sm);
+  display: inline-flex;
+  align-self: center;
+  box-sizing: border-box;
+  max-width: 100%;
+  margin-top: var(--space-12);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  overflow: hidden;
 }
 
 .person-stats > * {
   display: flex;
-  flex: 1 1 0;
+  flex: 0 1 auto;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   box-sizing: border-box;
   min-width: 0;
-  padding: var(--space-sm) var(--space-xs);
+  min-height: var(--touch-target-min);
+  padding: 6px var(--space-md);
   text-align: center;
 }
 
@@ -124,7 +137,7 @@ h1.person-username {
 .person-stars:not([hidden]) {
   display: grid;
   grid-template-columns: auto auto;
-  align-content: start;
+  align-content: center;
   justify-content: center;
   align-items: center;
   column-gap: var(--space-xs);
@@ -137,8 +150,8 @@ h1.person-username {
 .person-stars__icon {
   display: block;
   flex: none;
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   background-color: var(--color-text);
   -webkit-mask-image: url("/static/icons/star-filled.svg");
   mask-image: url("/static/icons/star-filled.svg");
@@ -153,16 +166,16 @@ h1.person-username {
 .person-stars__number,
 .person-count__number {
   color: var(--color-text);
-  font-size: var(--font-size-heading);
-  line-height: var(--line-height-heading);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-label);
   font-weight: var(--font-weight-semibold);
 }
 
 .person-stars__word,
 .person-count__word {
   color: var(--color-text-muted);
-  font-size: var(--font-size-label);
-  line-height: var(--line-height-label);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
   font-weight: var(--font-weight-regular);
   overflow-wrap: anywhere;
 }
@@ -171,9 +184,10 @@ h1.person-username {
   grid-column: 1 / -1;
 }
 
-/* 1b part 6: the Followers and Following buttons are cells of the counts row, 44px
-   or more tall, with no box of their own (the line between the cells is drawn by
-   the rule after them). */
+/* 1b part 6: the Followers and Following buttons are cells of the counts group,
+   44px or more tall, with no box of their own (the line between the cells is
+   drawn by the rule after them). The group clips, so the focus ring is drawn
+   inside the cell. */
 .person-count {
   min-height: var(--touch-target-min);
   border: 0;
@@ -188,6 +202,10 @@ h1.person-username {
   background: var(--color-surface);
 }
 
+.person-count:focus-visible {
+  outline-offset: -2px;
+}
+
 /* Muted text sits on --color-bg only, so the word takes the full text colour on
    the hover fill (the same rule as the report rows, review fix WR-T02). */
 .person-count:hover .person-count__word {
@@ -198,30 +216,34 @@ h1.person-username {
   border-left: 1px solid var(--color-border);
 }
 
-/* 1b part 3: the reporter tag chip with its counts sentence under it, the last
-   cell of the counts row. The chip may wrap inside a narrow phone cell, so its
+/* 1b part 3: the reporter tag chip with its counts sentence, one line under the
+   counts group. On the phone the sentence wraps under the chip; the laptop block
+   puts it beside the chip. The chip may wrap inside a narrow phone line, so its
    words are never clipped. */
-.person-tag-group {
-  gap: var(--space-xs);
+.person-tag-line {
+  box-sizing: border-box;
+  max-width: 100%;
+  margin-top: 10px;
+  text-align: center;
 }
 
 .person-tag {
   display: inline-block;
   box-sizing: border-box;
   max-width: 100%;
-  padding: var(--space-xs) var(--space-sm);
+  padding: 2px var(--space-sm);
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: 6px;
   background: var(--color-surface);
   color: var(--color-text);
-  font-size: var(--font-size-label);
+  font-size: var(--font-size-caption);
   line-height: var(--line-height-label);
   font-weight: var(--font-weight-semibold);
   overflow-wrap: anywhere;
 }
 
 .person-tag-sentence {
-  margin: 0;
+  margin: var(--space-xs) 0 0;
   color: var(--color-text-muted);
   font-size: var(--font-size-label);
   line-height: var(--line-height-label);
@@ -229,37 +251,20 @@ h1.person-username {
   overflow-wrap: anywhere;
 }
 
-/* 1b parts 4 and 5: the details line, Member since with a clock and the home
-   area with a map pin. Stacked on the phone, side by side on the laptop. The
-   clock is drawn from clock.svg the way the map pin is, with one literal url. */
+/* 1b parts 4 and 5: the details line, Member since and the home area on one
+   line joined by a dot, with no icons. The two facts and the dot are inline, so
+   a long place name wraps to a second line at the dot instead of overflowing. */
 .person-facts {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-xs);
-  margin-top: var(--space-sm);
-}
-
-.person-meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-  margin: 0;
+  margin: 10px 0 0;
   color: var(--color-text-muted);
-  font-size: var(--font-size-body);
-  line-height: var(--line-height-body);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
   font-weight: var(--font-weight-regular);
   overflow-wrap: anywhere;
 }
 
-.person-meta__icon {
-  width: var(--space-md);
-  height: var(--space-md);
-}
-
-main.person-page .app-icon--clock {
-  -webkit-mask-image: url("/static/icons/clock.svg");
-  mask-image: url("/static/icons/clock.svg");
+.person-meta {
+  margin: 0;
 }
 
 /* Your rating on someone else's page: its heading and the five stars, centred.
@@ -268,7 +273,7 @@ main.person-page .app-icon--clock {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-top: var(--space-md);
+  margin-top: var(--space-12);
 }
 
 .person-rating .stars-control {
@@ -283,9 +288,51 @@ main.person-page .app-icon--clock {
   justify-content: center;
 }
 
+/* Quick 261113-t4y: the edit panel of your own page, three rows like the
+   Settings rows (the label, the value, a chevron) and a primary Done under them,
+   in place of the counts, the tag line, the details and the action row while it
+   is open. The display rule is guarded, so the hidden attribute works. */
+.person-edit:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  align-self: stretch;
+  margin-top: var(--space-md);
+}
+
+.person-edit__box {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 480px;
+  background: var(--color-bg);
+  text-align: left;
+}
+
+.person-edit .place-box > * + * {
+  border-top: 1px solid var(--color-border);
+}
+
+.person-edit .place-row {
+  min-height: 48px;
+  padding: 0 14px;
+}
+
+.person-edit__done {
+  margin-top: var(--space-12);
+}
+
+.person-header--editing > .person-stats,
+.person-header--editing > .person-tag-line,
+.person-header--editing > .person-facts,
+.person-header--editing > .person-state-line,
+.person-header--editing > .person-actions,
+.person-header--editing > .person-rating {
+  display: none;
+}
+
 /* 1d to 1f: the action row. The options menu hangs from the row, not from the
    More button, so on a 320px phone it never runs off the right edge. Quick
-   261113-k9t: the row is centred under the name, with 4px more room above it. */
+   261113-t4y: the row is centred under the details line, 12px below it. */
 .person-actions {
   position: relative;
   display: flex;
@@ -293,7 +340,7 @@ main.person-page .app-icon--clock {
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  margin-top: var(--space-xs);
+  margin-top: var(--space-12);
 }
 
 .person-more:not([hidden]) {
@@ -414,9 +461,10 @@ main.person-page .app-icon--clock {
 }
 
 /* 1g: the state line under the details on your own page, centred and muted at
-   the label size (quick 261113-k9t). */
+   the label size (quick 261113-k9t). Since quick 261113-t4y it is drawn only for a
+   profile that is off. */
 .person-state-line {
-  margin: 0;
+  margin: 10px 0 0;
   color: var(--color-text-muted);
   font-size: var(--font-size-label);
   line-height: var(--line-height-label);
@@ -845,86 +893,49 @@ a.person-report__body:hover .person-report__label {
   font-weight: var(--font-weight-regular);
 }
 
-/* Quick 261113-k9t: the counts row on the phone. The cells share the width
-   equally, as the drawing has it, and the chip is drawn at the caption size so
-   "New reporter" fits its cell; in the narrowest cell the chip may still wrap
-   onto two lines and is never clipped. With the stars cell present there are
-   four cells, and the reporter cell then wraps to a row of its own under the
-   other three, full width and with no line on its left. The rule keys on the
-   stars group, so it also holds after a rating adds or takes away the stars. No
-   CSS order property is used. */
-@media not all and (min-width: 900px) {
-  .person-stats .person-tag {
-    font-size: var(--font-size-caption);
-    line-height: var(--line-height-caption);
-  }
-
-  .person-stats:has(> .person-stars) > .person-tag-group {
-    flex: 1 0 100%;
-    border-left: 0;
-    margin-top: var(--space-sm);
-  }
-}
-
 /* ---- Laptop ---------------------------------------------------------------- */
 
 @media (min-width: 900px) {
-  /* Quick 261113-k9t (owner decision 2026-11-13, the centred profile, drawn in
+  /* Quick 261113-t4y (owner decision 2026-11-13, the compact profile, drawn in
      the mockup): the page is still one full width column (03.4 R6), the header
-     in it is the centred column of the base rules, and Recent reports sits
-     under it at full width with 48px between them and 48px above the letter. */
+     in it is the same short centred column as on the phone, and Recent reports
+     sits under its line at full width. Only the page's inline padding is wider
+     here, so the header's line still runs to the page edges. */
   .person-page {
-    padding: var(--space-2xl) var(--space-lg) var(--space-lg);
-    gap: var(--space-2xl);
+    padding: calc(var(--space-md) + var(--space-xs)) var(--space-lg) var(--space-lg);
   }
 
-  /* The letter is 104px, the username is the display size, and the name stays
-     the muted body line. */
-  .person-disc {
-    width: calc(var(--space-3xl) + var(--space-xl) + var(--space-sm));
-    height: calc(var(--space-3xl) + var(--space-xl) + var(--space-sm));
-    font-size: calc(var(--font-size-display) * 1.6);
+  .person-header:not([hidden]) {
+    margin: 0 calc(var(--space-lg) * -1);
+    padding: 0 var(--space-lg) var(--space-md);
   }
 
   h1.person-username {
     display: block;
-    font-size: var(--font-size-display);
-    line-height: var(--line-height-display);
   }
 
   .person-username--phone {
     display: none;
   }
 
-  /* The counts row is as wide as its cells and centred. Each cell is at least
-     140px wide with a 24px inline padding; the reporter cell is at most 260px
-     wide and its sentence wraps inside it. Value and word stay as in the base. */
-  .person-stats {
-    flex-wrap: nowrap;
-    align-self: center;
-    margin-top: var(--space-md);
-  }
-
-  .person-stats > * {
-    flex: 0 1 auto;
-    min-width: 140px;
-    padding: var(--space-sm) var(--space-lg);
-  }
-
-  .person-stats > .person-tag-group {
-    max-width: 260px;
-  }
-
+  /* The reporter tag line is one line on the laptop: the chip, then its
+     sentence beside it. */
   .person-tag {
     white-space: nowrap;
   }
 
-  /* The details line: the two facts side by side with a gap. */
-  .person-facts {
-    flex-direction: row;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: var(--space-xs) var(--space-lg);
+  .person-tag-sentence {
+    display: inline;
+    margin: 0 0 0 var(--space-xs);
+  }
+
+  /* The Done button is as small as the action row's buttons on the laptop. */
+  .person-header .person-edit__done {
+    box-sizing: border-box;
+    min-height: 32px;
+    padding: 0 var(--space-12);
+    font-size: var(--font-size-label);
+    line-height: var(--line-height-label);
   }
 
   /* Review fix IN-T02: the not found and You blocked states draw no username, so
@@ -1046,6 +1057,17 @@ a.person-report__body:hover .person-report__label {
      error state box stay visible in a forced colours theme. */
   .person-stats > * + * {
     border-left: 1px solid CanvasText;
+  }
+
+  /* Quick 261113-t4y: the edge of the counts group, the line under the header and
+     the lines between the edit rows stay visible too. */
+  .person-stats,
+  .person-header:not([hidden]) {
+    border-color: CanvasText;
+  }
+
+  .person-edit .place-box > * + * {
+    border-top-color: CanvasText;
   }
 
   .person-reports__state {

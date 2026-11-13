@@ -24,29 +24,11 @@ type settingsViewModel struct {
 	// item is current; the phone top bar shows the title Settings and a back
 	// arrow whose address is the constant "/" (D-11, T-34-20).
 	Nav NavView
-	// Profile is the account's own name and home area as the service returns
-	// them. The two strings below are what About you draws from it.
-	Profile service.AccountProfile
-	// DisplayName and HomeAreaName are the stored name and the stored home area
-	// place name as plain strings, empty when unset (D-24b). The template
-	// shows "Not set" for an empty one and html/template escapes both (T-34-26).
-	// The home area's coarse cell is never read into the page.
-	DisplayName  string
-	HomeAreaName string
-	// Username is the stored username as a plain string, empty when none is
-	// saved (only an account that has not finished the fill in has none, and
-	// the gate sends it to /welcome first). Added by Phase 7.1 plan 10 (D-07):
-	// the Settings page shows it and offers the change window, drawn by plan
-	// 15. html/template escapes it.
-	Username string
-	// UsernameWaitUntil is the moment this account's rename wait ends, as an RFC 3339
-	// UTC time, and empty outside the 7 day gap. The Username window works out the
-	// days left from it on each opening: no days left opens it normally, otherwise
-	// it opens read only with the wait sentence and one OK button. It is the end of
-	// the caller's own wait, so the page can tell when the account last changed its
-	// username; the server still decides on save. Quick 261108-fku (owner decision
-	// 2026-11-08; review fix WR-02).
-	UsernameWaitUntil string
+	// Quick 261113-t4y (owner decision 2026-11-13): the About you section, with the
+	// Username, Name and Home area rows and their windows, moved to your profile
+	// page behind Edit profile (PersonPage reads the name, the home area and the
+	// rename wait there), so this page no longer reads or draws any of them.
+
 	// Legal is the text of the in app reader window opened from the About
 	// Pinalert rows (D-31). It holds nothing about the account (R-07).
 	Legal LegalText
@@ -88,8 +70,9 @@ type settingsViewModel struct {
 //
 // Like Profile it is only reached through the gated r.Group, so a missing
 // account in the context is a routing bug, logged and answered with a 500, and
-// the response is no-store. A failed read of the account's own profile is also a
-// 500: the page would otherwise render rows that look empty when they are not.
+// the response is no-store. A failed read of the muted count, the people rows or the
+// alert distance is also a 500: the page would otherwise render rows that look
+// empty when they are not.
 //
 // Deliberately carries no swag annotation: it serves text/html and lives
 // outside @BasePath /api.
@@ -102,12 +85,7 @@ func SettingsPage(tmpl *template.Template, accounts *service.AccountService, mut
 			return
 		}
 
-		profile, err := accounts.Profile(r.Context(), acc.ID)
-		if err != nil {
-			log.Printf("handlers: SettingsPage: %v", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
+		var err error
 
 		// The muted count for the People and reports row. A failed read is a
 		// logged 500 like the profile read: a row that reads 0 when it is not
@@ -169,21 +147,8 @@ func SettingsPage(tmpl *template.Template, accounts *service.AccountService, mut
 			Chrome:           chrome,
 			AccountID:        acc.ID,
 			Nav:              navFor(NavSettings, navTitle("Settings"), navBack("/")),
-			Profile:          profile,
 			Legal:            legalTextFor(chrome),
 		}
-		if profile.DisplayName != nil {
-			vm.DisplayName = *profile.DisplayName
-		}
-		if profile.HomeAreaName != nil {
-			vm.HomeAreaName = *profile.HomeAreaName
-		}
-		if profile.Username != nil {
-			vm.Username = *profile.Username
-		}
-		// Quick 261108-fku (owner decision 2026-11-08): the rename wait, from the
-		// profile already read, on the service clock. No new read.
-		vm.UsernameWaitUntil = accounts.UsernameWaitUntil(profile)
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")

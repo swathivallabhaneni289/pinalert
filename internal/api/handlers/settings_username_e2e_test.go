@@ -1,5 +1,8 @@
 // settings_username_e2e_test.go: Quick 261108-fku (owner decision 2026-11-08).
-// The Settings page carries the moment the signed in account's 7 day rename wait
+// Amended 2026-11-13 by quick 261113-t4y (owner decision 2026-11-13, the compact
+// profile): the Username window moved from the Settings page to your own profile
+// page (/u/yourname, behind Edit profile), so the page read here is that one.
+// The profile page carries the moment the signed in account's 7 day rename wait
 // ends (data-wait-until on the Username window), so the window can follow the
 // real deadline and open read only with one OK button. It runs through the real
 // router over a real Postgres (the disposable database the e2e harness opens).
@@ -26,7 +29,7 @@ func fkuWindowTag(t *testing.T, body string) string {
 	t.Helper()
 	tag := regexp.MustCompile(`<div[^>]*id="settings-username-window"[^>]*>`).FindString(body)
 	if tag == "" {
-		t.Fatalf("the Settings page has no Username window opening tag")
+		t.Fatalf("the profile page has no Username window opening tag")
 	}
 	return tag
 }
@@ -51,11 +54,14 @@ func TestSettingsUsernameWaitUntil(t *testing.T) {
 	srv, mailer, pool := newE2EServer(t)
 	email := "fku-wait-line@example.com"
 	client := newVerifiedClient(t, srv, mailer, email)
+	// current is the username the page is read under; an account with no username has
+	// no profile page, so the first read comes after the first username is saved.
+	current := ""
 
 	// wantUntil reads the stored change time and checks the page against it.
 	wantUntil := func(label string) {
 		t.Helper()
-		_, body := getPlacePage(t, client, srv.URL, "/settings")
+		_, body := getPlacePage(t, client, srv.URL, "/u/"+current)
 		got, ok := fkuWaitUntil(t, body)
 		if !ok {
 			t.Errorf("%s: the window lacks data-wait-until: %s", label, fkuWindowTag(t, body))
@@ -78,24 +84,24 @@ func TestSettingsUsernameWaitUntil(t *testing.T) {
 	}
 	noWait := func(label string) {
 		t.Helper()
-		_, body := getPlacePage(t, client, srv.URL, "/settings")
+		_, body := getPlacePage(t, client, srv.URL, "/u/"+current)
 		if tag := fkuWindowTag(t, body); strings.Contains(tag, "data-wait") {
 			t.Errorf("%s: the window carries a wait: %s", label, tag)
 		}
 	}
 
-	noWait("an account with no username")
-
 	// A first username is free and starts no wait.
 	meWant(t, "PATCH first username", meSend(t, client, http.MethodPatch, srv.URL+"/api/me/profile",
 		`{"username":"wait_one"}`), http.StatusOK)
+	current = "wait_one"
 	noWait("a first username")
 
 	// A different username is a change, and the wait starts.
 	meWant(t, "PATCH second username", meSend(t, client, http.MethodPatch, srv.URL+"/api/me/profile",
 		`{"username":"wait_two"}`), http.StatusOK)
+	current = "wait_two"
 	wantUntil("after a change")
-	_, body := getPlacePage(t, client, srv.URL, "/settings")
+	_, body := getPlacePage(t, client, srv.URL, "/u/"+current)
 	if tag := fkuWindowTag(t, body); strings.Contains(tag, "data-wait-message") || strings.Contains(tag, "data-wait-after-change") {
 		t.Errorf("the window still carries the old sentence attributes: %s", tag)
 	}

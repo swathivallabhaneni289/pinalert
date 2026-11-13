@@ -17,10 +17,10 @@ import (
 const (
 	// PublicNameRefusedMessage refuses "Let others follow me" for a Name that
 	// failed the reserved word check or the abuse screen.
-	PublicNameRefusedMessage = "Your name can't be shown on a public profile. Change it in About you."
+	PublicNameRefusedMessage = "Your name can't be shown on a public profile. Change it with Edit profile."
 	// PublicUsernameRefusedMessage refuses it for a missing, borderline or
 	// rejected username.
-	PublicUsernameRefusedMessage = "Your username can't be shown on a public profile. Change it in About you."
+	PublicUsernameRefusedMessage = "Your username can't be shown on a public profile. Change it with Edit profile."
 	// PublicNameUnfinishedMessage answers a check that could not finish.
 	PublicNameUnfinishedMessage = "Couldn't check your name just now. Try again."
 	// PublicNameEditRefusedMessage refuses a Name edit while the profile is on.

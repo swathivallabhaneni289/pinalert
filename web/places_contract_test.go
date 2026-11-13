@@ -234,16 +234,29 @@ func TestSettingsShowsOnlyExistingRows(t *testing.T) {
 			t.Errorf("settings.html.tmpl lacks %q", want)
 		}
 	}
-	// Amended 2026-10-17 by Phase 3.4 plan 06 (owner decision, 03.4-CONTEXT D-25
-	// and D-24b): About you is the first section and its two rows open edit
-	// windows, so the order starts with it and five rows draw a chevron.
-	for _, want := range []string{
-		"About you",
-		"Shown only if you let others follow you", "Used for alerts, never your exact spot",
-		`id="settings-name-row"`, `id="settings-home-row"`, "Not set",
+	// Amended 2026-11-13 by quick 261113-t4y (owner decision 2026-11-13, the compact
+	// profile): About you left Settings. The Username, Name and Home area rows and
+	// their windows are on your profile page behind Edit profile, so Settings holds
+	// none of them, and the profile page holds the rows and the windows.
+	for _, gone := range []string{
+		`>About you</h2>`, "settings-you-title", "Shown only if you let others follow you", "Used for alerts, never your exact spot",
+		`id="settings-username-row"`, `id="settings-name-row"`, `id="settings-home-row"`,
+		`id="settings-username-window"`, `id="settings-name-window"`, `id="settings-home-window"`,
 	} {
-		if !strings.Contains(page, want) {
-			t.Errorf("settings.html.tmpl lacks %q", want)
+		if strings.Contains(page, gone) {
+			t.Errorf("settings.html.tmpl still holds %q, About you moved to the profile page", gone)
+		}
+	}
+	person := p421ReadTemplate(t, "person.html.tmpl")
+	windows := p421ReadTemplate(t, "profile_edit_windows.html.tmpl")
+	for _, want := range []string{`id="settings-username-row"`, `id="settings-name-row"`, `id="settings-home-row"`, `id="person-edit-panel"`, "Not set"} {
+		if !strings.Contains(person, want) {
+			t.Errorf("person.html.tmpl lacks %q", want)
+		}
+	}
+	for _, want := range []string{`id="settings-username-window"`, `id="settings-name-window"`, `id="settings-home-window"`} {
+		if !strings.Contains(windows, want) {
+			t.Errorf("profile_edit_windows.html.tmpl lacks %q", want)
 		}
 	}
 	// Amended 2026-10-19 by Phase 3.2 plan 12 (D-23, LAYOUT-06, UI-SPEC D3 and D4):
@@ -257,7 +270,7 @@ func TestSettingsShowsOnlyExistingRows(t *testing.T) {
 	// settings-phone-title, people, About Pinalert, account; and a ninth row
 	// draws a chevron, the "Add a home area first" row that opens the Home area
 	// window.
-	p421InOrder(t, "section order", page, `id="settings-you-title"`, `id="settings-phone-title"`, `id="settings-people-title"`, "About Pinalert", `id="settings-account-title"`)
+	p421InOrder(t, "section order", page, `id="settings-phone-title"`, `id="settings-people-title"`, "About Pinalert", `id="settings-account-title"`)
 	//
 	// Amended 2026-10-18 by Phase 3.3 plan 14 (D-12, UI-SPEC Surface 2): two more
 	// rows draw a chevron, the On this device row that opens the install guide
@@ -280,8 +293,11 @@ func TestSettingsShowsOnlyExistingRows(t *testing.T) {
 	// D1, C9): the Critical, official and Reliable "Add a home area first" rows are
 	// gone and the distance row has its own "Add a home area first" button, so
 	// three chevrons left and one came: sixteen.
-	if got := strings.Count(page, "app-icon--chevron-right"); got != 16 {
-		t.Errorf("settings.html.tmpl draws %d chevrons, want one on each of the sixteen rows that open something", got)
+	//
+	// Amended 2026-11-13 by quick 261113-t4y (owner decision 2026-11-13): the
+	// Username, Name and Home area rows left Settings with About you, so thirteen.
+	if got := strings.Count(page, "app-icon--chevron-right"); got != 13 {
+		t.Errorf("settings.html.tmpl draws %d chevrons, want one on each of the thirteen rows that open something", got)
 	}
 	header := p421ReadTemplate(t, "account_header.html.tmpl")
 	for _, label := range waitingSettingsLabels {
@@ -321,7 +337,11 @@ func settingsWindowRegion(t *testing.T, page, id string) string {
 // phone.css, centres the laptop window at min(480px, 92%) and keeps the hidden
 // attribute working.
 func TestSettingsWindowsCloseWithXOnly(t *testing.T) {
-	page := p421ReadTemplate(t, "settings.html.tmpl")
+	// Amended 2026-11-13 by quick 261113-t4y (owner decision 2026-11-13): the three
+	// edit windows moved from Settings to the profile page, so they are read from
+	// their partial, and the sheets and the script are read from the profile page.
+	page := p421ReadTemplate(t, "profile_edit_windows.html.tmpl")
+	person := p421ReadTemplate(t, "person.html.tmpl")
 	windows := []struct {
 		id    string
 		title string
@@ -368,7 +388,7 @@ func TestSettingsWindowsCloseWithXOnly(t *testing.T) {
 		t.Errorf("the Name window holds a Remove button")
 	}
 
-	p421InOrder(t, "stylesheet order", page,
+	p421InOrder(t, "stylesheet order", person,
 		`/static/css/places.css?v={{.AssetVersion}}`, `/static/css/window.css?v={{.AssetVersion}}`, `/static/css/phone.css?v={{.AssetVersion}}`)
 
 	css := stripCSSComments(p421ReadStatic(t, "css/window.css"))
@@ -387,8 +407,8 @@ func TestSettingsWindowsCloseWithXOnly(t *testing.T) {
 			t.Errorf("window.css holds %q", banned)
 		}
 	}
-	if !strings.Contains(page, `<script src="/static/js/settings.js?v={{.AssetVersion}}" defer></script>`) {
-		t.Errorf("settings.html.tmpl does not load settings.js with defer and the asset version")
+	if !strings.Contains(person, `<script src="/static/js/profile-edit.js?v={{.AssetVersion}}" defer></script>`) {
+		t.Errorf("person.html.tmpl does not load profile-edit.js with defer and the asset version")
 	}
 	rawCSS := p421ReadStatic(t, "css/window.css")
 	for _, dash := range []rune{0x2013, 0x2014} {
@@ -399,18 +419,18 @@ func TestSettingsWindowsCloseWithXOnly(t *testing.T) {
 }
 
 // TestSettingsScriptContract pins D-24b, D-02, T-34-26 and T-34-27 on
-// settings.js: it never asks for the device position, never parses markup,
+// profile-edit.js: it never asks for the device position, never parses markup,
 // never sends a map centre with the place search, saves through the one
 // profile route with PATCH, and has no handler that closes a window from a
 // click on its backdrop.
 func TestSettingsScriptContract(t *testing.T) {
-	raw := p421ReadStatic(t, "js/settings.js")
+	raw := p421ReadStatic(t, "js/profile-edit.js")
 	js := stripJSComments(raw)
 	for _, want := range []string{
 		"'PATCH'", "/api/me/profile", "/api/geocode/place?kind=area&q=", "textContent", "'Escape'", "display_name", "home_area",
 	} {
 		if !strings.Contains(js, want) {
-			t.Errorf("settings.js lacks %q", want)
+			t.Errorf("profile-edit.js lacks %q", want)
 		}
 	}
 	for _, banned := range []string{
@@ -419,7 +439,7 @@ func TestSettingsScriptContract(t *testing.T) {
 		"&lat=", "&lon=", "localStorage", "sessionStorage",
 	} {
 		if strings.Contains(js, banned) {
-			t.Errorf("settings.js uses %q: the device position, a markup parsing sink or a map centre has no place here", banned)
+			t.Errorf("profile-edit.js uses %q: the device position, a markup parsing sink or a map centre has no place here", banned)
 		}
 	}
 	// Only the row buttons, the X, the forms, the save and remove buttons and
@@ -427,12 +447,12 @@ func TestSettingsScriptContract(t *testing.T) {
 	// on the backdrop closes nothing (D-02).
 	for _, banned := range []string{"nameWin.addEventListener('click'", "homeWin.addEventListener('click'", "win.addEventListener('click'"} {
 		if strings.Contains(js, banned) {
-			t.Errorf("settings.js binds %q: a window closes with the X and Escape only", banned)
+			t.Errorf("profile-edit.js binds %q: a window closes with the X and Escape only", banned)
 		}
 	}
 	for _, dash := range []rune{0x2013, 0x2014} {
 		if strings.ContainsRune(raw, dash) {
-			t.Errorf("settings.js holds the dash character U+%04X", dash)
+			t.Errorf("profile-edit.js holds the dash character U+%04X", dash)
 		}
 	}
 	page := p421ReadTemplate(t, "settings.html.tmpl")
@@ -516,9 +536,8 @@ func TestSettingsIsAGroupedList(t *testing.T) {
 	// left column, "stuff like this should also be included": each section
 	// has its line, shown on the laptop only.
 	for _, line := range []string{
-		// Amended 2026-10-29 by Phase 7.1 plan 15 (D-07, UI-SPEC Surface 8): the
-		// About you line also names the username.
-		`<p class="place-section__line">Your username, name and home area.</p>`,
+		// Amended 2026-11-13 by quick 261113-t4y: the About you section and its line left
+		// Settings, so the line is no longer pinned.
 		`<p class="place-section__line">The rules, how your data is used, and a lighter version for weak networks.</p>`,
 		`<p class="place-section__line">Sign out, or remove your account and its data.</p>`,
 	} {

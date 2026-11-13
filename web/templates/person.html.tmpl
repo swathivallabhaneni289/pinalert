@@ -43,15 +43,61 @@
     {{else}}
     {{if not .BlockedByYou}}
     <header id="person-header" class="person-header">
-      {{/* Quick 261113-k9t (owner decision 2026-11-13, the centred profile, option D of the mockup): the header is one centred column on both sizes and the DOM order is the reading order, so Tab and a screen reader follow what the eye sees: the letter, the username, the name, the action row, the counts row, the details line, then the state line on your own page or Your rating on someone else's, then the action error line. This replaces the 261108-fku band, the 261108-hm7 grid and its Tab order conflict, and the 261109-n25 left aligned header, and it replaces the phone header too. There are no wrappers, so every part is a direct child of the header. */}}
+      {{/* Quick 261113-t4y (owner decision 2026-11-13, the compact profile, mockup profile-compact): the header is one short centred column on both sizes, about half the height it was, and the DOM order is the reading order, so Tab and a screen reader follow what the eye sees: the letter, the username, the name, the counts (Stars, Followers, Following), the reporter tag line, Member since and the home area on one line, then the private line on your own page, the action row, Your rating on someone else's, and the action error line. This replaces the spacing of quick 261113-k9t, which stays centred. There are no wrappers except the counts group, the tag line, the details line and the edit panel, so every other part is a direct child of the header. */}}
       <span id="person-disc" class="person-disc" aria-hidden="true">{{.Profile.Initial}}</span>
       <h1 id="person-username" class="person-username">{{.Profile.Username}}</h1>
       {{/* Review fix IN-T02: under 900px the top bar title is the page's h1, so the username there is this plain line; person.css shows one of the two at each size. */}}
       <p class="person-username person-username--phone">{{.Profile.Username}}</p>
-      {{if .Profile.Name}}<p id="person-name" class="person-name">{{.Profile.Name}}</p>{{end}}
+      {{/* On your own page the name line is always drawn and hidden while there is no name, so a name saved from the edit window fills it at once. */}}
+      {{if or .Profile.Name .Profile.IsSelf}}<p id="person-name" class="person-name"{{if not .Profile.Name}} hidden{{end}}>{{.Profile.Name}}</p>{{end}}
+      {{if .Profile.IsSelf}}
+      {{/* Quick 261113-t4y (owner decision 2026-11-13): Edit profile opens this panel on the page, so Settings no longer holds About you. Each row opens the same small window Settings used to open, with the same rules; the three windows sit at the end of the body (profile_edit_windows.html.tmpl) and profile-edit.js drives the rows, the windows and Done. The rows keep the settings- ids of the windows they open. Done hides the panel and returns focus to Edit profile. */}}
+      <div id="person-edit-panel" class="person-edit" hidden>
+        <div class="place-box person-edit__box">
+          <button type="button" class="place-row" id="settings-username-row" aria-haspopup="dialog" data-value="{{.Profile.Username}}">
+            <span class="place-row__text"><span class="place-row__label">Username</span></span>
+            <span class="place-row__value" id="settings-username-value">{{if .Profile.Username}}{{.Profile.Username}}{{else}}Not set{{end}}</span>
+            <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+          </button>
+          <button type="button" class="place-row" id="settings-name-row" aria-haspopup="dialog" data-value="{{.Profile.Name}}">
+            <span class="place-row__text"><span class="place-row__label">Name</span></span>
+            <span class="place-row__value" id="settings-name-value">{{if .Profile.Name}}{{.Profile.Name}}{{else}}Not set{{end}}</span>
+            <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+          </button>
+          <button type="button" class="place-row" id="settings-home-row" aria-haspopup="dialog" data-value="{{.Profile.HomeAreaName}}">
+            <span class="place-row__text"><span class="place-row__label">Home area</span></span>
+            <span class="place-row__value" id="settings-home-value">{{if .Profile.HomeAreaName}}{{.Profile.HomeAreaName}}{{else}}Not set{{end}}</span>
+            <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+          </button>
+        </div>
+        <button type="button" class="btn btn--primary person-edit__done" id="person-edit-done">Done</button>
+      </div>
+      {{end}}
+      {{/* The counts group: one bordered group of three cells, Stars first when there is a total, then Followers and Following, each a number with its word under it and a thin line between the cells. The reporter tag is not a cell: it has its own line under the group. */}}
+      <div id="person-stats" class="person-stats">
+        {{if .Profile.StarsNumber}}
+        <div id="person-stars" class="person-stars" role="group" aria-label="{{.Profile.StarsLabel}}">
+          <span class="person-stars__icon" aria-hidden="true"></span>
+          <span class="person-stars__total"><span class="person-stars__number">{{.Profile.StarsNumber}}</span> <span class="person-stars__word">Stars</span></span>
+          {{/* Quick 261109-n25 (owner decision 2026-11-09, fewer words): the page draws the stars total alone. The two parts stay in the JSON route and in the group's accessible name (StarsLabel). */}}
+        </div>
+        {{end}}
+        <button type="button" id="person-followers-button" class="person-count" aria-haspopup="dialog" aria-label="{{.Profile.FollowersText}}"><span id="person-followers-count" class="person-count__number">{{.Profile.FollowersCount}}</span> <span id="person-followers-word" class="person-count__word">{{.Profile.FollowersWord}}</span></button>
+        <button type="button" id="person-following-button" class="person-count" aria-haspopup="dialog" aria-label="{{.Profile.FollowingText}}"><span id="person-following-count" class="person-count__number">{{.Profile.FollowingCount}}</span> <span id="person-following-word" class="person-count__word">{{.Profile.FollowingWord}}</span></button>
+      </div>
+      {{/* The reporter tag line: the chip, then its sentence. On the phone the sentence wraps under the chip. */}}
+      <div id="person-tag-line" class="person-tag-line">
+        <span id="person-tag" class="person-tag">{{.Profile.TagWord}}</span>
+        <p id="person-tag-sentence" class="person-tag-sentence">{{.Profile.TagSentence}}</p>
+      </div>
+      {{/* The details line: Member since and the home area joined by a dot, no icons. On your own page the home area and its dot are always drawn and hidden while there is no home area, so a home area saved from the edit window fills them at once. */}}
+      <p id="person-facts" class="person-facts"><span id="person-member-since" class="person-meta">{{.Profile.MemberSince}}</span>{{if or .Profile.HomeAreaName .Profile.IsSelf}}<span id="person-facts-dot" class="person-facts__dot" aria-hidden="true"{{if not .Profile.HomeAreaName}} hidden{{end}}> · </span><span id="person-home-area" class="person-meta person-meta--area"{{if not .Profile.HomeAreaName}} hidden{{end}}>{{.Profile.HomeAreaName}}</span>{{end}}</p>
+      {{if and .Profile.IsSelf .Profile.StateLine}}
+      <p id="person-state-line" class="person-state-line" role="status">{{.Profile.StateLine}}</p>
+      {{end}}
       {{if .Profile.IsSelf}}
       <div id="person-actions" class="person-actions">
-        <a id="person-edit" class="btn" href="/settings">Edit in Settings</a>
+        <button type="button" id="person-edit" class="btn" aria-expanded="false" aria-controls="person-edit-panel">Edit profile</button>
       </div>
       {{else}}
       {{/* Follow and Following are both drawn and the server hides the one that does not apply, so the script only toggles the hidden flags and moves no markup. */}}
@@ -68,35 +114,10 @@
           <button type="button" id="person-block" class="person-menu__item" role="menuitem">Block</button>
         </div>
       </div>
-      {{end}}
-      {{/* The counts row: the stars total first when there is one, then Followers, Following and the reporter cell, each a number with its word under it and a thin line between the cells. */}}
-      <div id="person-stats" class="person-stats">
-        {{if .Profile.StarsNumber}}
-        <div id="person-stars" class="person-stars" role="group" aria-label="{{.Profile.StarsLabel}}">
-          <span class="person-stars__icon" aria-hidden="true"></span>
-          <span class="person-stars__total"><span class="person-stars__number">{{.Profile.StarsNumber}}</span> <span class="person-stars__word">Stars</span></span>
-          {{/* Quick 261109-n25 (owner decision 2026-11-09, fewer words): the page draws the stars total alone. The two parts stay in the JSON route and in the group's accessible name (StarsLabel). */}}
-        </div>
-        {{end}}
-        <button type="button" id="person-followers-button" class="person-count" aria-haspopup="dialog" aria-label="{{.Profile.FollowersText}}"><span id="person-followers-count" class="person-count__number">{{.Profile.FollowersCount}}</span> <span id="person-followers-word" class="person-count__word">{{.Profile.FollowersWord}}</span></button>
-        <button type="button" id="person-following-button" class="person-count" aria-haspopup="dialog" aria-label="{{.Profile.FollowingText}}"><span id="person-following-count" class="person-count__number">{{.Profile.FollowingCount}}</span> <span id="person-following-word" class="person-count__word">{{.Profile.FollowingWord}}</span></button>
-        <div class="person-tag-group">
-          <span id="person-tag" class="person-tag">{{.Profile.TagWord}}</span>
-          <p id="person-tag-sentence" class="person-tag-sentence">{{.Profile.TagSentence}}</p>
-        </div>
-      </div>
-      {{/* The details line: Member since and the home area, each with a small icon. */}}
-      <div class="person-facts">
-        <p id="person-member-since" class="person-meta"><span class="app-icon app-icon--clock person-meta__icon" aria-hidden="true"></span><span>{{.Profile.MemberSince}}</span></p>
-        {{if .Profile.HomeAreaName}}
-        <p id="person-home-area" class="person-meta person-meta--area"><span class="app-icon app-icon--map-pin person-meta__icon" aria-hidden="true"></span><span>{{.Profile.HomeAreaName}}</span></p>
-        {{end}}
-      </div>
-      {{if .Profile.IsSelf}}
-      <p id="person-state-line" class="person-state-line" role="status">{{.Profile.StateLine}}</p>
-      {{else if .Profile.MayRate}}
+      {{if .Profile.MayRate}}
       {{/* Plan 09-16 (D-02, UI-SPEC 3a): the mount of the Your rating control. It is drawn only when the server says this reader may rate, and never on your own page. stars.js fills it. data-your-rating is the server's number, 0 when unrated. */}}
       <div id="person-rating" class="person-rating" data-your-rating="{{.Profile.YourRating}}"></div>
+      {{end}}
       {{end}}
       <p id="person-action-error" class="inline-error" role="alert" hidden></p>
     </header>
@@ -190,6 +211,11 @@
   {{template "people_list_window" .}}
   {{end}}
 
+  {{if and (not .NotFound) (not .LoadFailed) .Profile.IsSelf}}
+  {{/* Quick 261113-t4y: the Username, Name and Home area edit windows, opened by the rows of the edit panel. They sit at the body level. */}}
+  {{template "profile_edit_windows" .}}
+  {{end}}
+
   {{template "app_bottombar" .}}
 
   <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>
@@ -199,6 +225,10 @@
   <script src="/static/js/person-reports.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/people-list.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/stars.js?v={{.AssetVersion}}" defer></script>
+  {{if and (not .NotFound) (not .LoadFailed) .Profile.IsSelf}}
+  <script src="/static/js/username-check.js?v={{.AssetVersion}}" defer></script>
+  <script src="/static/js/profile-edit.js?v={{.AssetVersion}}" defer></script>
+  {{end}}
   <script src="/static/js/person.js?v={{.AssetVersion}}" defer></script>
 </body>
 </html>

@@ -224,10 +224,6 @@ function buildPage({ count = 0, withMarkup = true, home = true, radius = 5, dial
   radiusNoHome.hidden = home;
   make('p', 'settings-device-error', main).hidden = true;
   make('p', 'settings-alerts-error', main).hidden = true;
-  const homeRow = make('button', 'settings-home-row', main);
-  homeRow.setAttribute('data-value', home ? 'Kochi' : '');
-  const homeWin = make('div', 'settings-home-window', doc.body);
-  homeWin.hidden = true;
   // Amended 2026-10-29 by Phase 7.1 plan 15: the sentence about removing the home
   // area (settings-home-alerts-note) left the page with the Remove home area
   // button, so the fixture no longer draws it.
@@ -241,7 +237,7 @@ function buildPage({ count = 0, withMarkup = true, home = true, radius = 5, dial
   make('button', 'device-guide-close', guideHead);
 
   return {
-    doc, bar, main, bottom, muted, logout, del, select, homeRow, homeWin,
+    doc, bar, main, bottom, muted, logout, del, select,
     radiusRow, radiusNoHome, deviceOn, deviceSwitch,
     deviceInstall, deviceBlocked, deviceUnsupported, guide
   };
@@ -313,7 +309,6 @@ function loadAlerts(options = {}) {
     document: page.doc,
     MutationObserver: FakeMutationObserver,
     PinalertNotify: notify === null ? undefined : notify,
-    PinalertSettings: { openWindow(which) { opened.push(which); } },
     fetch(target, init) {
       return new Promise((resolve, reject) => {
         requests.push({ url: String(target), init: init || {}, resolve, reject, at: now });
@@ -954,85 +949,42 @@ test('a distance that is not a whole number is never sent', async () => {
   assert.equal(page.select.value, '5');
 });
 
-test('the Add a home area first button opens the Home area window', async () => {
+// Amended 2026-11-13 by quick 261113-t4y (owner decision 2026-11-13, the compact
+// profile): the Home area row and window left Settings with About you and are on
+// the profile page behind Edit profile. The Add a home area first button now goes
+// to the profile page, and the section no longer follows a Home area row, so the
+// tests that drove the window and the row are replaced by these.
+test('the Add a home area first button goes to the profile page', async () => {
   const page = loadAlerts({ home: false });
   fire(page.radiusNoHome, 'click');
-  assert.deepEqual(page.opened, ['home']);
+  assert.deepEqual(page.assigned, ['/me']);
+  assert.deepEqual(page.opened, [], 'no Home area window is opened from Settings');
   assert.equal(page.requests.length, 0);
 });
 
-test('closing the Home area window after saving one shows the select and focuses it', async () => {
-  const page = loadAlerts({ home: false });
-  assert.equal(page.radiusRow.hidden, true);
-  assert.equal(page.radiusNoHome.hidden, false);
-  fire(page.radiusNoHome, 'click');
-  page.homeWin.hidden = false;
+test('the distance select still saves with no Home area row or window on the page', async () => {
+  const page = loadAlerts({ home: true, radius: 5 });
+  assert.equal(page.doc.byId['settings-home-row'], undefined);
+  assert.equal(page.doc.byId['settings-home-window'], undefined);
+  pick(page, 10);
   await flush();
-
-  // What settings.js does after a save: the row takes the stored name, the
-  // window closes, focus goes to the Home area row.
-  page.homeRow.setAttribute('data-value', 'Kochi');
-  page.homeWin.hidden = true;
-  page.homeRow.focus();
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.requests[0].init.body, '{"alert_radius_km":10}');
+  answer(page.requests[0], 200, ok(10));
   await flush();
-
-  assert.equal(page.radiusRow.hidden, false);
-  assert.equal(page.radiusNoHome.hidden, true);
-  assert.equal(page.doc.activeElement, page.select);
-  assert.equal(page.requests.length, 0);
-});
-
-test('closing the Home area window with no home area puts focus back on the button that opened it', async () => {
-  const page = loadAlerts({ home: false });
-  fire(page.radiusNoHome, 'click');
-  page.homeWin.hidden = false;
-  await flush();
-  page.homeWin.hidden = true;
-  page.homeRow.focus();
-  await flush();
-  assert.equal(page.radiusRow.hidden, true);
-  assert.equal(page.radiusNoHome.hidden, false);
-  assert.equal(page.doc.activeElement, page.radiusNoHome);
-});
-
-test('a Home area window opened from the Home area row keeps focus where settings.js put it', async () => {
-  const page = loadAlerts({ home: false });
-  page.homeWin.hidden = false;
-  await flush();
-  page.homeRow.setAttribute('data-value', 'Kochi');
-  page.homeWin.hidden = true;
-  page.homeRow.focus();
-  await flush();
-  assert.equal(page.radiusRow.hidden, false);
-  assert.equal(page.doc.activeElement, page.homeRow);
-});
-
-test('a home area that goes empty (data repair) shows the button, says nothing and sends nothing', async () => {
-  const page = loadAlerts({ home: true, radius: 10 });
-  page.homeRow.setAttribute('data-value', '');
-  await flush();
-
-  assert.equal(page.radiusRow.hidden, true);
-  assert.equal(page.radiusNoHome.hidden, false);
-  assert.equal(live(page).textContent, '', 'nothing is announced: a home area is never removed in Settings');
-  assert.equal(page.requests.length, 0);
-});
-
-test('changing the home area to another place changes nothing in the section', async () => {
-  const page = loadAlerts({ home: true, radius: 10 });
-  page.homeRow.setAttribute('data-value', 'Thrissur');
-  await flush();
-  assert.equal(page.radiusRow.hidden, false);
-  assert.equal(page.radiusNoHome.hidden, true);
   assert.equal(page.select.value, '10');
-  assert.equal(live(page).textContent, '');
 });
 
-test('a failed distance save after the home area was removed still puts the old distance back', async () => {
+test('with no home area the page draws the button and not the select', async () => {
+  const page = loadAlerts({ home: false });
+  assert.equal(page.radiusRow.hidden, true);
+  assert.equal(page.radiusNoHome.hidden, false);
+  assert.equal(page.requests.length, 0);
+});
+
+test('a failed distance save puts the old distance back', async () => {
   const page = loadAlerts({ home: true, radius: 5 });
   pick(page, 2);
-  await flush();
-  page.homeRow.setAttribute('data-value', '');
   await flush();
   page.requests[0].reject(new Error('down'));
   await flush();

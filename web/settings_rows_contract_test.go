@@ -107,6 +107,7 @@ func TestPeopleAndReportsRowOrder(t *testing.T) {
 		`id="settings-blocked-row"`,
 		`<span class="place-row__label">Blocked people</span>`,
 		`id="settings-blocked-value">{{.BlockedCount}}</span>`,
+		`id="settings-view-profile-row" href="/me"`,
 		`id="settings-people-error" role="alert" hidden`,
 	)
 	switchRow := region[strings.Index(region, `<label class="place-row place-row--switch" id="settings-profile-row"`):strings.Index(region, `id="settings-following-row"`)]
@@ -124,8 +125,11 @@ func TestPeopleAndReportsRowOrder(t *testing.T) {
 			t.Errorf("%s is not a button row that opens a dialog", id)
 		}
 	}
-	if got := strings.Count(region, "app-icon--chevron-right"); got != 5 {
-		t.Errorf("the People and reports section draws %d chevrons, want 5 (Following, Followers, Muted reports, Muted people, Blocked people)", got)
+	// Amended 2026-11-13 by quick 261113-t4y (owner decision 2026-11-13): the phone's
+	// View my profile row moved here, the last row of the box, when About you left
+	// Settings, so six chevrons are drawn.
+	if got := strings.Count(region, "app-icon--chevron-right"); got != 6 {
+		t.Errorf("the People and reports section draws %d chevrons, want 6 (Following, Followers, Muted reports, Muted people, Blocked people, View my profile)", got)
 	}
 	// The Muted people row has no second line (no hint text under a simple option).
 	mutedRow := region[strings.Index(region, `id="settings-muted-people-row"`):strings.Index(region, `id="settings-blocked-row"`)]
@@ -244,8 +248,15 @@ func TestAccountConfirmWindows(t *testing.T) {
 			t.Errorf("settings.html.tmpl holds the dash character U+%04X", dash)
 		}
 	}
+	// Amended 2026-11-13 by quick 261113-t4y: the edit windows and their script moved to
+	// the profile page, so Settings no longer loads profile-edit.js or the live check.
+	for _, gone := range []string{"/static/js/profile-edit.js", "/static/js/username-check.js"} {
+		if strings.Contains(page, gone) {
+			t.Errorf("settings.html.tmpl still loads %s", gone)
+		}
+	}
 	p421InOrder(t, "script order", page,
-		`/static/js/settings.js?v={{.AssetVersion}}`, `/static/js/settings-alerts.js?v={{.AssetVersion}}`)
+		`/static/js/updates.js?v={{.AssetVersion}}`, `/static/js/settings-alerts.js?v={{.AssetVersion}}`)
 }
 
 // TestDeleteAccountConfirmBox pins the Delete my account box: a native dialog
@@ -299,7 +310,7 @@ func TestDeleteAccountConfirmBox(t *testing.T) {
 	}
 	// A direct child of the body: after main, before the first window, so it is
 	// never inside a hidden ancestor and never inside a window's region.
-	p421InOrder(t, "Delete box position", page, "</main>", open, `id="settings-name-window"`)
+	p421InOrder(t, "Delete box position", page, "</main>", open, `id="settings-muted-window"`)
 }
 
 // TestDeleteRuleSentenceIsOneString pins the owner's answer to Q2 (2026-10-18):
@@ -327,7 +338,7 @@ func TestDeleteRuleSentenceIsOneString(t *testing.T) {
 // settings-alerts.js: it reaches the routes it needs, writes text only through
 // textContent, never parses markup or asks for the device position, navigates
 // only to the two fixed sign in addresses, and binds no click handler on a
-// window element, so a click on the backdrop closes nothing. settings.js is not
+// window element, so a click on the backdrop closes nothing. profile-edit.js is not
 // edited by this plan, so TestSettingsScriptContract stays as it is.
 func TestSettingsAlertsScriptContract(t *testing.T) {
 	raw := p421ReadStatic(t, "js/settings-alerts.js")
@@ -351,10 +362,12 @@ func TestSettingsAlertsScriptContract(t *testing.T) {
 			t.Errorf("settings-alerts.js uses %q: a markup parsing sink or the device position has no place here", banned)
 		}
 	}
-	// Navigation goes to the two fixed addresses and nowhere else.
+	// Navigation goes to the two fixed sign in addresses, and since quick 261113-t4y
+	// (owner decision 2026-11-13) to the one fixed address of the profile page, where
+	// the Add a home area first button now sends the person, and nowhere else.
 	for _, m := range regexp.MustCompile(`location\.(assign|replace|href)[^;]*;`).FindAllString(js, -1) {
-		if !strings.Contains(m, "LOGGED_OUT_PAGE") && !strings.Contains(m, "DELETED_PAGE") {
-			t.Errorf("settings-alerts.js navigates with %q, want only the two fixed sign in addresses", m)
+		if !strings.Contains(m, "LOGGED_OUT_PAGE") && !strings.Contains(m, "DELETED_PAGE") && !strings.Contains(m, "PROFILE_PAGE") {
+			t.Errorf("settings-alerts.js navigates with %q, want only the fixed addresses", m)
 		}
 	}
 	// A window is never given a click handler of its own (D-02).
@@ -458,8 +471,9 @@ func TestPhoneNotificationsSection(t *testing.T) {
 			t.Errorf("settings.html.tmpl holds %q", banned)
 		}
 	}
-	// The section sits after About you and before People and reports.
-	p421InOrder(t, "section order", page, `id="settings-you-title"`, `id="settings-phone-title"`, `id="settings-people-title"`)
+	// The section sits before People and reports (About you left Settings, quick
+	// 261113-t4y).
+	p421InOrder(t, "section order", page, `id="settings-phone-title"`, `id="settings-people-title"`)
 	for _, dash := range []rune{0x2013, 0x2014} {
 		if strings.ContainsRune(page, dash) {
 			t.Errorf("settings.html.tmpl holds the dash character U+%04X", dash)
@@ -537,8 +551,8 @@ func TestPhoneNotificationsRowsNeedAHomeArea(t *testing.T) {
 // TestSettingsAlertsSavesAtOnce pins UI-SPEC E1 and P32-C22 and C23 on
 // settings-alerts.js: the distance goes to PATCH /api/me/alerts with the one
 // field name the route takes, a failure puts the old value back with the fixed
-// sentences, the section follows the Home area row through a MutationObserver
-// (settings.js is not edited), and every string is written as text.
+// sentences, the Add a home area first button goes to the profile page (quick
+// 261113-t4y), and every string is written as text.
 //
 // Amended 2026-10-18 by Phase 3.3 plan 14 (D-12, UI-SPEC 2a, 2e, W2): the file
 // also calls notify.js to turn this device on and off, says the two device
@@ -553,8 +567,7 @@ func TestSettingsAlertsSavesAtOnce(t *testing.T) {
 	raw := p421ReadStatic(t, "js/settings-alerts.js")
 	js := stripJSComments(raw)
 	for _, want := range []string{
-		"/api/me/alerts", "'PATCH'", "alert_radius_km", "MutationObserver",
-		"'data-value'", "attributeFilter",
+		"/api/me/alerts", "'PATCH'", "alert_radius_km",
 		// P32-C22
 		`Couldn\'t save that. Try again.`,
 		`You\'re offline, so this wasn\'t saved. Try again when you have a signal.`,
@@ -562,7 +575,7 @@ func TestSettingsAlertsSavesAtOnce(t *testing.T) {
 		// is gone with the Remove home area button; the absence is pinned below.
 		"navigator.onLine === false",
 		"saveAlerts: saveAlerts", "redrawAlerts: redrawAlerts",
-		"openWindow('home')", "settings-radius-nohome",
+		"settings-radius-nohome", "PROFILE_PAGE = '/me'",
 		// Phase 3.3 plan 14
 		"drawDevice: drawDevice",
 		"PinalertNotify.enable(", "PinalertNotify.disable(", "PinalertNotify.reconcile(", "PinalertNotify.baseState(",
@@ -572,6 +585,15 @@ func TestSettingsAlertsSavesAtOnce(t *testing.T) {
 	} {
 		if !strings.Contains(js, want) {
 			t.Errorf("settings-alerts.js lacks %q", want)
+		}
+	}
+	// Amended 2026-11-13 by quick 261113-t4y (owner decision 2026-11-13): the Home area
+	// row and window left Settings with About you, so the section no longer follows
+	// them through a MutationObserver and no longer opens the window: the Add a home
+	// area first button goes to the profile page.
+	for _, gone := range []string{"MutationObserver", "settings-home-row", "settings-home-window", "PinalertSettings.", "openWindow('home')"} {
+		if strings.Contains(js, gone) {
+			t.Errorf("settings-alerts.js still holds %q, the Home area window is on the profile page", gone)
 		}
 	}
 	for _, banned := range []string{
@@ -589,10 +611,10 @@ func TestSettingsAlertsSavesAtOnce(t *testing.T) {
 			t.Errorf("settings-alerts.js names %q: the home cell and coordinates never reach the browser (T-03.2-14)", banned)
 		}
 	}
-	// settings.js is not edited by this plan: it does not know the alerts route.
-	settings := stripJSComments(p421ReadStatic(t, "js/settings.js"))
+	// profile-edit.js is not edited by this plan: it does not know the alerts route.
+	settings := stripJSComments(p421ReadStatic(t, "js/profile-edit.js"))
 	if strings.Contains(settings, "/api/me/alerts") || strings.Contains(settings, "settings-reliable") {
-		t.Errorf("settings.js names the alert route or rows; plan 15 leaves settings.js as built")
+		t.Errorf("profile-edit.js names the alert route or rows; plan 15 leaves profile-edit.js as built")
 	}
 }
 
@@ -841,7 +863,10 @@ func TestNotificationsOfficialRow(t *testing.T) {
 // attribute, and an input a password manager cannot take for the login
 // (T-07.1-30).
 func TestSettingsUsernameRow(t *testing.T) {
-	page := p421ReadTemplate(t, "settings.html.tmpl")
+	// Amended 2026-11-13 by quick 261113-t4y (owner decision 2026-11-13, the compact
+	// profile): the row now sits in the edit panel of the profile page and the window
+	// in its partial, so both are read together; the laptop line is gone with About you.
+	page := p421ReadTemplate(t, "person.html.tmpl") + "\n" + p421ReadTemplate(t, "profile_edit_windows.html.tmpl")
 	for _, id := range []string{
 		"settings-username-row", "settings-username-value", "settings-username-window", "settings-username-title",
 		"settings-username-close", "settings-username-form", "settings-username-input", "settings-username-status",
@@ -851,24 +876,20 @@ func TestSettingsUsernameRow(t *testing.T) {
 			t.Errorf("id %s appears %d times, want 1", id, got)
 		}
 	}
-	p421InOrder(t, "About you rows", page,
+	p421InOrder(t, "the edit rows", page,
 		`id="settings-username-row"`, `id="settings-name-row"`, `id="settings-home-row"`)
-	if got := strings.Count(page, "Your username, name and home area."); got != 1 {
-		t.Errorf("the laptop line appears %d times, want 1", got)
-	}
-	if strings.Contains(page, "Your name and home area.") {
-		t.Errorf("settings.html.tmpl still holds the old laptop line Your name and home area.")
+	if strings.Contains(page, "Your username, name and home area.") {
+		t.Errorf("the profile page holds the About you line of Settings")
 	}
 	row := openingTagOf(t, page, "settings-username-row")
-	for _, want := range []string{`aria-haspopup="dialog"`, `data-value="{{.Username}}"`} {
+	for _, want := range []string{`aria-haspopup="dialog"`, `data-value="{{.Profile.Username}}"`} {
 		if !strings.Contains(row, want) {
 			t.Errorf("the Username row lacks %s", want)
 		}
 	}
 	for _, want := range []string{
 		`<span class="place-row__label">Username</span>`,
-		`<span class="place-row__sub">Shown on your comments, to everyone</span>`,
-		`id="settings-username-value">{{if .Username}}{{.Username}}{{else}}Not set{{end}}</span>`,
+		`id="settings-username-value">{{if .Profile.Username}}{{.Profile.Username}}{{else}}Not set{{end}}</span>`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the Username row lacks %q", want)
@@ -960,9 +981,10 @@ func TestSettingsUsernameRow(t *testing.T) {
 		}
 	}
 
-	// The shared live check loads before settings.js, which attaches it.
+	// The shared live check loads before profile-edit.js, which attaches it, and
+	// person.js loads after both.
 	p421InOrder(t, "script order", page,
-		`/static/js/username-check.js?v={{.AssetVersion}}`, `/static/js/settings.js?v={{.AssetVersion}}`, `/static/js/settings-alerts.js?v={{.AssetVersion}}`)
+		`/static/js/username-check.js?v={{.AssetVersion}}`, `/static/js/profile-edit.js?v={{.AssetVersion}}`, `/static/js/person.js?v={{.AssetVersion}}`)
 	for _, dash := range []rune{0x2013, 0x2014} {
 		if strings.ContainsRune(page, dash) {
 			t.Errorf("settings.html.tmpl holds the dash character U+%04X", dash)
@@ -970,22 +992,22 @@ func TestSettingsUsernameRow(t *testing.T) {
 	}
 }
 
-// TestSettingsUsernameScript pins settings.js: it uses the shared live check in
+// TestSettingsUsernameScript pins profile-edit.js: it uses the shared live check in
 // settings mode, writes text only, binds no backdrop click on the Username
 // window and never uses the disabled attribute for Save username.
 func TestSettingsUsernameScript(t *testing.T) {
-	js := stripJSComments(p421ReadStatic(t, "js/settings.js"))
+	js := stripJSComments(p421ReadStatic(t, "js/profile-edit.js"))
 	for _, want := range []string{
 		"PinalertUsernameCheck", "mode: 'settings'", "showSaveError", "isGood()",
 		"settings-username-save", "'aria-disabled'", "btn--off", "btn--primary", "{ username: wanted }",
 	} {
 		if !strings.Contains(js, want) {
-			t.Errorf("settings.js lacks %q", want)
+			t.Errorf("profile-edit.js lacks %q", want)
 		}
 	}
 	for _, banned := range []string{"usernameWin.addEventListener('click'", "usernameSave.disabled", "autocomplete"} {
 		if strings.Contains(js, banned) {
-			t.Errorf("settings.js holds %q", banned)
+			t.Errorf("profile-edit.js holds %q", banned)
 		}
 	}
 }
@@ -994,22 +1016,29 @@ func TestSettingsUsernameScript(t *testing.T) {
 // Surface 8): the Remove home area button, the sentence about removing it and
 // the removed status are gone from the template and both scripts; Save home area
 // is pressable (no disabled attribute) and the two refusal sentences live in
-// settings.js; the Name window label reads Name.
+// profile-edit.js; the Name window label reads Name.
 func TestSettingsHomeAreaCannotBeRemoved(t *testing.T) {
 	page := p421ReadTemplate(t, "settings.html.tmpl")
-	settings := stripJSComments(p421ReadStatic(t, "js/settings.js"))
+	// Amended 2026-11-13 by quick 261113-t4y (owner decision 2026-11-13): the Home area
+	// and Name windows are in the profile page partial now, so the bans cover both
+	// templates and the Save home area and Name checks read the partial.
+	windows := p421ReadTemplate(t, "profile_edit_windows.html.tmpl")
+	person := p421ReadTemplate(t, "person.html.tmpl")
+	settings := stripJSComments(p421ReadStatic(t, "js/profile-edit.js"))
 	alerts := stripJSComments(p421ReadStatic(t, "js/settings-alerts.js"))
 	for _, banned := range []string{
 		"settings-home-remove", "Remove home area", "Removing it also turns off alerts", "settings-home-alerts-note",
 		">Your name<",
 	} {
-		if strings.Contains(page, banned) {
-			t.Errorf("settings.html.tmpl still holds %q", banned)
+		for name, text := range map[string]string{"settings.html.tmpl": page, "profile_edit_windows.html.tmpl": windows, "person.html.tmpl": person} {
+			if strings.Contains(text, banned) {
+				t.Errorf("%s still holds %q", name, banned)
+			}
 		}
 	}
 	for _, banned := range []string{"settings-home-remove", "removeHomeArea", "home_area: null", "homeRemove"} {
 		if strings.Contains(settings, banned) {
-			t.Errorf("settings.js still holds %q", banned)
+			t.Errorf("profile-edit.js still holds %q", banned)
 		}
 	}
 	for _, banned := range []string{"Home area removed.", "MESSAGE_HOME_REMOVED", "settings-home-alerts-note", "syncNote"} {
@@ -1017,16 +1046,16 @@ func TestSettingsHomeAreaCannotBeRemoved(t *testing.T) {
 			t.Errorf("settings-alerts.js still holds %q", banned)
 		}
 	}
-	save := openingTagOf(t, page, "settings-home-save")
+	save := openingTagOf(t, windows, "settings-home-save")
 	if strings.Contains(save, "disabled") {
 		t.Errorf("Save home area carries the disabled attribute; it is pressable and says Choose a home area. when nothing is picked: %s", save)
 	}
 	for _, want := range []string{"\"Your name can't be empty.\"", "'Choose a home area.'"} {
 		if got := strings.Count(settings, want); got != 1 {
-			t.Errorf("settings.js holds %s %d times, want 1", want, got)
+			t.Errorf("profile-edit.js holds %s %d times, want 1", want, got)
 		}
 	}
-	if !strings.Contains(page, `<label class="app-window__label" for="settings-name-input">Name</label>`) {
+	if !strings.Contains(windows, `<label class="app-window__label" for="settings-name-input">Name</label>`) {
 		t.Errorf("the Name window label does not read Name")
 	}
 	// The no home row stays as a defensive state.
