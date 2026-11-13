@@ -495,7 +495,8 @@ func (s *CredentialService) endSessionID(ctx context.Context, q CredentialQuerie
 // writes 0 rows and everything rolls back; one that commits after the spend
 // leaves a fresh code for the address (its new row did not exist when the
 // other rows were deleted, and the owner of the address simply has one more
-// valid code). TestResetStepTwoWithResendDuringIt pins both.
+// valid code). TestResetStepTwoWithResendDuringIt pins the first order; the
+// second is not raced in a test and follows from the row lock the spend holds.
 func (s *CredentialService) ConfirmReset(ctx context.Context, sessionID, newPassword string) error {
 	now := s.now()
 	latest, err := s.q.GetLatestAuthCode(ctx, sqlcgen.GetLatestAuthCodeParams{
