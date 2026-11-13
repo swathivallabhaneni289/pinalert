@@ -490,8 +490,11 @@ func (s *CredentialService) endSessionID(ctx context.Context, q CredentialQuerie
 // any session still on the old epoch. A failure anywhere changes nothing and
 // leaves the code usable. The spend is conditional on the row still being
 // unused and inside the confirm window, so two parallel calls cannot both
-// win, and a Resend that retired the row after it was read rolls everything
-// back.
+// win. A Resend that commits before the spend retires the row, so the spend
+// writes 0 rows and everything rolls back; one that commits after the spend
+// leaves a fresh code for the address (its new row did not exist when the
+// other rows were deleted, and the owner of the address simply has one more
+// valid code). TestResetStepTwoWithResendDuringIt pins both.
 func (s *CredentialService) ConfirmReset(ctx context.Context, sessionID, newPassword string) error {
 	now := s.now()
 	latest, err := s.q.GetLatestAuthCode(ctx, sqlcgen.GetLatestAuthCodeParams{
