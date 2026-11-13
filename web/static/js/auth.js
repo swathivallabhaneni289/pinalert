@@ -876,8 +876,17 @@
     });
   }
 
-  // changeEmail goes back to the panel the person came from. Nothing is sent.
+  // changeEmail goes back to the panel the person came from. On step two of
+  // Forgot password it first tells the server to turn the confirm off (review fix
+  // WR-01), so leaving step two is a way out on the server too and a reload does
+  // not draw step two again. The call is not waited for and its answer is not
+  // read: the card moves on at once, and a call that never arrived only leaves
+  // the confirm to run out by itself within its 5 minutes. Everywhere else
+  // nothing is sent.
   function changeEmail() {
+    if (state.mode === 'reset' && state.step === 'password') {
+      postJSON('/api/auth/reset/cancel', {});
+    }
     stopTimers();
     if (state.from === 'forgot') {
       forgotEmail.value = state.email;

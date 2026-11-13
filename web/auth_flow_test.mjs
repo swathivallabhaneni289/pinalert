@@ -953,6 +953,42 @@ test('a reload on step two draws step two with focus in the new password box and
   assertClean(page);
 });
 
+// Review fix WR-01: leaving step two with Change email turns the confirm off on the
+// server, so a reload afterwards cannot draw step two again. Nothing is sent from
+// any other screen, and the card leaves at once whatever the call answers.
+test('Change email on step two posts the cancel and leaves at once; no other screen posts it', async () => {
+  const page = load({ start: 'code', mode: 'reset', step: 'password', email: 'priya@example.com', secondsLeft: 0 });
+  click(page, 'code-change-email');
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.requests[0].url, '/api/auth/reset/cancel');
+  assert.deepEqual(body(page.requests[0]), {});
+  assert.deepEqual(shownPanel(page), ['forgot'], 'the card does not wait for the answer');
+  assert.equal(byId(page, 'forgot-email').value, 'priya@example.com');
+  answer(page.requests[0], 200, { cancelled: true });
+  await flush();
+  assert.deepEqual(shownPanel(page), ['forgot']);
+
+  // A call that fails changes nothing on the card.
+  const failing = load({ start: 'code', mode: 'reset', step: 'password', email: 'priya@example.com', secondsLeft: 0 });
+  click(failing, 'code-change-email');
+  answer(failing.requests[0], 500, { error: { field: 'auth', message: 'Something went wrong. Try again.' } });
+  await flush();
+  assert.deepEqual(shownPanel(failing), ['forgot']);
+  assert.equal(byId(failing, 'forgot-error').hidden, true);
+
+  // Step one of Forgot password and the sign up code screen post nothing.
+  const stepOne = load({ start: 'code', mode: 'reset', email: 'priya@example.com', secondsLeft: 300 });
+  click(stepOne, 'code-change-email');
+  assert.equal(stepOne.requests.length, 0);
+  const create = load({ start: 'code', mode: 'create', email: 'ravi@example.com', secondsLeft: 300 });
+  click(create, 'code-change-email');
+  assert.equal(create.requests.length, 0);
+  assertClean(page);
+  assertClean(failing);
+  assertClean(stepOne);
+  assertClean(create);
+});
+
 // The sign up code screen is unchanged: one step, Create account, no password box.
 test('the sign up code screen has one step and posts to the sign up route', async () => {
   const page = load({ start: 'create' });

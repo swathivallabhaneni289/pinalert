@@ -543,6 +543,20 @@ func (s *CredentialService) ConfirmReset(ctx context.Context, sessionID, newPass
 	})
 }
 
+// CancelResetConfirm turns off the confirm of this browser's newest unused reset
+// code (review fix WR-01): Change email on step two of Forgot password calls it,
+// so leaving step two is a way out on the server and not only on the page. A
+// reload afterwards draws the code screen again, and step two is refused until
+// the code is typed once more. It reports nothing about whether there was a
+// confirm to clear: a browser with none, a spent or replaced row, a sign up row
+// and a no account row are all a plain nil.
+func (s *CredentialService) CancelResetConfirm(ctx context.Context, sessionID string) error {
+	if _, err := s.q.ClearAuthCodeVerified(ctx, sessionID); err != nil {
+		return fmt.Errorf("service: clearing the reset confirm: %w", err)
+	}
+	return nil
+}
+
 // verifiedResetRow is true for a code row that step two may spend: a reset row
 // that was emailed a code, is unused, and was verified less than
 // ResetConfirmWindow before now.

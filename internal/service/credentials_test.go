@@ -286,6 +286,23 @@ func (f *credFakeQuerier) MarkAuthCodeVerified(_ context.Context, arg sqlcgen.Ma
 	return 0, nil
 }
 
+// ClearAuthCodeVerified follows the real query: the newest unused reset row of
+// the session loses its verified_at.
+func (f *credFakeQuerier) ClearAuthCodeVerified(_ context.Context, sessionID string) (int64, error) {
+	f.log("ClearAuthCodeVerified")
+	for i := len(f.codes) - 1; i >= 0; i-- {
+		r := &f.codes[i]
+		if r.session == sessionID && r.purpose == service.PurposeReset && r.used == nil {
+			if r.verified == nil {
+				return 0, nil
+			}
+			r.verified = nil
+			return 1, nil
+		}
+	}
+	return 0, nil
+}
+
 // ConsumeVerifiedResetCode follows the real query: the spend of a verified reset
 // row inside the confirm window, with the same equal used and expires pair as
 // ConsumeAuthCode.
@@ -2204,6 +2221,49 @@ func TestConfirmResetNeedsAConfirmedCode(t *testing.T) {
 		}
 		if err := r.svc.ConfirmReset(ctx, fresh, newPassword); err != nil {
 			t.Fatalf("ConfirmReset inside the confirm window: %v", err)
+		}
+	})
+
+	// Review fix WR-01: Change email on step two turns the confirm off.
+	t.Run("the cancel turns the confirm off and the code can be typed again", func(t *testing.T) {
+		r := newCredRig(t)
+		a := r.addPasswordAccount(t, credEmail, credPassword)
+		code := r.resetCodeFor(t, "sess-d")
+		fresh, err := checkReset(r.svc, "sess-d", code)
+		if err != nil {
+			t.Fatalf("CheckResetCode: %v", err)
+		}
+		if err := r.svc.CancelResetConfirm(ctx, fresh); err != nil {
+			t.Fatalf("CancelResetConfirm: %v", err)
+		}
+		if lc, ok, _ := r.svc.LiveCode(ctx, fresh); !ok || lc.Verified {
+			t.Errorf("after the cancel LiveCode = %+v ok=%v, want the code screen and not step two", lc, ok)
+		}
+		refused(t, r, a, fresh)
+		// The row is still live: the same code confirms again, then step two works.
+		again, err := checkReset(r.svc, fresh, code)
+		if err != nil {
+			t.Fatalf("the code typed again after the cancel: %v", err)
+		}
+		if err := r.svc.ConfirmReset(ctx, again, newPassword); err != nil {
+			t.Fatalf("ConfirmReset after the code was typed again: %v", err)
+		}
+	})
+
+	t.Run("the cancel with nothing to clear is a plain nil and touches no other browser", func(t *testing.T) {
+		r := newCredRig(t)
+		r.addPasswordAccount(t, credEmail, credPassword)
+		for _, session := range []string{"nobody", "sess-g"} {
+			if err := r.svc.CancelResetConfirm(ctx, session); err != nil {
+				t.Errorf("CancelResetConfirm(%q) = %v, want nil", session, err)
+			}
+		}
+		other := r.resetVerified(t, "sess-o")
+		if err := r.svc.CancelResetConfirm(ctx, "sess-d"); err != nil {
+			t.Fatalf("CancelResetConfirm: %v", err)
+		}
+		if lc, ok, _ := r.svc.LiveCode(ctx, other); !ok || !lc.Verified {
+			t.Errorf("another browser's confirm was turned off: %+v ok=%v", lc, ok)
 		}
 	})
 

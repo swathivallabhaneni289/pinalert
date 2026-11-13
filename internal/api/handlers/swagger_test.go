@@ -341,7 +341,7 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 	}
 	for _, path := range []string{
 		"/auth/sign-up", "/auth/sign-up/code", "/auth/code/resend",
-		"/auth/sign-in", "/auth/reset", "/auth/reset/code", "/auth/reset/password",
+		"/auth/sign-in", "/auth/reset", "/auth/reset/code", "/auth/reset/password", "/auth/reset/cancel",
 	} {
 		ops, ok := spec.Paths[path]
 		if !ok {

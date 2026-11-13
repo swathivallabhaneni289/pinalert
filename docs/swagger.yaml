@@ -1563,6 +1563,14 @@ definitions:
     type: object
   handlers.ResendRequest:
     type: object
+  handlers.ResetCancelRequest:
+    type: object
+  handlers.ResetCancelledResponse:
+    properties:
+      cancelled:
+        example: true
+        type: boolean
+    type: object
   handlers.ResetCodeRequest:
     properties:
       code:
@@ -2075,6 +2083,48 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       summary: Ask for a password reset code
+      tags:
+      - auth
+  /auth/reset/cancel:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Called when the person leaves the new password step with Change email. Clears the
+        confirm of this browser's newest unused reset code, so the code has to be typed
+        again before a new password is accepted. The body is an empty object. The answer is
+        the same whether or not there was a confirm to clear.
+      parameters:
+      - description: Empty object
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.ResetCancelRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ResetCancelledResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Turn off the confirmed reset code of this browser
       tags:
       - auth
   /auth/reset/code:

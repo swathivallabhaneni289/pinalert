@@ -39,6 +39,8 @@ type CredentialQuerier interface {
 	// verified row, guarded by the confirm window.
 	MarkAuthCodeVerified(ctx context.Context, arg sqlcgen.MarkAuthCodeVerifiedParams) (int64, error)
 	ConsumeVerifiedResetCode(ctx context.Context, arg sqlcgen.ConsumeVerifiedResetCodeParams) (int64, error)
+	// ClearAuthCodeVerified turns a browser's confirm off (review fix WR-01).
+	ClearAuthCodeVerified(ctx context.Context, sessionID string) (int64, error)
 	// MarkAuthCodePasswordSet marks the kept row of a Create account confirm that
 	// only set a password on an existing account (review fix round 4, SK3-03).
 	MarkAuthCodePasswordSet(ctx context.Context, id int64) error

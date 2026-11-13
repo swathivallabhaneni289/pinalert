@@ -62,6 +62,32 @@ func (q *Queries) BumpAuthCodeAttempt(ctx context.Context, arg BumpAuthCodeAttem
 	return i, err
 }
 
+const clearAuthCodeVerified = `-- name: ClearAuthCodeVerified :execrows
+UPDATE auth_codes
+SET verified_at = NULL
+WHERE id = (SELECT c.id FROM auth_codes c
+            WHERE c.session_id = $1
+              AND c.purpose = 'reset'
+              AND c.used_at IS NULL
+            ORDER BY c.id DESC
+            LIMIT 1)
+  AND verified_at IS NOT NULL
+  AND used_at IS NULL
+`
+
+// Review fix WR-01: Change email on step two of Forgot password turns the
+// confirm off. It clears verified_at on this browser's newest unused reset row,
+// so a reload shows the code screen again and step two is refused until the
+// code is typed once more. 0 rows (nothing to clear) is not an error: the
+// route answers the same either way. Only the session's own rows are read.
+func (q *Queries) ClearAuthCodeVerified(ctx context.Context, sessionID string) (int64, error) {
+	result, err := q.db.Exec(ctx, clearAuthCodeVerified, sessionID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const consumeAuthCode = `-- name: ConsumeAuthCode :execrows
 UPDATE auth_codes
 SET used_at = now(), expires_at = now(), password_hash = NULL

@@ -181,10 +181,10 @@ type Deps struct {
 	// Resend and Forgot password (Phase 7.1, plan 07). cmd/server/main.go builds
 	// it with keys derived from SESSION_SECRET. Additive, as the fields above were:
 	// a Deps{} literal that omits it still compiles and still serves every other
-	// route, and the seven auth routes then answer 503 with a plain message rather
+	// route, and the eight auth routes then answer 503 with a plain message rather
 	// than panic.
 	Credentials *service.CredentialService
-	// AuthLimits holds the device and network buckets of those seven routes. A zero
+	// AuthLimits holds the device and network buckets of those eight routes. A zero
 	// field takes its AuthLimitsDefault value; cmd/server/main.go sets every field
 	// from its constants block. The network buckets are used only when
 	// ClientIPHeader is set.
@@ -534,9 +534,9 @@ var compressibleContentTypes = []string{"text/html", "text/css", "text/javascrip
 // visibly, by construction, unprotected (threat T-01-70).
 //
 // The exempt set is exactly: /static/*, /swagger/*, GET /login, POST /login (a
-// fixed 303 back to GET /login that never reads the body, review WR-T04), the seven POST
+// fixed 303 back to GET /login that never reads the body, review WR-T04), the eight POST
 // /api/auth routes (sign-up, sign-up/code, code/resend, sign-in, reset,
-// reset/code and reset/password), GET /auth/verify (the retired emailed link redirect), GET
+// reset/code, reset/password and reset/cancel), GET /auth/verify (the retired emailed link redirect), GET
 // /disclaimer and GET /policy, the ten app asset paths, and Phase 5's entries
 // (the Demo prefix, the refresh route and the globe tiles): the login surface
 // itself, the code and password steps that give a person an account and a
@@ -596,6 +596,9 @@ var compressibleContentTypes = []string{"text/html", "text/css", "text/javascrip
 // Amended 2026-11-13 by quick 261113-r5w: Forgot password became two steps, the
 // code (/api/auth/reset/code) and then the new password, so one more exact POST
 // path, /api/auth/reset/password, joins the same set on the same terms.
+// Amended 2026-11-13 by the review fix of quick 261113-r5w (WR-01): Change email
+// on step two turns the confirm off through /api/auth/reset/cancel, an eighth
+// exact POST path in the same set on the same terms.
 // Each one is wrapped by net/http CrossOriginProtection and takes a strict
 // application/json body of at most 4 KB. They do NOT skip the session
 // middleware: the typed code row and the new session binding are keyed on the
@@ -882,13 +885,13 @@ func NewRouter(deps Deps) *chi.Mux {
 	// literal sibling path alongside a wildcard r.Route mount at the same prefix,
 	// so /api is never mounted as its own subrouter in this router.
 	//
-	// The seven code and password routes (Phase 7.1, plan 07, D-03). Flat literal
+	// The eight code and password routes (Phase 7.1, plan 07, D-03). Flat literal
 	// paths outside the gate: they are how a person gets an account and a session
 	// in the first place. They are always registered, so
 	// the exempt list is constant; a router built without Deps.Credentials answers
 	// each with a 503. cop rejects a cross site browser POST (login CSRF, research
 	// Pattern 4) and lets a request without Origin and Sec-Fetch-Site through,
-	// which is every script and every same site fetch. None of the seven skips the
+	// which is every script and every same site fetch. None of the eight skips the
 	// session middleware: the code row and the new session binding are keyed on
 	// the browser's session id (research section 7). The buckets are the device
 	// and, with CLIENT_IP_HEADER, the network ones of handlers.AuthGate.
@@ -901,6 +904,7 @@ func NewRouter(deps Deps) *chi.Mux {
 	r.With(cop.Handler).Post("/api/auth/reset", handlers.RequestReset(deps.Credentials, authGate))
 	r.With(cop.Handler).Post("/api/auth/reset/code", handlers.ConfirmResetCode(deps.Credentials, authGate, deps.Session))
 	r.With(cop.Handler).Post("/api/auth/reset/password", handlers.SetResetPassword(deps.Credentials, authGate))
+	r.With(cop.Handler).Post("/api/auth/reset/cancel", handlers.CancelReset(deps.Credentials))
 
 	// The external cron's door (plan 05-12, D-15, research G1). Outside the gate,
 	// because the cron has no account; its own bearer token is the guard, and the
@@ -950,7 +954,7 @@ func NewRouter(deps Deps) *chi.Mux {
 		// sketches, because this router already has a literal /api/reports leaf that
 		// a wildcard subrouter mounted at an overlapping prefix would sit
 		// awkwardly beside; every /api/* path in this router is registered
-		// flat, gated or not (see the comment above the seven code and
+		// flat, gated or not (see the comment above the eight code and
 		// password routes). Flat registration also keeps these five routes in the
 		// same visual list as every other route in the group, which is
 		// exactly the property this function's own doc comment relies on

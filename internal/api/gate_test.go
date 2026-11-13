@@ -446,7 +446,9 @@ func TestAccessGateAllowsVerified(t *testing.T) {
 // Amended 2026-11-13 by quick 261113-r5w: Forgot password became two steps, so
 // the "reset code" row now carries the code alone and one row, "reset password"
 // for POST /api/auth/reset/password, was added. Each table count above is one
-// more than it says.
+// more than it says. The review fix of the same task added a second row, "reset
+// cancel" for POST /api/auth/reset/cancel (Change email turns the confirm of
+// step two off), which answers 200 for a caller with no session.
 //
 // Amended 2026-10-29 by plan 05-12 (D-15): the external cron's door joins the
 // exempt list. With a token configured and a fake refresher, POST
@@ -528,6 +530,7 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 		{"reset", http.MethodPost, "/api/auth/reset", `{"email":"exempt-reset@example.com"}`},
 		{"reset code", http.MethodPost, "/api/auth/reset/code", `{"code":"123456"}`},
 		{"reset password", http.MethodPost, "/api/auth/reset/password", `{"password":"` + gateTestPassword + `"}`},
+		{"reset cancel", http.MethodPost, "/api/auth/reset/cancel", `{}`},
 	}
 	for _, p := range appAssets {
 		cases = append(cases, struct {

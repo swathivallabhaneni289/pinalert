@@ -150,7 +150,7 @@ func TestResetSignUpCodeScreenUnchanged(t *testing.T) {
 func TestResetStepsAuthJS(t *testing.T) {
 	script := readAuthJS(t)
 	for _, want := range []string{
-		"'/api/auth/reset/code'", "'/api/auth/reset/password'", "'/api/auth/sign-up/code'",
+		"'/api/auth/reset/code'", "'/api/auth/reset/password'", "'/api/auth/reset/cancel'", "'/api/auth/sign-up/code'",
 		"function enterPasswordStep", "function backToCodeStep", "data-code-step",
 	} {
 		if !strings.Contains(script, want) {

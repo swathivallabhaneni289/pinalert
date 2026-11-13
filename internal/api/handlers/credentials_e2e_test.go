@@ -29,6 +29,7 @@ var authRoutePaths = []string{
 	"/api/auth/reset",
 	"/api/auth/reset/code",
 	"/api/auth/reset/password",
+	"/api/auth/reset/cancel",
 }
 
 // getLoginPage visits GET /login so the jar holds a session cookie, the way a
