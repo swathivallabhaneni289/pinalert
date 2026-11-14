@@ -44,13 +44,13 @@
             <span class="auth-icon auth-icon--mail" aria-hidden="true"></span>
             <input type="email" id="create-email" name="email" placeholder="you@example.com" autocomplete="username" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" required>
           </div>
-          <label for="create-password">Password</label>
+          <label for="create-password">Make a Pinalert password</label>
           <div class="login-field login-field--rule">
             <span class="auth-icon auth-icon--lock" aria-hidden="true"></span>
             <input type="password" id="create-password" name="new-password" autocomplete="new-password" minlength="{{.PasswordMin}}" maxlength="{{.PasswordMax}}" autocapitalize="none" autocorrect="off" spellcheck="false" required aria-describedby="create-rule">
             <button type="button" class="login-show" id="create-show" data-show-for="create-password" aria-label="Show password">Show</button>
           </div>
-          <p class="login-rule" id="create-rule">At least {{.PasswordMin}} characters.</p>
+          <p class="login-rule" id="create-rule">At least {{.PasswordMin}} characters. Not your email's password.</p>
           <p class="inline-error" id="create-error" role="alert" hidden></p>
           <div class="login-actions">
             <button type="submit" class="btn btn--primary" id="create-submit">Email me a code</button>

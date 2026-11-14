@@ -212,7 +212,7 @@ func TestLoginFieldAttributes(t *testing.T) {
 		want(statusID, `role="status"`, ` hidden`)
 	}
 	// The labels.
-	for _, label := range []string{`for="create-email">Email address`, `for="create-password">Password`, `for="signin-email">Email address`,
+	for _, label := range []string{`for="create-email">Email address`, `for="create-password">Make a Pinalert password`, `for="signin-email">Email address`,
 		`for="signin-password">Password`, `for="code-input">6 digit code`, `for="code-new-password">New password`, `for="forgot-email">Email address`} {
 		if !strings.Contains(page, label) {
 			t.Errorf("the page lacks the label %q", label)
@@ -222,7 +222,7 @@ func TestLoginFieldAttributes(t *testing.T) {
 	vm := p711Vm()
 	vm["PasswordMin"], vm["PasswordMax"], vm["CodeDigits"] = 10, 64, 8
 	other := p711RenderVM(t, vm)
-	for _, w := range []string{`minlength="10"`, `maxlength="64"`, `maxlength="8"`, "At least 10 characters."} {
+	for _, w := range []string{`minlength="10"`, `maxlength="64"`, `maxlength="8"`, "At least 10 characters.", "At least 10 characters. Not your email's password."} {
 		if !strings.Contains(other, w) {
 			t.Errorf("the page does not follow the view model: lacks %s", w)
 		}
