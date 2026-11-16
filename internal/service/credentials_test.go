@@ -813,11 +813,11 @@ func TestSignUpBranches(t *testing.T) {
 		if err != nil || !ok {
 			t.Errorf("stored hash does not verify the typed password: ok=%v err=%v", ok, err)
 		}
-		if want := row.expires.Sub(r.clk.Now()); want != 10*time.Minute {
-			t.Errorf("code life = %v, want 10m", want)
+		if want := row.expires.Sub(r.clk.Now()); want != 5*time.Minute {
+			t.Errorf("code life = %v, want 5m", want)
 		}
 		sent := r.mail.last(t)
-		if len(r.mail.sent) != 1 || sent.to != credEmail || sent.msg.Kind != mailer.KindCodeSignup || sent.msg.MinutesValid != 10 {
+		if len(r.mail.sent) != 1 || sent.to != credEmail || sent.msg.Kind != mailer.KindCodeSignup || sent.msg.MinutesValid != 5 {
 			t.Errorf("email = %+v (count %d)", sent, len(r.mail.sent))
 		}
 		if want := auth.CodeHash(credCodeKey, "signup", credEmail, sent.msg.Code); row.codeHash != want {
@@ -1074,7 +1074,7 @@ func TestRequestResetBranches(t *testing.T) {
 			t.Errorf("row = %+v", row)
 		}
 		sent := r.mail.last(t)
-		if sent.msg.Kind != mailer.KindCodeReset || sent.msg.MinutesValid != 10 {
+		if sent.msg.Kind != mailer.KindCodeReset || sent.msg.MinutesValid != 5 {
 			t.Errorf("email = %+v", sent)
 		}
 		if row.codeHash != auth.CodeHash(credCodeKey, "reset", credEmail, sent.msg.Code) {
@@ -1480,7 +1480,7 @@ func TestConfirmSignUpWrongCode(t *testing.T) {
 	t.Run("an expired code", func(t *testing.T) {
 		r := newCredRig(t)
 		code := r.signUpAndCode(t, "sess-a", credEmail, credPassword)
-		r.clk.Advance(11 * time.Minute)
+		r.clk.Advance(6 * time.Minute)
 		if _, err := r.svc.ConfirmSignUp(ctx, "sess-a", code, credSessionIDs("f")); !errors.Is(err, service.ErrWrongCode) {
 			t.Fatalf("err = %v", err)
 		}
@@ -2231,9 +2231,14 @@ func TestConfirmResetNeedsAConfirmedCode(t *testing.T) {
 
 	// A confirm that ran out while the code is still live is renewed by typing the
 	// code once more; without that, step two would stay refused until a Resend,
-	// because the window (5 minutes) is shorter than the code's life (10).
+	// because the window (5 minutes) is shorter than the code's life. With the
+	// default life now 5 minutes too, a confirm can never outlast its code, so this
+	// run gives the code a life of 10 minutes of its own to keep the renewal path
+	// pinned for any future limits.
 	t.Run("a confirm that ran out while the code is live is renewed by typing the code again", func(t *testing.T) {
-		r := newCredRig(t)
+		limits := service.DefaultCredentialLimits
+		limits.CodeTTL = 10 * time.Minute
+		r := newCredRig(t, service.WithCredentialLimits(limits))
 		a := r.addPasswordAccount(t, credEmail, credPassword)
 		code := r.resetCodeFor(t, "sess-d")
 		fresh, err := checkReset(r.svc, "sess-d", code)
@@ -2377,10 +2382,10 @@ func TestLiveCode(t *testing.T) {
 		if err != nil || !ok {
 			t.Fatalf("ok=%v err=%v", ok, err)
 		}
-		if lc.Purpose != service.PurposeSignUp || lc.Email != credEmail || lc.SecondsLeft != 600 {
+		if lc.Purpose != service.PurposeSignUp || lc.Email != credEmail || lc.SecondsLeft != 300 {
 			t.Errorf("live code = %+v", lc)
 		}
-		r.clk.Advance(500*time.Second + 400*time.Millisecond)
+		r.clk.Advance(200*time.Second + 400*time.Millisecond)
 		if lc, _, _ = r.svc.LiveCode(ctx, "sess-a"); lc.SecondsLeft != 100 {
 			t.Errorf("seconds left = %d, want 100 (rounded up)", lc.SecondsLeft)
 		}

@@ -161,8 +161,8 @@ func TestSendsOneSampleEmail(t *testing.T) {
 			if !regexp.MustCompile(`^\d{6}$`).MatchString(got.msg.Code) {
 				t.Errorf("code %q is not 6 digits", got.msg.Code)
 			}
-			if got.msg.MinutesValid != 10 {
-				t.Errorf("MinutesValid = %d, want 10 (mailer.CodeLifetime)", got.msg.MinutesValid)
+			if got.msg.MinutesValid != 5 {
+				t.Errorf("MinutesValid = %d, want 5 (mailer.CodeLifetime)", got.msg.MinutesValid)
 			}
 			assertNoSecrets(t, "stdout", out.String(), got.msg.Code)
 			assertNoSecrets(t, "stderr", errOut.String(), got.msg.Code)
