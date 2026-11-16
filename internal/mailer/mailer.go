@@ -16,7 +16,7 @@ import (
 // the codes expire when the email says), and mailcheck reads it for the sample
 // email, without importing the service and everything that package pulls in. A
 // test in internal/service pins the two together.
-const CodeLifetime = 10 * time.Minute
+const CodeLifetime = 5 * time.Minute
 
 // Mailer sends one of the four password sign in emails (a code, or a note that
 // an account does or does not exist) through SendAuthEmail. It holds no link

@@ -209,7 +209,7 @@ var DefaultCredentialLimits = CredentialLimits{
 // of Forgot password, counted from the confirm and not from the send (quick
 // 261113-r5w, review fix WR-01). It is short on purpose: for this long after the
 // right code was typed, whoever holds the browser's session can set the password
-// without the code, so it is kept well under the code's own 10 minute life. The
+// without the code, so its length is no more than the code's own 5 minute life. The
 // service, LiveCode (which draws step two) and docs/TRUST-MODEL.md all use this
 // one number.
 const ResetConfirmWindow = 5 * time.Minute
