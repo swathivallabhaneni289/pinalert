@@ -1419,12 +1419,14 @@ test('WR-B02: a refused early Resend restarts the wait from the server, up to th
   await toCodeScreen(page);
   assert.equal(text(page, 'code-resend'), 'Resend code');
   click(page, 'code-resend');
-  answer(page.requests[page.requests.length - 1], 429, { error: { field: 'email', message: 'Too many requests. Try again in a minute.' }, retry_after_seconds: 60 });
+  // Quick 261116-isd: the per address wait says the real seconds left, and the
+  // button counts down from the same number.
+  answer(page.requests[page.requests.length - 1], 429, { error: { field: 'email', message: 'A code was just sent to this email. Try again in 20 seconds.' }, retry_after_seconds: 20 });
   await flush();
-  assert.equal(text(page, 'code-error'), 'Too many requests. Try again in a minute.');
-  assert.equal(text(page, 'code-resend'), 'Resend in 60s');
+  assert.equal(text(page, 'code-error'), 'A code was just sent to this email. Try again in 20 seconds.');
+  assert.equal(text(page, 'code-resend'), 'Resend in 20s');
   assert.equal(isOff(page, 'code-resend'), true);
-  page.sleep(60000);
+  page.sleep(20000);
   page.fireDoc('visibilitychange');
   assert.equal(text(page, 'code-resend'), 'Resend code');
 
@@ -1442,6 +1444,25 @@ test('WR-B02: a refused early Resend restarts the wait from the server, up to th
   answer(plain.requests[plain.requests.length - 1], 503, { error: { message: 'The mail service is down. Try again later.' } });
   await flush();
   assert.equal(text(plain, 'code-resend'), 'Resend code', 'only a 429 names a wait');
+});
+
+// Quick 261116-isd: pressing Email me a code again inside the 45 second wait (the
+// person tapped Change email and sent the same form again) shows the server's
+// sentence with the seconds left on the create panel's own line. It is a limit, so
+// no field is marked and the person stays on the create panel.
+test('isd: a create form refused inside the send wait shows the seconds left on the create panel', async () => {
+  const page = load({ start: 'create' });
+  await fillCreate(page, 'priya@example.com', 'pinalert-demo');
+  submit(page, 'create');
+  answer(page.requests[0], 429, { error: { field: 'email', message: 'A code was just sent to this email. Try again in 20 seconds.' }, retry_after_seconds: 20 });
+  await flush();
+  assert.deepEqual(shownPanel(page), ['create']);
+  const line = byId(page, 'create-error');
+  assert.equal(line.hidden, false);
+  assert.equal(line.textContent, 'A code was just sent to this email. Try again in 20 seconds.');
+  assert.equal(byId(page, 'create-email').getAttribute('aria-invalid'), null, 'a wait does not blame the email field');
+  assert.equal(byId(page, 'create-password').getAttribute('aria-invalid'), null);
+  assert.equal(byId(page, 'create-submit').getAttribute('aria-busy'), null, 'the button is free again');
 });
 
 // Phase 7.1 review fix (browser), IN-B03: an answer belongs to the screen that

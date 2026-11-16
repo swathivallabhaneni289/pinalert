@@ -201,6 +201,7 @@ func signedInNext(r *http.Request) string {
 func writeCredentialError(w http.ResponseWriter, handler string, err error) {
 	var ve service.ValidationError
 	var locked service.SignInLockedError
+	var sendWait service.SendWaitError
 	switch {
 	case errors.As(err, &ve):
 		writeAuthError(w, http.StatusBadRequest, ve.Field, ve.Message)
@@ -209,6 +210,10 @@ func writeCredentialError(w http.ResponseWriter, handler string, err error) {
 		writeAuthError(w, http.StatusBadRequest, "credentials", service.WrongCredentialsMessage)
 	case errors.Is(err, service.ErrWrongCode):
 		writeAuthError(w, http.StatusBadRequest, "code", service.WrongCodeMessage)
+	case errors.As(err, &sendWait):
+		// The per address wait between two code emails says how long is left.
+		// It comes before the plain ErrRateLimited case, which it also matches.
+		writeAuthRateLimited(w, service.SendWaitMessage(sendWait.Wait), sendWait.Wait)
 	case errors.Is(err, service.ErrRateLimited):
 		// This sentence is duplicated in internal/ratelimit's
 		// tooManyRequestsMessage and in the client-side auth.js script; all

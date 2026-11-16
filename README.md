@@ -188,7 +188,7 @@ paced at 15 in any 10 minutes (5 kept for Forgot password), and once the other e
 sender (a client network with `CLIENT_IP_HEADER`, or every request without a valid cookie) may take
 only 3 of the kept slots a day, so one network cannot spend the reserve. Several networks working
 together still can; see "Signing in" in [docs/TRUST-MODEL.md](./docs/TRUST-MODEL.md). A person is
-also limited to one code email every 45 seconds and 5 an hour for each address. A send past the
+also limited to one code email every 45 seconds (the person is told the seconds left) and 5 an hour for each address. A send past the
 ceiling shows the person "Something went wrong. Try again." and says nothing about why.
 
 ### Signing in: client address header and hashing speed

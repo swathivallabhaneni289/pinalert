@@ -165,6 +165,29 @@ func SignInLockedMessage(wait time.Duration) string {
 	return fmt.Sprintf("Too many tries. Wait %d minutes, or reset your password.", minutes)
 }
 
+// SendWaitError says a code email was refused because the last email to this
+// address went out less than the send cooldown ago. Wait is the real time left,
+// at least one second. It still counts as ErrRateLimited (errors.Is), so a
+// caller that only knows the plain sentinel behaves as before.
+type SendWaitError struct {
+	Wait time.Duration
+}
+
+func (e SendWaitError) Error() string { return SendWaitMessage(e.Wait) }
+
+// Is lets errors.Is(err, ErrRateLimited) stay true for a SendWaitError.
+func (e SendWaitError) Is(target error) bool { return target == ErrRateLimited }
+
+// SendWaitMessage is "A code was just sent to this email. Try again in N
+// seconds." with N rounded up to a whole second, and "1 second" for one.
+func SendWaitMessage(wait time.Duration) string {
+	seconds := int((wait + time.Second - 1) / time.Second)
+	if seconds <= 1 {
+		return "A code was just sent to this email. Try again in 1 second."
+	}
+	return fmt.Sprintf("A code was just sent to this email. Try again in %d seconds.", seconds)
+}
+
 // CredentialLimits are the database backed limits this service owns. The
 // device and network buckets are the handler's job (plan 07).
 type CredentialLimits struct {
@@ -523,7 +546,13 @@ func (s *CredentialService) claimRefused(ctx context.Context, email string, now 
 		int(win.WindowSends) >= s.limits.SendsPerHour {
 		return ErrTooManyCodes
 	}
-	return ErrRateLimited
+	// Still inside the cooldown: say how long is left. The wait is read from
+	// the same row for every address, whether or not it has an account.
+	left := win.LastRequestedAt.Add(s.limits.SendCooldown).Sub(now)
+	if left < time.Second {
+		left = time.Second
+	}
+	return SendWaitError{Wait: left}
 }
 
 // lookupAccount reads the account of a normalised address. A deleted account
