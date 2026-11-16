@@ -30,7 +30,6 @@ func p711Vm() map[string]any {
 		"CodeSecondsLeft": 0,
 		"CodeDigits":      6,
 		"CodeTTLSeconds":  300,
-		"CodeMinutes":     5,
 		"ResendSeconds":   45,
 		"PasswordMin":     8,
 		"PasswordMax":     128,

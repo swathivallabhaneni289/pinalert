@@ -95,9 +95,8 @@
             <label for="code-input">{{.CodeDigits}} digit code</label>
             <div class="login-field login-field--code">
               <span class="auth-icon auth-icon--shield-check" aria-hidden="true"></span>
-              <input type="text" id="code-input" name="code" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="{{.CodeDigits}}" enterkeyhint="done" autocapitalize="none" autocorrect="off" spellcheck="false"{{if not .CodeVerified}} required{{end}} aria-describedby="code-life">
+              <input type="text" id="code-input" name="code" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="{{.CodeDigits}}" enterkeyhint="done" autocapitalize="none" autocorrect="off" spellcheck="false"{{if not .CodeVerified}} required{{end}}>
             </div>
-            <p class="login-rule" id="code-life">The code works for {{.CodeMinutes}} minutes.</p>
           </div>
           <div id="code-new-wrap"{{if not .CodeVerified}} hidden{{end}}>
             <label for="code-new-password">New password</label>

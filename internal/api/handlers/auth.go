@@ -103,28 +103,14 @@ type loginGateViewModel struct {
 	// script starts after every send, so a code screen reloaded with less left
 	// never takes the leftover as the next whole wait (review fix round 2,
 	// skeptic SK-04).
-	CodeDigits     int
-	CodeTTLSeconds int
-	// CodeMinutes is the same life in whole minutes, at least 1, for the line
-	// under the code box ("The code works for N minutes."). It is the number the
-	// email says too (service.minutesValid), so the page and the email agree.
-	CodeMinutes           int
+	CodeDigits            int
+	CodeTTLSeconds        int
 	ResendSeconds         int
 	ResendCooldownSeconds int
 	// PasswordMin and PasswordMax feed minlength and maxlength on the new
 	// password fields and the rule line.
 	PasswordMin int
 	PasswordMax int
-}
-
-// codeMinutes is the code's life in whole minutes, at least 1. It mirrors
-// service.minutesValid, the number the email says, so the line on the code
-// screen and the email always agree.
-func codeMinutes(ttl time.Duration) int {
-	if m := int(ttl / time.Minute); m >= 1 {
-		return m
-	}
-	return 1
 }
 
 // The start panels of the card and the two code modes.
@@ -214,7 +200,6 @@ func LoginGate(tmpl *template.Template, cfg AuthConfig) http.HandlerFunc {
 			vm.CodeTTLSeconds = int(cfg.Login.CodeTTL() / time.Second)
 			vm.ResendSeconds = int(cfg.Login.ResendCooldown() / time.Second)
 		}
-		vm.CodeMinutes = codeMinutes(time.Duration(vm.CodeTTLSeconds) * time.Second)
 		vm.ResendCooldownSeconds = vm.ResendSeconds
 
 		vm.LowDataDefault = lowDataChosen(r)

@@ -210,11 +210,6 @@ func TestLoginGateClockAttributes(t *testing.T) {
 	if got := gateAttr(t, body, "data-code-ttl-seconds"); got != 420 {
 		t.Errorf("entry panel data-code-ttl-seconds = %d, want the service's 420", got)
 	}
-	// Quick 261116-i0n: the line under the code box says the service's own life
-	// in whole minutes, so it follows the limit and not a number in the page.
-	if !strings.Contains(body, `id="code-life">The code works for 7 minutes.</p>`) {
-		t.Errorf("the code screen does not say the service's 7 minute life: %s", body)
-	}
 
 	if status := signUpRequest(t, browser, srv, "gate-clock@example.com", e2eTestPassword); status != http.StatusOK {
 		t.Fatalf("sign up status = %d, want 200", status)
