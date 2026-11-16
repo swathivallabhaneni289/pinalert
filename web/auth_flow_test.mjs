@@ -32,7 +32,6 @@ import vm from 'node:vm';
 const here = path.dirname(url.fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.join(here, 'static', 'js', 'auth.js'), 'utf8');
 
-const OLD_ACCOUNT_LINE = 'Had an account before passwords? Choose Create account with the same email. Your reports stay with you.';
 const ELLIPSIS = '\u2026';
 
 class FakeEl {
@@ -716,7 +715,7 @@ test('Change email returns to the panel the person came from with the email fill
   assertClean(reset);
 });
 
-test('Sign in posts the email and password; a wrong one shows both sentences on every try', async () => {
+test('Sign in posts the email and password; a wrong one shows the one sentence on every try', async () => {
   const page = load({ start: 'signin' });
   byId(page, 'signin-email').value = 'priya@example.com';
   byId(page, 'signin-password').value = 'not-the-password';
@@ -733,20 +732,20 @@ test('Sign in posts the email and password; a wrong one shows both sentences on 
   const line = byId(page, 'signin-error');
   assert.equal(line.hidden, false);
   assert.equal(byId(page, 'signin-submit').textContent, 'Sign in');
-  assert.ok(line.textContent.includes('Email or password is wrong.'));
-  assert.ok(line.textContent.includes(OLD_ACCOUNT_LINE));
-  assert.equal(line.textContent, 'Email or password is wrong.' + OLD_ACCOUNT_LINE);
+  // Only the one sentence: the old account line is gone (owner, 2026-11-16).
+  assert.equal(line.textContent, 'Email or password is wrong.');
+  assert.ok(!line.textContent.includes('before passwords'));
   assert.equal(byId(page, 'signin-password').getAttribute('aria-invalid'), 'true');
   assert.ok(isFocused(page, 'signin-password'));
 
-  // The second wrong try shows both again, not twice.
+  // The second wrong try shows it again, not twice.
   submit(page, 'signin');
   assert.equal(line.hidden, true);
   answer(page.requests[1], 400, { error: { field: 'credentials', message: 'Email or password is wrong.' } });
   await flush();
-  assert.equal(line.textContent, 'Email or password is wrong.' + OLD_ACCOUNT_LINE);
+  assert.equal(line.textContent, 'Email or password is wrong.');
 
-  // A locked sign in shows the server's sentence and no old account line.
+  // A locked sign in shows the server's sentence.
   submit(page, 'signin');
   answer(page.requests[2], 429, { error: { field: 'email', message: 'Too many tries. Wait 5 minutes, or reset your password.' }, retry_after_seconds: 300 });
   await flush();

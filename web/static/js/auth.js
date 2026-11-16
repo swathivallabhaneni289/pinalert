@@ -18,7 +18,6 @@
 
   var RATE_LIMIT_MESSAGE = 'Too many requests. Try again in a minute.';
   var WRONG_CREDENTIALS_MESSAGE = 'Email or password is wrong.';
-  var OLD_ACCOUNT_LINE = 'Had an account before passwords? Choose Create account with the same email. Your reports stay with you.';
   var OFFLINE_MESSAGE = "You're offline. Try again when you have a signal.";
   var SERVER_MESSAGE = 'Something went wrong. Try again.';
   var CODE_WRONG_MESSAGE = 'That code is wrong or has expired.';
@@ -187,20 +186,16 @@
     }
   }
 
-  // The wrong sign in sentence and the old account line sit in one block, one
-  // under the other, inside a wrapper the card's stylesheet lays out.
-  function showSignInError(first, more) {
+  // The sign in refusal is one sentence inside a wrapper the card's stylesheet
+  // lays out. A wrong password says only that (the owner took the old account
+  // line off on 2026-11-16).
+  function showSignInError(sentence) {
     setText(signinError, '');
     var wrap = document.createElement('span');
     wrap.className = 'inline-error__text';
     var top = document.createElement('span');
-    setText(top, first);
+    setText(top, sentence);
     wrap.appendChild(top);
-    if (more) {
-      var under = document.createElement('span');
-      setText(under, more);
-      wrap.appendChild(under);
-    }
     signinError.appendChild(wrap);
     signinError.hidden = false;
   }
@@ -752,14 +747,14 @@
         return;
       }
       if (result.status === 400 && fieldOf(result) === 'credentials') {
-        showSignInError(WRONG_CREDENTIALS_MESSAGE, OLD_ACCOUNT_LINE);
+        showSignInError(WRONG_CREDENTIALS_MESSAGE);
         markInvalid(signinEmail, signinError, true);
         markInvalid(signinPassword, signinError, true);
         signinPassword.focus();
         return;
       }
       var field = fieldFor(result, { email: signinEmail, password: signinPassword });
-      showSignInError(messageFor(result), '');
+      showSignInError(messageFor(result));
       markInvalid(field, signinError, true);
     });
   }

@@ -186,13 +186,9 @@
   margin-top: 2px;
 }
 
-/* A two line error (the wrong sign in line and the old account line under it). */
+/* The sign in refusal sentence, in its wrapper. */
 .login-card .inline-error__text > span:not([hidden]) {
   display: block;
-}
-
-.login-card .inline-error__text > span + span {
-  margin-top: var(--space-xs);
 }
 
 /* The address in the code lead is plain text; a long one wraps. */
