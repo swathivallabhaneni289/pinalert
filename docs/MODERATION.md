@@ -102,14 +102,16 @@ Recording status: not recorded yet.
 
 ## Held and removed reports
 
-A report has one of three `moderation_state` values: `clear`, `pending` and `removed`.
-`Resolve` puts removed above every other rung, even a critical report, and pending and not
-serious next. Both give `withheld`, which is listable in no view (Active, Disputed, Resolved or
-Past).
+A report has one of four `moderation_state` values: `clear`, `pending`, `removed` and, since
+quick 261117-vvb (2026-11-17), `review` (hidden for review by flags, see Flag this report).
+`Resolve` puts removed and review above every other rung, even a critical report, and pending
+and not serious next. All three give `withheld`, which is listable in no view (Active, Disputed,
+Resolved or Past).
 
 - A vote or a flag on a withheld report answers 404.
 - Only the author sees it, on the Activity page, as "Waiting for a text check" or "Removed after
-  review", with no trust block, counters or votes.
+  review", with no trust block, counters or votes. Since 2026-11-17 the author is also told in
+  the bell when moderation shows, hides or removes the report (see Flag this report).
 - It never counts for or against the author's reporter rating, whatever its votes (see
   [docs/TRUST-MODEL.md](./TRUST-MODEL.md)).
 - The pinned `NearbyReports` query is unchanged. Moderation arrives through one batched extras
@@ -132,7 +134,11 @@ attempt, capped at one hour, scaled by a factor between 0.5 and 1.5, and never s
 - A late pass releases the report.
 - A late borderline releases it as clear and lists it for review.
 - A late reject removes it, serious reports included, and the author sees "Removed after
-  review".
+  review". Since 2026-11-17 the same statement writes the author one bell row: "Your report was
+  removed after review." for a reject, and "Your report passed the text check and is now
+  showing." when a held report is released. A pending serious report was already showing, so its
+  pass writes nothing.
+- A report hidden for review is never claimed and never moved by the worker.
 - An expired report is never retried.
 
 Tests: `TestModerationWorkerBackoff`, `TestModerationWorker`,
@@ -163,6 +169,11 @@ The heading counts come from one count query and never from the length of a list
 by id opens any report, including a held or removed one. Keep and a confirmed Remove each write
 one `moderation_actions` row, which holds no report text. No flagger identity is ever shown.
 
+Since 2026-11-17 (quick 261117-vvb) a report hidden for review comes first in the flagged list,
+marked "Hidden by flags", with the usual reasons, notes and counts. Keep shows it again, dismisses
+its open flags and stamps `review_kept_at`, so flags can never hide it again; later flags still
+reach this list. Remove works as for any report. The place cells of the flags are never shown.
+
 ## Flag this report
 
 A signed in person can flag a report they did not write, ticking one or more of five reasons:
@@ -183,11 +194,75 @@ is just wrong, and has an optional "Tell the moderators more" box of up to 300 c
 - The moderator screen counts each reason once per flag it appears in and lists each open
   flag's note with its reasons, newest first, at most 20 per report, as text. The note is never
   shown to the author or any reader, and nothing names who wrote it.
-- A flag never hides or changes a report. Only a moderator's Remove does.
+- ~~A flag never hides or changes a report. Only a moderator's Remove does.~~ Amended
+  2026-11-17 (quick 261117-vvb, owner, 7.1 UAT test 7): one flag still never hides a report, but
+  flags from three places do, until a moderator looks. The rule follows below. A flag on a comment
+  still never hides it.
 - Flagging your own report answers 403, a missing or withheld report 404 and a repeat 409.
 - Flags have their own allowance, listed under Limits.
 - Police guidance stays plain text on the legal pages. The Flag control sends nothing to anyone
   outside Pinalert.
+
+### Hidden for review (since 2026-11-17)
+
+The owner asked for an action when several people complain about one report, the way community
+apps hide a post after several independent complaints until a person looks. Big apps never remove
+by flag count alone, and neither does Pinalert: a moderator still decides.
+
+- **Place cells.** A report flag may carry the flagger's position, the same cached fix a vote on
+  that page reuses without asking (`PinalertVotes.knownPosition`). There is no new location
+  prompt; with no known position the flag is sent without one, as before. The server turns the
+  position into a place cell at the voter precision (`voterGeohashPrecision`, 7, about 150 m,
+  the cells confirmations count by) and stores only the cell, in `report_flags.flagger_cell`
+  (migration 00026). The position itself is never stored. The cell is read only by the hide
+  decision: it is in no JSON answer, not on the moderator screen and in no log. Half a position
+  answers 400 on the missing field, and a latitude or longitude outside the map answers 400, as
+  on the vote route.
+- **The rule.** A report is hidden for review when its open (not dismissed) flags come from at
+  least `FlagHideThreshold` (3) different place cells. One flag per account means that is at
+  least 3 accounts too. A flag with no cell never counts, but still reaches the moderator. Only a
+  shown report (`moderation_state = 'clear'`) that no moderator kept after a review hide can be
+  hidden; a held or removed report never moves to review, and a pending serious report stays
+  pending.
+- **Exactly once.** The flag, the decision and the author's bell row run in one transaction that
+  first takes the report's row lock (`LockReportModeration`, `FOR NO KEY UPDATE`). Two flags on
+  one report queue on that lock, so each sees the other's committed flag: concurrent flags can
+  neither skip the hide nor make it twice (`TestFlagReviewConcurrent`).
+- **Withheld everywhere.** `review` is a fourth `moderation_state` and `Withheld` treats it like
+  `removed` at every severity, so every read that already fails closed leaves it out: feeds, map,
+  report page and focus, Past, profile, search, comments, share, votes and flags (404), and push.
+  The text check worker never claims a report hidden for review and its verdict write never moves
+  one; the comment worker does not check held comments on it either. The report's time keeps
+  running while it is hidden. A hidden report sends no push of any kind.
+- **Only a moderator ends it.** See Moderator screen. Keep stamps `review_kept_at`, so a report
+  is hidden this way at most once; a kept report is never pushed again
+  (`TestPushReviewHideAndKeep`). Remove works as today.
+- **Ratings.** A review hide never counts against the author: a withheld report is neutral for
+  the outcome score, stars and reporter tag. After Keep the report counts as if it was never
+  hidden; after Remove it counts the way a removal counts (neutral).
+
+The author's bell gets one row per event, written straight to their updates whatever their
+follows or mutes, at most once per report and kind (`uq_updates_own_report`). They are bell only:
+never a phone notification and never an email. They show in the bell and in the full updates list
+(`/profile?part=updates`) on phone and laptop, unread like other rows.
+
+| Event | The row says | Tapping it opens |
+|---|---|---|
+| A held report becomes shown, by the late check or a moderator Keep (`own_shown`) | Your report passed the text check and is now showing. | The report |
+| Hidden for review by flags (`own_review`) | Your report is hidden while it's reviewed. | Nothing (a plain row) |
+| A moderator keeps it after a review hide (`own_kept`) | Your report is showing again. Sorry for the wait. | The report |
+| Removed, by a moderator's Remove from any state or the late text check (`own_removed`) | Your report was removed after review. | The Policy page |
+
+No row is written while a report waits for the text check: the message at posting already says
+so. A row about the author's own withheld report never turns into "This report is no longer
+available" and never shows the report's words. The shown and kept rows open the report only while
+it is not withheld. The existing follow path (`DecideUpdate`) still writes nothing for a withheld
+report. The gaming analysis is in [docs/TRUST-MODEL.md](./TRUST-MODEL.md).
+
+Tests: `TestFlagReviewHide`, `TestFlagReviewConcurrent`, `TestReviewUntouchedByTextCheck`,
+`TestOwnShownAndRemovedRows`, `TestReviewIsWithheldEverywhere` and `TestPushReviewHideAndKeep` in
+`internal/service`, `TestReviewHideFlow` and `TestWithheldReportsInNoFeed` in
+`internal/api/handlers`, and `TestMigration00026` in `internal/store`.
 
 ## Comments
 

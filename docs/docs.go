@@ -3384,7 +3384,7 @@ const docTemplate = `{
         },
         "/reports/{id}/flag": {
             "post": {
-                "description": "Sends a report to the moderators with one or more of five reasons: spam, abusive,\nfalse, dangerous or other, each at most once, and an optional note of at most 300\ncharacters that only moderators see. The note goes through the same text check as a\nreport description, and a refused note gets 422. The older single reason field is\nstill accepted on its own as a one reason flag. A flag never hides or changes the report. Each account can flag\na report once, and a repeat gets 409. Your own report gets 403. A report that does\nnot exist, or that is not shown in any feed, gets 404. Flagging is limited per\nverified account, and a blocked flag gets 429 with a Retry-After header.\nRequires a session verified by email; an unverified caller receives 401.",
+                "description": "Sends a report to the moderators with one or more of five reasons: spam, abusive,\nfalse, dangerous or other, each at most once, and an optional note of at most 300\ncharacters that only moderators see. The note goes through the same text check as a\nreport description, and a refused note gets 422. The older single reason field is\nstill accepted on its own as a one reason flag. The body may carry the flagger's latitude and\nlongitude, both or neither; only the place cell is kept. One flag never hides the report: once\npeople in three different places flag it, it is hidden until a moderator keeps or removes it.\nEach account can flag a report once, and a repeat gets 409. Your own report gets 403. A\nreport that does not exist, or that is not shown in any feed, gets 404. Flagging is limited per\nverified account, and a blocked flag gets 429 with a Retry-After header.\nRequires a session verified by email; an unverified caller receives 401.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4712,6 +4712,15 @@ const docTemplate = `{
         "handlers.FlagRequest": {
             "type": "object",
             "properties": {
+                "latitude": {
+                    "description": "Latitude and Longitude are where the flagger is, when the browser already\nknows it. Both or neither: with neither the flag is stored as always, and\nonly one of them is a 400. The server keeps only the place cell of about\n150 metres that votes use, to tell flags from different places apart, and\nnever returns it.",
+                    "type": "number",
+                    "example": 13.0827
+                },
+                "longitude": {
+                    "type": "number",
+                    "example": 80.2707
+                },
                 "note": {
                     "type": "string",
                     "maxLength": 300,
@@ -6314,7 +6323,11 @@ const docTemplate = `{
                         "comment_on_yours",
                         "reply_to_yours",
                         "followed_posted",
-                        "more"
+                        "more",
+                        "own_shown",
+                        "own_review",
+                        "own_kept",
+                        "own_removed"
                     ],
                     "example": "reached_live"
                 },
@@ -6322,6 +6335,14 @@ const docTemplate = `{
                     "description": "Label is the row's accessible name, built whole on the server (UI-SPEC P32-C8).",
                     "type": "string",
                     "example": "New. Now confirmed. Flood, Critical. Confirmed by 3 people at different spots. 12 minutes ago"
+                },
+                "link": {
+                    "description": "Link is \"policy\" only on the row that says the reader's own report was\nremoved: that row opens the Policy page. It is a closed value, never an\naddress, and absent on every other row.",
+                    "type": "string",
+                    "enum": [
+                        "policy"
+                    ],
+                    "example": "policy"
                 },
                 "more_count": {
                     "description": "MoreCount is how many changes the rolled up row stands for. Only that row\ncarries it.",
