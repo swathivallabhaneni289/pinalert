@@ -84,3 +84,11 @@ The harness checks were written to expect this history step.
 ## Self-Check: PASSED
 
 Both commits (b50f0df8, 5589027a) are on the branch. Every file named above exists, except the intentionally deleted `profile_record_test.go`.
+
+## Review fixes
+
+One finding, confirmed by reading the templates, fixed in 5e0a6012.
+
+- **Ended location heading.** The part is named Ended, but its location state still said "Ended nearby needs your location" on My activity (`web/templates/profile.html.tmpl`) and in the Demo (`web/templates/demo_activity.html.tmpl`). Both now say "Ended needs your location". Only the words changed. The state still shows and hides the same way, and the line under it is the same. `web/ended_nearby_contract_test.go` (`TestEndedNearbyStatesCopy`) and `web/activity_page_contract_test.go` (`TestActivityPageTemplateMarkup`) now pin the new words, each with an amended note.
+- Nothing was skipped.
+- Reruns: `node --test web/*.mjs` 1649 pass, 0 fail. `go build ./...` and `go vet ./...` pass. `go test ./... -p 1 -count=1 -v` with `env -i` on the scratch database `p9_vuf_fix` (dropped afterwards): 2489 top level PASS, 0 FAIL; 4405 subtest PASS, 0 FAIL, 0 SKIP; the same 3 top level SKIPs as before (`TestGeocodeLive`, `TestOfficialLive`, `TestScreeningFixture`).
