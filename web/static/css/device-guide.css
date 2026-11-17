@@ -98,9 +98,21 @@
   color: var(--color-text);
 }
 
+/* Step 1's tile holds the Share and the Menu (three dots) glyphs and one shows
+   (quick 261117-kqy). .app-icon sets display: block, which outranks the
+   browser's own [hidden] rule, so the hidden one needs this. */
+.device-guide__tile .app-icon[hidden] {
+  display: none;
+}
+
 .app-icon--share {
   -webkit-mask-image: url("/static/icons/share.svg");
   mask-image: url("/static/icons/share.svg");
+}
+
+.app-icon--ellipsis {
+  -webkit-mask-image: url("/static/icons/ellipsis.svg");
+  mask-image: url("/static/icons/ellipsis.svg");
 }
 
 .app-icon--square-plus {

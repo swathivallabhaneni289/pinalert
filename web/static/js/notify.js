@@ -30,7 +30,9 @@
 //   - It sends no position, writes no text to the page, builds no markup and
 //     adds no listener on the window or the document. Apart from that one load
 //     time check it reacts only to calls from the page scripts, which draw
-//     every word on screen.
+//     every word on screen. The one exception is applyShareStep, which a page
+//     script calls to pick which of the install guide's ready made step 1
+//     wordings shows; it only flips hidden on them.
 //   - It does not touch the browser's own install prompt. Android and laptop
 //     browsers keep their own install control; there is no custom Install
 //     button (decision 5, UI-SPEC 4c).
@@ -93,6 +95,53 @@
     var agent = typeof navigator !== 'undefined' && navigator && typeof navigator.userAgent === 'string' ?
       navigator.userAgent : '';
     return isInstalled() && !isAppleMobile() && /Macintosh/.test(agent);
+  }
+
+  // The iOS browsers that are not Safari, and Version/ is missing in an in-app
+  // web view, so neither gets Safari's own wording.
+  var OTHER_IOS_BROWSERS = /CriOS|FxiOS|EdgiOS|OPiOS|OPT\/|YaBrowser|DuckDuckGo|GSA\/|Brave|Focus/;
+  var SAFARI_VERSION = /Version\/(\d+)/;
+
+  // shareStep says which step 1 the install guide shows (quick 261117-kqy):
+  //   'menu'  iPhone Safari 26 or newer: Share sits in the Menu, the three dots
+  //           at the bottom right (Compact layout);
+  //   'bar'   iPhone Safari 25 or older: Share is in the bar at the bottom;
+  //   'plain' everything else, an iPad and a desktop mode iPad included.
+  // maxTouchPoints is taken so a caller hands over what isAppleMobile reads,
+  // but the iPhone token alone decides: a desktop mode iPad says Macintosh, so
+  // it is plain at any number of touch points.
+  // The version is Safari's Version/N, not the OS number: Safari 26 freezes
+  // "CPU iPhone OS" at 18_6 or 18_7 (WebKit bug 298473).
+  function shareStep(agent, maxTouchPoints) {
+    if (typeof agent !== 'string' || !/iPhone/.test(agent) || OTHER_IOS_BROWSERS.test(agent)) {
+      return 'plain';
+    }
+    var version = SAFARI_VERSION.exec(agent);
+    if (!version) {
+      return 'plain';
+    }
+    return parseInt(version[1], 10) >= 26 ? 'menu' : 'bar';
+  }
+
+  // applyShareStep shows this browser's step 1 inside a guide root (the install
+  // pop-up or the Settings guide window): every [data-share-for] node of the
+  // step is hidden unless its list names the variant. It only flips hidden and
+  // one attribute on nodes the page already has. Returns the variant, or ''
+  // when the root has no step 1.
+  function applyShareStep(root) {
+    var step = root && typeof root.querySelector === 'function' ? root.querySelector('[data-share-step]') : null;
+    if (!step) {
+      return '';
+    }
+    var nav = typeof navigator !== 'undefined' && navigator ? navigator : {};
+    var variant = shareStep(nav.userAgent, nav.maxTouchPoints);
+    step.setAttribute('data-share-step', variant);
+    var parts = step.querySelectorAll('[data-share-for]');
+    for (var i = 0; i < parts.length; i++) {
+      var names = ' ' + (parts[i].getAttribute('data-share-for') || '') + ' ';
+      parts[i].hidden = names.indexOf(' ' + variant + ' ') === -1;
+    }
+    return variant;
   }
 
   // baseState is what the browser alone can say, with no request:
@@ -562,6 +611,8 @@
     isAppleMobile: isAppleMobile,
     isInstalled: isInstalled,
     isMacDockApp: isMacDockApp,
+    shareStep: shareStep,
+    applyShareStep: applyShareStep,
     keyBytes: keyBytes
   };
 }());
