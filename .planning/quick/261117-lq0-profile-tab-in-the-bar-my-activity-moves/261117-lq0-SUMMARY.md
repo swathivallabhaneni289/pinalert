@@ -81,3 +81,23 @@ The server was stopped, the database dropped and the server log deleted.
 
 - Commits c41bd2a6, 7f399cb4 and 80956af0 are on the branch after 406f36ce.
 - None of them stages STATE.md, ROADMAP.md or REQUIREMENTS.md.
+
+## Review fixes
+
+All three review findings were real. Each was checked against the code first, and all three are fixed.
+
+1. **Laptop rows opened their part off screen** (e3f696c6). The laptop draws all five parts stacked, so every Settings row landed at the top with Updates in view. `activityLinks` now adds `#part-<key>` to the part address it takes from `activityPartHref`. The hub, the bell and the My activity page are unchanged. `TestSettingsRows` pins the five new hrefs.
+2. **Policy tied the name to following** (49f18973). The What Pinalert keeps item now reads "Your name, which is shown to other people only if your profile is public." The name shows while the profile is public (`publicFace`), and following also needs the Reliable reporter tag (`CanFollow`). `TestPolicyNamesProfilesFollowingAndRatings` pins the new sentence.
+3. **Docs named the old switch** (8a6a6e97). TRUST-MODEL.md (lines 716, 754 and 919), MODERATION.md and PUSH.md now name Public profile, each with a dated note. No docs test pinned the old phrase. This replaces the docs/ part of deviation 4. The swagger summary is generated from the `@Summary` in people.go and still names the old switch, and code comments still do too. Neither is on screen, so both were left as they were.
+
+Tests after the fixes:
+- `node --test web/*.mjs`: 1649 pass, 0 fail.
+- `go build`, `go vet` and `go test ./... -p 1 -count=1 -v` with `env -i` on the scratch database `p9_lq0_fix`: exit 0, 2494 top-level PASS, 0 FAIL, 3 SKIP. The three skips are the live-only `TestGeocodeLive`, `TestOfficialLive` and `TestScreeningFixture`.
+
+Live look with Playwright WebKit:
+- Setup: a scratch server on port 8794, `p9_lq0_fix` migrated and seeded, signed in as the made-up `anita.r@example.com`. Each Settings row was clicked.
+- Laptop, 1280x800 light and 900x700 dark: the chosen part's heading was in view every time. For example, You disputed was at 372 and Ended nearby at 591 at 1280.
+- Phone, 320 light and 390 dark: each part screen with and without the fragment was identical. The first content sat at 60, just under the top bar, with scroll 0. The title was the part name and the back arrow went to `/settings`.
+- 0 fails, no sideways scroll.
+- Screenshots are in `/private/tmp/claude-501/-Users-swathivallabhaneni-code-pinalert/2574caf2-6d41-4dbd-95b5-bd3c870af095/scratchpad/lq0fix/shots/`.
+- Afterwards the server was stopped, the database dropped and the log deleted.
