@@ -86,7 +86,6 @@ const (
 	hubDisputedNone    = "Nothing disputed yet"
 	hubEndedSummary    = "Last 7 days, near your area"
 	hubLatestPrefix    = "Latest: "
-	activityListHref   = "/profile"
 	activityPartPrefix = "/profile?part="
 )
 
