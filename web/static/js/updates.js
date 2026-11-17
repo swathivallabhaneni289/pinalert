@@ -51,6 +51,9 @@
   var LINK_POLICY = 'policy';
   var POLICY_URL = '/policy';
 
+  // The plain row that says the reader's own report is hidden for review.
+  var KIND_OWN_REVIEW = 'own_review';
+
   // The only severity classes a dot can get. Anything else gets none.
   var SEVERITY_CLASS = { low: 'sev-low', medium: 'sev-medium', critical: 'sev-critical' };
 
@@ -187,6 +190,13 @@
     return rowHref(u) !== '';
   }
 
+  // marksNew says whether a row may carry the new mark while unread: every link
+  // row, and the plain row that says the reader's own report is hidden for
+  // review (quick 261117-vvb review, 2026-11-18).
+  function marksNew(u) {
+    return isLinkRow(u) || (u.available === true && u.kind === KIND_OWN_REVIEW);
+  }
+
   function severityClass(level) {
     return typeof level === 'string' && Object.prototype.hasOwnProperty.call(SEVERITY_CLASS, level) ? SEVERITY_CLASS[level] : '';
   }
@@ -201,10 +211,16 @@
   // buildRow draws one update (UI-SPEC A3). A link row is one anchor to the
   // report; the "and N more" and "no longer available" shapes are plain blocks
   // that cannot be focused or pressed.
+  //
+  // The row that says the reader's own report is hidden for review is plain but
+  // is news, so it carries the new mark while unread like a link row, and says
+  // New. to a screen reader through hidden text, since a plain block has no
+  // label (quick 261117-vvb review, 2026-11-18). Other plain rows never do.
   function buildRow(u, newIds) {
     var li = document.createElement('li');
     var link = isLinkRow(u);
-    var isNew = link && newIds[Number(u.id)] === true;
+    var ownPlain = !link && marksNew(u);
+    var isNew = marksNew(u) && newIds[Number(u.id)] === true;
     var classes = 'bell-row';
     if (isNew) {
       classes += ' bell-row--new';
@@ -225,6 +241,9 @@
       if (firstLink === null) {
         firstLink = el;
       }
+    }
+    if (ownPlain && isNew) {
+      el.appendChild(span('visually-hidden', 'New. '));
     }
     el.appendChild(span('bell-row__event', text(u.event)));
     if (text(u.report_line) !== '') {
@@ -364,7 +383,7 @@
       }
       if (u.unread === true) {
         anyUnread = true;
-        if (isLinkRow(u)) {
+        if (marksNew(u)) {
           newIds[id] = true;
         }
       }

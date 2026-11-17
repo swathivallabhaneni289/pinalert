@@ -531,6 +531,37 @@ test('own report rows: hidden is plain, kept opens the report, removed opens the
   });
 });
 
+// Quick 261117-vvb review (2026-11-18): the hidden row is plain but is news, so
+// it carries the new mark while unread and says New. through hidden text. The
+// other plain rows still never do.
+test('an unread own hidden row carries the new mark and hidden New.; a read one and other plain rows do not', async () => {
+  const env = load();
+  const own = { report_line: '', category: '', severity: '', severity_level: '', trust: '', report_id: undefined, kind: 'own_review', event: "Your report is hidden while it's reviewed." };
+  env.answer({
+    unread: 2,
+    updates: [
+      row({ ...own, id: 22, unread: true }),
+      row({ ...own, id: 21, unread: false }),
+      row({ id: 20, available: false, unread: true, event: 'This report is no longer available', report_line: '', category: '', severity: '', severity_level: '', trust: '' })
+    ]
+  });
+  await flush();
+  env.clickBell();
+  await flush();
+  const [fresh, read, gone] = env.rows.children.map((li) => li.children[0]);
+  const classes = (e) => e.getAttribute('class').split(' ');
+  assert.equal(fresh.tagName, 'DIV');
+  assert.equal(fresh.hasAttribute('href'), false, 'the hidden row still opens nothing');
+  assert.ok(classes(fresh).includes('bell-row--plain'));
+  assert.ok(classes(fresh).includes('bell-row--new'), 'an unread hidden row carries the new mark');
+  assert.equal(fresh.find('visually-hidden').textContent, 'New. ');
+  assert.equal(fresh.find('bell-row__event').textContent, "Your report is hidden while it's reviewed.");
+  assert.equal(classes(read).includes('bell-row--new'), false, 'a read hidden row has no mark');
+  assert.equal(read.find('visually-hidden'), null);
+  assert.equal(classes(gone).includes('bell-row--new'), false, 'a no longer available row still has no mark');
+  assert.equal(gone.find('visually-hidden'), null);
+});
+
 test('while open the rows are frozen but the badge follows the poll; closing drops the marks', async () => {
   const env = load();
   env.answer({ unread: 1, updates: [row({ id: 5, unread: true })] });

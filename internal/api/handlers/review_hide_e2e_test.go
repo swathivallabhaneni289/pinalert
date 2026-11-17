@@ -268,6 +268,14 @@ func TestReviewHideFlow(t *testing.T) {
 		if strings.Contains(hiddenRow, "href=") {
 			t.Errorf("the hidden row is a link: %s", hiddenRow)
 		}
+		// Review fix 2026-11-18: the unread hidden row carries the new mark and
+		// says New. to a screen reader, like the bell; other plain rows do not.
+		if !strings.Contains(hiddenRow, `data-unread="true"`) {
+			t.Fatalf("setup: the hidden row is not unread: %s", hiddenRow)
+		}
+		if !strings.Contains(hiddenRow, `<li class="urow urow--new urow--plain"`) || !strings.Contains(hiddenRow, `<span class="visually-hidden">New.</span>`) {
+			t.Errorf("the unread hidden row has no new mark: %s", hiddenRow)
+		}
 		keptRow := vvbRowOf(t, page, "Your report is showing again. Sorry for the wait.")
 		if !strings.Contains(keptRow, `href="/?report=`+strconv.FormatInt(hidden, 10)+`"`) {
 			t.Errorf("the kept row does not open the report: %s", keptRow)

@@ -207,6 +207,10 @@ type activityUpdateRow struct {
 	When          string
 	// Label is the row's accessible name (UI-SPEC P32-C8).
 	Label string
+	// OwnPlain marks the plain row that says the reader's own report is hidden
+	// for review. Unlike the other plain rows it carries the new mark while
+	// unread, as the bell does (quick 261117-vvb review, 2026-11-18).
+	OwnPlain bool
 }
 
 // updateSeverityClass is the closed lookup behind the severity dot class: only
@@ -260,6 +264,7 @@ func fillUpdatesPart(view *activityPageView, page service.UpdatesPage, failed bo
 				Available:     item.Available,
 				Unread:        item.Unread,
 				IsMore:        item.Kind == service.UpdateMore,
+				OwnPlain:      item.Available && item.Kind == service.UpdateOwnReview,
 				Event:         item.Event,
 				ReportLine:    item.ReportLine,
 				Category:      updateCategoryWord(item.Category),
