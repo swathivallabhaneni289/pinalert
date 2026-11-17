@@ -1,8 +1,8 @@
 // settings-people.js: the people rows of the Settings page, People and reports
 // (Phase 9 plan 12, D-04, D-12, UI-SPEC Surface 7).
 //
-//   - Let others follow me is a switch saved at once with
-//     PATCH /api/me/visibility. On 200 it says "Your profile is on. People can
+//   - Public profile (named Let others follow me before quick 261117-lq0) is a
+//     switch saved at once with PATCH /api/me/visibility. On 200 it says "Your profile is on. People can
 //     follow you while you hold the Reliable reporter tag." or "Your profile is
 //     off." politely. A refusal (422, the Name or username sentence, or a 429
 //     with the server's own sentence, also rate_visibility, the bucket that
@@ -10,17 +10,21 @@
 //     the server's sentence under the box. Any other failure puts the old value back
 //     and shows "Couldn't save that. Try again."; offline nothing is sent and
 //     the built offline line shows.
-//   - Turning it off while the Followers count is above 0 asks first, in a small
+//   - Turning it off while the Followers count (the wrapper's data-followers
+//     since quick 261117-lq0) is above 0 asks first, in a small
 //     native box like Log out (UI-SPEC 7b, P9-C22): Cancel leaves it on, Turn
 //     off saves. With nobody following it turns off at once. The box closes only
 //     through its two buttons and Escape (which is Cancel), never by a tap on
 //     the dim page.
-//   - The Following, Followers, Muted people and Blocked people rows open the
-//     shared list window (people-list.js) with own true. After the list changed
-//     something the row's count is read again from the server, or, for Muted
-//     people (plan 20, D-12), taken down by one for the one Unmute that was done
-//     (the count can exceed the list by the people whose new username is pending,
-//     so reading the list length would lose them).
+//   - The Muted people and Blocked people rows open the shared list window
+//     (people-list.js) with own true. After the list changed something the
+//     row's count is taken down by one for the one Unmute or Unblock that was
+//     done (the count can exceed the list by the people whose new username is
+//     pending, so reading the list length would lose them). Amended 2026-11-17
+//     (quick 261117-lq0, owner: "I don't think the followers and following list
+//     should be on the settings"): the Following and Followers rows left
+//     Settings, so their openers and count writes are gone; both lists open
+//     from your profile.
 //
 // A separate file from settings.js and settings-alerts.js on purpose, so both
 // stay as built. It is self contained: it needs only the ids settings.html.tmpl
@@ -38,11 +42,7 @@ window.PinalertSettingsPeople = (function () {
   var box = document.getElementById('settings-profile-off-confirm');
   var errorLine = document.getElementById('settings-people-error');
   var wrap = document.getElementById('settings-people-wrap');
-  var followingRow = document.getElementById('settings-following-row');
-  var followersRow = document.getElementById('settings-followers-row');
   var blockedRow = document.getElementById('settings-blocked-row');
-  var followingValue = document.getElementById('settings-following-value');
-  var followersValue = document.getElementById('settings-followers-value');
   var blockedValue = document.getElementById('settings-blocked-value');
   // The Muted people row (plan 20). It is optional here so a page drawn without
   // it still gets the other rows.
@@ -51,8 +51,7 @@ window.PinalertSettingsPeople = (function () {
   var offGo = document.getElementById('settings-profile-off-go');
   var offCancel = document.getElementById('settings-profile-off-cancel');
   var offTitle = document.getElementById('settings-profile-off-title');
-  if (!sw || !box || !errorLine || !wrap || !followingRow || !followersRow || !blockedRow ||
-      !followingValue || !followersValue || !blockedValue || !offGo || !offCancel) {
+  if (!sw || !box || !errorLine || !wrap || !blockedRow || !blockedValue || !offGo || !offCancel) {
     return undefined;
   }
 
@@ -68,6 +67,14 @@ window.PinalertSettingsPeople = (function () {
 
   var live = document.getElementById('notice-live');
   var username = wrap.getAttribute('data-username') || '';
+  // followers is the Followers count the server drew into the page as
+  // data-followers (quick 261117-lq0, now that the Followers row is gone). It
+  // decides whether turning the switch off asks first, and the count read and
+  // the save below keep it current.
+  var followers = parseInt(wrap.getAttribute('data-followers') || '0', 10);
+  if (isNaN(followers) || followers < 0) {
+    followers = 0;
+  }
   var canAskInBox = typeof box.showModal === 'function';
 
   // saved is the last value the server confirmed, which is what a failed save
@@ -196,7 +203,7 @@ window.PinalertSettingsPeople = (function () {
         say(MESSAGE_ON);
       } else {
         // Turning it off ended every follow on the server (D-12).
-        setText(followersValue, '0');
+        followers = 0;
         say(MESSAGE_OFF);
       }
       return true;
@@ -206,8 +213,7 @@ window.PinalertSettingsPeople = (function () {
   }
 
   function followerCount() {
-    var n = parseInt(followersValue.textContent, 10);
-    return isNaN(n) ? 0 : n;
+    return followers;
   }
 
   // closeBox closes the confirm box when it is open.
@@ -276,7 +282,7 @@ window.PinalertSettingsPeople = (function () {
         checking = false;
         if (count > 0) {
           // Keep it on while the box asks; Cancel leaves it as it is.
-          setText(followersValue, count);
+          followers = count;
           sw.checked = true;
           ask();
           return;
@@ -316,12 +322,11 @@ window.PinalertSettingsPeople = (function () {
 
   // ---- The list rows ---------------------------------------------------------
 
-  // refreshCounts reads the counts again after a list changed something. A
-  // failed read leaves the shown count as it was; the next page load is right.
+  // refreshCounts updates a row's count after its list changed something.
+  // Amended 2026-11-17 (quick 261117-lq0): only Muted people and Blocked people
+  // open a list from Settings now, so the read of the Followers and Following
+  // counts is gone with their rows.
   function refreshCounts(kind) {
-    function get(url) {
-      return request(url, { method: 'GET', credentials: 'same-origin', headers: { Accept: 'application/json' } });
-    }
     if (kind === 'muted' || kind === 'blocked') {
       // One Unmute or Unblock was done in the window. Take the shown count down
       // by one and never below zero. The list is not read for this: it leaves
@@ -332,28 +337,15 @@ window.PinalertSettingsPeople = (function () {
       if (target) {
         setText(target, isNaN(shown) || shown < 1 ? 0 : shown - 1);
       }
-      return Promise.resolve();
     }
-    if (username === '') {
-      return Promise.resolve();
-    }
-    return get(PEOPLE_URL + encodeURIComponent(username)).then(function (answer) {
-      if (!answer.ok || !answer.body) {
-        return;
-      }
-      if (typeof answer.body.followers_count === 'number') {
-        setText(followersValue, answer.body.followers_count);
-      }
-      if (typeof answer.body.following_count === 'number') {
-        setText(followingValue, answer.body.following_count);
-      }
-    }, function () {});
+    return Promise.resolve();
   }
 
   // openList opens the shared list window for one row. Followers and Following
   // are read through the person's own username; a person with no username has
-  // no lists yet, so those two rows do nothing (the first time flow gives every
-  // account a username before Settings can be reached).
+  // no lists yet, so those two kinds do nothing (the first time flow gives every
+  // account a username before Settings can be reached). Since quick 261117-lq0
+  // no Settings row opens those two kinds; openList still takes them.
   function openList(kind, opener) {
     var lists = typeof window !== 'undefined' ? window.PinalertPeopleList : null;
     if (!lists || typeof lists.open !== 'function') {
@@ -372,8 +364,6 @@ window.PinalertSettingsPeople = (function () {
     });
   }
 
-  followingRow.addEventListener('click', function () { openList('following', followingRow); });
-  followersRow.addEventListener('click', function () { openList('followers', followersRow); });
   if (mutedPeopleRow) {
     mutedPeopleRow.addEventListener('click', function () { openList('muted', mutedPeopleRow); });
   }

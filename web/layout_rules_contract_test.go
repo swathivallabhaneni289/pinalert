@@ -611,7 +611,10 @@ var sizeOnlyNamed = map[string]string{
 	// Amended 2026-10-29 by Phase 9 plan 12 (D-04, owner decision 2026-10-16, UI-SPEC
 	// 7c): the Settings row View my profile is drawn on the phone only. No other
 	// entry changed.
-	".place-row.place-row--phone-only": "phone only: the View my profile row of Settings, About you; the laptop reaches the same page from the person menu (D-04, UI-SPEC 7c).",
+	// Amended 2026-11-17 (quick 261117-lq0): the View my profile row left Settings
+	// (Profile is a main place in both bars now), so its phone only entry
+	// .place-row.place-row--phone-only is removed with its laptop hide. No check
+	// changed.
 
 	// Laptop only, hidden under 900px.
 	"main.profile-page > .activity-heading": "laptop only: the My activity page heading in the left column; the phone has the top bar title and the hub (D-06, D-19).",

@@ -9,10 +9,15 @@
 //   - turning it off while anyone follows opens the confirm box and sends
 //     nothing; Cancel and Escape leave the switch on; Turn off saves, and a
 //     success sets Followers to 0; with no followers it turns off at once;
-//   - the three list rows call PinalertPeopleList.open with the right kind,
-//     own true and the person's username, and after a change the counts are
-//     read again;
+//   - the list rows call PinalertPeopleList.open with the right kind, own true
+//     and the person's username, and after a change the count goes down by one;
 //   - every string reaches the page through textContent.
+//
+// Amended 2026-11-17 (quick 261117-lq0): the Following and Followers rows left
+// Settings (both lists are on your profile) and the switch is named Public
+// profile. The Followers count the switch reads is the wrapper's
+// data-followers now, so the tests that read the Followers row's number check
+// the same count through what the switch does next. Each test keeps its intent.
 //
 // Run it with: node --test web/settings_people_test.mjs
 // CI runs it with the other web/*.mjs files. It is not embedded in the server.
@@ -51,7 +56,7 @@ class FakeEl {
 }
 
 // The ids settings.html.tmpl renders for the people rows.
-function buildPage({ followers = 0, following = 2, blocked = 1, mutedPeople = 2, mutedRow = true, on = false, username = 'asha_k', dialog = true } = {}) {
+function buildPage({ followers = 0, blocked = 1, mutedPeople = 2, mutedRow = true, on = false, username = 'asha_k', dialog = true } = {}) {
   const doc = { activeElement: null, byId: {} };
   const make = (tag, id) => {
     const el = new FakeEl(doc, tag, id);
@@ -62,17 +67,14 @@ function buildPage({ followers = 0, following = 2, blocked = 1, mutedPeople = 2,
   make('div', 'notice-live');
   const wrap = make('div', 'settings-people-wrap');
   wrap.setAttribute('data-username', username);
+  wrap.setAttribute('data-followers', String(followers));
   make('input', 'settings-profile-switch').checked = on;
-  make('button', 'settings-following-row');
-  make('button', 'settings-followers-row');
   make('button', 'settings-blocked-row');
   // Plan 20 (D-12): the Muted people row and its count.
   if (mutedRow) {
     make('button', 'settings-muted-people-row');
     make('span', 'settings-muted-people-value').textContent = String(mutedPeople);
   }
-  make('span', 'settings-following-value').textContent = String(following);
-  make('span', 'settings-followers-value').textContent = String(followers);
   make('span', 'settings-blocked-value').textContent = String(blocked);
   make('p', 'settings-people-error').hidden = true;
   const box = make('dialog', 'settings-profile-off-confirm');
@@ -279,7 +281,13 @@ test('a follower who arrived since the page was drawn makes the switch ask first
   assert.equal(page.requests.length, 1, 'no save was sent');
   assert.equal(page.box.open, true);
   assert.equal(el(page, 'settings-profile-switch').checked, true);
-  assert.equal(el(page, 'settings-followers-value').textContent, '2');
+  // The count read is kept: after Cancel, the next try asks at once, with no
+  // second read.
+  fire(el(page, 'settings-profile-off-cancel'), 'click');
+  flip(page);
+  await flush();
+  assert.equal(page.box.open, true);
+  assert.equal(page.requests.length, 1, 'no second read');
 });
 
 test('a failed count read keeps the shown zero and saves', async () => {
@@ -336,8 +344,18 @@ test('Turn off saves, and a success sets Followers to 0', async () => {
   answer(page.requests[0], 200, { profile_public: false });
   await flush();
   assert.equal(el(page, 'settings-profile-switch').checked, false);
-  assert.equal(el(page, 'settings-followers-value').textContent, '0');
   assert.equal(el(page, 'notice-live').textContent, 'Your profile is off.');
+  // Followers is 0 now: switched on and off again, the switch reads the count
+  // once more instead of asking at once.
+  flip(page);
+  await flush();
+  answer(page.requests[1], 200, { profile_public: true });
+  await flush();
+  flip(page);
+  await flush();
+  assert.equal(page.box.open, false);
+  assert.equal(page.requests.length, 3);
+  assert.match(page.requests[2].url, /\/api\/people\/asha_k$/);
 });
 
 test('a failed Turn off puts the switch back on and shows the line', async () => {
@@ -348,56 +366,50 @@ test('a failed Turn off puts the switch back on and shows the line', async () =>
   answer(page.requests[0], 500, {});
   await flush();
   assert.equal(el(page, 'settings-profile-switch').checked, true);
-  assert.equal(el(page, 'settings-followers-value').textContent, '3');
   assert.equal(el(page, 'settings-people-error').textContent, 'Couldn\'t save that. Try again.');
+  // The Followers count is still 3: the next try asks at once and sends nothing.
+  flip(page);
+  await flush();
+  assert.equal(page.box.open, true);
+  assert.equal(page.requests.length, 1);
 });
 
-test('the three rows open the list window with the right kind', async () => {
+// Amended 2026-11-17 (quick 261117-lq0): the Following and Followers rows left
+// Settings, so the Blocked people row is the list row this test opens; Muted
+// people has its own tests below.
+test('the Blocked people row opens the list window with the right kind', async () => {
   const page = load({ username: 'asha_k' });
-  fire(el(page, 'settings-following-row'), 'click');
-  fire(el(page, 'settings-followers-row'), 'click');
   fire(el(page, 'settings-blocked-row'), 'click');
-  assert.equal(page.opens.length, 3);
-  assert.deepEqual(page.opens.map((o) => o.kind), ['following', 'followers', 'blocked']);
-  assert.deepEqual(page.opens.map((o) => o.own), [true, true, true]);
-  assert.deepEqual(page.opens.map((o) => o.username), ['asha_k', 'asha_k', '']);
-  assert.equal(page.opens[0].opener, el(page, 'settings-following-row'));
-  assert.equal(page.opens[2].opener, el(page, 'settings-blocked-row'));
+  assert.equal(page.opens.length, 1);
+  assert.deepEqual(page.opens.map((o) => o.kind), ['blocked']);
+  assert.deepEqual(page.opens.map((o) => o.own), [true]);
+  assert.deepEqual(page.opens.map((o) => o.username), ['']);
+  assert.equal(page.opens[0].opener, el(page, 'settings-blocked-row'));
   assert.equal(typeof page.opens[0].onChange, 'function');
 });
 
-test('after a list changed, the counts are read again from the server', async () => {
-  const page = load({ followers: 3, following: 2, blocked: 2, username: 'asha_k' });
-  fire(el(page, 'settings-followers-row'), 'click');
-  page.opens[0].onChange();
-  await flush();
-  assert.equal(page.requests.length, 1);
-  assert.match(page.requests[0].url, /\/api\/people\/asha_k$/);
-  answer(page.requests[0], 200, { followers_count: 0, following_count: 2 });
-  await flush();
-  assert.equal(el(page, 'settings-followers-value').textContent, '0');
-  assert.equal(el(page, 'settings-following-value').textContent, '2');
+// Amended 2026-11-17 (quick 261117-lq0): the read of the Followers and Following
+// counts went with their rows; Blocked people still goes down by one.
+test('after the Blocked list changed, the count goes down by one with no read', async () => {
+  const page = load({ followers: 3, blocked: 2, username: 'asha_k' });
 
   // 2026-10-30 (09-REVIEW WR-B04): Blocked people goes down by one per Unblock
   // and is not read from the list, which leaves out a name still being checked
-  // and stops at a cap. The list answer here is deliberately shorter than the
-  // count, and must not change it.
+  // and stops at a cap.
   fire(el(page, 'settings-blocked-row'), 'click');
-  page.opens[1].onChange();
+  page.opens[0].onChange();
   await flush();
-  assert.equal(page.requests.length, 1, 'no second read is sent');
+  assert.equal(page.requests.length, 0, 'no read is sent');
   assert.equal(el(page, 'settings-blocked-value').textContent, '1');
-  page.opens[1].onChange();
-  page.opens[1].onChange();
+  page.opens[0].onChange();
+  page.opens[0].onChange();
   await flush();
   assert.equal(el(page, 'settings-blocked-value').textContent, '0', 'never below zero');
-  assert.equal(page.requests.length, 1);
+  assert.equal(page.requests.length, 0);
 });
 
 test('a person with no username opens only the Blocked people list', () => {
   const page = load({ username: '' });
-  fire(el(page, 'settings-following-row'), 'click');
-  fire(el(page, 'settings-followers-row'), 'click');
   assert.equal(page.opens.length, 0);
   fire(el(page, 'settings-blocked-row'), 'click');
   assert.equal(page.opens.length, 1);

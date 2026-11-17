@@ -48,16 +48,22 @@ type settingsViewModel struct {
 	// data-push-key. The key is public by design; the home cell and every
 	// coordinate stay out of this model (T-03.2-14).
 	PushPublicKey string
-	// ProfilePublic, FollowingCount, FollowersCount, BlockedCount and MyUsername are
-	// Phase 9 plan 12 (D-04): the Let others follow me switch state, the three counts
-	// of the People and reports rows, and the caller's own username, which the
-	// list windows need to read your own lists. All are the caller's own; nothing
-	// about anyone else enters this model. html/template escapes the username.
+	// ProfilePublic, FollowersCount, BlockedCount and MyUsername are Phase 9 plan
+	// 12 (D-04): the Public profile switch state, the Followers count the switch
+	// reads before it is turned off, the Blocked people count and the caller's own
+	// username, which the list windows need to read your own lists. All are the
+	// caller's own; nothing about anyone else enters this model. html/template
+	// escapes the username. Amended 2026-11-17 (quick 261117-lq0): the Following
+	// and Followers rows left Settings (both are on your profile), so the
+	// Following count is gone and the Followers count is drawn only as the
+	// data-followers attribute the switch reads.
 	ProfilePublic  bool
-	FollowingCount int
 	FollowersCount int
 	BlockedCount   int
 	MyUsername     string
+	// ActivityLinks are the five rows of the My activity section (quick
+	// 261117-lq0), in the hub's order with the hub's names and addresses.
+	ActivityLinks []activityLink
 	// MutedPeopleCount is how many people the caller muted (Phase 9 plan 20, D-12),
 	// for the Muted people row. It can exceed the list by the people whose new
 	// username is still pending, as the Blocked people count does.
@@ -138,7 +144,6 @@ func SettingsPage(tmpl *template.Template, accounts *service.AccountService, mut
 			MutedCount:       mutedCount,
 			ProfilePublic:    own.ProfilePublic,
 			MyUsername:       own.Username,
-			FollowingCount:   counts.Following,
 			FollowersCount:   counts.Followers,
 			BlockedCount:     counts.Blocked,
 			MutedPeopleCount: mutedPeopleCount,
@@ -148,6 +153,7 @@ func SettingsPage(tmpl *template.Template, accounts *service.AccountService, mut
 			AccountID:        acc.ID,
 			Nav:              navFor(NavSettings, navTitle("Settings"), navBack("/")),
 			Legal:            legalTextFor(chrome),
+			ActivityLinks:    activityLinks(),
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

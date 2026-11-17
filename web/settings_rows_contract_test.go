@@ -47,6 +47,13 @@ func settingsSectionRegion(t *testing.T, page, titleID string) string {
 // Amended 2026-10-29 by Phase 9 plan 20 (D-12, UI-SPEC Defaults 7): a fifth
 // button row, Muted people, sits after Muted reports. Every other assertion is
 // unchanged.
+//
+// Amended 2026-11-17 (quick 261117-lq0, owner: "I don't think the followers and
+// following list should be on the settings"): the Following and Followers rows
+// are gone, so three button rows remain (Muted reports, Muted people, Blocked
+// people). The switch is named Public profile and carries the one line
+// "Anyone can see your profile and follow you."; that is the only second line in
+// the section.
 func TestPeopleAndReportsSection(t *testing.T) {
 	page := p421ReadTemplate(t, "settings.html.tmpl")
 	region := settingsSectionRegion(t, page, "settings-people-title")
@@ -62,12 +69,13 @@ func TestPeopleAndReportsSection(t *testing.T) {
 			t.Errorf("the People and reports section lacks %q", want)
 		}
 	}
-	if got := strings.Count(region, `class="place-row"`); got != 5 {
-		t.Errorf("the People and reports section has %d button rows, want exactly 5 (Following, Followers, Muted reports, Muted people, Blocked people)", got)
+	if got := strings.Count(region, `class="place-row"`); got != 3 {
+		t.Errorf("the People and reports section has %d button rows, want exactly 3 (Muted reports, Muted people, Blocked people)", got)
 	}
-	// No second line under any row: a simple option carries no hint text.
-	if strings.Contains(region, "place-row__sub") {
-		t.Errorf("a People and reports row carries a second line")
+	// No second line under any row but the switch's: a simple option carries no
+	// hint text.
+	if got := strings.Count(region, "place-row__sub"); got != 1 {
+		t.Errorf("the People and reports section carries %d second lines, want 1 (the Public profile line)", got)
 	}
 }
 
@@ -85,19 +93,21 @@ func TestPeopleAndReportsSection(t *testing.T) {
 // chevron that opens the dialog, so five chevrons are drawn, and the words
 // "Muted people" are no longer banned (only "Someone I follow" is). Every other
 // assertion is unchanged.
+//
+// Amended 2026-11-17 (quick 261117-lq0, owner on the 7.1 UAT): the order is
+// Public profile, Muted reports, Muted people, Blocked people. The Following,
+// Followers and View my profile rows are gone (all three are on your profile),
+// so three chevrons are drawn. The switch row keeps its native checkbox and has
+// one line under its label, "Anyone can see your profile and follow you.", in
+// the Notifications row's sub line pattern, and still no chevron.
 func TestPeopleAndReportsRowOrder(t *testing.T) {
 	page := p421ReadTemplate(t, "settings.html.tmpl")
 	region := settingsSectionRegion(t, page, "settings-people-title")
 	p421InOrder(t, "the People and reports rows", region,
 		`id="settings-profile-row" for="settings-profile-switch"`,
-		`<span class="place-row__label">Let others follow me</span>`,
+		`<span class="place-row__label">Public profile</span>`,
+		`<span class="place-row__sub">Anyone can see your profile and follow you.</span>`,
 		`id="settings-profile-switch"`,
-		`id="settings-following-row"`,
-		`<span class="place-row__label">Following</span>`,
-		`id="settings-following-value">{{.FollowingCount}}</span>`,
-		`id="settings-followers-row"`,
-		`<span class="place-row__label">Followers</span>`,
-		`id="settings-followers-value">{{.FollowersCount}}</span>`,
 		`id="settings-muted-row"`,
 		`<span class="place-row__label">Muted reports</span>`,
 		`id="settings-muted-value">{{.MutedCount}}</span>`,
@@ -107,19 +117,23 @@ func TestPeopleAndReportsRowOrder(t *testing.T) {
 		`id="settings-blocked-row"`,
 		`<span class="place-row__label">Blocked people</span>`,
 		`id="settings-blocked-value">{{.BlockedCount}}</span>`,
-		`id="settings-view-profile-row" href="/me"`,
 		`id="settings-people-error" role="alert" hidden`,
 	)
-	switchRow := region[strings.Index(region, `<label class="place-row place-row--switch" id="settings-profile-row"`):strings.Index(region, `id="settings-following-row"`)]
+	switchStart := strings.Index(region, `<label class="place-row place-row--switch" id="settings-profile-row"`)
+	switchEnd := strings.Index(region, `id="settings-muted-row"`)
+	if switchStart == -1 || switchEnd == -1 || switchEnd < switchStart {
+		t.Fatalf("the Public profile row or the Muted reports row is missing")
+	}
+	switchRow := region[switchStart:switchEnd]
 	for _, want := range []string{`type="checkbox"`, `role="switch"`, `name="profile_public"`, `{{if .ProfilePublic}} checked{{end}}`} {
 		if !strings.Contains(switchRow, want) {
-			t.Errorf("the Let others follow me row lacks %q", want)
+			t.Errorf("the Public profile row lacks %q", want)
 		}
 	}
-	if strings.Contains(switchRow, "place-row__sub") || strings.Contains(switchRow, "app-icon--chevron-right") {
-		t.Errorf("the Let others follow me row carries a second line or a chevron")
+	if got := strings.Count(switchRow, "place-row__sub"); got != 1 || strings.Contains(switchRow, "app-icon--chevron-right") {
+		t.Errorf("the Public profile row carries %d second lines (want 1) or a chevron", got)
 	}
-	for _, id := range []string{"settings-following-row", "settings-followers-row", "settings-muted-people-row", "settings-blocked-row"} {
+	for _, id := range []string{"settings-muted-people-row", "settings-blocked-row"} {
 		row := regexp.MustCompile(`<button type="button" class="place-row" id="` + id + `" aria-haspopup="dialog"[^>]*>`).FindString(region)
 		if row == "" {
 			t.Errorf("%s is not a button row that opens a dialog", id)
@@ -127,9 +141,22 @@ func TestPeopleAndReportsRowOrder(t *testing.T) {
 	}
 	// Amended 2026-11-13 by quick 261113-t4y (owner decision 2026-11-13): the phone's
 	// View my profile row moved here, the last row of the box, when About you left
-	// Settings, so six chevrons are drawn.
-	if got := strings.Count(region, "app-icon--chevron-right"); got != 6 {
-		t.Errorf("the People and reports section draws %d chevrons, want 6 (Following, Followers, Muted reports, Muted people, Blocked people, View my profile)", got)
+	// Settings, so six chevrons are drawn. Amended 2026-11-17 (quick 261117-lq0):
+	// Following, Followers and View my profile left Settings, so three remain.
+	if got := strings.Count(region, "app-icon--chevron-right"); got != 3 {
+		t.Errorf("the People and reports section draws %d chevrons, want 3 (Muted reports, Muted people, Blocked people)", got)
+	}
+	// Quick 261117-lq0: the three removed rows are gone from the whole page.
+	for _, gone := range []string{
+		`id="settings-following-row"`, `id="settings-followers-row"`, `id="settings-view-profile-row"`,
+		`<span class="place-row__label">Let others follow me</span>`,
+		`<span class="place-row__label">View my profile</span>`,
+		`<span class="place-row__label">Following</span>`,
+		`<span class="place-row__label">Followers</span>`,
+	} {
+		if strings.Contains(page, gone) {
+			t.Errorf("settings.html.tmpl still draws %q", gone)
+		}
 	}
 	// The Muted people row has no second line (no hint text under a simple option).
 	mutedRow := region[strings.Index(region, `id="settings-muted-people-row"`):strings.Index(region, `id="settings-blocked-row"`)]

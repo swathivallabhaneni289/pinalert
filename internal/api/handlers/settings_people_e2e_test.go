@@ -46,6 +46,15 @@ func p912Value(t *testing.T, body, id string) string {
 // that order, with the counts of a seeded account that follows two people, has one
 // follower and blocked one person, and the switch unchecked by default. There is
 // no Someone I follow posts row (D-11), and View my profile is a link to /me.
+//
+// Amended 2026-11-17 (quick 261117-lq0, owner on the 7.1 UAT: "I don't think the
+// followers and following list should be on the settings. Even view my profile
+// in settings is unnecessary."): the rows are Public profile (with the line
+// "Anyone can see your profile and follow you."), Muted reports, Muted people
+// and Blocked people. Following, Followers and View my profile are gone; the
+// Followers count stays on the wrapper as data-followers, which the switch
+// reads before it is turned off. The seeded follows are kept so that count is
+// still proven.
 func TestSettingsPeopleRows(t *testing.T) {
 	srv, mailer, pool := p907Server(t)
 	me, meID := p907Person(t, srv, mailer, pool, "p912-rows@example.com", "rows_me", false)
@@ -68,11 +77,9 @@ func TestSettingsPeopleRows(t *testing.T) {
 		t.Fatalf("GET /settings status = %d, want 200: %s", resp.StatusCode, body)
 	}
 
-	// The order of the five rows.
+	// The order of the four rows.
 	order := []string{
 		`id="settings-profile-switch"`,
-		`id="settings-following-row"`,
-		`id="settings-followers-row"`,
 		`id="settings-muted-row"`,
 		`id="settings-muted-people-row"`,
 		`id="settings-blocked-row"`,
@@ -85,8 +92,10 @@ func TestSettingsPeopleRows(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Your public profile and the lists that go with it.",
-		"Let others follow me", "Following", "Followers", "Muted reports", "Muted people", "Blocked people",
-		`data-username="rows_me"`,
+		`<span class="place-row__label">Public profile</span>`,
+		`<span class="place-row__sub">Anyone can see your profile and follow you.</span>`,
+		"Muted reports", "Muted people", "Blocked people",
+		`data-username="rows_me" data-followers="1"`,
 		`id="settings-profile-off-confirm"`, "Turn off your public profile?",
 		`id="people-list-window"`,
 		`/static/js/settings-people.js`, `/static/js/people-list.js`, `/static/css/person.css`,
@@ -98,10 +107,8 @@ func TestSettingsPeopleRows(t *testing.T) {
 
 	// The counts.
 	for id, want := range map[string]string{
-		"settings-following-value": "2",
-		"settings-followers-value": "1",
-		"settings-blocked-value":   "1",
-		"settings-muted-value":     "0",
+		"settings-blocked-value": "1",
+		"settings-muted-value":   "0",
 		// Amended 2026-10-29 by Phase 9 plan 20 (D-12): the Muted people count.
 		"settings-muted-people-value": "1",
 	} {
@@ -119,9 +126,16 @@ func TestSettingsPeopleRows(t *testing.T) {
 		t.Errorf("the switch is checked for an account that never turned it on: %q", sw)
 	}
 
-	// View my profile is a link to /me, and there is no follow posts switch.
-	if !regexp.MustCompile(`<a class="place-row place-row--phone-only" id="settings-view-profile-row" href="/me">`).MatchString(body) {
-		t.Errorf("/settings has no View my profile link to /me")
+	// The three rows that left Settings are gone, and there is no follow posts
+	// switch.
+	for _, gone := range []string{
+		`id="settings-following-row"`, `id="settings-followers-row"`, `id="settings-view-profile-row"`,
+		`id="settings-following-value"`, `id="settings-followers-value"`,
+		"Let others follow me", "View my profile",
+	} {
+		if strings.Contains(body, gone) {
+			t.Errorf("/settings still holds %q", gone)
+		}
 	}
 	// Amended 2026-10-29 by Phase 9 plan 20 (D-12, UI-SPEC Defaults 7): "Muted
 	// people" is drawn now and left this list; the other two stay banned.
@@ -147,6 +161,10 @@ func TestSettingsPeopleRows(t *testing.T) {
 // Followers. It also proves that the person's own profile read, which the Settings
 // script uses to redraw the counts, answers 200 with the counts while the profile
 // is switched off.
+//
+// Amended 2026-11-17 (quick 261117-lq0): the Followers row left Settings, so the
+// follower count is read from the wrapper's data-followers, the count the
+// switch reads before it is turned off. Every step is unchanged.
 func TestSettingsProfileSwitchSaves(t *testing.T) {
 	srv, mailer, pool := p907Server(t)
 	me, meID := p907Person(t, srv, mailer, pool, "p912-switch@example.com", "switch_me", false)
@@ -181,8 +199,8 @@ func TestSettingsProfileSwitchSaves(t *testing.T) {
 	fan := testutil.SeedPerson(t, pool, "p912-switch-fan@example.com", "switch_fan", true)
 	testutil.SeedFollow(t, pool, fan, meID, time.Now().UTC().Add(-time.Hour))
 	_, page = getPlacePage(t, me, srv.URL, "/settings")
-	if got := p912Value(t, page, "settings-followers-value"); got != "1" {
-		t.Fatalf("Followers before switching off = %q, want 1", got)
+	if !strings.Contains(page, `data-followers="1"`) {
+		t.Fatalf("Followers before switching off is not 1 (no data-followers=\"1\")")
 	}
 
 	// Off ends the follow; Settings shows the switch off and 0 Followers.
@@ -197,8 +215,8 @@ func TestSettingsProfileSwitchSaves(t *testing.T) {
 	if checked.MatchString(page) {
 		t.Errorf("the switch is checked after it was turned off")
 	}
-	if got := p912Value(t, page, "settings-followers-value"); got != "0" {
-		t.Errorf("Followers after switching off = %q, want 0", got)
+	if !strings.Contains(page, `data-followers="0"`) {
+		t.Errorf("Followers after switching off is not 0 (no data-followers=\"0\")")
 	}
 
 	// The own profile read the script uses to redraw counts works while the
