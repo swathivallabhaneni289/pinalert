@@ -237,9 +237,11 @@ by flag count alone, and neither does Pinalert: a moderator still decides.
 - **Only a moderator ends it.** See Moderator screen. Keep stamps `review_kept_at`, so a report
   is hidden this way at most once; a kept report is never pushed again
   (`TestPushReviewHideAndKeep`). Remove works as today.
-- **Ratings.** A review hide never counts against the author: a withheld report is neutral for
-  the outcome score, stars and reporter tag. After Keep the report counts as if it was never
-  hidden; after Remove it counts the way a removal counts (neutral).
+- **Ratings.** A review hide never moves the author's outcome score, stars or reporter tag,
+  either way: while it is hidden the report is judged by its votes exactly as if it were shown
+  (amended 2026-11-18, review fix; it was neutral, which let three accounts take a good report
+  out of someone's rating or a poor one out of their own). After Keep nothing changes; after
+  Remove it counts the way a removal counts (neutral). `TestReviewHideLeavesTheRating`.
 
 The author's bell gets one row per event, written straight to their updates whatever their
 follows or mutes, at most once per report and kind (`uq_updates_own_report`). They are bell only:

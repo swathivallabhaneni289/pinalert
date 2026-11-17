@@ -603,3 +603,88 @@ func TestOwnShownAndRemovedRows(t *testing.T) {
 		}
 	})
 }
+
+// TestReviewHideLeavesTheRating is the review fix of 2026-11-18 on a real
+// Postgres: flags are not a moderation outcome, so a Past report that three
+// places hide for review keeps counting in its author's rating exactly as
+// before, whether it helped or hurt them, and Keep changes nothing. Remove
+// still makes the report neutral, as a removal always has.
+func TestReviewHideLeavesTheRating(t *testing.T) {
+	r := newFrRig(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	past := func(i int, value service.VoteValue) int64 {
+		t.Helper()
+		id := testutil.InsertStoredReport(t, r.pool, testutil.StoredReport{
+			SessionID:       frPosterSess,
+			Category:        string(service.CategoryFlood),
+			Severity:        string(service.SeverityLow),
+			Description:     "Water over the road by the old bridge",
+			Latitude:        frLat,
+			Longitude:       frLon,
+			CreatedAt:       now.Add(-time.Duration(30+i) * time.Hour),
+			ExpiresAt:       now.Add(-time.Duration(24+i) * time.Hour),
+			ModerationState: string(service.ModerationClear),
+		})
+		for k := 0; k < service.IndependentAgreementThreshold; k++ {
+			if _, err := r.pool.Exec(ctx,
+				`INSERT INTO votes (report_id, account_id, kind, value, geohash_cell, created_at) VALUES ($1, $2, 'content', $3, $4, $5)`,
+				id, r.flagger(), string(value), fmt.Sprintf("tdr1v%d%d", i, k), now.Add(-time.Duration(28+i)*time.Hour)); err != nil {
+				t.Fatalf("vote on report %d: %v", id, err)
+			}
+		}
+		return id
+	}
+	signal := func() service.ReporterSignal {
+		t.Helper()
+		got, err := service.LoadReporterSignals(ctx, r.q, nil, []int64{r.poster}, now)
+		if err != nil {
+			t.Fatalf("LoadReporterSignals: %v", err)
+		}
+		return got[r.poster]
+	}
+	same := func(name string, got, want service.ReporterSignal) {
+		t.Helper()
+		sameScore := (got.Score == nil) == (want.Score == nil) && (got.Score == nil || *got.Score == *want.Score)
+		if got.Tag != want.Tag || !sameScore || got.JudgedReports != want.JudgedReports || got.CorroboratedReports != want.CorroboratedReports {
+			t.Errorf("%s: tag %q judged %d corroborated %d, want %q, %d, %d (score same %v)", name, got.Tag, got.JudgedReports, got.CorroboratedReports, want.Tag, want.JudgedReports, want.CorroboratedReports, sameScore)
+		}
+	}
+	hide := func(id int64) {
+		t.Helper()
+		for k := 1; k <= service.FlagHideThreshold; k++ {
+			r.mustFlag(id, frAt(k))
+		}
+		if got := r.state(id); got != string(service.ModerationReview) {
+			t.Fatalf("report %d after %d places flagged it: state %q, want review", id, service.FlagHideThreshold, got)
+		}
+	}
+
+	var good, bad []int64
+	for i := 0; i < 5; i++ {
+		good = append(good, past(i, service.VoteConfirm))
+	}
+	for i := 5; i < 7; i++ {
+		bad = append(bad, past(i, service.VoteDispute))
+	}
+	before := signal()
+	if before.JudgedReports != 7 || before.CorroboratedReports != 5 {
+		t.Fatalf("setup: judged %d corroborated %d, want 7 and 5", before.JudgedReports, before.CorroboratedReports)
+	}
+
+	hide(good[0])
+	hide(bad[0])
+	same("one corroborated and one contradicted Past report hidden for review", signal(), before)
+
+	if _, err := r.mods.Keep(ctx, good[0], r.mod); err != nil {
+		t.Fatalf("Keep: %v", err)
+	}
+	same("after Keep", signal(), before)
+
+	if _, err := r.mods.Remove(ctx, bad[0], r.mod); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if got := signal(); got.JudgedReports != 6 || got.CorroboratedReports != 5 {
+		t.Errorf("after Remove: judged %d corroborated %d, want 6 and 5, a removed report stays neutral", got.JudgedReports, got.CorroboratedReports)
+	}
+}

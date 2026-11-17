@@ -89,10 +89,11 @@ func TestModeratedReportsAreNeutralForRating(t *testing.T) {
 		want(t, "clear control", classify(p429Meta(service.SeverityLow, service.CategoryFlood, service.ModerationClear), 1, 2), service.OutcomeContradicted)
 	})
 
-	// Quick 261117-vvb: a review hide never counts against the author, at any
-	// severity. After Keep the report is clear and judged as if never hidden;
-	// after Remove it is removed and neutral, as a removal counts today.
-	t.Run("a report hidden for review is neutral whatever its votes", func(t *testing.T) {
+	// Quick 261117-vvb: review is withheld, so the pure classifier makes it
+	// neutral like any withheld state. The reporter rating never hands it that
+	// state: reporterHistoryMeta judges a review report as clear (review fix
+	// 2026-11-18), which the ReporterSignals subtest below pins.
+	t.Run("the classifier alone makes a review report neutral like any withheld one", func(t *testing.T) {
 		for _, sev := range []service.Severity{service.SeverityLow, service.SeverityCritical} {
 			for _, tally := range [][2]int{{0, 0}, {2, 0}, {1, 2}, {0, 2}} {
 				name := fmt.Sprintf("review %s confirm %d dispute %d", sev, tally[0], tally[1])
@@ -207,6 +208,55 @@ func TestModeratedReportsAreNeutralForRating(t *testing.T) {
 		control := service.ReporterSignals([]int64{account}, clearRun, votes, now)[account]
 		if control.JudgedReports != service.ReliabilityRowCap || control.CorroboratedReports != 0 {
 			t.Errorf("clear control: judged %d corroborated %d, want %d judged and 0 corroborated (R-02)", control.JudgedReports, control.CorroboratedReports, service.ReliabilityRowCap)
+		}
+	})
+
+	// Quick 261117-vvb review fix (2026-11-18): flags are not a moderation
+	// outcome, so a report hidden for review counts in its author's rating
+	// exactly as a clear one, whether that helps or hurts them.
+	t.Run("a report hidden for review counts in the rating exactly as a clear one", func(t *testing.T) {
+		const account = 505
+		build := func(states []service.ModerationState, disputed map[int]bool) service.ReporterSignal {
+			var rows []sqlcgen.ReporterHistoryReportsRow
+			var votes []sqlcgen.CurrentVotesForReportsRow
+			for i, state := range states {
+				id := 5601 + int64(i)
+				rows = append(rows, p429Row(account, id, service.SeverityLow, service.CategoryFlood, state, now.Add(-time.Duration(i+2)*time.Hour)))
+				pair := p429Confirms(id)
+				if disputed[i] {
+					for k := range pair {
+						pair[k].Value = string(service.VoteDispute)
+					}
+				}
+				votes = append(votes, pair...)
+			}
+			return service.ReporterSignals([]int64{account}, rows, votes, now)[account]
+		}
+		same := func(name string, got, wantSig service.ReporterSignal) {
+			t.Helper()
+			sameScore := (got.Score == nil) == (wantSig.Score == nil) && (got.Score == nil || *got.Score == *wantSig.Score)
+			if got.Tag != wantSig.Tag || !sameScore || got.JudgedReports != wantSig.JudgedReports || got.CorroboratedReports != wantSig.CorroboratedReports {
+				t.Errorf("%s: tag %q score %s judged %d corroborated %d, want the clear record's %q, %s, %d, %d", name, got.Tag, p429Score(got.Score), got.JudgedReports, got.CorroboratedReports, wantSig.Tag, p429Score(wantSig.Score), wantSig.JudgedReports, wantSig.CorroboratedReports)
+			}
+		}
+		c, r := service.ModerationClear, service.ModerationReview
+		good := build([]service.ModerationState{c, c, c, c, c}, nil)
+		if good.Tag != service.ReporterReliable || good.Score == nil || *good.Score != 86 || good.JudgedReports != 5 {
+			t.Fatalf("setup: five corroborated clear reports read %q, %s, %d, want Reliable, 86, 5", good.Tag, p429Score(good.Score), good.JudgedReports)
+		}
+		same("one corroborated report hidden for review", build([]service.ModerationState{r, c, c, c, c}, nil), good)
+		same("every report hidden for review", build([]service.ModerationState{r, r, r, r, r}, nil), good)
+
+		bad := map[int]bool{0: true, 1: true, 2: true}
+		mixed := build([]service.ModerationState{c, c, c, c, c, c, c, c}, bad)
+		if mixed.JudgedReports != 8 || mixed.CorroboratedReports != 5 {
+			t.Fatalf("setup: five corroborated and three contradicted read judged %d corroborated %d, want 8 and 5", mixed.JudgedReports, mixed.CorroboratedReports)
+		}
+		same("the three contradicted reports hidden for review", build([]service.ModerationState{r, r, r, c, c, c, c, c}, bad), mixed)
+
+		removed := build([]service.ModerationState{service.ModerationRemoved, c, c, c, c}, nil)
+		if removed.JudgedReports != 4 {
+			t.Errorf("control: a removed report should stay neutral, judged %d, want 4", removed.JudgedReports)
 		}
 	})
 

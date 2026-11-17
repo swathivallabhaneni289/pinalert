@@ -68,8 +68,19 @@ type RatingTally struct {
 // classification sees the metadata every read path sees. It also carries the
 // stored moderation state so ClassifyOutcome can make a withheld report
 // neutral (Phase 4 R-02).
+//
+// A report hidden for review by flags (quick 261117-vvb, review fix
+// 2026-11-18) is the one exception: it is classified as a clear report, by its
+// votes. Flags are not a moderation outcome, so three accounts must not be able
+// to take a good report out of its author's rating, or a poor one out of their
+// own. Keep then counts exactly as if it was never hidden, and Remove counts
+// as a removal does (neutral). Held and removed reports stay neutral.
 func reporterHistoryMeta(row sqlcgen.ReporterHistoryReportsRow) ReportMeta {
-	meta := ReportMeta{Severity: Severity(row.Severity), Category: Category(row.Category), Moderation: ModerationState(row.ModerationState)}
+	state := ModerationState(row.ModerationState)
+	if state == ModerationReview {
+		state = ModerationClear
+	}
+	meta := ReportMeta{Severity: Severity(row.Severity), Category: Category(row.Category), Moderation: state}
 	if !meta.Category.Valid() {
 		meta.Category = CategoryOther
 	}
