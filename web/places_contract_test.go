@@ -350,7 +350,7 @@ func TestSettingsWindowsCloseWithXOnly(t *testing.T) {
 	}{
 		{"settings-name-window", "Name", []string{
 			// Amended 2026-10-29 by Phase 7.1 plan 15 (UI-SPEC P71-C4): the label reads Name.
-			`for="settings-name-input">Name</label>`, `placeholder="For example: Ravi Kumar"`,
+			`for="settings-name-input">Name</label>`, `id="settings-name-input" name="display_name"`,
 			`maxlength="60"`, `autocomplete="name"`,
 		}, "Save name"},
 		{"settings-home-window", "Home area", []string{

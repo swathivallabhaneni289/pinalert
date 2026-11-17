@@ -172,19 +172,19 @@
           <p class="welcome__label">Step 4 of 4</p>
         </div>
         <h1 class="welcome__title" id="welcome-step-4-title" tabindex="-1">About you</h1>
-        <p class="welcome__lead">{{if .FillingIn}}Pinalert now asks everyone for a username, a name and a home area. Fill in what is missing.{{else}}All three are needed to finish signing up. You can change them later in Settings.{{end}}</p>
+        <p class="welcome__lead">{{if .FillingIn}}Pinalert now asks everyone for a username, a name and a home area. Fill in what is missing.{{else}}All three are needed to finish signing up.{{end}}</p>
         <div class="welcome__field">
           <label class="app-window__label" for="welcome-username-input">Username</label>
           <div class="username-field">
             <span class="username-field__at" aria-hidden="true">@</span>
-            <input class="username-field__input" type="text" id="welcome-username-input" name="handle" maxlength="20" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" enterkeyhint="next" placeholder="ravi.k" value="{{.Username}}" aria-describedby="welcome-username-status welcome-username-help">
+            <input class="username-field__input" type="text" id="welcome-username-input" name="handle" maxlength="20" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" enterkeyhint="next" value="{{.Username}}" aria-describedby="welcome-username-status welcome-username-help">
           </div>
           <p class="username-status" id="welcome-username-status" role="status" aria-live="polite"></p>
           <p class="app-window__help" id="welcome-username-help">Shown on your comments, to everyone.</p>
         </div>
         <div class="welcome__field">
           <label class="app-window__label" for="welcome-name-input">Name</label>
-          <input class="app-window__field" type="text" id="welcome-name-input" name="display_name" maxlength="60" autocomplete="name" enterkeyhint="next" placeholder="For example: Ravi Kumar" value="{{.DisplayName}}" aria-describedby="welcome-name-help">
+          <input class="app-window__field" type="text" id="welcome-name-input" name="display_name" maxlength="60" autocomplete="name" enterkeyhint="next" value="{{.DisplayName}}" aria-describedby="welcome-name-help">
           <p class="app-window__help" id="welcome-name-help">Shown only if you let others follow you.</p>
         </div>
         <div class="welcome__field">

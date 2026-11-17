@@ -356,9 +356,8 @@ func TestWelcomeStep3And4Privacy(t *testing.T) {
 		"Koramangala", "welcome__tile", "Search a place")
 	// Amended 2026-10-29 by Phase 7.1 plan 13: the optional lead and the Skip button
 	// are gone (step 4 is required, see TestWelcomeStep4Required); the name and home
-	// area inputs keep their placeholders and stored values, and Continue stays.
+	// area inputs keep their stored values, and Continue stays.
 	p13MustContain(t, "step 4", page,
-		`placeholder="For example: Ravi Kumar"`,
 		`value="{{.DisplayName}}"`, `value="{{.HomeAreaName}}"`,
 		`id="welcome-continue-4" aria-disabled="true">Continue</button>`)
 
@@ -889,7 +888,7 @@ func TestWelcomeStep4Required(t *testing.T) {
 	// The two leads, switched on the account that is filling in.
 	p13Ordered(t, step4, "step 4 lead", `<p class="welcome__lead">{{if .FillingIn}}`,
 		"Pinalert now asks everyone for a username, a name and a home area. Fill in what is missing.",
-		"{{else}}", "All three are needed to finish signing up. You can change them later in Settings.", "{{end}}</p>")
+		"{{else}}", "All three are needed to finish signing up.", "{{end}}</p>")
 
 	// The three fields in order, with their labels and their small lines.
 	p13Ordered(t, step4, "step 4 fields",
@@ -903,9 +902,11 @@ func TestWelcomeStep4Required(t *testing.T) {
 		`id="welcome-error-4"`, `id="welcome-continue-4"`)
 	p13MustNotContain(t, "step 4", step4, ">Your name<", "Used to send you alerts about this area.")
 	p13MustContain(t, "step 4", step4,
-		`placeholder="ravi.k"`, `value="{{.Username}}"`,
-		`placeholder="For example: Ravi Kumar"`, `maxlength="60"`, `autocomplete="name"`,
+		`value="{{.Username}}"`, `maxlength="60"`, `autocomplete="name"`,
 		`id="welcome-name-help"`, `aria-describedby="welcome-name-help"`)
+	// Amended 2026-11-17 (7.1 UAT test 7): no example person names in the boxes,
+	// and no line saying where to change them later.
+	p13MustNotContain(t, "step 4", step4, `placeholder="ravi.k"`, "Ravi Kumar", "later in Settings")
 
 	// The live line: a status that announces politely, empty until the script writes it.
 	p13MustContain(t, "step 4", step4,

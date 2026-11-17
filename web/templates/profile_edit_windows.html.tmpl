@@ -11,7 +11,7 @@
         <label class="app-window__label" for="settings-username-input">Username</label>
         <div class="username-field">
           <span class="username-field__at" aria-hidden="true">@</span>
-          <input class="username-field__input" type="text" id="settings-username-input" name="handle" maxlength="20" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" enterkeyhint="done" placeholder="ravi.k" aria-describedby="settings-username-status settings-username-help">
+          <input class="username-field__input" type="text" id="settings-username-input" name="handle" maxlength="20" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" inputmode="text" enterkeyhint="done" aria-describedby="settings-username-status settings-username-help">
         </div>
         <p class="username-status" id="settings-username-status" role="status" aria-live="polite"></p>
         <p class="app-window__help" id="settings-username-help">Shown on your comments, to everyone.</p>
@@ -33,7 +33,7 @@
       <form class="app-window__body" id="settings-name-form" novalidate>
         {{/* Amended 2026-10-29 by Phase 7.1 plan 15 (UI-SPEC P71-C4, sketch 010 note): the label reads Name, like step 4 and the row. */}}
         <label class="app-window__label" for="settings-name-input">Name</label>
-        <input class="app-window__field" type="text" id="settings-name-input" name="display_name" maxlength="60" autocomplete="name" placeholder="For example: Ravi Kumar">
+        <input class="app-window__field" type="text" id="settings-name-input" name="display_name" maxlength="60" autocomplete="name">
         <p class="inline-error" id="settings-name-error" role="alert" hidden></p>
         <div class="app-window__actions">
           <button type="submit" class="btn btn--primary" id="settings-name-save">Save name</button>
