@@ -15,8 +15,9 @@
 //
 // This file needs no other script and no app global, so it works on every page
 // that has the bell. Every word comes from the server and is written with
-// textContent or setAttribute; no markup is ever built from a string. The only
-// address a row can open is "/?report=" plus an id that passes a digits check.
+// textContent or setAttribute; no markup is ever built from a string. A row can
+// open only "/?report=" plus an id that passes a digits check, or the Policy
+// page for the row that says the reader's own report was removed.
 //
 // The list is frozen while open: an update that arrives while a person reads
 // raises the count behind the list and shows the next time the list opens.
@@ -44,6 +45,11 @@
 
   // A report id the row link may carry: digits, no leading zero, at most 18.
   var ID_PATTERN = /^[1-9][0-9]{0,17}$/;
+
+  // The one other page a row may open: the Policy, for the removed row about
+  // the reader's own report (quick 261117-vvb).
+  var LINK_POLICY = 'policy';
+  var POLICY_URL = '/policy';
 
   // The only severity classes a dot can get. Anything else gets none.
   var SEVERITY_CLASS = { low: 'sev-low', medium: 'sev-medium', critical: 'sev-critical' };
@@ -163,8 +169,22 @@
 
   // ---- Drawing the list ---------------------------------------------------
 
+  // rowHref is the one address a row opens, or the empty string for a plain
+  // row: the report for a link row, and the Policy page for the row that says
+  // the reader's own report was removed (quick 261117-vvb), which carries the
+  // closed value link "policy" and never an address of its own.
+  function rowHref(u) {
+    if (u.available === true && u.link === LINK_POLICY) {
+      return POLICY_URL;
+    }
+    if (u.available === true && u.kind !== 'more' && ID_PATTERN.test(String(u.report_id))) {
+      return '/?report=' + String(u.report_id);
+    }
+    return '';
+  }
+
   function isLinkRow(u) {
-    return u.available === true && u.kind !== 'more' && ID_PATTERN.test(String(u.report_id));
+    return rowHref(u) !== '';
   }
 
   function severityClass(level) {
@@ -198,7 +218,7 @@
     var el = document.createElement(link ? 'a' : 'div');
     el.setAttribute('class', classes);
     if (link) {
-      el.setAttribute('href', '/?report=' + String(u.report_id));
+      el.setAttribute('href', rowHref(u));
       if (text(u.label) !== '') {
         el.setAttribute('aria-label', u.label);
       }

@@ -55,8 +55,9 @@ var _ WorkerQuerier = (*sqlcgen.Queries)(nil)
 // Per sweep (D-01 background retry, D-02, D-04, R-03):
 //  1. SweepOnce claims at most ModerationBatchLimit due checks with a
 //     ModerationLeaseSeconds lease in one statement, so two workers sweeping at
-//     once screen each check exactly once. Expired and removed reports are
-//     never claimed, because the claim filters on the database clock.
+//     once screen each check exactly once. Expired and removed reports, and
+//     reports hidden for review (quick 261117-vvb), are never claimed, because
+//     the claim filters on the database clock and the state.
 //  2. For each row, in claim order, the trimmed description alone goes to the
 //     screener with a ModerationWorkerCallTimeout deadline. One call per row per
 //     sweep, no retry loop and no sleep: waiting happens only through the
@@ -69,6 +70,9 @@ var _ WorkerQuerier = (*sqlcgen.Queries)(nil)
 //     written in one statement (FinishCheckAndSetState), so no crash can leave
 //     one written without the other. If that write fails, nothing changes and
 //     the lease lapses so a later sweep tries again.
+//     Since quick 261117-vvb the same statement writes the author one bell
+//     row when it moved the report: own_removed for a reject, own_shown for a
+//     held report that is now showing.
 //  4. An unfinished call is classified. A quota or permanent provider error is
 //     never retried: the check is rescheduled to the report's expires_at,
 //     which the claim never reaches, so the check stays pending and the
@@ -268,7 +272,22 @@ func (w *ModerationWorker) screenRow(ctx context.Context, row sqlcgen.ClaimDueMo
 		model = &m
 	}
 
+	// Quick 261117-vvb: the author's bell row, written by the same statement
+	// only when it moved the report. A late reject is own_removed. A pass of a
+	// held report, one this claim found withheld, is own_shown; a serious
+	// report was already showing, so its pass tells nothing.
+	var ownKind *string
+	switch {
+	case state == ModerationRemoved:
+		k := string(UpdateOwnRemoved)
+		ownKind = &k
+	case meta.Withheld():
+		k := string(UpdateOwnShown)
+		ownKind = &k
+	}
+
 	if err := w.q.FinishCheckAndSetState(ctx, sqlcgen.FinishCheckAndSetStateParams{
+		OwnKind:         ownKind,
 		ModerationState: string(state),
 		Verdict:         string(decision.Verdict),
 		Scores:          scoresJSON,

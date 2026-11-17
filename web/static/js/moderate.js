@@ -93,6 +93,10 @@
   var MAIN_PAGE_LINK_TEXT = 'View on the main page';
   var HELD_WORD = 'Held, shown to no one';
   var REMOVED_WORD = 'Removed after review';
+  // Quick 261117-vvb: a report that flags from three places hid until a
+  // moderator acts. It comes first in the flagged list.
+  var HIDDEN_BY_FLAGS_WORD = 'Hidden by flags';
+  var HIDDEN_BY_FLAGS_DOES = "Keep report shows it again, and flags can't hide it again. Remove report hides it from everyone and tells the author.";
   var REMOVED_SENTENCE = 'Removed after review.';
   var SCORED_INTRO = 'The check scored this text:';
   var UNFINISHED_INTRO = "The text check hasn't finished.";
@@ -357,6 +361,9 @@
   function moderationWord(report) {
     if (report.moderation === 'removed') {
       return REMOVED_WORD;
+    }
+    if (report.moderation === 'review') {
+      return HIDDEN_BY_FLAGS_WORD;
     }
     if (report.moderation === 'pending' && report.serious !== true) {
       return HELD_WORD;
@@ -695,6 +702,9 @@
             break;
           }
         }
+      }
+      if (report.moderation === 'review') {
+        doesText = HIDDEN_BY_FLAGS_DOES;
       }
       Pinalert.setText(does, doesText);
       row.appendChild(does);

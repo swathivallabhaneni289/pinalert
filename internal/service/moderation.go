@@ -79,9 +79,11 @@ type ModerationQuerier interface {
 	ReportForModeration(ctx context.Context, reportID int64) (sqlcgen.ReportForModerationRow, error)
 	ModerationStatusForReport(ctx context.Context, reportID int64) (sqlcgen.ModerationStatusForReportRow, error)
 	LockModerationCheck(ctx context.Context, reportID int64) error
+	LockReportModeration(ctx context.Context, reportID int64) (sqlcgen.LockReportModerationRow, error)
 	KeepReport(ctx context.Context, reportID int64) error
 	RemoveReport(ctx context.Context, reportID int64) error
 	InsertModerationAction(ctx context.Context, arg sqlcgen.InsertModerationActionParams) error
+	InsertOwnReportUpdate(ctx context.Context, arg sqlcgen.InsertOwnReportUpdateParams) (int64, error)
 	CurrentVotesForReports(ctx context.Context, reportIds []int64) ([]sqlcgen.CurrentVotesForReportsRow, error)
 	ReporterAccountsForReports(ctx context.Context, reportIds []int64) ([]sqlcgen.ReporterAccountsForReportsRow, error)
 }
@@ -227,6 +229,15 @@ type ModerationQueues struct {
 //     moderation Remove is the authority R-03 names, so it withdraws even a
 //     serious report that was published while its check was pending. A
 //     moderator may Keep or Remove their own report: no special rule.
+//
+// Amended 2026-11-17 (quick 261117-vvb). Right after LockModerationCheck the
+// transaction takes the report's row lock (LockReportModeration), so the state
+// it read is the state the change moves from. A report hidden for review is on
+// the flagged list through its open flags; Keep releases it to clear and marks
+// it so flags never hide it again, and Remove works as for any report. In the
+// same transaction the author gets one bell row (ownUpdateForAction), so the
+// row commits with the change or not at all. Since this lock, two moderators
+// acting on a report with no check row also queue, on the report row.
 //
 // Two Claude's Discretion readings the owner can veto. First, the audit row is
 // written in the same transaction as the state change and before it, so the
@@ -529,6 +540,18 @@ func (s *ModerationService) act(ctx context.Context, id, moderatorID int64, acti
 		if err := q.LockModerationCheck(ctx, id); err != nil {
 			return err
 		}
+		// Quick 261117-vvb: the report row is locked second, the order the
+		// worker takes, so the state read here is the state the change below
+		// moves from, and a flag that would hide the report waits for this
+		// transaction. Most shown reports have no check row, so without this
+		// lock nothing would be held for them.
+		before, err := q.LockReportModeration(ctx, id)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrReportNotFound
+			}
+			return err
+		}
 		status, err := q.ModerationStatusForReport(ctx, id)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -553,9 +576,20 @@ func (s *ModerationService) act(ctx context.Context, id, moderatorID int64, acti
 			return err
 		}
 		if action == ModerationActionKeep {
-			return q.KeepReport(ctx, id)
+			if err := q.KeepReport(ctx, id); err != nil {
+				return err
+			}
+		} else if err := q.RemoveReport(ctx, id); err != nil {
+			return err
 		}
-		return q.RemoveReport(ctx, id)
+		if kind := ownUpdateForAction(action, before); kind != "" {
+			if _, err := q.InsertOwnReportUpdate(ctx, sqlcgen.InsertOwnReportUpdateParams{
+				ReportID: id, Kind: string(kind),
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return ModerationRow{}, err
@@ -573,6 +607,34 @@ func (s *ModerationService) act(ctx context.Context, id, moderatorID int64, acti
 		return ModerationRow{}, err
 	}
 	return built[0], nil
+}
+
+// ownUpdateForAction is the bell row the author gets for a Keep or Remove that
+// is about to commit, from the report's locked state before it (quick
+// 261117-vvb): Keep of a held report (pending and not serious) is own_shown,
+// Keep of a report hidden for review is own_kept, and Remove of any report is
+// own_removed. Keep of a shown report, including a pending serious one that was
+// already showing, tells the author nothing. act returns ErrAlreadyHandled
+// before this for a removed report, so a Remove is never told twice.
+func ownUpdateForAction(action string, before sqlcgen.LockReportModerationRow) UpdateKind {
+	meta := ReportMeta{
+		Severity:   Severity(before.Severity),
+		Category:   Category(before.Category),
+		Moderation: ModerationState(before.ModerationState),
+	}
+	if action == ModerationActionRemove {
+		if meta.Moderation == ModerationRemoved {
+			return ""
+		}
+		return UpdateOwnRemoved
+	}
+	switch {
+	case meta.Moderation == ModerationReview:
+		return UpdateOwnKept
+	case meta.Moderation == ModerationPending && meta.Withheld():
+		return UpdateOwnShown
+	}
+	return ""
 }
 
 // Keep clears the automatic flag, dismisses the open people flags and releases

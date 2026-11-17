@@ -269,9 +269,11 @@ LIMIT sqlc.arg(row_cap)::int;
 -- server code: the position never leaves the server (D-20, T-03.2-14) and the
 -- area name is read by no feed query. reporter_account_id comes from the
 -- session binding and is NULL for a report posted without an account.
+-- review_kept_at (quick 261117-vvb) is set once a moderator kept the report
+-- after a review hide; such a report is never pushed again.
 SELECT r.id, r.severity, r.category, r.happening, r.area_name,
        r.latitude, r.longitude,
-       r.created_at, r.expires_at, r.moderation_state,
+       r.created_at, r.expires_at, r.moderation_state, r.review_kept_at,
        ss.account_id AS reporter_account_id
 FROM reports r
 LEFT JOIN sessions ss ON ss.session_id = r.session_id

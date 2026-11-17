@@ -348,8 +348,9 @@ ON CONFLICT (account_id, report_id, kind)
 -- claimable again once it lapses; check_attempts counts every claim. A comment
 -- is never claimed when it is not held, when its author deleted it (its words
 -- are already blanked, review W7), when it is not yet due, or when its report
--- has expired or was removed. now, the lease end and the batch size come from
--- the worker (its clock, 60 seconds, 5 rows). The only text that leaves this
+-- has expired, was removed or is hidden for review (quick 261117-vvb: a held
+-- comment on a hidden report waits for the moderator's Keep). now, the lease
+-- end and the batch size come from the worker (its clock, 60 seconds, 5 rows). The only text that leaves this
 -- query is the body, and only toward the screener. Postgres does not promise
 -- the order of rows an UPDATE returns.
 WITH due AS MATERIALIZED (
@@ -361,7 +362,7 @@ WITH due AS MATERIALIZED (
       AND c.next_attempt_at <= sqlc.arg(now)::timestamptz
       AND (c.lease_until IS NULL OR c.lease_until < sqlc.arg(now)::timestamptz)
       AND r2.expires_at > sqlc.arg(now)::timestamptz
-      AND r2.moderation_state <> 'removed'
+      AND r2.moderation_state NOT IN ('removed', 'review')
     ORDER BY c.next_attempt_at, c.id
     LIMIT sqlc.arg(batch_limit)::int
     FOR UPDATE OF c SKIP LOCKED

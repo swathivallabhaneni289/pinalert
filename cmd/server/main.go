@@ -577,6 +577,9 @@ func main() {
 		// Keep and Remove lock the check row first inside one transaction,
 		// the order the moderation worker takes (WR-S01).
 		ModerationTx: service.PgxModerationTx(pool),
+		// A report flag and the review hide it may cause lock the report and
+		// commit together (quick 261117-vvb).
+		FlagTx: service.PgxFlagTx(pool),
 		// Keep and Remove of a comment write the change, the flag dismissal and
 		// the audit row in one transaction (Phase 8 plan 13).
 		CommentModerationTx: service.PgxCommentModerationTx(pool),

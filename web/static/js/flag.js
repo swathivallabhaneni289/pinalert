@@ -5,10 +5,13 @@
 // screen sheet on a phone) and on the Low data row, never on a main page list
 // row (D-09, P4-A7 amended). Its two listeners stop propagation so a tap or a
 // key press never reaches a row, card or map listener, and they leave the
-// browser's own button activation alone. A flag never hides, dims or relabels
-// a report for anyone: the only visible change is this reader's own control
-// text. The feature is online only and saves nothing on the device. There is
-// no outside reporting feature in this flow. Every string reaches the page
+// browser's own button activation alone. Sending a flag changes nothing on
+// this page but this reader's own control text. Amended 2026-11-17 (quick
+// 261117-vvb): the server hides a report for review once people in three
+// different places flagged it, so a report flag carries the position the page
+// already knows (flagBody), never one it asks for. The feature is online
+// only and saves nothing on the device. There is no outside reporting feature
+// in this flow. Every string reaches the page
 // through Pinalert.setText or setAttribute, and the dialog is static template
 // markup, so nothing here parses markup.
 window.PinalertFlag = (function () {
@@ -376,7 +379,7 @@ window.PinalertFlag = (function () {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ reasons: reasons, note: note }),
+      body: JSON.stringify(flagBody(reasons, note)),
       signal: limit.signal
     }), limit.expired]).then(function (res) {
       return Promise.race([res.json(), limit.expired]).catch(function () {
@@ -390,6 +393,33 @@ window.PinalertFlag = (function () {
       setSending(false);
       showError(FLAG_OFFLINE_MESSAGE);
     });
+  }
+
+  // flagBody is the request body: the ticked reasons and the note, and for a
+  // report the flagger's position when the page already knows it (quick
+  // 261117-vvb). The position is the cached fix a vote on this page reuses
+  // without asking (PinalertVotes.knownPosition); with none, both keys are
+  // left out, never sent as 0,0, and nothing asks for a location. The server
+  // keeps only a place cell, so flags from three different places can hide a
+  // report for review. A comment flag never carries a position.
+  function flagBody(reasons, note) {
+    var body = { reasons: reasons, note: note };
+    if (current.target === 'comment') {
+      return body;
+    }
+    var votes = window.PinalertVotes;
+    var pos = null;
+    try {
+      pos = votes && typeof votes.knownPosition === 'function' ? votes.knownPosition() : null;
+    } catch (err) {
+      pos = null;
+    }
+    if (pos && typeof pos.latitude === 'number' && typeof pos.longitude === 'number' &&
+        isFinite(pos.latitude) && isFinite(pos.longitude)) {
+      body.latitude = pos.latitude;
+      body.longitude = pos.longitude;
+    }
+    return body;
   }
 
   function flagPath() {

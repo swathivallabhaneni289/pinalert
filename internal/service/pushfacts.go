@@ -40,6 +40,9 @@ type pushReportFacts struct {
 	Vis               Visibility
 	View              FeedView
 	Confirmed         bool
+	// Kept is true once a moderator kept the report after a review hide
+	// (quick 261117-vvb). Such a report is never pushed again.
+	Kept bool
 }
 
 // loadPushFacts reads one report fresh, builds its vote tally, asks the
@@ -81,6 +84,7 @@ func loadPushFacts(ctx context.Context, q PushFactsQuerier, reportID int64, now 
 		Vis:               vis,
 		View:              view,
 		Confirmed:         ConfirmedByPeople(vis, view, tally),
+		Kept:              row.ReviewKeptAt.Valid,
 	}
 	if row.Happening != nil {
 		h := Happening(*row.Happening)

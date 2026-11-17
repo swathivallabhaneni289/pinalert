@@ -442,6 +442,13 @@ func (w *PushWorker) sendRow(ctx context.Context, claim sqlcgen.ClaimDuePushesRo
 	if remaining < time.Second || !run.now.Before(claim.ExpiresAt) {
 		return w.skip(ctx, run, pushSkipStale)
 	}
+	// A report a moderator kept after a review hide is never pushed again
+	// (quick 261117-vvb): a first alert queued before the hide is not sent
+	// after the Keep. A changed note is about a later change and is judged by
+	// its own predicate below.
+	if facts.Kept && run.kind != PushKindChanged {
+		return w.skip(ctx, run, pushSkipNotEligible)
+	}
 
 	// A now disputed note reaches a phone only for a report people had confirmed
 	// before, replayed from the report's own vote log. Only a changed row whose

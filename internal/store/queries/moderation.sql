@@ -36,8 +36,9 @@ INSERT INTO moderation_checks (
 -- LOCKED and so lock and return more rows than the batch limit. SKIP LOCKED
 -- lets two workers claim different rows without waiting on each other, and the
 -- lease makes a crashed claimant's row claimable again once it lapses; attempts
--- counts every claim. A check is never claimed when its report has expired or
--- was removed, when it is done, or when it is not yet due. The lease and the
+-- counts every claim. A check is never claimed when its report has expired,
+-- was removed or is hidden for review (quick 261117-vvb), when it is done, or
+-- when it is not yet due. The lease and the
 -- batch size come from the worker's Go constants (60 seconds, 5 rows).
 -- Postgres does not promise the order of rows an UPDATE returns.
 WITH due AS MATERIALIZED (
@@ -48,7 +49,7 @@ WITH due AS MATERIALIZED (
       AND mc.next_attempt_at <= now()
       AND (mc.lease_until IS NULL OR mc.lease_until < now())
       AND r2.expires_at > now()
-      AND r2.moderation_state <> 'removed'
+      AND r2.moderation_state NOT IN ('removed', 'review')
     ORDER BY mc.next_attempt_at, mc.report_id
     LIMIT sqlc.arg(batch_limit)::int
     FOR UPDATE OF mc SKIP LOCKED
@@ -74,6 +75,14 @@ RETURNING c.report_id, c.attempts, r.description, r.severity, r.category,
 -- and a check closed by Keep or Remove is never reopened or overwritten.
 -- Removal is terminal, so a worker pass never undoes a moderator Remove
 -- (R-03). One statement also leaves no crash window between the two writes.
+--
+-- Quick 261117-vvb: a report hidden for review is never moved, like a removed
+-- one. When the report moved and own_kind is set, the same statement writes
+-- that one bell row for the author (own_shown when a held report is now
+-- showing, own_removed when the late check removed it). The worker decides the
+-- kind in Go from the state and the claimed report; SQL decides nothing about
+-- visibility. A report whose author has no account, or a deleted one, gets no
+-- row, and the unique index makes a repeat a no-op.
 WITH fin AS (
     UPDATE moderation_checks
     SET status = 'done',
@@ -86,12 +95,22 @@ WITH fin AS (
     WHERE moderation_checks.report_id = sqlc.arg(report_id)
       AND moderation_checks.status = 'pending'
     RETURNING moderation_checks.report_id
+), moved AS (
+    UPDATE reports r
+    SET moderation_state = sqlc.arg(moderation_state)
+    FROM fin
+    WHERE r.id = fin.report_id
+      AND r.moderation_state NOT IN ('removed', 'review')
+    RETURNING r.id, r.session_id
 )
-UPDATE reports r
-SET moderation_state = sqlc.arg(moderation_state)
-FROM fin
-WHERE r.id = fin.report_id
-  AND r.moderation_state <> 'removed';
+INSERT INTO updates (account_id, report_id, kind)
+SELECT s.account_id, m.id, sqlc.narg(own_kind)::text
+FROM moved m
+JOIN sessions s ON s.session_id = m.session_id
+JOIN accounts a ON a.id = s.account_id
+WHERE sqlc.narg(own_kind)::text IS NOT NULL
+  AND a.deleted_at IS NULL
+ON CONFLICT (account_id, report_id, kind) WHERE kind IN ('own_shown', 'own_review', 'own_kept', 'own_removed') DO NOTHING;
 
 -- name: RescheduleModerationCheck :exec
 -- The provider did not answer: try again later. last_error holds an error
@@ -132,7 +151,8 @@ LIMIT 100;
 
 -- name: FlagQueue :many
 -- List (b): posts with at least one open flag, most flags first and then
--- newest, at most 100 rows. LEFT JOIN because a flagged report may have no
+-- newest, at most 100 rows. Quick 261117-vvb: a report hidden for review by
+-- flags comes before every other row. LEFT JOIN because a flagged report may have no
 -- check row (seeded and older reports).
 SELECT r.id, r.category, r.severity, r.description, r.created_at, r.expires_at,
        r.client_written_at, r.moderation_state,
@@ -155,7 +175,7 @@ FROM reports r
 LEFT JOIN moderation_checks c ON c.report_id = r.id
 WHERE EXISTS (SELECT 1 FROM report_flags f WHERE f.report_id = r.id AND f.dismissed_at IS NULL)
   AND r.moderation_state <> 'removed'
-ORDER BY open_flag_total DESC, r.created_at DESC, r.id DESC
+ORDER BY (r.moderation_state = 'review') DESC, open_flag_total DESC, r.created_at DESC, r.id DESC
 LIMIT 100;
 
 -- name: PendingQueue :many
@@ -233,6 +253,10 @@ FOR UPDATE;
 -- accepts a pending post as it is and never touches a removed one, so removal
 -- stays terminal (D-08, R-03). The service runs it inside a transaction after
 -- LockModerationCheck.
+--
+-- Quick 261117-vvb: a report hidden for review is released to clear too, and
+-- only then is review_kept_at stamped, so flags can never hide it again. The
+-- SET reads the state before this statement, which is why the stamp is a CASE.
 WITH closed AS (
     UPDATE moderation_checks
     SET needs_review = false, status = 'done', lease_until = NULL
@@ -245,8 +269,9 @@ WITH closed AS (
     RETURNING id
 )
 UPDATE reports
-SET moderation_state = 'clear'
-WHERE reports.id = sqlc.arg(report_id) AND reports.moderation_state = 'pending';
+SET moderation_state = 'clear',
+    review_kept_at = CASE WHEN reports.moderation_state = 'review' THEN now() ELSE reports.review_kept_at END
+WHERE reports.id = sqlc.arg(report_id) AND reports.moderation_state IN ('pending', 'review');
 
 -- name: RemoveReport :exec
 -- Remove as one statement, with the same two CTEs as Keep. The main statement
@@ -276,11 +301,61 @@ VALUES (sqlc.arg(report_id), sqlc.arg(moderator_account_id), sqlc.arg(action));
 
 -- name: InsertReportFlag :one
 -- One flag per account per report. No row back means this account already
--- flagged this report (409). A flag is stored only here; it never changes a
--- column of reports (D-09). The flag upsert lives in this file because
--- votes.sql must stay free of conflict clauses and row locks.
+-- flagged this report (409). The flag itself never changes a column of
+-- reports (D-09); since quick 261117-vvb HideReportForReview may, in the same
+-- transaction. The flag upsert lives in this file because votes.sql must stay
+-- free of conflict clauses and row locks.
 -- The reasons are a set in the dialog's order and the note is trimmed text or
--- NULL (plan 04-31, migration 00010).
-INSERT INTO report_flags (report_id, account_id, reasons, note)
-VALUES (sqlc.arg(report_id), sqlc.arg(account_id), sqlc.arg(reasons)::text[], sqlc.narg(note))
+-- NULL (plan 04-31, migration 00010). flagger_cell is the flagger's place cell
+-- computed by the server, or NULL when the flag came with no position
+-- (migration 00026). It is never returned.
+INSERT INTO report_flags (report_id, account_id, reasons, note, flagger_cell)
+VALUES (sqlc.arg(report_id), sqlc.arg(account_id), sqlc.arg(reasons)::text[], sqlc.narg(note), sqlc.narg(flagger_cell))
 ON CONFLICT (report_id, account_id) DO NOTHING RETURNING id;
+
+-- name: LockReportModeration :one
+-- Quick 261117-vvb: takes the row lock on one report and returns the facts the
+-- flag hide and Keep and Remove decide from. FOR NO KEY UPDATE, because the
+-- statements that follow change no key and a vote or flag insert that only
+-- references the row must not wait on it. A flag takes it first, so two flags
+-- on one report queue here and each later statement sees the other's committed
+-- flag. Keep and Remove take it after LockModerationCheck, the check row first
+-- and the report second, the order the worker takes. No row means no report.
+SELECT moderation_state, severity, category
+FROM reports
+WHERE id = sqlc.arg(report_id)
+FOR NO KEY UPDATE;
+
+-- name: HideReportForReview :execrows
+-- Quick 261117-vvb: hides a shown report for review once its open flags come
+-- from at least threshold different place cells. One flag per account per
+-- report means that many cells are that many accounts too. A flag with no cell
+-- never counts and a dismissed one never counts. Only a clear report that no
+-- moderator kept after a review hide moves, so a held, removed or already
+-- hidden report never does and a hide happens at most once. One row back means
+-- this call hid it. The threshold is the service's FlagHideThreshold.
+UPDATE reports r
+SET moderation_state = 'review'
+WHERE r.id = sqlc.arg(report_id)
+  AND r.moderation_state = 'clear'
+  AND r.review_kept_at IS NULL
+  AND (SELECT count(DISTINCT f.flagger_cell)
+         FROM report_flags f
+        WHERE f.report_id = r.id
+          AND f.dismissed_at IS NULL
+          AND f.flagger_cell IS NOT NULL) >= sqlc.arg(threshold)::bigint;
+
+-- name: InsertOwnReportUpdate :execrows
+-- Quick 261117-vvb: one bell row for the author of a report about what
+-- moderation did to it (own_shown, own_review, own_kept, own_removed). It is
+-- written straight to the author's updates, whatever their follows or mutes,
+-- and never queued for a phone. A report whose author has no account, or a
+-- deleted one, gets no row, and the unique index makes a repeat a no-op.
+INSERT INTO updates (account_id, report_id, kind)
+SELECT s.account_id, r.id, sqlc.arg(kind)::text
+FROM reports r
+JOIN sessions s ON s.session_id = r.session_id
+JOIN accounts a ON a.id = s.account_id
+WHERE r.id = sqlc.arg(report_id)
+  AND a.deleted_at IS NULL
+ON CONFLICT (account_id, report_id, kind) WHERE kind IN ('own_shown', 'own_review', 'own_kept', 'own_removed') DO NOTHING;

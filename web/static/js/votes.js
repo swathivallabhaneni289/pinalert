@@ -1155,6 +1155,24 @@
     }
   }
 
+  // knownPosition is the position a flag carries (quick 261117-vvb): the same
+  // cached fix a vote reuses without asking, while it is younger than
+  // VOTER_LOCATION_STALE_MAX_MS, as { latitude, longitude }, or null. It never
+  // asks the browser, never queries the permission and never writes the cache,
+  // so flagging never causes a location prompt. On the Demo page it is the
+  // pretend position, like every vote there.
+  function knownPosition() {
+    var fix = peekVoterLocation();
+    if (fix === null || !isFreshVoterLocation(fix, VOTER_LOCATION_STALE_MAX_MS)) {
+      return null;
+    }
+    if (typeof fix.latitude !== 'number' || typeof fix.longitude !== 'number' ||
+        !isFinite(fix.latitude) || !isFinite(fix.longitude)) {
+      return null;
+    }
+    return { latitude: fix.latitude, longitude: fix.longitude };
+  }
+
   // farFromCachedFix says whether a list row shows the Too far to vote fact
   // (03.1 D-14). It keeps every guard of applyDistanceHint so the row and the
   // opened report agree: the reporter's own report, an unknown radius, no
@@ -2336,6 +2354,7 @@
     setReopenLabel: setVoteButtonLabel,
     updateVoteBlock: updateVoteBlock,
     farFromCachedFix: farFromCachedFix,
+    knownPosition: knownPosition,
     setBlockBusy: setBlockBusy,
     dismissHostedRateBoxes: dismissHostedRateBoxes,
     showVoteError: showVoteError,

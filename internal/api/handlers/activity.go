@@ -272,6 +272,13 @@ func fillUpdatesPart(view *activityPageView, page service.UpdatesPage, failed bo
 			if item.Available && item.ReportID != nil && item.Kind != service.UpdateMore {
 				row.Href = "/?report=" + strconv.FormatInt(*item.ReportID, 10)
 			}
+			// Quick 261117-vvb: the row that says the reader's own report was
+			// removed opens the Policy page, like the bell's row. The other rows
+			// about the reader's own report link only through ReportID above, so
+			// the hidden row stays a plain row.
+			if item.PolicyLink {
+				row.Href = policyPagePath
+			}
 			rows = append(rows, row)
 		}
 		p.Updates = rows
