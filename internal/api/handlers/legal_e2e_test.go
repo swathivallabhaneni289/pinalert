@@ -709,6 +709,10 @@ func TestPolicyNamesProfilesFollowingAndRatings(t *testing.T) {
 		"When you remove your own rating it stops counting, but the rating stays stored and a moderator can still see it.",
 		"If a moderator removes every rating you gave, your account can no longer rate, for good, and that is kept with the moderator and the time.",
 		"The name of the area, never the square, is also shown on your profile while Public profile is on.",
+		// Amended 2026-11-17 (quick 261117-lq0 review): the name is shown while
+		// the profile is public, and following needs the Reliable reporter tag
+		// too, so this item no longer ties the name to following.
+		"Your name, which is shown to other people only if your profile is public.",
 	} {
 		if n := strings.Count(policy, phrase); n != 1 {
 			t.Errorf("the Policy holds %q %d times, want exactly once", phrase, n)
