@@ -55,7 +55,8 @@ const IndependentAgreementThreshold = 2
 // wire and 02-06 maps it to display copy, so these string values are
 // frozen here.
 //
-// removed_after_review and awaiting_text_check never reach a documented JSON
+// removed_after_review, awaiting_text_check and hidden_for_review (quick
+// 261117-vvb) never reach a documented JSON
 // response (the feed never lists a withheld report, a vote on one answers 404
 // from 04-07, the Activity page renders server side), so the swagger enums
 // tags keep the five Phase 2 slugs (outline decision on R-01).
@@ -69,6 +70,9 @@ const (
 	ReasonConfirmed            ResolveReason = "confirmed"
 	ReasonRemovedAfterReview   ResolveReason = "removed_after_review"
 	ReasonAwaitingTextCheck    ResolveReason = "awaiting_text_check"
+	// ReasonHiddenForReview is a report that flags from three places hid until a
+	// moderator keeps or removes it (quick 261117-vvb).
+	ReasonHiddenForReview ResolveReason = "hidden_for_review"
 )
 
 // ResolveReasons is the ordered, canonical list of every valid resolve
@@ -81,12 +85,14 @@ var ResolveReasons = []ResolveReason{
 	ReasonConfirmed,
 	ReasonRemovedAfterReview,
 	ReasonAwaitingTextCheck,
+	ReasonHiddenForReview,
 }
 
 // ModerationState is the outcome of a report's text check and of moderator
 // review (R-01). clear is published normally, pending means the text check
 // could not finish (D-02), removed is a moderator Remove or a late reject
-// (R-03). The zero value is not a stored state (the column defaults to
+// (R-03), review is hidden for review by flags from three places until a
+// moderator acts (quick 261117-vvb). The zero value is not a stored state (the column defaults to
 // clear); Resolve treats it exactly as clear, so callers that build a
 // ReportMeta without moderation keep their result. Rating neutrality for a
 // withheld report is ClassifyOutcome's job (04-29, R-02), not the zero
@@ -97,12 +103,13 @@ const (
 	ModerationClear   ModerationState = "clear"
 	ModerationPending ModerationState = "pending"
 	ModerationRemoved ModerationState = "removed"
+	ModerationReview  ModerationState = "review"
 )
 
 // ModerationStates is the ordered, canonical list of every stored state.
-var ModerationStates = []ModerationState{ModerationClear, ModerationPending, ModerationRemoved}
+var ModerationStates = []ModerationState{ModerationClear, ModerationPending, ModerationRemoved, ModerationReview}
 
-// Valid reports whether s is one of the three stored states. Comparison is
+// Valid reports whether s is one of the four stored states. Comparison is
 // exact, so the empty string and any case variant are invalid.
 func (s ModerationState) Valid() bool {
 	for _, x := range ModerationStates {
@@ -142,12 +149,14 @@ func (m ReportMeta) Serious() bool {
 	return m.criticalBypass()
 }
 
-// Withheld reports whether m is hidden by moderation: removed at any severity
-// (R-01, R-03), or pending and not serious (D-02). A pending serious report is
+// Withheld reports whether m is hidden by moderation: removed or hidden for
+// review at any severity (R-01, R-03, quick 261117-vvb), or pending and not
+// serious (D-02). A pending serious report is
 // published while its check retries. Resolve's two top rungs and later
 // consumers read this one predicate so they cannot drift apart.
 func (m ReportMeta) Withheld() bool {
-	return m.Moderation == ModerationRemoved || (m.Moderation == ModerationPending && !m.Serious())
+	return m.Moderation == ModerationRemoved || m.Moderation == ModerationReview ||
+		(m.Moderation == ModerationPending && !m.Serious())
 }
 
 // VoteTally is an already-loaded snapshot of a report's confirm, dispute,
@@ -244,7 +253,8 @@ func (t VoteTally) isRetracted() bool {
 //  1. Removed (R-01, R-03): withheld with reason removed_after_review, above
 //     Retracted and above the critical bypass, because a moderation Remove is
 //     a separate authority from the votes and must hide even a critical
-//     report.
+//     report. Hidden for review (quick 261117-vvb) sits on the same rung with
+//     reason hidden_for_review, at every severity, until a moderator acts.
 //  2. Held (D-02, R-01): pending and not serious is withheld with reason
 //     awaiting_text_check; pending and serious falls through to the rungs
 //     below.
@@ -272,8 +282,11 @@ func (t VoteTally) isRetracted() bool {
 //  7. Live: the default once nothing above fired.
 func Resolve(meta ReportMeta, tally VoteTally, now time.Time) (Visibility, ResolveReason) {
 	if meta.Withheld() {
-		if meta.Moderation == ModerationRemoved {
+		switch meta.Moderation {
+		case ModerationRemoved:
 			return VisibilityWithheld, ReasonRemovedAfterReview
+		case ModerationReview:
+			return VisibilityWithheld, ReasonHiddenForReview
 		}
 		return VisibilityWithheld, ReasonAwaitingTextCheck
 	}

@@ -355,6 +355,53 @@ func TestPushDispatchResolver(t *testing.T) {
 	}
 }
 
+// TestPushReviewHideAndKeep (quick 261117-vvb): a critical report hidden for
+// review is never pushed, and once a moderator kept it, it is not pushed again,
+// not even to a reader who could only now be served. A shown critical report
+// is the control: a re run serves a reader who arrived later.
+func TestPushReviewHideAndKeep(t *testing.T) {
+	r := newPushDBRig(t)
+
+	const authorSession = "vvb-push-author"
+	testutil.SeedReporterAccount(t, r.pool, r.email("vvb-author"), authorSession)
+	first, _ := r.reader("vvb-first", 0, 5, true, false, false)
+
+	r.cur = r.base.Add(10 * time.Minute)
+	at := r.base.Add(5 * time.Minute)
+	control := r.report(authorSession, SeverityCritical, at, "clear")
+	hidden := r.report(authorSession, SeverityCritical, at, "review")
+	kept := r.report(authorSession, SeverityCritical, at, "clear")
+	for _, id := range []int64{control, hidden, kept} {
+		r.eval(id, 0)
+	}
+	if got := r.outbox(hidden)[first]; len(got) != 0 {
+		t.Errorf("a report hidden for review queued %v", got)
+	}
+	if !outboxKindsEqual(r.outbox(kept)[first], "critical") {
+		t.Fatalf("the shown report queued %v before the hide", r.outbox(kept)[first])
+	}
+
+	// The kept report went through a review hide and a Keep; a reader who
+	// arrives later gets it only from the control.
+	testutil.MustExec(t, r.pool, "UPDATE reports SET review_kept_at = now() WHERE id = $1", kept)
+	late, _ := r.reader("vvb-late", 0, 5, true, false, false)
+	for _, id := range []int64{control, hidden, kept} {
+		r.eval(id, 0)
+	}
+	if !outboxKindsEqual(r.outbox(control)[late], "critical") {
+		t.Errorf("the control did not serve the late reader: %v", r.outbox(control)[late])
+	}
+	if got := r.outbox(kept)[late]; len(got) != 0 {
+		t.Errorf("a kept report was pushed again to a late reader: %v", got)
+	}
+	if got := r.outbox(hidden)[late]; len(got) != 0 {
+		t.Errorf("a report hidden for review queued %v for a late reader", got)
+	}
+	if got := r.outbox(kept)[first]; !outboxKindsEqual(got, "critical") {
+		t.Errorf("the first reader's one row changed: %v", got)
+	}
+}
+
 func TestPushReliable(t *testing.T) {
 	r := newPushDBRig(t)
 

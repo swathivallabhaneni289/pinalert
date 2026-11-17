@@ -128,8 +128,8 @@
           {{else if and (eq .Key "updates") .Updates}}
           <ul class="urow-list" id="updates-rows">
             {{range .Updates}}
-            <li class="urow{{if and .Unread .Href}} urow--new{{end}}{{if not .Href}} urow--plain{{end}}{{if .IsMore}} urow--more{{end}}" data-update-id="{{.ID}}"{{if .Unread}} data-unread="true"{{end}}>
-              {{if .Href}}<a class="urow__link" href="{{.Href}}" aria-label="{{.Label}}">{{else}}<div class="urow__link">{{end}}
+            <li class="urow{{if and .Unread (or .Href .OwnPlain)}} urow--new{{end}}{{if not .Href}} urow--plain{{end}}{{if .IsMore}} urow--more{{end}}" data-update-id="{{.ID}}"{{if .Unread}} data-unread="true"{{end}}>
+              {{if .Href}}<a class="urow__link" href="{{.Href}}" aria-label="{{.Label}}">{{else}}<div class="urow__link">{{if and .Unread .OwnPlain}}<span class="visually-hidden">New.</span>{{end}}{{end}}
                 <span class="urow__dot" aria-hidden="true"></span>
                 <span class="urow__text">
                   <span class="urow__event">{{.Event}}</span>

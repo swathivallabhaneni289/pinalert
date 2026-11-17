@@ -346,6 +346,10 @@ type UpdateItem struct {
 	// Trust is the trust sentence chosen from the live trust object.
 	Trust     string
 	MoreCount int
+	// PolicyLink is true only for the removed row about the reader's own report
+	// (quick 261117-vvb): that row opens the Policy page. It is a closed flag,
+	// not an address, so a row can still open only a report or the Policy.
+	PolicyLink bool
 }
 
 // UpdatesPage is one list read: the newest rows, the unread count capped at
@@ -474,6 +478,26 @@ func (s *UpdatesService) List(ctx context.Context, accountID int64, limit int) (
 			vis, _ = Resolve(meta, tally, now)
 			view = ViewOf(vis, rep.ExpiresAt, now)
 			unavailable = vis == VisibilityWithheld
+		}
+		// The four rows about the reader's own report (quick 261117-vvb) are
+		// told whatever the report's state, because the state is their news:
+		// one fixed line, no report words, category or trust, and never the no
+		// longer available line. The shown and kept rows open the report only
+		// while it is not withheld (it may have been removed since); the hidden
+		// row opens nothing; the removed row opens the Policy page.
+		if kind.IsOwnReport() {
+			item.Available = true
+			item.Event = OwnReportLine(kind)
+			switch kind {
+			case UpdateOwnShown, UpdateOwnKept:
+				if !unavailable {
+					item.ReportID = row.ReportID
+				}
+			case UpdateOwnRemoved:
+				item.PolicyLink = true
+			}
+			page.Items = append(page.Items, item)
+			continue
 		}
 		if unavailable {
 			// Held, removed or gone: no report id, no category, no trust line, no

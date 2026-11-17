@@ -21,7 +21,7 @@ WITH due AS MATERIALIZED (
       AND mc.next_attempt_at <= now()
       AND (mc.lease_until IS NULL OR mc.lease_until < now())
       AND r2.expires_at > now()
-      AND r2.moderation_state <> 'removed'
+      AND r2.moderation_state NOT IN ('removed', 'review')
     ORDER BY mc.next_attempt_at, mc.report_id
     LIMIT $2::int
     FOR UPDATE OF mc SKIP LOCKED
@@ -57,8 +57,9 @@ type ClaimDueModerationChecksRow struct {
 // LOCKED and so lock and return more rows than the batch limit. SKIP LOCKED
 // lets two workers claim different rows without waiting on each other, and the
 // lease makes a crashed claimant's row claimable again once it lapses; attempts
-// counts every claim. A check is never claimed when its report has expired or
-// was removed, when it is done, or when it is not yet due. The lease and the
+// counts every claim. A check is never claimed when its report has expired,
+// was removed or is hidden for review (quick 261117-vvb), when it is done, or
+// when it is not yet due. The lease and the
 // batch size come from the worker's Go constants (60 seconds, 5 rows).
 // Postgres does not promise the order of rows an UPDATE returns.
 func (q *Queries) ClaimDueModerationChecks(ctx context.Context, arg ClaimDueModerationChecksParams) ([]ClaimDueModerationChecksRow, error) {
@@ -102,21 +103,32 @@ WITH fin AS (
     WHERE moderation_checks.report_id = $6
       AND moderation_checks.status = 'pending'
     RETURNING moderation_checks.report_id
+), moved AS (
+    UPDATE reports r
+    SET moderation_state = $7
+    FROM fin
+    WHERE r.id = fin.report_id
+      AND r.moderation_state NOT IN ('removed', 'review')
+    RETURNING r.id, r.session_id
 )
-UPDATE reports r
-SET moderation_state = $1
-FROM fin
-WHERE r.id = fin.report_id
-  AND r.moderation_state <> 'removed'
+INSERT INTO updates (account_id, report_id, kind)
+SELECT s.account_id, m.id, $1::text
+FROM moved m
+JOIN sessions s ON s.session_id = m.session_id
+JOIN accounts a ON a.id = s.account_id
+WHERE $1::text IS NOT NULL
+  AND a.deleted_at IS NULL
+ON CONFLICT (account_id, report_id, kind) WHERE kind IN ('own_shown', 'own_review', 'own_kept', 'own_removed') DO NOTHING
 `
 
 type FinishCheckAndSetStateParams struct {
-	ModerationState string
+	OwnKind         *string
 	Verdict         string
 	Scores          []byte
 	Model           *string
 	NeedsReview     bool
 	ReportID        int64
+	ModerationState string
 }
 
 // The worker's one write after a verdict: it closes the check and moves the
@@ -130,14 +142,23 @@ type FinishCheckAndSetStateParams struct {
 // and a check closed by Keep or Remove is never reopened or overwritten.
 // Removal is terminal, so a worker pass never undoes a moderator Remove
 // (R-03). One statement also leaves no crash window between the two writes.
+//
+// Quick 261117-vvb: a report hidden for review is never moved, like a removed
+// one. When the report moved and own_kind is set, the same statement writes
+// that one bell row for the author (own_shown when a held report is now
+// showing, own_removed when the late check removed it). The worker decides the
+// kind in Go from the state and the claimed report; SQL decides nothing about
+// visibility. A report whose author has no account, or a deleted one, gets no
+// row, and the unique index makes a repeat a no-op.
 func (q *Queries) FinishCheckAndSetState(ctx context.Context, arg FinishCheckAndSetStateParams) error {
 	_, err := q.db.Exec(ctx, finishCheckAndSetState,
-		arg.ModerationState,
+		arg.OwnKind,
 		arg.Verdict,
 		arg.Scores,
 		arg.Model,
 		arg.NeedsReview,
 		arg.ReportID,
+		arg.ModerationState,
 	)
 	return err
 }
@@ -164,7 +185,7 @@ FROM reports r
 LEFT JOIN moderation_checks c ON c.report_id = r.id
 WHERE EXISTS (SELECT 1 FROM report_flags f WHERE f.report_id = r.id AND f.dismissed_at IS NULL)
   AND r.moderation_state <> 'removed'
-ORDER BY open_flag_total DESC, r.created_at DESC, r.id DESC
+ORDER BY (r.moderation_state = 'review') DESC, open_flag_total DESC, r.created_at DESC, r.id DESC
 LIMIT 100
 `
 
@@ -188,7 +209,8 @@ type FlagQueueRow struct {
 }
 
 // List (b): posts with at least one open flag, most flags first and then
-// newest, at most 100 rows. LEFT JOIN because a flagged report may have no
+// newest, at most 100 rows. Quick 261117-vvb: a report hidden for review by
+// flags comes before every other row. LEFT JOIN because a flagged report may have no
 // check row (seeded and older reports).
 func (q *Queries) FlagQueue(ctx context.Context) ([]FlagQueueRow, error) {
 	rows, err := q.db.Query(ctx, flagQueue)
@@ -225,6 +247,39 @@ func (q *Queries) FlagQueue(ctx context.Context) ([]FlagQueueRow, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const hideReportForReview = `-- name: HideReportForReview :execrows
+UPDATE reports r
+SET moderation_state = 'review'
+WHERE r.id = $1
+  AND r.moderation_state = 'clear'
+  AND r.review_kept_at IS NULL
+  AND (SELECT count(DISTINCT f.flagger_cell)
+         FROM report_flags f
+        WHERE f.report_id = r.id
+          AND f.dismissed_at IS NULL
+          AND f.flagger_cell IS NOT NULL) >= $2::bigint
+`
+
+type HideReportForReviewParams struct {
+	ReportID  int64
+	Threshold int64
+}
+
+// Quick 261117-vvb: hides a shown report for review once its open flags come
+// from at least threshold different place cells. One flag per account per
+// report means that many cells are that many accounts too. A flag with no cell
+// never counts and a dismissed one never counts. Only a clear report that no
+// moderator kept after a review hide moves, so a held, removed or already
+// hidden report never does and a hide happens at most once. One row back means
+// this call hid it. The threshold is the service's FlagHideThreshold.
+func (q *Queries) HideReportForReview(ctx context.Context, arg HideReportForReviewParams) (int64, error) {
+	result, err := q.db.Exec(ctx, hideReportForReview, arg.ReportID, arg.Threshold)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const insertModerationAction = `-- name: InsertModerationAction :exec
@@ -303,31 +358,65 @@ func (q *Queries) InsertModerationCheck(ctx context.Context, arg InsertModeratio
 	return err
 }
 
+const insertOwnReportUpdate = `-- name: InsertOwnReportUpdate :execrows
+INSERT INTO updates (account_id, report_id, kind)
+SELECT s.account_id, r.id, $1::text
+FROM reports r
+JOIN sessions s ON s.session_id = r.session_id
+JOIN accounts a ON a.id = s.account_id
+WHERE r.id = $2
+  AND a.deleted_at IS NULL
+ON CONFLICT (account_id, report_id, kind) WHERE kind IN ('own_shown', 'own_review', 'own_kept', 'own_removed') DO NOTHING
+`
+
+type InsertOwnReportUpdateParams struct {
+	Kind     string
+	ReportID int64
+}
+
+// Quick 261117-vvb: one bell row for the author of a report about what
+// moderation did to it (own_shown, own_review, own_kept, own_removed). It is
+// written straight to the author's updates, whatever their follows or mutes,
+// and never queued for a phone. A report whose author has no account, or a
+// deleted one, gets no row, and the unique index makes a repeat a no-op.
+func (q *Queries) InsertOwnReportUpdate(ctx context.Context, arg InsertOwnReportUpdateParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertOwnReportUpdate, arg.Kind, arg.ReportID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const insertReportFlag = `-- name: InsertReportFlag :one
-INSERT INTO report_flags (report_id, account_id, reasons, note)
-VALUES ($1, $2, $3::text[], $4)
+INSERT INTO report_flags (report_id, account_id, reasons, note, flagger_cell)
+VALUES ($1, $2, $3::text[], $4, $5)
 ON CONFLICT (report_id, account_id) DO NOTHING RETURNING id
 `
 
 type InsertReportFlagParams struct {
-	ReportID  int64
-	AccountID int64
-	Reasons   []string
-	Note      *string
+	ReportID    int64
+	AccountID   int64
+	Reasons     []string
+	Note        *string
+	FlaggerCell *string
 }
 
 // One flag per account per report. No row back means this account already
-// flagged this report (409). A flag is stored only here; it never changes a
-// column of reports (D-09). The flag upsert lives in this file because
-// votes.sql must stay free of conflict clauses and row locks.
+// flagged this report (409). The flag itself never changes a column of
+// reports (D-09); since quick 261117-vvb HideReportForReview may, in the same
+// transaction. The flag upsert lives in this file because votes.sql must stay
+// free of conflict clauses and row locks.
 // The reasons are a set in the dialog's order and the note is trimmed text or
-// NULL (plan 04-31, migration 00010).
+// NULL (plan 04-31, migration 00010). flagger_cell is the flagger's place cell
+// computed by the server, or NULL when the flag came with no position
+// (migration 00026). It is never returned.
 func (q *Queries) InsertReportFlag(ctx context.Context, arg InsertReportFlagParams) (int64, error) {
 	row := q.db.QueryRow(ctx, insertReportFlag,
 		arg.ReportID,
 		arg.AccountID,
 		arg.Reasons,
 		arg.Note,
+		arg.FlaggerCell,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -347,8 +436,9 @@ WITH closed AS (
     RETURNING id
 )
 UPDATE reports
-SET moderation_state = 'clear'
-WHERE reports.id = $1 AND reports.moderation_state = 'pending'
+SET moderation_state = 'clear',
+    review_kept_at = CASE WHEN reports.moderation_state = 'review' THEN now() ELSE reports.review_kept_at END
+WHERE reports.id = $1 AND reports.moderation_state IN ('pending', 'review')
 `
 
 // Keep as one statement. Two data modifying CTEs close the check and dismiss
@@ -356,6 +446,10 @@ WHERE reports.id = $1 AND reports.moderation_state = 'pending'
 // accepts a pending post as it is and never touches a removed one, so removal
 // stays terminal (D-08, R-03). The service runs it inside a transaction after
 // LockModerationCheck.
+//
+// Quick 261117-vvb: a report hidden for review is released to clear too, and
+// only then is review_kept_at stamped, so flags can never hide it again. The
+// SET reads the state before this statement, which is why the stamp is a CASE.
 func (q *Queries) KeepReport(ctx context.Context, reportID int64) error {
 	_, err := q.db.Exec(ctx, keepReport, reportID)
 	return err
@@ -377,6 +471,33 @@ FOR UPDATE
 func (q *Queries) LockModerationCheck(ctx context.Context, reportID int64) error {
 	_, err := q.db.Exec(ctx, lockModerationCheck, reportID)
 	return err
+}
+
+const lockReportModeration = `-- name: LockReportModeration :one
+SELECT moderation_state, severity, category
+FROM reports
+WHERE id = $1
+FOR NO KEY UPDATE
+`
+
+type LockReportModerationRow struct {
+	ModerationState string
+	Severity        string
+	Category        string
+}
+
+// Quick 261117-vvb: takes the row lock on one report and returns the facts the
+// flag hide and Keep and Remove decide from. FOR NO KEY UPDATE, because the
+// statements that follow change no key and a vote or flag insert that only
+// references the row must not wait on it. A flag takes it first, so two flags
+// on one report queue here and each later statement sees the other's committed
+// flag. Keep and Remove take it after LockModerationCheck, the check row first
+// and the report second, the order the worker takes. No row means no report.
+func (q *Queries) LockReportModeration(ctx context.Context, reportID int64) (LockReportModerationRow, error) {
+	row := q.db.QueryRow(ctx, lockReportModeration, reportID)
+	var i LockReportModerationRow
+	err := row.Scan(&i.ModerationState, &i.Severity, &i.Category)
+	return i, err
 }
 
 const moderationQueueCounts = `-- name: ModerationQueueCounts :one

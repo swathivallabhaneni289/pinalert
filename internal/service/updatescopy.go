@@ -59,6 +59,33 @@ func EventLine(k UpdateKind) string {
 	}
 }
 
+// The lines of the four rows about the reader's own report (quick 261117-vvb,
+// owner 2026-11-17). Each row is this one line and its time: it never shows
+// the report's words, category or trust, and never reads as no longer
+// available.
+const (
+	OwnShownLine   = "Your report passed the text check and is now showing."
+	OwnReviewLine  = "Your report is hidden while it's reviewed."
+	OwnKeptLine    = "Your report is showing again. Sorry for the wait."
+	OwnRemovedLine = "Your report was removed after review."
+)
+
+// OwnReportLine is the one line of a row about the reader's own report, and
+// the empty string for any other kind.
+func OwnReportLine(k UpdateKind) string {
+	switch k {
+	case UpdateOwnShown:
+		return OwnShownLine
+	case UpdateOwnReview:
+		return OwnReviewLine
+	case UpdateOwnKept:
+		return OwnKeptLine
+	case UpdateOwnRemoved:
+		return OwnRemovedLine
+	}
+	return ""
+}
+
 // FollowedPostedLine is line 1 of a follow note: "{username} posted a report."
 // (Phase 9, D-09, UI-SPEC 2a). The caller passes a username only when its
 // screen is clear.

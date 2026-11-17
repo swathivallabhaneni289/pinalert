@@ -323,6 +323,7 @@ type Report struct {
 	Happening             *string
 	AreaName              *string
 	ShareToken            *string
+	ReviewKeptAt          pgtype.Timestamptz
 }
 
 type ReportFlag struct {
@@ -333,6 +334,7 @@ type ReportFlag struct {
 	DismissedAt pgtype.Timestamptz
 	Reasons     []string
 	Note        *string
+	FlaggerCell *string
 }
 
 type ReportMute struct {

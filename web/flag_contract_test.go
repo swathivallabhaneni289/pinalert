@@ -324,9 +324,12 @@ func TestFlagDialogCopy(t *testing.T) {
 		">Why are you flagging this report?</h2>",
 		">If the report is just wrong, use Dispute instead.</p>",
 		">Tell the moderators more (optional)</label>",
-		"A flag never hides a post by itself. A moderator reads it. The author isn't told who flagged it.",
+		// Amended 2026-11-17 (quick 261117-vvb): flags from three places now hide
+		// a report for review, so the line says one flag never hides a post.
+		"One flag never hides a post. A moderator reads it. The author isn't told who flagged it.",
 		"Send to moderators", "Go back", "Choose a reason to continue.")
 	p424Lacks(t, "flag_dialog.html.tmpl", partial, "What is wrong with this report?",
+		"A flag never hides a post by itself.",
 		"If you only disagree with the facts, use Dispute instead.")
 
 	rawJS := p424ReadRaw(t, "static/js/flag.js")
@@ -445,7 +448,14 @@ func TestFlagSendOutcomes(t *testing.T) {
 	// other assertion; flagPath holds the report path text unchanged.
 	p424Contains(t, "sendFlag", s,
 		"fetch(flagPath()", "method: 'POST'", "'Content-Type': 'application/json'",
-		"JSON.stringify({ reasons: reasons, note: note })", "handleAnswer(", "setSending(true)")
+		// Amended 2026-11-17 (quick 261117-vvb): the body is built by flagBody,
+		// which adds the known position to a report flag.
+		"JSON.stringify(flagBody(reasons, note))", "handleAnswer(", "setSending(true)")
+	p424Contains(t, "flagBody", jsFunctionBody(t, flag, "flagBody(reasons, note)"),
+		"var body = { reasons: reasons, note: note };", "current.target === 'comment'",
+		"votes.knownPosition()", "body.latitude = pos.latitude;", "body.longitude = pos.longitude;")
+	p424Lacks(t, "flagBody", jsFunctionBody(t, flag, "flagBody(reasons, note)"),
+		"getVoterLocation", "geolocation", "latitude: 0")
 	p424Contains(t, "flagPath", jsFunctionBody(t, flag, "flagPath()"),
 		"'/api/reports/' + encodeURIComponent(", "'/flag'")
 	// The shared time limit of app.js, raced against the post and its body

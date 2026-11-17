@@ -34,6 +34,13 @@ type FlagRequest struct {
 	Reasons []string `json:"reasons" enums:"spam,abusive,false,dangerous,other" example:"spam,false"`
 	Note    string   `json:"note,omitempty" maxLength:"300" example:"The photo is from a flood in 2019."`
 	Reason  string   `json:"reason,omitempty" enums:"spam,abusive,false,dangerous,other" example:"spam"`
+	// Latitude and Longitude are where the flagger is, when the browser already
+	// knows it. Both or neither: with neither the flag is stored as always, and
+	// only one of them is a 400. The server keeps only the place cell of about
+	// 150 metres that votes use, to tell flags from different places apart, and
+	// never returns it.
+	Latitude  *float64 `json:"latitude,omitempty" example:"13.0827"`
+	Longitude *float64 `json:"longitude,omitempty" example:"80.2707"`
 }
 
 // FlagResponse is the answer to a stored flag. It says nothing else: no count
@@ -49,9 +56,11 @@ type FlagResponse struct {
 // @Description false, dangerous or other, each at most once, and an optional note of at most 300
 // @Description characters that only moderators see. The note goes through the same text check as a
 // @Description report description, and a refused note gets 422. The older single reason field is
-// @Description still accepted on its own as a one reason flag. A flag never hides or changes the report. Each account can flag
-// @Description a report once, and a repeat gets 409. Your own report gets 403. A report that does
-// @Description not exist, or that is not shown in any feed, gets 404. Flagging is limited per
+// @Description still accepted on its own as a one reason flag. The body may carry the flagger's latitude and
+// @Description longitude, both or neither; only the place cell is kept. One flag never hides the report: once
+// @Description people in three different places flag it, it is hidden until a moderator keeps or removes it.
+// @Description Each account can flag a report once, and a repeat gets 409. Your own report gets 403. A
+// @Description report that does not exist, or that is not shown in any feed, gets 404. Flagging is limited per
 // @Description verified account, and a blocked flag gets 429 with a Retry-After header.
 // @Description Requires a session verified by email; an unverified caller receives 401.
 // @Tags reports
@@ -102,6 +111,19 @@ func FlagReport(svc *service.FlagService) http.HandlerFunc {
 		if req.Reason != "" {
 			raw = []string{req.Reason}
 		}
+		// A position is both halves or neither, as on the vote route.
+		var pos *service.FlagPosition
+		switch {
+		case req.Latitude == nil && req.Longitude == nil:
+		case req.Latitude == nil:
+			writeFieldError(w, http.StatusBadRequest, "latitude", "latitude is required.")
+			return
+		case req.Longitude == nil:
+			writeFieldError(w, http.StatusBadRequest, "longitude", "longitude is required.")
+			return
+		default:
+			pos = &service.FlagPosition{Latitude: *req.Latitude, Longitude: *req.Longitude}
+		}
 		reasons := make([]service.FlagReason, len(raw))
 		for i, s := range raw {
 			reasons[i] = service.FlagReason(s)
@@ -112,6 +134,7 @@ func FlagReport(svc *service.FlagService) http.HandlerFunc {
 			AccountID: acc.ID,
 			Reasons:   reasons,
 			Note:      req.Note,
+			Position:  pos,
 		})
 		if err != nil {
 			switch {

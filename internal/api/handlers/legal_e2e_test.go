@@ -271,7 +271,11 @@ func TestLegalPagesRender(t *testing.T) {
 		"Clearly hateful, harassing or sexual text is rejected, and nothing is stored.",
 		"If the check finishes late, after the report was saved, and finds clearly hateful, harassing or sexual text, the report is removed. It stays stored but shows to no one.",
 		"Borderline text is posted, and a moderator may look at it.",
-		"A removed report shows to no one. Its author sees \"Removed after review\", whether a moderator removed it or the late automatic check did.",
+		// Amended 2026-11-17 (quick 261117-vvb): the author is told in the bell,
+		// and flags from three places hide a report until a moderator acts.
+		"A removed report shows to no one. Its author is told in the bell, whether a moderator removed it or the late automatic check did.",
+		"One flag never hides a report. When people in three different places flag it, it is hidden until a moderator keeps or removes it. Its author is told in the bell when it is hidden, shown again or removed, and is never told who flagged it.",
+		"Flags you send, and their reasons. When the page already knows where you are, a flag also keeps a rough square about 150 metres wide, never your exact spot.",
 		"For borderline reports, and for reports whose check finished after they were saved: the check's result, its scores and which model gave them, without the report text.",
 		// Quick 261016-pho: the place search now goes to Photon first, a
 		// second third party, with the text and a position.
@@ -282,7 +286,7 @@ func TestLegalPagesRender(t *testing.T) {
 			t.Errorf("policy text lacks %q", want)
 		}
 	}
-	for _, banned := range []string{"threatening", "illegal", "critical or Rescue needed"} {
+	for _, banned := range []string{"threatening", "illegal", "critical or Rescue needed", "never hides it by itself. It only asks", "Its author sees"} {
 		if strings.Contains(strings.ToLower(ptext), strings.ToLower(banned)) {
 			t.Errorf("policy text names %q", banned)
 		}

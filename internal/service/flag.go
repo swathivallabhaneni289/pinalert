@@ -2,15 +2,20 @@ package service
 
 // flag.go is the server half of the Flag control (D-09). A signed in person
 // can flag someone else's report once, with one or more of five reasons and an
-// optional note for the moderators (plan 04-31, owner 2026-10-22). A flag only
-// queues the report for the moderator screen: it never hides or changes the
-// report, which is why FlagQuerier can read one report row and insert one flag
-// row and nothing else. A report nobody may see (missing or withheld) reads as
-// not found, and the flagger is never exposed to anyone. The note goes through
-// the abuse screen of the report description's text check (ScreenAbuse, the
-// screener half of CheckText) and is shown to moderators only. It skips the
-// gibberish and minimum length rule on purpose: a one word note such as
-// "fake" or "duplicate" is a good flag note (owner, 2026-10-23).
+// optional note for the moderators (plan 04-31, owner 2026-10-22). A flag
+// queues the report for the moderator screen, and on its own it never hides or
+// changes the report. Amended 2026-11-17 (quick 261117-vvb, owner): once the
+// open flags of a shown report come from FlagHideThreshold different place
+// cells, the report is hidden for review until a moderator keeps or removes
+// it, and its author is told in the bell. The flagger's position, when the
+// browser knows one, becomes a place cell here and only the cell is stored; it
+// is never returned, shown or logged. A report nobody may see (missing or
+// withheld) reads as not found, and the flagger is never exposed to anyone.
+// The note goes through the abuse screen of the report description's text
+// check (ScreenAbuse, the screener half of CheckText) and is shown to
+// moderators only. It skips the gibberish and minimum length rule on purpose:
+// a one word note such as "fake" or "duplicate" is a good flag note (owner,
+// 2026-10-23).
 
 import (
 	"context"
@@ -20,9 +25,16 @@ import (
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/mmcloughlin/geohash"
 
 	sqlcgen "pinalert/internal/store/sqlc"
 )
+
+// FlagHideThreshold is how many different place cells the open flags of a
+// shown report must come from before it is hidden for review (quick
+// 261117-vvb). One flag per account per report makes that many cells that many
+// accounts too.
+const FlagHideThreshold = 3
 
 // FlagReason is one of the five reasons a reader can give when flagging.
 type FlagReason string
@@ -84,6 +96,9 @@ const (
 	FlagReasonsBadMessage = "Choose each reason from the list once."
 	// FlagNoteTooLongMessage answers a note over FlagNoteMaxChars.
 	FlagNoteTooLongMessage = "Keep the note to 300 characters or fewer."
+	// FlagPositionMessage answers a position outside the map, which the dialog
+	// never sends (quick 261117-vvb).
+	FlagPositionMessage = "Your location could not be read. Try again."
 )
 
 var (
@@ -114,15 +129,44 @@ func (e FlagNoteRejectedError) Unwrap() error {
 
 // FlagQuerier is the narrow store surface of FlagService. It has exactly two
 // methods on purpose: a flag can read the one vote context row and insert one
-// flag row, so it has no way to write a reports column or feed the resolver.
+// flag row, so through it a flag has no way to write a reports column or feed
+// the resolver. The review hide of quick 261117-vvb goes through FlagHideQuerier
+// instead, inside its own transaction.
 type FlagQuerier interface {
 	ReportVoteContext(ctx context.Context, reportID int64) (sqlcgen.ReportVoteContextRow, error)
 	InsertReportFlag(ctx context.Context, arg sqlcgen.InsertReportFlagParams) (int64, error)
 }
 
+// FlagHideQuerier is the store surface of the flag write with the review hide
+// (quick 261117-vvb): lock the report, insert the flag, hide the report when
+// the threshold is met, and tell its author. Its only reports write is
+// HideReportForReview, which moves a clear report to review and nothing else.
+type FlagHideQuerier interface {
+	LockReportModeration(ctx context.Context, reportID int64) (sqlcgen.LockReportModerationRow, error)
+	InsertReportFlag(ctx context.Context, arg sqlcgen.InsertReportFlagParams) (int64, error)
+	HideReportForReview(ctx context.Context, arg sqlcgen.HideReportForReviewParams) (int64, error)
+	InsertOwnReportUpdate(ctx context.Context, arg sqlcgen.InsertOwnReportUpdateParams) (int64, error)
+}
+
+var _ FlagHideQuerier = (*sqlcgen.Queries)(nil)
+
+// FlagTxFunc runs fn inside one database transaction with a querier bound to
+// it, commits when fn returns nil and rolls back otherwise.
+type FlagTxFunc func(ctx context.Context, fn func(q FlagHideQuerier) error) error
+
+// PgxFlagTx builds the production FlagTxFunc over a pool.
+func PgxFlagTx(db TxBeginner) FlagTxFunc {
+	return func(ctx context.Context, fn func(q FlagHideQuerier) error) error {
+		return pgx.BeginFunc(ctx, db, func(tx pgx.Tx) error {
+			return fn(sqlcgen.New(tx))
+		})
+	}
+}
+
 // FlagService applies the flag rules.
 type FlagService struct {
 	q        FlagQuerier
+	tx       FlagTxFunc
 	screener TextScreener
 }
 
@@ -138,6 +182,14 @@ func WithFlagScreener(s TextScreener) FlagOption {
 	}
 }
 
+// WithFlagTx runs the flag write and the review hide inside one transaction
+// (PgxFlagTx in production). A nil tx leaves the plain querier.
+func WithFlagTx(tx FlagTxFunc) FlagOption {
+	return func(fs *FlagService) {
+		fs.tx = tx
+	}
+}
+
 // NewFlagService stores the querier. It never dereferences it, so a router
 // built with a nil sessions store still constructs.
 func NewFlagService(q FlagQuerier, opts ...FlagOption) *FlagService {
@@ -148,21 +200,33 @@ func NewFlagService(q FlagQuerier, opts ...FlagOption) *FlagService {
 	return s
 }
 
+// FlagPosition is where the flagger is, as the browser last knew it. It is
+// turned into a place cell and never stored or returned itself.
+type FlagPosition struct {
+	Latitude  float64
+	Longitude float64
+}
+
 // FlagInput is one flag attempt. AccountID is the verified account of the
 // caller and nothing else. Reasons may be in any order; Note is the raw note
-// and may be empty.
+// and may be empty. Position is nil when the browser knew no position, which
+// is allowed: such a flag reaches the moderators and never counts toward a
+// review hide.
 type FlagInput struct {
 	ReportID  int64
 	AccountID int64
 	Reasons   []FlagReason
 	Note      string
+	Position  *FlagPosition
 }
 
 // ValidateFlagInput checks the shape of a flag and returns the reasons in the
 // FlagReasons order with the trimmed note. The rules: at least one reason
 // (FlagReasonMessage), every reason one of the five and none twice
-// (FlagReasonsBadMessage), and a note of at most FlagNoteMaxChars characters
-// after trimming (FlagNoteTooLongMessage). An empty trimmed note means none.
+// (FlagReasonsBadMessage), a note of at most FlagNoteMaxChars characters
+// after trimming (FlagNoteTooLongMessage), and a position, when there is one,
+// with a latitude from -90 to 90 and a longitude from -180 to 180, the vote
+// route's bounds (FlagPositionMessage). An empty trimmed note means none.
 func ValidateFlagInput(in FlagInput) ([]FlagReason, string, error) {
 	if len(in.Reasons) == 0 {
 		return nil, "", ValidationError{Field: "reasons", Message: FlagReasonMessage}
@@ -184,12 +248,32 @@ func ValidateFlagInput(in FlagInput) ([]FlagReason, string, error) {
 	if utf8.RuneCountInString(note) > FlagNoteMaxChars {
 		return nil, "", ValidationError{Field: "note", Message: FlagNoteTooLongMessage}
 	}
+	if p := in.Position; p != nil {
+		// Written as negated within tests so a NaN is refused too.
+		if !(p.Latitude >= -90 && p.Latitude <= 90) {
+			return nil, "", ValidationError{Field: "latitude", Message: FlagPositionMessage}
+		}
+		if !(p.Longitude >= -180 && p.Longitude <= 180) {
+			return nil, "", ValidationError{Field: "longitude", Message: FlagPositionMessage}
+		}
+	}
 	return ordered, note, nil
+}
+
+// flagCell is the place cell of a flag's position at the voter cell precision,
+// the precision confirmations count by, or nil with no position.
+func flagCell(p *FlagPosition) *string {
+	if p == nil {
+		return nil
+	}
+	cell := geohash.EncodeWithPrecision(p.Latitude, p.Longitude, voterGeohashPrecision)
+	return &cell
 }
 
 // Flag stores one flag. The order of the checks is part of the specification:
 //
-//  1. ValidateFlagInput: the reasons and the note length (ValidationError).
+//  1. ValidateFlagInput: the reasons, the note length and the position
+//     (ValidationError).
 //  2. The report is read once; a missing report is ErrReportNotFound.
 //  3. A withheld report is ErrReportNotFound (R-01, R-04).
 //  4. The caller's own report is ErrFlagOwnReport.
@@ -197,13 +281,14 @@ func ValidateFlagInput(in FlagInput) ([]FlagReason, string, error) {
 //     FlagNoteRejectedError and nothing is stored. A borderline or unfinished
 //     check still stores the note: only moderators read it, and a provider
 //     outage must not stop a flag, which is a safety action.
-//  6. The flag is inserted; no row back means ErrAlreadyFlagged.
+//  6. The flag is written (writeFlag); no row back means ErrAlreadyFlagged.
 //
 // Withheld comes before ownership so an author's own held or removed report
 // looks exactly like a missing one and never reveals itself through a 403.
 // The note is checked after the report checks so a 404 or 403 never costs a
-// screener call. There is deliberately no expiry step: a Past report can still
-// be flagged, and 409 is reserved for already flagged because the dialog reads
+// screener call, and before the write so no lock is held across the screener
+// call. There is deliberately no expiry step: a Past report can still be
+// flagged, and 409 is reserved for already flagged because the dialog reads
 // 409 as Flagged. Flag never calls the resolver and builds no VoteTally.
 func (s *FlagService) Flag(ctx context.Context, in FlagInput) error {
 	reasons, note, err := ValidateFlagInput(in)
@@ -247,17 +332,91 @@ func (s *FlagService) Flag(ctx context.Context, in FlagInput) error {
 	for i, r := range reasons {
 		slugs[i] = string(r)
 	}
-	_, err = s.q.InsertReportFlag(ctx, sqlcgen.InsertReportFlagParams{
-		ReportID:  in.ReportID,
-		AccountID: in.AccountID,
-		Reasons:   slugs,
-		Note:      notePtr,
-	})
+	arg := sqlcgen.InsertReportFlagParams{
+		ReportID:    in.ReportID,
+		AccountID:   in.AccountID,
+		Reasons:     slugs,
+		Note:        notePtr,
+		FlaggerCell: flagCell(in.Position),
+	}
+
+	switch {
+	case s.tx != nil:
+		err = s.tx(ctx, func(q FlagHideQuerier) error { return writeFlag(ctx, q, arg) })
+	default:
+		// Without a transaction (router harnesses that build no pool) the same
+		// steps run on the plain querier when it can take them, and a querier
+		// that cannot (the unit test fakes) only stores the flag.
+		if hq, ok := s.q.(FlagHideQuerier); ok {
+			err = writeFlag(ctx, hq, arg)
+		} else {
+			_, err = s.q.InsertReportFlag(ctx, arg)
+			if errors.Is(err, pgx.ErrNoRows) {
+				err = ErrAlreadyFlagged
+			}
+		}
+	}
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrAlreadyFlagged
+		if errors.Is(err, ErrAlreadyFlagged) || errors.Is(err, ErrReportNotFound) {
+			return err
 		}
 		return fmt.Errorf("service: Flag: storing flag on report %d: %w", in.ReportID, err)
 	}
 	return nil
+}
+
+// writeFlag is the write of one flag with the review hide (quick 261117-vvb),
+// in this order, inside the caller's transaction:
+//
+//  1. LockReportModeration takes the report's row lock, so two flags on one
+//     report queue here. Under READ COMMITTED every later statement of the
+//     second flag then sees the first one's committed flag, so concurrent
+//     flags can neither skip the hide nor make it twice. A report that is gone
+//     or became withheld since Flag read it is ErrReportNotFound.
+//  2. InsertReportFlag; no row back is ErrAlreadyFlagged.
+//  3. HideReportForReview moves a clear report that no moderator kept after a
+//     review hide to review once its open flags come from FlagHideThreshold
+//     different cells. It runs after every flag, even one with no cell, which
+//     never counts itself, so a report that met the rule while it could not
+//     be hidden (a pending serious report the late check then passed) is
+//     hidden by the next flag.
+//  4. Only when that statement hid the report, its author gets the own_review
+//     bell row, so the row is written exactly once.
+func writeFlag(ctx context.Context, q FlagHideQuerier, arg sqlcgen.InsertReportFlagParams) error {
+	locked, err := q.LockReportModeration(ctx, arg.ReportID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrReportNotFound
+		}
+		return err
+	}
+	meta := ReportMeta{
+		Severity:   Severity(locked.Severity),
+		Category:   Category(locked.Category),
+		Moderation: ModerationState(locked.ModerationState),
+	}
+	if meta.Withheld() {
+		return ErrReportNotFound
+	}
+	if _, err := q.InsertReportFlag(ctx, arg); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrAlreadyFlagged
+		}
+		return err
+	}
+	hid, err := q.HideReportForReview(ctx, sqlcgen.HideReportForReviewParams{
+		ReportID:  arg.ReportID,
+		Threshold: FlagHideThreshold,
+	})
+	if err != nil {
+		return err
+	}
+	if hid != 1 {
+		return nil
+	}
+	_, err = q.InsertOwnReportUpdate(ctx, sqlcgen.InsertOwnReportUpdateParams{
+		ReportID: arg.ReportID,
+		Kind:     string(UpdateOwnReview),
+	})
+	return err
 }

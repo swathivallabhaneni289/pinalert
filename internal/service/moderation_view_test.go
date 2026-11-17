@@ -96,7 +96,8 @@ func withheldViewFeedViewFuncs(t *testing.T) []string {
 // TestReportMetaSeriousMatchesBypass proves Serious() is criticalBypass() and
 // ignores moderation (R-04).
 func TestReportMetaSeriousMatchesBypass(t *testing.T) {
-	states := []ModerationState{"", ModerationClear, ModerationPending, ModerationRemoved}
+	// Amended 2026-11-17 (quick 261117-vvb): the review state is in the grid too.
+	states := []ModerationState{"", ModerationClear, ModerationPending, ModerationRemoved, ModerationReview}
 	for _, state := range states {
 		for _, sev := range Severities {
 			for _, cat := range Categories {
@@ -107,6 +108,32 @@ func TestReportMetaSeriousMatchesBypass(t *testing.T) {
 				got := meta.Serious()
 				if got != meta.criticalBypass() || got != bare.criticalBypass() || got != viaResolve {
 					t.Errorf("meta=%+v: Serious() = %v, criticalBypass() = %v, bare = %v, via Resolve = %v", meta, got, meta.criticalBypass(), bare.criticalBypass(), viaResolve)
+				}
+			}
+		}
+	}
+}
+
+// TestReviewIsWithheldEverywhere (quick 261117-vvb): a report hidden for review
+// resolves to withheld with reason hidden_for_review at every severity and
+// category and whatever its votes, above the critical bypass and above
+// Retracted, so every read that already fails closed on withheld (the guards
+// TestWithheldInNoView proves) leaves it out with no second rule.
+func TestReviewIsWithheldEverywhere(t *testing.T) {
+	tallies := []VoteTally{{}, {ConfirmCells: 3}, {DisputeCells: 3}, {ReporterResolved: true}, {ConfirmCells: 2, ReporterReopened: true}}
+	for _, sev := range Severities {
+		for _, cat := range Categories {
+			meta := ReportMeta{Severity: sev, Category: cat, Moderation: ModerationReview}
+			if !meta.Withheld() {
+				t.Errorf("%s %s review: not withheld", sev, cat)
+			}
+			for _, tally := range tallies {
+				vis, reason := Resolve(meta, tally, withheldViewNow)
+				if vis != VisibilityWithheld || reason != ReasonHiddenForReview {
+					t.Errorf("%s %s review %+v: Resolve = %q %q, want withheld hidden_for_review", sev, cat, tally, vis, reason)
+				}
+				if view := ViewOf(vis, withheldViewNow.Add(time.Hour), withheldViewNow); view != FeedViewNone {
+					t.Errorf("%s %s review: view %q, want none", sev, cat, view)
 				}
 			}
 		}

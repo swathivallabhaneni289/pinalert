@@ -67,7 +67,9 @@ type JudgedOutcome struct {
 // A report that moderation withholds (removed, or pending and not serious,
 // per ReportMeta.Withheld) is neutral whatever its votes, so a moderation
 // outcome never moves a rating (Phase 4 R-02). A pending serious report was
-// public while its check ran and is judged as before.
+// public while its check ran and is judged as before. A report hidden for
+// review by flags is withheld too, but the reporter rating never passes that
+// state here: reporterHistoryMeta judges it as clear (quick 261117-vvb).
 func ClassifyOutcome(meta ReportMeta, tally VoteTally, expiresAt, now time.Time) Outcome {
 	if meta.Withheld() {
 		return OutcomeNeutral

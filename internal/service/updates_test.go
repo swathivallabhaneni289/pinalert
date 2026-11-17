@@ -26,8 +26,12 @@ func TestUpdateKindsClosed(t *testing.T) {
 	// by followed_posted, so the counts are 9 and 8. UpdateFollowedPosted sits
 	// right after UpdateReplyToYours in the events and right before UpdateMore
 	// in the kinds, once in each; every other assertion is unchanged.
-	if len(UpdateKinds) != 9 {
-		t.Errorf("UpdateKinds has %d entries, want 9", len(UpdateKinds))
+	//
+	// Amended 2026-11-17 (quick 261117-vvb): the kinds grew by the four rows about
+	// the reader's own report, appended after UpdateMore, so the count is 13.
+	// They are not events, so the event count stays 8.
+	if len(UpdateKinds) != 13 {
+		t.Errorf("UpdateKinds has %d entries, want 13", len(UpdateKinds))
 	}
 	if len(UpdateEventKinds) != 8 {
 		t.Errorf("UpdateEventKinds has %d entries, want 8", len(UpdateEventKinds))
@@ -62,6 +66,28 @@ func TestUpdateKindsClosed(t *testing.T) {
 	}
 	if UpdateMore.IsEvent() {
 		t.Error("more is a rolled up marker and never an event")
+	}
+	// Quick 261117-vvb: the four rows about the reader's own report are stored
+	// kinds, in this order, right after more, and never events.
+	wantOwn := []UpdateKind{"own_shown", "own_review", "own_kept", "own_removed"}
+	if len(UpdateOwnKinds) != len(wantOwn) {
+		t.Fatalf("UpdateOwnKinds = %v, want %v", UpdateOwnKinds, wantOwn)
+	}
+	for i, k := range wantOwn {
+		if UpdateOwnKinds[i] != k || !k.Valid() || !k.IsOwnReport() || k.IsEvent() {
+			t.Errorf("own kind %d = %q: want %q, valid, own and not an event", i, UpdateOwnKinds[i], k)
+		}
+		if UpdateKinds[9+i] != k {
+			t.Errorf("UpdateKinds[%d] = %q, want %q", 9+i, UpdateKinds[9+i], k)
+		}
+		if OwnReportLine(k) == "" || EventLine(k) != "" {
+			t.Errorf("%q: own line %q and event line %q, want an own line and no event line", k, OwnReportLine(k), EventLine(k))
+		}
+	}
+	for _, k := range append(append([]UpdateKind{}, UpdateEventKinds...), UpdateMore) {
+		if k.IsOwnReport() || OwnReportLine(k) != "" {
+			t.Errorf("%q is not a row about the reader's own report", k)
+		}
 	}
 	for _, k := range UpdateEventKinds {
 		if !k.IsEvent() {

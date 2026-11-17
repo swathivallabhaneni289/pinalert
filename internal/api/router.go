@@ -127,6 +127,12 @@ type Deps struct {
 	// literal that does not set it gives, runs the same writes without a
 	// transaction.
 	ModerationTx service.ModerationTxFunc
+	// FlagTx runs a report flag and the review hide it may cause inside one
+	// transaction that locks the report first, so concurrent flags hide a
+	// report exactly once (quick 261117-vvb). cmd/server/main.go sets it from
+	// the pool through service.PgxFlagTx. Nil runs the same steps on the plain
+	// querier with no transaction (tests only).
+	FlagTx service.FlagTxFunc
 	// CommentModerationTx runs the moderator Keep and Remove of a comment
 	// inside one transaction, so the change, the flag dismissal and the audit
 	// row commit together (Phase 8 plan 13, D-14). cmd/server/main.go sets it
@@ -700,6 +706,9 @@ func NewRouter(deps Deps) *chi.Mux {
 	var flagOpts []service.FlagOption
 	if deps.Reports != nil {
 		flagOpts = append(flagOpts, service.WithFlagScreener(deps.Reports.Screener()))
+	}
+	if deps.FlagTx != nil {
+		flagOpts = append(flagOpts, service.WithFlagTx(deps.FlagTx))
 	}
 	flags := service.NewFlagService(deps.Sessions, flagOpts...)
 	// The report history service (Phase 8, plan 01). Like the flag service it has

@@ -405,7 +405,8 @@ func TestModerateScreenCopy(t *testing.T) {
 		"Type the report id, or paste a link that includes report=", "Find report",
 		"Flagged by the automatic check", "Flagged by people", "Text check not finished",
 		"Posted normally, but the text scored near the line. Newest first.",
-		"People used Flag this report. Most flags first.",
+		// Amended 2026-11-18 (quick 261117-vvb review): hidden reports come first.
+		"People used Flag this report. Hidden by flags first, then most flags.",
 		"The check couldn't finish. Serious reports in this list are already published. Waiting longest first.",
 		"No reports flagged by the check.", "No reports flagged by people.", "No unfinished checks.",
 		"Nothing needs a decision here. Use Find a report to look up a post by id.",
@@ -422,6 +423,10 @@ func TestModerateScreenCopy(t *testing.T) {
 		"Keep report clears the flags on it. The report stays. Remove report hides it from everyone and tells the author.",
 		"Keep report accepts the text as it is and lets the report through the normal rules. Remove report hides it from everyone and tells the author.",
 		"Remove report hides it from everyone and tells the author.",
+		// Amended 2026-11-17 (quick 261117-vvb): a report flags from three places
+		// hid until a moderator acts is marked and explained in its own words.
+		"Hidden by flags",
+		"Keep report shows it again, and flags can't hide it again. Remove report hides it from everyone and tells the author.",
 	}
 	for _, s := range once {
 		if n := p426CountTemplateText(tmpl, s) + p426CountQuoted(js, s); n != 1 {

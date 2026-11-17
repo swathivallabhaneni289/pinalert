@@ -3203,3 +3203,190 @@ func TestMigration00024(t *testing.T) {
 		t.Errorf("after Up again: the first alert index is %q, want it to name follow", def)
 	}
 }
+
+// TestMigration00026 pins the review hide migration (quick 261117-vvb): a flag
+// gains a nullable place cell of 7 characters, a report gains the review state
+// and the review_kept_at mark, and the bell learns the four rows about the
+// reader's own report, once per account, report and kind. Up, Down and Up
+// again; Down moves a report still hidden for review back to pending.
+func TestMigration00026(t *testing.T) {
+	const file = "migrations/00026_add_review_hide.sql"
+	contents, err := MigrationsFS.ReadFile(file)
+	if err != nil {
+		t.Fatalf("reading embedded %s: %v", file, err)
+	}
+	text := string(contents)
+	up := strings.Index(text, "+goose Up")
+	down := strings.Index(text, "+goose Down")
+	if up < 0 || down < 0 || down < up {
+		t.Fatalf("%s must carry +goose Up then +goose Down", file)
+	}
+	var code []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		code = append(code, line)
+	}
+	if strings.Contains(strings.ToUpper(strings.Join(code, "\n")), "CONCURRENTLY") {
+		t.Error("migration 00026 must not use CONCURRENTLY: goose runs it inside a transaction")
+	}
+	for _, name := range []string{"ADD COLUMN flagger_cell TEXT", "char_length(flagger_cell) = 7",
+		"'clear', 'pending', 'removed', 'review'", "ADD COLUMN review_kept_at TIMESTAMPTZ",
+		"'followed_posted', 'own_shown', 'own_review', 'own_kept', 'own_removed'", "CREATE UNIQUE INDEX uq_updates_own_report"} {
+		if !strings.Contains(text[:down], name) {
+			t.Errorf("migration 00026 Up must contain %s", name)
+		}
+	}
+	for _, want := range []string{"DROP INDEX uq_updates_own_report",
+		"DELETE FROM updates WHERE kind IN ('own_shown', 'own_review', 'own_kept', 'own_removed')",
+		"UPDATE reports SET moderation_state = 'pending' WHERE moderation_state = 'review'",
+		"CHECK (moderation_state IN ('clear', 'pending', 'removed'));", "DROP COLUMN review_kept_at", "DROP COLUMN flagger_cell"} {
+		if !strings.Contains(text[down:], want) {
+			t.Errorf("migration 00026 Down must contain %q", want)
+		}
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping the database part of the 00026 migration test")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("opening database: %v", err)
+	}
+	defer db.Close()
+
+	goose.SetBaseFS(MigrationsFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up: %v", err)
+	}
+
+	var a, b, report int64
+	const sessionID = "migration-00026-session"
+	t.Cleanup(func() {
+		_ = goose.Up(db, "migrations")
+		if report != 0 {
+			_, _ = db.Exec("DELETE FROM updates WHERE report_id = $1", report)
+			_, _ = db.Exec("DELETE FROM report_flags WHERE report_id = $1", report)
+			_, _ = db.Exec("DELETE FROM reports WHERE id = $1", report)
+		}
+		for _, id := range []int64{a, b} {
+			if id != 0 {
+				_, _ = db.Exec("DELETE FROM sessions WHERE account_id = $1", id)
+				_, _ = db.Exec("DELETE FROM accounts WHERE id = $1", id)
+			}
+		}
+	})
+
+	count := func(query string, args ...any) (n int) {
+		t.Helper()
+		if err := db.QueryRow(query, args...).Scan(&n); err != nil {
+			t.Fatalf("counting with %q: %v", query, err)
+		}
+		return
+	}
+	columns := func() int {
+		t.Helper()
+		return count(`SELECT count(*) FROM information_schema.columns
+			WHERE table_schema = 'public'
+			  AND ((table_name = 'report_flags' AND column_name = 'flagger_cell')
+			    OR (table_name = 'reports' AND column_name = 'review_kept_at'))`)
+	}
+	index := func() int {
+		t.Helper()
+		return count(`SELECT count(*) FROM pg_indexes WHERE indexname = 'uq_updates_own_report'`)
+	}
+	if c, i := columns(), index(); c != 2 || i != 1 {
+		t.Errorf("after Up: %d of 2 columns, %d of 1 index", c, i)
+	}
+
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00026-a@example.com') RETURNING id`).Scan(&a); err != nil {
+		t.Fatalf("inserting account: %v", err)
+	}
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00026-b@example.com') RETURNING id`).Scan(&b); err != nil {
+		t.Fatalf("inserting account: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO sessions (session_id, account_id) VALUES ($1, $2)`, sessionID, a); err != nil {
+		t.Fatalf("inserting session: %v", err)
+	}
+	if err := db.QueryRow(`INSERT INTO reports
+		(session_id, category, severity, description, latitude, longitude, geohash, created_at, expires_at)
+		VALUES ($1, 'flood', 'medium', 'migration test report', 12.9716, 77.5946, 'tdr1v8y',
+		        now() - interval '1 hour', now() + interval '5 hours') RETURNING id`, sessionID).Scan(&report); err != nil {
+		t.Fatalf("inserting report: %v", err)
+	}
+
+	wantCode := func(label, code, query string, args ...any) {
+		t.Helper()
+		_, err := db.Exec(query, args...)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != code {
+			t.Errorf("%s: want SQLSTATE %s, got %v", label, code, err)
+		}
+	}
+	// The cell is 7 characters or NULL.
+	if _, err := db.Exec(`INSERT INTO report_flags (report_id, account_id, reasons, flagger_cell) VALUES ($1, $2, ARRAY['spam'], 'tdr1v8y')`, report, b); err != nil {
+		t.Fatalf("a flag with a 7 character cell: %v", err)
+	}
+	wantCode("a 5 character cell", "23514",
+		`UPDATE report_flags SET flagger_cell = 'tdr1v' WHERE report_id = $1`, report)
+	if _, err := db.Exec(`UPDATE report_flags SET flagger_cell = NULL WHERE report_id = $1`, report); err != nil {
+		t.Errorf("a flag with no cell: %v", err)
+	}
+	// review is a state, held still is not.
+	if _, err := db.Exec(`UPDATE reports SET moderation_state = 'review' WHERE id = $1`, report); err != nil {
+		t.Errorf("setting review: %v", err)
+	}
+	wantCode("setting held", "23514", `UPDATE reports SET moderation_state = 'held' WHERE id = $1`, report)
+	// The four own kinds, once per account, report and kind.
+	for _, kind := range []string{"own_shown", "own_review", "own_kept", "own_removed"} {
+		if _, err := db.Exec(`INSERT INTO updates (account_id, report_id, kind) VALUES ($1, $2, $3)`, a, report, kind); err != nil {
+			t.Errorf("own kind %s: %v", kind, err)
+		}
+	}
+	wantCode("a second own_review row", "23505",
+		`INSERT INTO updates (account_id, report_id, kind) VALUES ($1, $2, 'own_review')`, a, report)
+	wantCode("an unknown kind", "23514",
+		`INSERT INTO updates (account_id, report_id, kind) VALUES ($1, $2, 'own_hidden')`, a, report)
+	// A read row still blocks a second one: each event happens once.
+	if _, err := db.Exec(`UPDATE updates SET read_at = now() WHERE report_id = $1`, report); err != nil {
+		t.Fatalf("marking read: %v", err)
+	}
+	wantCode("a second own_kept row after the first was read", "23505",
+		`INSERT INTO updates (account_id, report_id, kind) VALUES ($1, $2, 'own_kept')`, a, report)
+
+	version, err := goose.NumericComponent("00026_add_review_hide.sql")
+	if err != nil {
+		t.Fatalf("parsing version: %v", err)
+	}
+	if err := goose.DownTo(db, "migrations", version-1); err != nil {
+		t.Fatalf("goose down to %d: %v", version-1, err)
+	}
+	if c, i := columns(), index(); c != 0 || i != 0 {
+		t.Errorf("after Down: %d columns, %d indexes still present", c, i)
+	}
+	if n := count(`SELECT count(*) FROM updates WHERE report_id = $1`, report); n != 0 {
+		t.Errorf("after Down: %d own rows, want 0", n)
+	}
+	var state string
+	if err := db.QueryRow(`SELECT moderation_state FROM reports WHERE id = $1`, report).Scan(&state); err != nil {
+		t.Fatalf("reading state: %v", err)
+	}
+	if state != "pending" {
+		t.Errorf("after Down: a hidden report is %q, want pending", state)
+	}
+	wantCode("review after Down", "23514", `UPDATE reports SET moderation_state = 'review' WHERE id = $1`, report)
+	wantCode("own_shown after Down", "23514",
+		`INSERT INTO updates (account_id, report_id, kind) VALUES ($1, $2, 'own_shown')`, a, report)
+
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up again: %v", err)
+	}
+	if c, i := columns(), index(); c != 2 || i != 1 {
+		t.Errorf("after Up again: %d of 2 columns, %d of 1 index", c, i)
+	}
+}

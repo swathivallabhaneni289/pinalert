@@ -396,7 +396,9 @@ func pushEarlier(a, b time.Time) time.Time {
 // and the state stays fanned.
 func (d *PushDispatcher) criticalBranch(ctx context.Context, run *evalRun) error {
 	f := run.facts
-	if !f.Meta.Serious() || f.ReporterAccountID == nil {
+	// A report a moderator kept after a review hide is never pushed again
+	// (quick 261117-vvb).
+	if !f.Meta.Serious() || f.ReporterAccountID == nil || f.Kept {
 		return nil
 	}
 	if !MayNotifyAboutReport(UpdateCriticalNearby, f.Vis, f.ExpiresAt, run.now) {
@@ -479,7 +481,9 @@ func (d *PushDispatcher) criticalBranch(ctx context.Context, run *evalRun) error
 // pushed. A failed Refresh logs ids only and does not stop the pass.
 func (d *PushDispatcher) followBranch(ctx context.Context, run *evalRun) error {
 	f := run.facts
-	if f.ReporterAccountID == nil || d.updates == nil {
+	// Like the Critical branch, a kept report is never pushed again (quick
+	// 261117-vvb).
+	if f.ReporterAccountID == nil || d.updates == nil || f.Kept {
 		return nil
 	}
 	if run.follow != "" {
