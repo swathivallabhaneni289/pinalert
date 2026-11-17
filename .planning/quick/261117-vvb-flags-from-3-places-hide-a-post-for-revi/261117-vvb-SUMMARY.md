@@ -130,3 +130,23 @@ When people in three different places flag a report, it is hidden until a modera
 - The migration, `flag_review_test.go` and `review_hide_e2e_test.go` exist.
 - d318da49, c92ac22b and e611460c are ancestors of HEAD.
 - `.planning/STATE.md`, ROADMAP.md and REQUIREMENTS.md were not touched.
+
+## Review fixes (2026-11-18)
+
+All four findings were confirmed in the code before fixing. None skipped.
+
+1. **Rating (must fix), f8fefb46.** A report hidden for review was neutral for its author's rating, so three accounts could take a good Past report out of someone's rating, or a poor one out of their own.
+   - `reporterHistoryMeta` now judges a `review` report as `clear`, by its votes. Held and removed stay neutral, Keep changes nothing, Remove counts as a removal. `ClassifyOutcome` is unchanged, so its "exactly Withheld" grid still holds.
+   - Tests: a pure `ReporterSignals` case (one hidden, all hidden, three contradicted hidden) and `TestReviewHideLeavesTheRating` on Postgres (hide, Keep, Remove). Both fail without the fix.
+   - MODERATION.md (Ratings) and TRUST-MODEL.md (R-02 line and the "What counts" bullet) now say what the code does.
+2. **Gaming analysis, 5bc09a55.** TRUST-MODEL.md "Hidden for review by flags" and its Honest limits line now say: one group of three accounts can hide about 10 reports at once and about 30 an hour under the current flag allowance; flags can hide a Critical report, which disputes cannot, and a kept one never alerts people who arrive later; the rating does not move. "The hide never removes anything" is replaced.
+3. **Moderator line, 0ede3aed.** "People used Flag this report. Hidden by flags first, then most flags." in the template and both pins.
+4. **New mark on the hidden row, f7771264.** The plan says these rows are unread like other rows.
+   - Bell: `marksNew` lets the plain `own_review` row carry `bell-row--new` and a hidden "New." while unread. Other plain rows still never do; the old pin is untouched.
+   - Full list: `OwnPlain`, set only in `fillUpdatesPart`, and one change to the row line of `profile.html.tmpl`.
+   - That template belongs to quick 261117-vuf. Its branch does not touch that line, and `git merge-tree --write-tree worktree-wf_78222fb7-12f-1 worktree-wf_78222fb7-12f-2` merges clean. No CSS change was needed: no `--plain` rule overrides `--new`. Not checked again in a browser.
+
+**Tests after the fixes**
+- `go test ./... -p 1 -count=1 -v` on scratch `p9_vvb_fix` with `env -i`: exit 0, 22 packages ok, 6993 PASS lines (2508 top level), 0 FAIL, the same 3 SKIP (TestGeocodeLive, TestOfficialLive, TestScreeningFixture).
+- `node --test web/*.mjs`: 1654 pass, 0 fail, 0 skipped.
+- `go build ./...` and `go vet ./...`: clean.
