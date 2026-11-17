@@ -86,10 +86,12 @@ func TestEndedNearbyNoServerLocation(t *testing.T) {
 // TestEndedNearbyStatesCopy pins the exact words of the part's states in the
 // template (UI-SPEC 3c) and the two toasts of a link to a report that cannot be
 // shown, and that no user visible string holds an em or en dash.
+// Amended 2026-11-17 (quick 261117-vuf): the part is named Ended now, so the
+// location heading reads "Ended needs your location".
 func TestEndedNearbyStatesCopy(t *testing.T) {
 	tmpl := p13ReadTemplate(t, "profile.html.tmpl")
 	for _, words := range []string{
-		"<h3>Ended nearby needs your location</h3>", "<p>Open Nearby and allow location, then come back.</p>",
+		"<h3>Ended needs your location</h3>", "<p>Open Nearby and allow location, then come back.</p>",
 		"<h3>Couldn't load reports</h3>", "<p>Check your connection and try again.</p>",
 		`id="ended-retry">Try again</button>`,
 	} {

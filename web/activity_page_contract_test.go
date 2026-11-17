@@ -181,7 +181,8 @@ func TestActivityPageTemplateMarkup(t *testing.T) {
 	// its own error block with the same two lines): the two shared lines are
 	// counted inside the Ended nearby shell, from id="ended-nearby" to the else
 	// that follows it, and no longer across the whole template. Nothing else is
-	// loosened: each line is still written once in the shell.
+	// loosened: each line is still written once in the shell. Amended 2026-11-17
+	// (quick 261117-vuf): the part is named Ended, so is its location heading.
 	shellStart := strings.Index(tmpl, `id="ended-nearby"`)
 	shellEnd := shellStart + strings.Index(tmpl[shellStart:], "{{else}}")
 	if shellStart == -1 || shellEnd < shellStart {
@@ -189,7 +190,7 @@ func TestActivityPageTemplateMarkup(t *testing.T) {
 	}
 	shell := tmpl[shellStart:shellEnd]
 	for _, words := range []string{
-		"Ended nearby needs your location", "Open Nearby and allow location, then come back.",
+		"Ended needs your location", "Open Nearby and allow location, then come back.",
 		"Couldn't load reports", "Check your connection and try again.", "Try again",
 	} {
 		if n := strings.Count(shell, words); n != 1 {
