@@ -784,6 +784,11 @@ func partSection(t *testing.T, body, key string) string {
 // this replaces TestProfileTabsRenderFromTheAddress, which pinned the six tab
 // page. The Phase 3.1 and Phase 4 hands-on tests are walked on this layout after
 // Phase 3.4 is built.
+//
+// Amended 2026-11-17 (quick 261117-lq0, owner on the 7.1 UAT): the parts open
+// from Settings now, so the list keeps the title My activity with a back arrow
+// to /settings, and a part screen's back arrow goes to /settings too, not to
+// the list. Everything else is unchanged.
 func TestActivityPartsRenderFromTheAddress(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
 	one := newVerifiedClient(t, srv, mailer, "activity-parts-one@example.com")
@@ -816,8 +821,8 @@ func TestActivityPartsRenderFromTheAddress(t *testing.T) {
 		if !strings.Contains(body, `data-part=""`) {
 			t.Errorf("/profile does not render an empty data-part: %s", body)
 		}
-		if !strings.Contains(body, `<h1 class="app-topbar__title">My activity</h1>`) || strings.Contains(body, `class="app-topbar__back"`) {
-			t.Errorf("/profile top bar must be titled My activity with no back arrow")
+		if !strings.Contains(body, `<h1 class="app-topbar__title">My activity</h1>`) || !strings.Contains(body, `<a class="app-topbar__back" href="/settings"`) {
+			t.Errorf("/profile top bar must be titled My activity with a back arrow to /settings")
 		}
 
 		// The five sections, in order.
@@ -905,8 +910,8 @@ func TestActivityPartsRenderFromTheAddress(t *testing.T) {
 			if !strings.Contains(body, wantTitle) {
 				t.Errorf("part %q: the top bar title %s is missing", key, wantTitle)
 			}
-			if !strings.Contains(body, `<a class="app-topbar__back" href="/profile"`) {
-				t.Errorf("part %q: the back arrow to /profile is missing", key)
+			if !strings.Contains(body, `<a class="app-topbar__back" href="/settings"`) {
+				t.Errorf("part %q: the back arrow to /settings is missing", key)
 			}
 			if n := strings.Count(body, " data-current"); n != 1 {
 				t.Errorf("part %q: %d sections are marked current, want 1", key, n)
@@ -1067,6 +1072,9 @@ func TestActivityTabAliases(t *testing.T) {
 // only logout form the page carries. The name is kept so the history of the test
 // reads on. The Phase 3.1 and Phase 4 hands-on tests are walked on this layout
 // after Phase 3.4 is built.
+//
+// Amended 2026-11-17 (quick 261117-lq0): the bar's third place is Profile at
+// /me, and My activity is not a main place, so no item is current on /profile.
 func TestProfileRendersLogoutAndBottomNav(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
 	client := newVerifiedClient(t, srv, mailer, "activity-frame@example.com")
@@ -1099,7 +1107,7 @@ func TestProfileRendersLogoutAndBottomNav(t *testing.T) {
 	for i, want := range []struct {
 		href, label string
 		current     bool
-	}{{"/", "Nearby", false}, {"/alerts", "Official alerts", false}, {"/profile", "My activity", true}, {"/?post=1", "Report", false}} {
+	}{{"/", "Nearby", false}, {"/alerts", "Official alerts", false}, {"/me", "Profile", false}, {"/?post=1", "Report", false}} {
 		got := tabs[i]
 		if got[1] != want.href || got[3] != want.label || strings.Contains(got[2], "aria-current") != want.current {
 			t.Errorf("item %d is href %q label %q attrs %q, want %q %q current=%v", i, got[1], got[3], got[2], want.href, want.label, want.current)

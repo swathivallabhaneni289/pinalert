@@ -90,6 +90,33 @@ const (
 	activityPartPrefix = "/profile?part="
 )
 
+// Quick 261117-lq0 (owner, 2026-11-17): My activity is no longer a main place.
+// activityTitle is its phone top bar title on the list, and settingsHref is
+// where its back arrow goes on the list and on a part, because Settings is
+// where the parts are opened from now.
+const (
+	activityTitle = "My activity"
+	settingsHref  = "/settings"
+)
+
+// activityLink is one row of the My activity section of Settings (quick
+// 261117-lq0): the part's name and the same address the hub links to.
+type activityLink struct {
+	Name string
+	Href string
+}
+
+// activityLinks lists the five parts in the hub's order, with the hub's names
+// and addresses, for the My activity section of Settings. The words and the
+// addresses come from activityPartSpecs and activityPartHref only.
+func activityLinks() []activityLink {
+	links := make([]activityLink, 0, len(activityPartSpecs))
+	for _, spec := range activityPartSpecs {
+		links = append(links, activityLink{Name: spec.Name, Href: activityPartHref(spec.Key)})
+	}
+	return links
+}
+
 // activityPartHref is the address of one part screen. The key is always one of
 // the five constants, never the raw request value.
 func activityPartHref(key string) string {

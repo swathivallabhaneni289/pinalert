@@ -597,11 +597,15 @@ func TestProfileRendersSharedHeader(t *testing.T) {
 	}
 	bodyStr := string(respBody)
 
+	// Amended 2026-11-17 (quick 261117-lq0): the menu's links are /me and
+	// /settings (the menu is unchanged), and the link to /profile was the bar's
+	// My activity, which the bar no longer draws; so the menu target pinned here
+	// is /me.
 	wantSubstrings := []string{
 		`aria-label="Account menu"`,
 		`aria-haspopup="menu"`,
 		`role="menu"`,
-		`href="/profile"`,
+		`role="menuitem" class="account-menu__item" href="/me"`,
 		`action="/auth/logout"`,
 		"account-menu.js?v=",
 	}

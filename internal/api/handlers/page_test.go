@@ -338,9 +338,55 @@ func TestPageShellCarriesVoteRadius(t *testing.T) {
 // 3.4, D-10 and D-12): navFor copies mainNavItems, so a call never changes the
 // list a later call reads, marks the matching place current and nothing else,
 // and Settings (which is not a main place) marks none and hides the gear.
+//
+// Amended 2026-11-17 (quick 261117-lq0, owner on the 7.1 UAT: "yes build it"):
+// the places are Nearby, Official alerts and Profile (href /me, icon user). My
+// activity is not a main place any more, so navFor(NavActivity) marks none and
+// has no title of its own; the Demo keeps My activity in its own list.
 func TestNavForMarksOnlyTheCurrentPlace(t *testing.T) {
 	before := make([]NavItem, len(mainNavItems))
 	copy(before, mainNavItems)
+
+	want := []NavItem{
+		{Key: NavNearby, Label: "Nearby", Href: "/", Icon: "map-pin"},
+		{Key: NavAlerts, Label: "Official alerts", Href: "/alerts", Icon: "megaphone"},
+		{Key: NavProfile, Label: "Profile", Href: "/me", Icon: "user"},
+	}
+	if len(mainNavItems) != len(want) {
+		t.Fatalf("mainNavItems has %d places, want %d", len(mainNavItems), len(want))
+	}
+	for i := range want {
+		if mainNavItems[i] != want[i] {
+			t.Errorf("mainNavItems[%d] = %+v, want %+v", i, mainNavItems[i], want[i])
+		}
+	}
+
+	activity := navFor(NavActivity)
+	for _, item := range activity.Items {
+		if item.Current {
+			t.Errorf("navFor(NavActivity) marks %q current; My activity is not a main place", item.Label)
+		}
+	}
+	if activity.Title != "" {
+		t.Errorf("navFor(NavActivity) title = %q, want none (the page passes its own)", activity.Title)
+	}
+
+	// The Demo's list is its own and unchanged: Nearby, Official alerts, My
+	// activity at /demo/activity.
+	demoV := demoNavFor(NavActivity, "", "")
+	gotDemo := make([]string, 0, len(demoV.Items))
+	for _, item := range demoV.Items {
+		gotDemo = append(gotDemo, item.Label+" "+item.Href+" "+item.Icon)
+		if item.Current != (item.Key == NavActivity) {
+			t.Errorf("demoNavFor(NavActivity) item %q current = %v", item.Label, item.Current)
+		}
+	}
+	if strings.Join(gotDemo, ", ") != "Nearby /demo map-pin, Official alerts /demo/alerts megaphone, My activity /demo/activity user" {
+		t.Errorf("the Demo bar is %v, want Nearby, Official alerts, My activity at the Demo's own pages", gotDemo)
+	}
+	if demoV.Title != "My activity" {
+		t.Errorf("demoNavFor(NavActivity) title = %q, want My activity", demoV.Title)
+	}
 
 	for _, tc := range []struct {
 		current, title string
@@ -348,7 +394,7 @@ func TestNavForMarksOnlyTheCurrentPlace(t *testing.T) {
 	}{
 		{NavNearby, "Nearby", 0},
 		{NavAlerts, "Official alerts", 1},
-		{NavActivity, "My activity", 2},
+		{NavProfile, "Profile", 2},
 	} {
 		v := navFor(tc.current)
 		if len(v.Items) != 3 {
