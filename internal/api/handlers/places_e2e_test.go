@@ -141,10 +141,13 @@ func TestSettingsRows(t *testing.T) {
 	// Amended 2026-11-17 (quick 261117-lq0 review): each My activity row adds
 	// the part's section id as a fragment, so the laptop, which stacks all five
 	// parts, opens with the picked one in view. The hub keeps the plain address.
+	//
+	// Amended 2026-11-17 (quick 261117-vuf, owner on the 7.1 UAT: "I think it all
+	// should just maybe come under my activity"): the first section is titled
+	// Activity and holds one row, My activity, to the plain /profile address. The
+	// parts are listed on that page.
 	wantHrefs := []string{
-		"/profile?part=updates#part-updates", "/profile?part=posted#part-posted",
-		"/profile?part=confirmed#part-confirmed", "/profile?part=disputed#part-disputed",
-		"/profile?part=ended#part-ended",
+		"/profile",
 		"/disclaimer", "/policy#policy", "/low",
 	}
 	if strings.Join(hrefs, ",") != strings.Join(wantHrefs, ",") {
@@ -152,28 +155,31 @@ func TestSettingsRows(t *testing.T) {
 	}
 	activity := regexp.MustCompile(`(?s)<section class="place-section" id="settings-activity-section" aria-labelledby="settings-activity-title">.*?</section>`).FindString(body)
 	if activity == "" {
-		t.Fatalf("/settings has no My activity section")
+		t.Fatalf("/settings has no Activity section")
 	}
 	if first := strings.Index(body, `<section class="place-section"`); first != strings.Index(body, activity) {
-		t.Errorf("My activity is not the first section of Settings")
+		t.Errorf("Activity is not the first section of Settings")
 	}
-	if !strings.Contains(activity, `<h2 class="place-section__title" id="settings-activity-title">My activity</h2>`) {
-		t.Errorf("the My activity section has no My activity title")
+	if !strings.Contains(activity, `<h2 class="place-section__title" id="settings-activity-title">Activity</h2>`) {
+		t.Errorf("the first section is not titled Activity")
 	}
 	labels := regexp.MustCompile(`<span class="place-row__label">([^<]*)</span>`).FindAllStringSubmatch(activity, -1)
 	var names []string
 	for _, m := range labels {
 		names = append(names, m[1])
 	}
-	if strings.Join(names, ",") != "Updates,Posted by you,You confirmed,You disputed,Ended nearby" {
-		t.Errorf("the My activity rows are %v, want the hub's five part names in order", names)
+	if strings.Join(names, ",") != "My activity" {
+		t.Errorf("the Activity rows are %v, want one My activity row", names)
 	}
-	if n := strings.Count(activity, "app-icon--chevron-right"); n != 5 {
-		t.Errorf("the My activity section draws %d chevrons, want 5", n)
+	if n := strings.Count(activity, `<a class="place-row" href="/profile">`); n != 1 {
+		t.Errorf("the Activity section holds %d rows to /profile, want 1", n)
 	}
-	for _, banned := range []string{"place-row__sub", "place-row__value", "app-icon--bell", "app-icon--history"} {
+	if n := strings.Count(activity, "app-icon--chevron-right"); n != 1 {
+		t.Errorf("the Activity section draws %d chevrons, want 1", n)
+	}
+	for _, banned := range []string{"place-row__sub", "place-row__value", "app-icon--bell", "app-icon--history", "part=", "#part-"} {
 		if strings.Contains(activity, banned) {
-			t.Errorf("the My activity section holds %q; its rows have no sub lines, counts or icons", banned)
+			t.Errorf("the Activity section holds %q; its one row has no sub line, count, icon or part address", banned)
 		}
 	}
 	// Amended 2026-10-17 by Phase 3.4 plan 06 (D-25, D-24b): About you renders

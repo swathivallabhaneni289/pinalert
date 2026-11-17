@@ -7,6 +7,8 @@ package handlers_test
 
 import (
 	"context"
+	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -39,9 +41,15 @@ func p31SeedResolutionRow(t *testing.T, pool *pgxpool.Pool, reportID, accountID 
 	}
 }
 
-// TestTakeBackLimitHidesActivityReopen proves D-22 on the page: a poster who
-// has used both undos on a report they then resolved sees no Reopen hook and
-// gets the used hook instead, while a poster with one undo left keeps Reopen.
+// TestTakeBackLimitHidesActivityReopen proved D-22 on the page: a poster who
+// had used both undos on a report they then resolved saw no Reopen hook and got
+// the used hook instead, while a poster with one undo left kept Reopen.
+//
+// Amended 2026-11-17 (quick 261117-vuf, owner on the 7.1 UAT): Posted, the only
+// part that carried the poster's Reopen and the used hook, left My activity, so
+// the page now lists neither report and carries neither hook. The limit itself
+// is the server's (D-22): the poster's reopen with both undos used is refused,
+// and with one left it lifts the retraction.
 func TestTakeBackLimitHidesActivityReopen(t *testing.T) {
 	srv, mailer, pool := newE2EServer(t)
 	email := "activity-p31-limit@example.com"
@@ -67,24 +75,25 @@ func TestTakeBackLimitHidesActivityReopen(t *testing.T) {
 	}
 
 	body := getProfile(t, client, srv.URL)
+	for _, id := range []int64{spent, spare} {
+		if strings.Contains(body, `data-report-id="`+strconv.FormatInt(id, 10)+`"`) {
+			t.Errorf("My activity lists the account's own report %d", id)
+		}
+	}
+	for _, gone := range []string{"data-can-reopen", "data-undos-used"} {
+		if strings.Contains(body, gone) {
+			t.Errorf("My activity carries %s; it left with Posted", gone)
+		}
+	}
 
-	spentRow := p15ProfileRow(t, body, spent)
-	if p15HasAttr(spentRow, "data-can-reopen") {
-		t.Errorf("a report with both undos used still carries data-can-reopen: %s", spentRow)
+	refused := postVote(t, client, srv.URL, spent, "reopen", loc)
+	refused.Body.Close()
+	if refused.StatusCode == http.StatusOK {
+		t.Errorf("a reopen with both undos used was accepted, want it refused (D-22)")
 	}
-	if got := p15Attr(t, spentRow, "data-undos-used"); got != "true" {
-		t.Errorf("data-undos-used = %q, want true", got)
-	}
-	if got := p15Attr(t, spentRow, "data-visibility"); got != "retracted" {
-		t.Errorf("data-visibility = %q, want retracted", got)
-	}
-
-	spareRow := p15ProfileRow(t, body, spare)
-	if !p15HasAttr(spareRow, "data-can-reopen") {
-		t.Errorf("a report with one undo left lost its Reopen hook: %s", spareRow)
-	}
-	if p15HasAttr(spareRow, "data-undos-used") {
-		t.Errorf("a report with one undo left carries data-undos-used: %s", spareRow)
+	resp = postVote(t, client, srv.URL, spare, "reopen", loc)
+	if vis, _ := decodeVoteResponse(t, resp); vis == "retracted" {
+		t.Errorf("a reopen with one undo left kept the report retracted (D-22)")
 	}
 }
 
@@ -130,12 +139,10 @@ func TestActivityVotedRescueCard(t *testing.T) {
 		t.Errorf("a voted card carries a Reopen hook or the used hook: %s", row)
 	}
 
-	// The poster's own card stays exact.
-	ownRow := p15ProfileRow(t, getProfile(t, b, srv.URL), rescueID)
-	if !strings.Contains(ownRow, secret) {
-		t.Errorf("the poster's own card lost its description: %s", ownRow)
-	}
-	if strings.Contains(ownRow, "Approximate location") {
-		t.Errorf("the poster's own card is marked approximate: %s", ownRow)
+	// Amended 2026-11-17 (quick 261117-vuf): the poster's own card left My
+	// activity with Posted (the profile shows the poster's reports), so B's page
+	// lists no card for it at all.
+	if strings.Contains(getProfile(t, b, srv.URL), `data-report-id="`+strconv.FormatInt(rescueID, 10)+`"`) {
+		t.Errorf("the poster's My activity lists the poster's own report")
 	}
 }

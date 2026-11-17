@@ -14,6 +14,11 @@
  * as cards. Everything here uses the house tokens. No text is faded: a disputed
  * or expired row keeps full contrast and is marked by a grey disc and a status
  * chip, never by opacity (D-07).
+ *
+ * Amended 2026-11-17 (quick 261117-vuf): the list holds three parts now,
+ * Confirmed, Disputed and Ended, stacked the same way on a laptop. Posted and
+ * its reporter record card left (your posts are on your profile), and Updates
+ * is drawn alone on its own screen, opened from the bell.
  */
 
 /* The chip tints, as variables on the page, light first. Ongoing takes the
@@ -275,54 +280,6 @@ main.profile-page .activity-card.vis-expired .visibility-tag:not([hidden]),
 main.profile-page .activity-card.vis-held .visibility-tag:not([hidden]),
 main.profile-page .activity-card.vis-removed .visibility-tag:not([hidden]) {
   display: none;
-}
-
-/* The record card above Posted by you shows the account's own label once, so
-   the reporter words on the account's own posts are not repeated. A voted card
-   keeps them, because that is another person's record. */
-main.profile-page .activity-card--post .trust-reporter:not([hidden]) {
-  display: none;
-}
-
-/* The reporter record card, one definition for both sizes. */
-main.profile-page .profile-record {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  column-gap: var(--space-md);
-  align-items: center;
-  margin: 0 0 var(--space-md);
-  padding: var(--space-md);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: var(--color-bg);
-}
-
-main.profile-page .profile-record .profile-record__kicker {
-  grid-column: 1;
-  margin: 0;
-  font-size: var(--font-size-label);
-  line-height: var(--line-height-label);
-  font-weight: var(--font-weight-regular);
-  color: var(--color-text-muted);
-}
-
-main.profile-page .profile-record .profile-record__label {
-  grid-column: 1;
-  margin: 0;
-  font-size: var(--font-size-heading);
-  line-height: var(--line-height-heading);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text);
-}
-
-main.profile-page .profile-record .profile-record__counts {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  margin: 0;
-  font-size: var(--font-size-label);
-  line-height: var(--line-height-label);
-  font-weight: var(--font-weight-regular);
-  color: var(--color-text);
 }
 
 /* Ended nearby: the two groups, the cut line and the states. The rows of the

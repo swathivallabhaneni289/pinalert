@@ -425,12 +425,19 @@ func TestPhoneActivityPageMarkup(t *testing.T) {
 			t.Errorf("profile.html.tmpl still holds %s", gone)
 		}
 	}
+	// Amended 2026-11-17 (quick 261117-vuf, owner on the 7.1 UAT): Posted and
+	// its record card left, and the hub is not drawn on the Updates screen.
 	p13Ordered(t, profile, "profile.html.tmpl",
 		`<main class="profile-page"`, `data-part="{{.CurrentPart}}"`,
+		`{{if ne .CurrentPart "updates"}}`,
 		`<nav class="activity-hub" aria-label="My activity">`, `{{range .Parts}}`, `class="activity-hub__row"`, `href="{{.Href}}"`,
-		`</nav>`, `<section class="activity-part`, `{{if eq .Key "posted"}}`,
-		`{{with $.Record}}`, `<section class="profile-record"`, `{{.Label}}`, `{{.Counts}}`, `</section>`,
+		`</nav>`, `<section class="activity-part`,
 		`<ol class="profile-report-list">`)
+	for _, gone := range []string{`{{if eq .Key "posted"}}`, `$.Record`, `profile-record`} {
+		if strings.Contains(profile, gone) {
+			t.Errorf("profile.html.tmpl still holds %s; the record card left with Posted", gone)
+		}
+	}
 
 	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-10): the
 	// Activity page carries the same four item app bar as the map page, drawn

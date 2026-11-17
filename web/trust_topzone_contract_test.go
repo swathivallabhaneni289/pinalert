@@ -128,10 +128,10 @@ func TestTrustStateLineMarkup(t *testing.T) {
 		"body.appendChild(PinalertTrust.createStateLine('report-row__stateline', tag, trustBlock))",
 		"body.appendChild(trustBlock.el)",
 		"PinalertTrust.updateTrustBlock(trustBlock, readRowTrust(row))",
-		"PinalertVotes.createReopenControl(row.dataset.reportId)",
 	)
-	p13MustNotContain(t, "activity.js", activity, "body.appendChild(tag)")
-	p13MustNotContain(t, "activity.js onReopenClick", jsFunctionBody(t, activity, "onReopenClick(row, block)"), "createStateLine(")
+	// Amended 2026-11-17 (quick 261117-vuf): the Reopen control and its click
+	// handler left with Posted.
+	p13MustNotContain(t, "activity.js", activity, "body.appendChild(tag)", "createReopenControl", "onReopenClick")
 
 	// T-03-23-01: one call per consumer, and the first argument is a quoted
 	// literal that ends in __stateline.

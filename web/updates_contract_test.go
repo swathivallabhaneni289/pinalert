@@ -287,13 +287,16 @@ func TestUpdatesPartMarkup(t *testing.T) {
 	if n := strings.Count(tmpl, `id="updates-rows"`); n != 1 {
 		t.Errorf("the template writes id=\"updates-rows\" %d times, want 1", n)
 	}
-	// The hub row: the red tag stands in for the count while anything is unread.
-	if n := strings.Count(tmpl, "activity-hub__new"); n != 1 {
-		t.Errorf("the template writes activity-hub__new %d times, want 1 (the hub row)", n)
+	// The hub row: the red tag stood in for the count while anything was unread.
+	// Amended 2026-11-17 (quick 261117-vuf, owner on the 7.1 UAT): Updates is no
+	// hub row now, only the screen the bell's See all updates opens, so the hub
+	// writes no new tag and the hub is not drawn on that screen.
+	if n := strings.Count(tmpl, "activity-hub__new"); n != 0 {
+		t.Errorf("the template writes activity-hub__new %d times, want 0 (Updates is no hub row)", n)
 	}
-	p421InOrder(t, "the hub row tag", tmpl,
-		`{{if .ShowCount}}{{if and (eq .Key "updates") .NewCount}}`, `<span class="activity-hub__new">{{.NewCount}} new</span>`,
-		`{{else}}<span class="activity-hub__count">{{.Count}}</span>{{end}}`)
+	p421InOrder(t, "the hub row count", tmpl,
+		`{{if ne .CurrentPart "updates"}}`, `<nav class="activity-hub"`,
+		`{{if .ShowCount}}<span class="activity-hub__count">{{.Count}}</span>`)
 	// The shared empty state is still written once for the row parts.
 	if n := strings.Count(tmpl, `<h3>{{.EmptyTitle}}</h3>`); n != 2 {
 		t.Errorf("the empty title is written %d times, want 2 (row parts and Ended nearby)", n)

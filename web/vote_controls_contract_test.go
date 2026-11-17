@@ -424,14 +424,14 @@ func TestReopenControlIsSharedFromVotes(t *testing.T) {
 	p09MustContain(t, "the export object", votes,
 		"createReopenControl: createReopenControl", "setReopenLabel: setVoteButtonLabel")
 
+	// Amended 2026-11-17 (quick 261117-vuf, owner on the 7.1 UAT): Posted left
+	// My activity, and with it the only Reopen the Activity page drew, so
+	// activity.js builds no Reopen at all. The builder above stays in votes.js,
+	// where the report's own block uses it.
+	p09MustContain(t, "votes.js", votes, "createReopenControl(reportId).button")
 	activity := p09ReadJS(t, "static/js/activity.js")
-	p09MustContain(t, "activity.js", activity,
-		"PinalertVotes.createReopenControl(row.dataset.reportId)",
-		"block.controls.remove()", "block.error.remove()")
-	if n := strings.Count(activity, "PinalertVotes.setReopenLabel("); n < 3 {
-		t.Errorf("activity.js must write Reopen labels through PinalertVotes.setReopenLabel at least 3 times, found %d", n)
-	}
 	p09MustNotContain(t, "activity.js", activity,
+		"createReopenControl", "setReopenLabel(",
 		"function buildReopenControl", "createElement('button')", "'vote-controls'", "'vote-error'",
 		"PinalertVotes.createVoteBlock(")
 	for _, pattern := range []string{

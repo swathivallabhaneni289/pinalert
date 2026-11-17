@@ -3,8 +3,9 @@
   profile.html.tmpl, so the real stylesheet and the real scripts (activity.js,
   ended-nearby.js and the trust and visibility builders) find every class and id
   they expect. It shows what the visitor did in this visit and nothing else:
-  Posted by you, You confirmed, You disputed and Ended nearby, each with the real
-  layout and the real empty state. It differs in what the Demo needs:
+  Confirmed, Disputed and Ended, each with the real layout and the real empty
+  state (amended 2026-11-17, quick 261117-vuf: the same three parts and one word
+  names as the real page, and no Posted). It differs in what the Demo needs:
 
     - the Demo strip is the first element, as on every Demo screen, and every
       card carries the Demo tag in its status cell;
@@ -101,7 +102,7 @@
             <p>{{.EmptyText}}</p>
           </div>
           <div class="empty-state profile-empty-state activity-empty" id="ended-location" hidden>
-            <h3>Ended nearby needs your location</h3>
+            <h3>Ended needs your location</h3>
             <p>Open Nearby and allow location, then come back.</p>
           </div>
           <div class="error-state activity-empty" id="ended-error" hidden>
@@ -128,9 +129,7 @@
                 data-visibility="{{.Visibility}}"
                 data-visibility-reason="{{.VisibilityReason}}"
                 data-expired="{{.Expired}}"
-                data-trust="{{.TrustJSON}}"
-                {{if .CanReopen}}data-can-reopen="true"{{end}}
-                {{if .UndosUsed}}data-undos-used="true"{{end}}>
+                data-trust="{{.TrustJSON}}">
               <span class="icon-badge activity-card__icon" aria-hidden="true"><span class="icon-glyph {{.IconGlyph}}"></span></span>
               <div class="activity-card__report">
                 <p class="report-row__title">{{.Description}}</p>

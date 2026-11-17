@@ -33,10 +33,12 @@ func TestBrowserFindingF4TrustToggleTakesFocusOnClick(t *testing.T) {
 		"toggle.focus();")
 
 	// The Activity page is the only page that mounts the toggle, and its
-	// script still has exactly one listener (A29).
+	// script still has exactly one listener (A29). Amended 2026-11-17 (quick
+	// 261117-vuf): that one listener was the Reopen click, which left with
+	// Posted, so the script adds none and the toggle keeps trust.js's own.
 	act := p16ReadStatic(t, "static/js/activity.js")
-	if n := strings.Count(act, "addEventListener"); n != 1 {
-		t.Errorf("activity.js has %d addEventListener occurrences, want 1", n)
+	if n := strings.Count(act, "addEventListener"); n != 0 {
+		t.Errorf("activity.js has %d addEventListener occurrences, want 0", n)
 	}
 }
 

@@ -20,6 +20,13 @@ import (
 // the record card source (W-10) and the words each kind of card carries (W-06)
 // are kept. The Phase 3.1 and Phase 4 hands-on tests are walked on this layout
 // after Phase 3.4 is built.
+//
+// Amended 2026-11-17 (quick 261117-vuf, owner, 7.1 UAT): Posted left (your
+// posts are on your profile) and the names are one word, Confirmed, Disputed
+// and Ended. The account's own posts are no longer cards, so the record card
+// and the poster's Reopen left with them; the tests that pinned those now pin
+// that posts are not listed and no card offers Reopen. Updates is still built
+// for its own screen, and activityShownParts keeps it out of the list.
 
 var wm5Now = time.Date(2031, 3, 1, 12, 0, 0, 0, time.UTC)
 
@@ -101,14 +108,16 @@ func wm5Part(t *testing.T, view activityPageView, key string) activityPart {
 
 func TestParseActivityPart(t *testing.T) {
 	cases := []struct{ part, tab, want string }{
-		// The five part values are honoured exactly.
+		// The four part values are honoured exactly.
 		{"updates", "", "updates"},
-		{"posted", "", "posted"},
 		{"confirmed", "", "confirmed"},
 		{"disputed", "", "disputed"},
 		{"ended", "", "ended"},
-		// The old tab values are read only aliases.
-		{"", "posts", "posted"},
+		// Posted left (quick 261117-vuf): its value and its old tab alias
+		// land on the list.
+		{"posted", "", ""},
+		{"", "posts", ""},
+		// The other old tab values are read only aliases.
 		{"", "votes", "confirmed"},
 		{"", "disputes", "disputed"},
 		// All, resolved and not-resolved land on the list.
@@ -119,15 +128,15 @@ func TestParseActivityPart(t *testing.T) {
 		{"", "", ""},
 		{"nonsense", "", ""},
 		{"", "nonsense", ""},
-		{"Posted", "", ""},
-		{"POSTED", "", ""},
-		{"posted ", "", ""},
-		{" posted", "", ""},
-		{"", "Posts", ""},
-		{"", "posts ", ""},
-		{"posted&part=ended", "", ""},
+		{"Ended", "", ""},
+		{"CONFIRMED", "", ""},
+		{"ended ", "", ""},
+		{" ended", "", ""},
+		{"", "Votes", ""},
+		{"", "votes ", ""},
+		{"disputed&part=ended", "", ""},
 		// The part wins over the tab when both are sent.
-		{"ended", "posts", "ended"},
+		{"ended", "votes", "ended"},
 		{"updates", "votes", "updates"},
 	}
 	for _, c := range cases {
@@ -137,8 +146,9 @@ func TestParseActivityPart(t *testing.T) {
 	}
 }
 
-// TestActivityPartsInOrder pins the five parts, their names, their left lines
-// from UI-SPEC 3a, their hub icons and their addresses.
+// TestActivityPartsInOrder pins the parts, their one word names (quick
+// 261117-vuf), their left lines from UI-SPEC 3a, their hub icons and their
+// addresses. Updates is built first for its own screen.
 func TestActivityPartsInOrder(t *testing.T) {
 	view := wm5Cards(t, service.ActivityPage{}, "")
 	var keys, names, lines, icons, hrefs []string
@@ -149,15 +159,14 @@ func TestActivityPartsInOrder(t *testing.T) {
 		icons = append(icons, p.Icon)
 		hrefs = append(hrefs, p.Href)
 	}
-	if want := []string{"updates", "posted", "confirmed", "disputed", "ended"}; !slices.Equal(keys, want) {
+	if want := []string{"updates", "confirmed", "disputed", "ended"}; !slices.Equal(keys, want) {
 		t.Errorf("keys = %v, want %v", keys, want)
 	}
-	if want := []string{"Updates", "Posted by you", "You confirmed", "You disputed", "Ended nearby"}; !slices.Equal(names, want) {
+	if want := []string{"Updates", "Confirmed", "Disputed", "Ended"}; !slices.Equal(names, want) {
 		t.Errorf("names = %v, want %v", names, want)
 	}
 	wantLines := []string{
 		"Changes on reports you posted or voted on, newest first.",
-		"Reports you posted. Open one to resolve or reopen it.",
 		"Reports you said are true.",
 		"Reports you said are wrong.",
 		"Everyone's reports near you that ended in the last 7 days.",
@@ -165,10 +174,10 @@ func TestActivityPartsInOrder(t *testing.T) {
 	if !slices.Equal(lines, wantLines) {
 		t.Errorf("lines = %v, want %v", lines, wantLines)
 	}
-	if want := []string{"bell", "circle-plus", "check-circle", "circle-x", "history"}; !slices.Equal(icons, want) {
+	if want := []string{"bell", "check-circle", "circle-x", "history"}; !slices.Equal(icons, want) {
 		t.Errorf("icons = %v, want %v", icons, want)
 	}
-	wantHrefs := []string{"/profile?part=updates", "/profile?part=posted", "/profile?part=confirmed", "/profile?part=disputed", "/profile?part=ended"}
+	wantHrefs := []string{"/profile?part=updates", "/profile?part=confirmed", "/profile?part=disputed", "/profile?part=ended"}
 	if !slices.Equal(hrefs, wantHrefs) {
 		t.Errorf("hrefs = %v, want %v", hrefs, wantHrefs)
 	}
@@ -179,12 +188,38 @@ func TestActivityPartsInOrder(t *testing.T) {
 	}
 }
 
-// TestActivityPartEmptyStates pins the five empty titles and texts of UI-SPEC 3c.
+// TestActivityShownParts pins what each screen draws (quick 261117-vuf): the
+// list and the three part screens draw exactly Confirmed, Disputed and Ended in
+// that order, and the Updates screen draws Updates alone.
+func TestActivityShownParts(t *testing.T) {
+	keysOf := func(parts []activityPart) []string {
+		var keys []string
+		for _, p := range parts {
+			keys = append(keys, p.Key)
+		}
+		return keys
+	}
+	three := []string{"confirmed", "disputed", "ended"}
+	for _, current := range []string{"", "confirmed", "disputed", "ended"} {
+		view := wm5Cards(t, wm5MixedPage(), current)
+		if got := keysOf(activityShownParts(view.Parts, view.CurrentPart)); !slices.Equal(got, three) {
+			t.Errorf("screen %q draws %v, want %v", current, got, three)
+		}
+	}
+	view := wm5Cards(t, wm5MixedPage(), "updates")
+	if got := keysOf(activityShownParts(view.Parts, view.CurrentPart)); !slices.Equal(got, []string{"updates"}) {
+		t.Errorf("the Updates screen draws %v, want only updates", got)
+	}
+	if view.CurrentName() != "Updates" {
+		t.Errorf("the Updates screen is named %q, want Updates", view.CurrentName())
+	}
+}
+
+// TestActivityPartEmptyStates pins the empty titles and texts of UI-SPEC 3c.
 func TestActivityPartEmptyStates(t *testing.T) {
 	view := wm5Cards(t, service.ActivityPage{}, "")
 	want := map[string][2]string{
 		"updates":   {"No updates yet", "Changes on reports you posted or voted on will show here."},
-		"posted":    {"No reports yet", "Reports you post will appear here."},
 		"confirmed": {"No confirmations yet", "Reports you confirm will appear here."},
 		"disputed":  {"No disputes yet", "Reports you dispute will appear here."},
 		"ended":     {"No ended reports nearby", "Nothing in this area was resolved or faded out in the last 7 days."},
@@ -194,56 +229,39 @@ func TestActivityPartEmptyStates(t *testing.T) {
 			t.Errorf("part %q empty = %v, want %v", p.Key, got, want[p.Key])
 		}
 	}
-	if len(wm5AllRows(view)) != 0 || view.Record != nil {
-		t.Errorf("empty account has %d rows and record %v", len(wm5AllRows(view)), view.Record)
+	if len(wm5AllRows(view)) != 0 {
+		t.Errorf("empty account has %d rows", len(wm5AllRows(view)))
 	}
 }
 
-// TestActivityPartMembership is W-03 rewritten for the parts (D-21): a post is
-// only in Posted by you, a confirm vote only in You confirmed, a dispute only in
-// You disputed, whatever the report's state. Counts equal row counts; Updates and
-// Ended nearby hold no server rows. It also pins which cards may offer Reopen
-// (W-09) and the status word of each state.
+// TestActivityPartMembership is W-03 rewritten for the parts (D-21): a confirm
+// vote is only in Confirmed and a dispute only in Disputed, whatever the
+// report's state, and the account's own post is in no part at all (quick
+// 261117-vuf: it is on the profile). Counts equal row counts; Updates and Ended
+// hold no server rows. It also pins the status word of each state.
 func TestActivityPartMembership(t *testing.T) {
 	type tc struct {
 		name       string
-		post       *service.ActivityReport
 		vote       *service.VotedReport
 		wantPart   string
-		wantReopen bool
 		wantKind   string
 		wantStatus string
-	}
-	post := func(vis service.Visibility, expired bool) *service.ActivityReport {
-		p := wm5Post(1, vis, expired)
-		return &p
 	}
 	vote := func(v service.VoteValue, vis service.Visibility, expired bool) *service.VotedReport {
 		p := wm5Vote(1, v, vis, expired)
 		return &p
 	}
 	cases := []tc{
-		{"post live unexpired", post(service.VisibilityLive, false), nil, "posted", false, "post", "Ongoing"},
-		{"post provisional expired", post(service.VisibilityProvisional, true), nil, "posted", false, "post", "Expired"},
-		{"post retracted unexpired", post(service.VisibilityRetracted, false), nil, "posted", true, "post", "Resolved"},
-		{"post retracted expired", post(service.VisibilityRetracted, true), nil, "posted", false, "post", "Resolved"},
-		{"post hidden unexpired", post(service.VisibilityHidden, false), nil, "posted", false, "post", "Disputed"},
-		{"vote confirm live", nil, vote(service.VoteConfirm, service.VisibilityLive, false), "confirmed", false, "vote", "Ongoing"},
-		{"vote confirm hidden unexpired", nil, vote(service.VoteConfirm, service.VisibilityHidden, false), "confirmed", false, "vote", "Disputed"},
-		{"vote confirm retracted unexpired", nil, vote(service.VoteConfirm, service.VisibilityRetracted, false), "confirmed", false, "vote", "Resolved"},
-		{"vote dispute provisional", nil, vote(service.VoteDispute, service.VisibilityProvisional, false), "disputed", false, "dispute", "Ongoing"},
-		{"vote dispute expired", nil, vote(service.VoteDispute, service.VisibilityProvisional, true), "disputed", false, "dispute", "Expired"},
-		{"vote dispute retracted expired", nil, vote(service.VoteDispute, service.VisibilityRetracted, true), "disputed", false, "dispute", "Resolved"},
+		{"vote confirm live", vote(service.VoteConfirm, service.VisibilityLive, false), "confirmed", "vote", "Ongoing"},
+		{"vote confirm hidden unexpired", vote(service.VoteConfirm, service.VisibilityHidden, false), "confirmed", "vote", "Disputed"},
+		{"vote confirm retracted unexpired", vote(service.VoteConfirm, service.VisibilityRetracted, false), "confirmed", "vote", "Resolved"},
+		{"vote dispute provisional", vote(service.VoteDispute, service.VisibilityProvisional, false), "disputed", "dispute", "Ongoing"},
+		{"vote dispute expired", vote(service.VoteDispute, service.VisibilityProvisional, true), "disputed", "dispute", "Expired"},
+		{"vote dispute retracted expired", vote(service.VoteDispute, service.VisibilityRetracted, true), "disputed", "dispute", "Resolved"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			var page service.ActivityPage
-			if c.post != nil {
-				page.Posts = []service.ActivityReport{*c.post}
-			}
-			if c.vote != nil {
-				page.Votes = []service.VotedReport{*c.vote}
-			}
+			page := service.ActivityPage{Votes: []service.VotedReport{*c.vote}}
 			view := wm5Cards(t, page, "")
 			card := wm5Card(t, view, 1)
 			for _, p := range view.Parts {
@@ -254,9 +272,6 @@ func TestActivityPartMembership(t *testing.T) {
 				if p.Count != len(p.Rows) {
 					t.Errorf("part %q count %d but %d rows", p.Key, p.Count, len(p.Rows))
 				}
-			}
-			if card.CanReopen != c.wantReopen {
-				t.Errorf("CanReopen = %v, want %v", card.CanReopen, c.wantReopen)
 			}
 			if card.Kind != c.wantKind {
 				t.Errorf("Kind = %q, want %q", card.Kind, c.wantKind)
@@ -281,19 +296,33 @@ func TestActivityPartMembership(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("the account's own posts are no cards", func(t *testing.T) {
+		// Quick 261117-vuf: whatever the post's state, including a resolved
+		// unexpired one that once offered Reopen, it is listed in no part.
+		for _, vis := range []service.Visibility{service.VisibilityLive, service.VisibilityProvisional, service.VisibilityRetracted, service.VisibilityHidden} {
+			for _, expired := range []bool{false, true} {
+				view := wm5Cards(t, service.ActivityPage{Posts: []service.ActivityReport{wm5Post(1, vis, expired)}}, "")
+				if n := len(wm5AllRows(view)); n != 0 {
+					t.Errorf("post %s expired %v made %d cards, want none", vis, expired, n)
+				}
+			}
+		}
+	})
 }
 
 // TestActivityStatusWordsForModeratedRows pins the two Phase 4 words and their
-// precedence over the state words.
+// precedence over the state words. Amended 2026-11-17 (quick 261117-vuf): the
+// cards are voted cards now, since own posts are no longer listed.
 func TestActivityStatusWordsForModeratedRows(t *testing.T) {
-	held := wm5Post(1, service.VisibilityWithheld, false)
+	held := wm5Vote(1, service.VoteConfirm, service.VisibilityWithheld, false)
 	held.Reason = service.ReasonAwaitingTextCheck
-	removed := wm5Post(2, service.VisibilityWithheld, false)
+	removed := wm5Vote(2, service.VoteConfirm, service.VisibilityWithheld, false)
 	removed.Reason = service.ReasonRemovedAfterReview
-	heldExpired := wm5Post(3, service.VisibilityWithheld, true)
+	heldExpired := wm5Vote(3, service.VoteDispute, service.VisibilityWithheld, true)
 	heldExpired.Reason = service.ReasonAwaitingTextCheck
 
-	view := wm5Cards(t, service.ActivityPage{Posts: []service.ActivityReport{held, removed, heldExpired}}, "")
+	view := wm5Cards(t, service.ActivityPage{Votes: []service.VotedReport{held, removed, heldExpired}}, "")
 	want := map[int64]string{1: "Waiting for a text check", 2: "Removed after review", 3: "Expired"}
 	for id, w := range want {
 		if got := wm5Card(t, view, id).StatusWord; got != w {
@@ -302,8 +331,8 @@ func TestActivityStatusWordsForModeratedRows(t *testing.T) {
 	}
 }
 
-// wm5MixedPage holds four cards: a live post, a resolved post, a confirmed
-// vote and a disputed vote.
+// wm5MixedPage holds a live post, a resolved post, a confirmed vote and a
+// disputed vote. Since quick 261117-vuf only the two votes become cards.
 func wm5MixedPage() service.ActivityPage {
 	return service.ActivityPage{
 		Posts: []service.ActivityReport{
@@ -319,14 +348,14 @@ func wm5MixedPage() service.ActivityPage {
 
 func TestActivityCountsEqualRowCounts(t *testing.T) {
 	view := wm5Cards(t, wm5MixedPage(), "")
-	want := map[string]int{"updates": 0, "posted": 2, "confirmed": 1, "disputed": 1, "ended": 0}
+	want := map[string]int{"updates": 0, "confirmed": 1, "disputed": 1, "ended": 0}
 	for _, p := range view.Parts {
 		if p.Count != want[p.Key] || len(p.Rows) != want[p.Key] {
 			t.Errorf("part %q count %d rows %d, want %d", p.Key, p.Count, len(p.Rows), want[p.Key])
 		}
 	}
-	if n := len(wm5AllRows(view)); n != 4 {
-		t.Errorf("got %d rows, want 4 distinct reports each in exactly one part", n)
+	if n := len(wm5AllRows(view)); n != 2 {
+		t.Errorf("got %d rows, want 2 distinct voted reports each in exactly one part", n)
 	}
 }
 
@@ -336,7 +365,6 @@ func TestActivityHubSummaries(t *testing.T) {
 		view := wm5Cards(t, service.ActivityPage{}, "")
 		want := map[string]string{
 			"updates":   "No updates yet",
-			"posted":    "Nothing posted yet",
 			"confirmed": "Nothing confirmed yet",
 			"disputed":  "Nothing disputed yet",
 			"ended":     "Last 7 days, near your area",
@@ -345,19 +373,6 @@ func TestActivityHubSummaries(t *testing.T) {
 			if p.Summary != want[p.Key] {
 				t.Errorf("part %q summary = %q, want %q", p.Key, p.Summary, want[p.Key])
 			}
-		}
-	})
-
-	t.Run("posted counts open and resolved posts", func(t *testing.T) {
-		page := service.ActivityPage{Posts: []service.ActivityReport{
-			wm5Post(1, service.VisibilityLive, false),
-			wm5Post(2, service.VisibilityProvisional, false),
-			wm5Post(3, service.VisibilityRetracted, false),
-			wm5Post(4, service.VisibilityProvisional, true), // faded: neither number
-		}}
-		got := wm5Part(t, wm5Cards(t, page, ""), "posted").Summary
-		if want := "2 still happening, 1 resolved"; got != want {
-			t.Errorf("summary = %q, want %q", got, want)
 		}
 	})
 
@@ -402,17 +417,19 @@ func TestActivityHubSummaries(t *testing.T) {
 // builder does not know reads as the list.
 func TestActivityCurrentPart(t *testing.T) {
 	view := wm5Cards(t, wm5MixedPage(), "disputed")
-	if view.CurrentPart != "disputed" || view.CurrentName() != "You disputed" {
-		t.Errorf("current = %q / %q, want disputed / You disputed", view.CurrentPart, view.CurrentName())
+	if view.CurrentPart != "disputed" || view.CurrentName() != "Disputed" {
+		t.Errorf("current = %q / %q, want disputed / Disputed", view.CurrentPart, view.CurrentName())
 	}
 	for _, p := range view.Parts {
 		if p.Current != (p.Key == "disputed") {
 			t.Errorf("part %q Current = %v", p.Key, p.Current)
 		}
 	}
-	list := wm5Cards(t, wm5MixedPage(), "bogus")
-	if list.CurrentPart != "" || list.CurrentName() != "" {
-		t.Errorf("an unknown part reads as %q, want the list", list.CurrentPart)
+	for _, unknown := range []string{"bogus", "posted"} {
+		list := wm5Cards(t, wm5MixedPage(), unknown)
+		if list.CurrentPart != "" || list.CurrentName() != "" {
+			t.Errorf("part %q reads as %q, want the list", unknown, list.CurrentPart)
+		}
 	}
 }
 
@@ -436,29 +453,8 @@ func TestActivityOrderIsNewestEventFirstTiesByReportID(t *testing.T) {
 	}
 }
 
-func TestActivityRecordComesFromOwnPostsNeverFromTheNewestCard(t *testing.T) {
-	post := wm5Post(1, service.VisibilityLive, false)
-	post.Trust.Reporter = service.ReporterSignal{Tag: service.ReporterReliable, Label: "Reliable reporter", JudgedReports: 5, CorroboratedReports: 5}
-	vote := wm5Vote(2, service.VoteConfirm, service.VisibilityLive, false)
-	vote.Trust.Reporter = service.ReporterSignal{Tag: service.ReporterNew, Label: "New reporter"}
-
-	view := wm5Cards(t, service.ActivityPage{
-		Posts: []service.ActivityReport{post},
-		Votes: []service.VotedReport{vote},
-	}, "")
-	if view.Record == nil || view.Record.Label != "Reliable reporter" || view.Record.Counts != "5 of 5 confirmed" {
-		t.Errorf("record = %+v, want the account's own reliable record", view.Record)
-	}
-
-	voteOnly := wm5Cards(t, service.ActivityPage{Votes: []service.VotedReport{vote}}, "")
-	if voteOnly.Record != nil {
-		t.Errorf("record = %+v, want nil for an account with no posts", voteOnly.Record)
-	}
-}
-
 func TestActivityCardWordsPerKind(t *testing.T) {
 	page := service.ActivityPage{
-		Posts: []service.ActivityReport{wm5Post(1, service.VisibilityLive, false)},
 		Votes: []service.VotedReport{
 			wm5Vote(2, service.VoteConfirm, service.VisibilityLive, false),
 			wm5Vote(3, service.VoteDispute, service.VisibilityLive, false),
@@ -467,7 +463,6 @@ func TestActivityCardWordsPerKind(t *testing.T) {
 	view := wm5Cards(t, page, "")
 	type want struct{ tag, action, icon, kind string }
 	cases := map[int64]want{
-		1: {"Your post", "You posted this report", "icon-glyph--flood", "post"},
 		2: {"Your vote", "You confirmed this report", "icon-glyph--flood", "vote"},
 		3: {"Your dispute", "You disputed this report", "icon-glyph--flood", "dispute"},
 	}
@@ -478,8 +473,8 @@ func TestActivityCardWordsPerKind(t *testing.T) {
 			t.Errorf("card %d = %+v, want %+v", id, got, w)
 		}
 	}
-	if c := wm5Card(t, view, 1); c.When != "2 hours ago" || c.Detail != "Flood" || c.WhenText != "Posted 2 hours ago" {
-		t.Errorf("post When %q Detail %q WhenText %q, want %q, %q and %q", c.When, c.Detail, c.WhenText, "2 hours ago", "Flood", "Posted 2 hours ago")
+	if c := wm5Card(t, view, 2); c.Detail != "Flood" {
+		t.Errorf("vote Detail %q, want %q", c.Detail, "Flood")
 	}
 	if c := wm5Card(t, view, 2); c.When != "10 min ago" || c.WhenText != "You confirmed 10 min ago" {
 		t.Errorf("vote When %q WhenText %q, want 10 min ago (the time of the vote) and %q", c.When, c.WhenText, "You confirmed 10 min ago")
@@ -492,17 +487,17 @@ func TestActivityCardWordsPerKind(t *testing.T) {
 // TestActivityCardCarriesItsPoint: Lat and Lon are the row's own point, which is
 // already the coarse cell centre for a finished Rescue report (T-34-31).
 func TestActivityCardCarriesItsPoint(t *testing.T) {
-	post := wm5Post(1, service.VisibilityLive, false)
-	post.Row.Latitude, post.Row.Longitude = 13.0827, 80.2707
+	live := wm5Vote(1, service.VoteConfirm, service.VisibilityLive, false)
+	live.Row.Latitude, live.Row.Longitude = 13.0827, 80.2707
 	vote := wm5Vote(2, service.VoteConfirm, service.VisibilityRetracted, false)
 	vote.Category = service.CategoryRescueNeeded
 	vote.Row.Category = string(service.CategoryRescueNeeded)
 	vote.Row.Latitude, vote.Row.Longitude = 13.05, 80.25 // the coarse centre the service wrote
 	vote.Approximate = true
 
-	view := wm5Cards(t, service.ActivityPage{Posts: []service.ActivityReport{post}, Votes: []service.VotedReport{vote}}, "")
+	view := wm5Cards(t, service.ActivityPage{Votes: []service.VotedReport{live, vote}}, "")
 	if c := wm5Card(t, view, 1); c.Lat != 13.0827 || c.Lon != 80.2707 || c.Approximate {
-		t.Errorf("post point = %v, %v approximate %v, want its own exact point", c.Lat, c.Lon, c.Approximate)
+		t.Errorf("live card point = %v, %v approximate %v, want its own exact point", c.Lat, c.Lon, c.Approximate)
 	}
 	if c := wm5Card(t, view, 2); c.Lat != 13.05 || c.Lon != 80.25 || !c.Approximate {
 		t.Errorf("blurred rescue point = %v, %v approximate %v, want the coarse centre", c.Lat, c.Lon, c.Approximate)
@@ -510,83 +505,39 @@ func TestActivityCardCarriesItsPoint(t *testing.T) {
 }
 
 func TestActivityDetailKeepsTheShelterWords(t *testing.T) {
-	post := wm5Post(1, service.VisibilityLive, false)
-	post.Category = service.CategoryShelterOpen
-	post.Row.Category = string(service.CategoryShelterOpen)
+	vote := wm5Vote(1, service.VoteConfirm, service.VisibilityLive, false)
+	vote.Category = service.CategoryShelterOpen
+	vote.Row.Category = string(service.CategoryShelterOpen)
 	capacity := "limited"
 	headcount := int32(40)
-	post.Row.ShelterCapacityStatus = &capacity
-	post.Row.ShelterHeadcount = &headcount
+	vote.Row.ShelterCapacityStatus = &capacity
+	vote.Row.ShelterHeadcount = &headcount
 
-	card := wm5Card(t, wm5Cards(t, service.ActivityPage{Posts: []service.ActivityReport{post}}, ""), 1)
+	card := wm5Card(t, wm5Cards(t, service.ActivityPage{Votes: []service.VotedReport{vote}}, ""), 1)
 	if want := "Shelter open · Limited · 40 people"; card.Detail != want {
 		t.Errorf("Detail = %q, want %q", card.Detail, want)
 	}
 }
 
-// TestProfileReopenFollowsUndoLimit is D-22 on the card: the poster's Reopen
-// shares the budget of two undos with the take back, so a closed unexpired own
-// post with no undos left offers no Reopen and says so, a post with one left
-// still offers it, and an expired post offers neither.
-func TestProfileReopenFollowsUndoLimit(t *testing.T) {
-	cases := []struct {
-		name                 string
-		left                 int
-		expired              bool
-		wantReopen, wantUsed bool
-	}{
-		{"no undos left", 0, false, false, true},
-		{"one undo left", 1, false, true, false},
-		{"full budget", service.UndoLimit, false, true, false},
-		{"expired with none left", 0, true, false, false},
-		{"expired with one left", 1, true, false, false},
+// TestProfileOffersNoReopen replaces the old Reopen and undo limit pins (D-22,
+// W-09, IN-03). Amended 2026-11-17 (quick 261117-vuf): the poster's Reopen
+// lived only on Posted cards, which left, so the card has no Reopen or "used
+// both undos" hook at all, and no card of any state carries one. The take back
+// and the report's own Reopen are unchanged elsewhere.
+func TestProfileOffersNoReopen(t *testing.T) {
+	typ := reflect.TypeOf(profileReport{})
+	for _, name := range []string{"CanReopen", "UndosUsed"} {
+		if _, ok := typ.FieldByName(name); ok {
+			t.Errorf("profileReport still has %s; the Reopen hook left with Posted", name)
+		}
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			post := wm5Post(1, service.VisibilityRetracted, c.expired)
-			post.UndosLeft = c.left
-			card := wm5Card(t, wm5Cards(t, service.ActivityPage{Posts: []service.ActivityReport{post}}, ""), 1)
-			if card.CanReopen != c.wantReopen {
-				t.Errorf("CanReopen = %v, want %v", card.CanReopen, c.wantReopen)
-			}
-			if card.UndosUsed != c.wantUsed {
-				t.Errorf("UndosUsed = %v, want %v", card.UndosUsed, c.wantUsed)
-			}
-		})
+	// A resolved unexpired post with undos left, the one card that once offered
+	// Reopen, is now no card at all.
+	post := wm5Post(1, service.VisibilityRetracted, false)
+	post.UndosLeft = service.UndoLimit
+	if n := len(wm5AllRows(wm5Cards(t, service.ActivityPage{Posts: []service.ActivityReport{post}}, ""))); n != 0 {
+		t.Errorf("a resolved own post made %d cards, want none", n)
 	}
-
-	t.Run("a live post with no undos left shows neither", func(t *testing.T) {
-		post := wm5Post(1, service.VisibilityLive, false)
-		post.UndosLeft = 0
-		card := wm5Card(t, wm5Cards(t, service.ActivityPage{Posts: []service.ActivityReport{post}}, ""), 1)
-		if card.CanReopen || card.UndosUsed {
-			t.Errorf("CanReopen %v UndosUsed %v, want both false for a report that is not closed", card.CanReopen, card.UndosUsed)
-		}
-	})
-
-	t.Run("a voted card never offers either", func(t *testing.T) {
-		// The service leaves the full budget on a voted card (it reads undo
-		// counts for own posts only), which is what the fixture carries.
-		vote := wm5Vote(2, service.VoteConfirm, service.VisibilityRetracted, false)
-		card := wm5Card(t, wm5Cards(t, service.ActivityPage{Votes: []service.VotedReport{vote}}, ""), 2)
-		if card.CanReopen || card.UndosUsed {
-			t.Errorf("voted card CanReopen %v UndosUsed %v, want both false", card.CanReopen, card.UndosUsed)
-		}
-	})
-
-	t.Run("a voted card is kept from both even when its undos left is 0", func(t *testing.T) {
-		// IN-03: the protection must not rest on the default budget. With none
-		// left on a closed, unexpired voted card, newProfileReport alone would set
-		// UndosUsed, and the page must still clear it.
-		for _, left := range []int{0, 1, service.UndoLimit} {
-			vote := wm5Vote(2, service.VoteConfirm, service.VisibilityRetracted, false)
-			vote.UndosLeft = left
-			card := wm5Card(t, wm5Cards(t, service.ActivityPage{Votes: []service.VotedReport{vote}}, ""), 2)
-			if card.CanReopen || card.UndosUsed {
-				t.Errorf("undos left %d: voted card CanReopen %v UndosUsed %v, want both false", left, card.CanReopen, card.UndosUsed)
-			}
-		}
-	})
 }
 
 // TestProfileVotedRescueCardIsApproximate is D-27 and D-23 on the card: an

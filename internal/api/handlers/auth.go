@@ -459,13 +459,13 @@ const (
 // for one row — Phase 1's existing .report-row markup and classes, reused
 // verbatim rather than reinvented for this account-scoped listing
 // (01.1-07-PLAN.md Task 2, UI-SPEC item 16). ReportID, Visibility,
-// VisibilityReason, VisibilityClass and CanReopen are 02-07's additions:
-// the first four give activity.js the hooks it needs to render the trust
-// chip; CanReopen (Task 3) gates the Reopen control to rows that are both
-// retracted AND not yet expired. SeverityWord, SeverityLevel, TrustJSON and
-// Expired are plan 03-15's (D-20, A44, A58): the visible severity word, its
-// level for the label modifier class, the shared trust object as JSON, and
-// the server's own expiry decision.
+// VisibilityReason and VisibilityClass are 02-07's additions: they give
+// activity.js the hooks it needs to render the trust chip. SeverityWord,
+// SeverityLevel, TrustJSON and Expired are plan 03-15's (D-20, A44, A58): the
+// visible severity word, its level for the label modifier class, the shared
+// trust object as JSON, and the server's own expiry decision. Amended
+// 2026-11-17 (quick 261117-vuf): CanReopen and UndosUsed left with Posted, the
+// only part whose cards carried the poster's Reopen.
 type profileReport struct {
 	ReportID         int64
 	CategoryGlyph    string
@@ -478,12 +478,6 @@ type profileReport struct {
 	VisibilityClass  string
 	TrustJSON        string
 	Expired          bool
-	CanReopen        bool
-	// UndosUsed is true on a closed, unexpired own post whose two undos are
-	// both used (plan 03.1-07, D-22). The template writes it as
-	// data-undos-used and activity.js shows the C52 sentence in place of the
-	// Reopen control. It is never true together with CanReopen.
-	UndosUsed bool
 
 	// Moderation is held or removed for a report the author cannot see in any
 	// feed (D-02, D-08), empty otherwise. ModerationNote is the Go constant
@@ -529,42 +523,17 @@ type profileReport struct {
 	ReporterProfilePath string
 }
 
-// profileRecord is the reporter record card of the phone Activity page: the
-// account's own reporter signal as the server wrote it. Label is the signal's
-// everyday word copied unchanged, and Counts is built from the real judged and
-// corroborated numbers, so a new reporter reads 0 of 0 confirmed and nothing is
-// invented for it.
-type profileRecord struct {
-	Label  string
-	Counts string
-}
-
-// newProfileRecord builds the record card from one reporter signal. A signal
-// with no label (the none tag, an account with nothing to rate) gives no card.
-// It computes nothing: the label and both counts come from the signal as
-// service.BuildTrust already wrote them.
-func newProfileRecord(sig service.ReporterSignal) *profileRecord {
-	if sig.Label == "" {
-		return nil
-	}
-	return &profileRecord{
-		Label:  sig.Label,
-		Counts: fmt.Sprintf("%d of %d confirmed", sig.CorroboratedReports, sig.JudgedReports),
-	}
-}
-
 // profileViewModel is exactly what profile.html.tmpl reads and nothing more.
 type profileViewModel struct {
 	AssetVersion string
-	// Parts are the five parts of My activity with their cards and counts
-	// (Phase 3.4, D-18). CurrentPart is the key the address asked for, empty
-	// for the list.
+	// Parts are the parts of My activity this screen draws, with their cards
+	// and counts (Phase 3.4, D-18). CurrentPart is the key the address asked
+	// for, empty for the list. Amended 2026-11-17 (quick 261117-vuf): Parts is
+	// Confirmed, Disputed and Ended, or Updates alone on the Updates screen, and
+	// the reporter record card left with Posted.
 	Parts       []activityPart
 	CurrentPart string
-	// Record is the reporter record card. It is nil for an account with no
-	// posts, and the template then renders no card.
-	Record *profileRecord
-	Chrome Chrome
+	Chrome      Chrome
 	// The three parts of the removed row's Policy pointer sentence, cut around
 	// the link words (D-24).
 	PolicyPointerLead string
@@ -672,16 +641,6 @@ func profileDetail(capacity *string, headcount *int32, category service.Category
 // fallback could drift apart, and a report would render one category's
 // colour against another category's trust state.
 //
-// CanReopen (Task 3, D-16 amended) gates the Reopen control to rows that
-// are BOTH retracted AND not yet past their own expires_at: 02-03a's
-// expiry rejection (step 4) is not scoped by vote kind the way its
-// self-vote block is, so a reopen on an expired report would 409 — and
-// even a successful one would restore nothing, since NearbyReports filters
-// on expires_at regardless of visibility. Resolve is deliberately
-// expiry-blind (expiry is not one of the four states), which is why this
-// clause lives here rather than in the resolver, and why it gates the
-// BUTTON alone, never the "Resolved" label.
-//
 // TrustJSON is the same object the feed and the vote response carry, from the
 // same mapper, never re derived here (D-20, V-33). Expired is the only expiry
 // rule the Activity page has, so activity.js compares no dates (A44). An
@@ -707,13 +666,6 @@ func newProfileReport(ar service.ActivityReport, now time.Time) (profileReport, 
 	}
 
 	expired := !row.ExpiresAt.After(now)
-	// The poster's Reopen spends the same two undos as the take back (D-22),
-	// and the server refuses a third, so the card stops offering a button that
-	// could only fail. UndosLeft is the service's own count from the votes log;
-	// a closed unexpired post with none left says so in words instead.
-	closedOpen := visibility == service.VisibilityRetracted && !expired
-	canReopen := closedOpen && ar.UndosLeft > 0
-	undosUsed := closedOpen && ar.UndosLeft <= 0
 
 	// An approximate card is a finished Rescue report of someone else (D-27,
 	// D-23): it shows the coarse words and never the description text.
@@ -781,8 +733,6 @@ func newProfileReport(ar service.ActivityReport, now time.Time) (profileReport, 
 		VisibilityClass:  visibilityClass,
 		TrustJSON:        string(trustJSON),
 		Expired:          expired,
-		CanReopen:        canReopen,
-		UndosUsed:        undosUsed,
 		Moderation:       moderation,
 		ModerationNote:   moderationNote,
 		PolicyPointer:    moderation == profileModerationRemoved,
@@ -848,8 +798,9 @@ func Profile(svc *service.AuthService, updates *service.UpdatesService, tmpl *te
 		// keyed by the gate's account id. There is no Refresh here: the bell poll
 		// is the producer (research Pattern 8). A failed read renders the page
 		// with the part's error state instead of a 500. The read mark stays with
-		// the browser (plan 08).
-		if updates != nil {
+		// the browser (plan 08). Amended 2026-11-17 (quick 261117-vuf): Updates
+		// is drawn only on its own screen now, so the read is made only there.
+		if updates != nil && view.CurrentPart == activityPartUpdates {
 			updatesPage, uerr := updates.List(r.Context(), acc.ID, service.ActivityUpdatesListSize)
 			if uerr != nil {
 				log.Printf("handlers: Profile: updates: %v", uerr)
@@ -857,15 +808,11 @@ func Profile(svc *service.AuthService, updates *service.UpdatesService, tmpl *te
 			fillUpdatesPart(&view, updatesPage, uerr != nil, now)
 		}
 
-		// The record card reads the account's own reporter signal from its
-		// own posts, never from the merged card list (W-10). An account with
-		// no posts gets no card, and a signal with no label gives none either.
 		policyLead, policyLink, policyTail := removedPolicyPointerParts()
 		vm := profileViewModel{
 			AssetVersion:      cfg.AssetVersion,
-			Parts:             view.Parts,
+			Parts:             activityShownParts(view.Parts, view.CurrentPart),
 			CurrentPart:       view.CurrentPart,
-			Record:            view.Record,
 			Chrome:            cfg.Chrome.withDefaults(),
 			PolicyPointerLead: policyLead,
 			PolicyPointerLink: policyLink,
@@ -878,9 +825,15 @@ func Profile(svc *service.AuthService, updates *service.UpdatesService, tmpl *te
 		// On a part screen the phone top bar names the part (D-19). Amended
 		// 2026-11-17 (quick 261117-lq0): My activity is no longer a main place, so
 		// no bar item is current here, and the parts open from Settings, so the
-		// back arrow goes to Settings on the list and on a part.
+		// back arrow goes to Settings on the list and on a part. Amended
+		// 2026-11-17 (quick 261117-vuf): the Updates screen is opened from the
+		// bell, so its back arrow goes to Nearby, where the bell is.
 		if name := view.CurrentName(); name != "" {
-			vm.Nav = navFor(NavActivity, navTitle(name), navBack(settingsHref))
+			back := settingsHref
+			if view.CurrentPart == activityPartUpdates {
+				back = nearbyHref
+			}
+			vm.Nav = navFor(NavActivity, navTitle(name), navBack(back))
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

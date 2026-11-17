@@ -28,20 +28,18 @@
   <main class="place-page place-page--settings" data-account-id="{{.AccountID}}" data-push-key="{{.PushPublicKey}}">
     <h1 class="place-head">Settings</h1>
 
-    {{/* Quick 261117-lq0 (owner, 2026-11-17, 7.1 UAT: "whatever we have in my activity page can be shifted to the setting by keeping one section for it", then "yes build it"): My activity left the bar for Profile, so its five parts open from here, in the hub's order with the hub's names and addresses (ActivityLinks, built from the same part list). Each row is a plain link on both sizes; the part's back arrow returns here. Amended 2026-11-17 (quick 261117-lq0 review): each row adds #part-<key> so the laptop, which stacks all five parts, scrolls to the one picked. */}}
+    {{/* Quick 261117-lq0 (owner, 2026-11-17, 7.1 UAT: "whatever we have in my activity page can be shifted to the setting by keeping one section for it", then "yes build it"): My activity left the bar for Profile, so it opens from here. Amended 2026-11-17 (quick 261117-vuf, owner: "I think it all should just maybe come under my activity", then "yes build it"): the section is called Activity and holds one plain link row, My activity, on both sizes. The My activity page lists Confirmed, Disputed and Ended, and its back arrow returns here. */}}
     <section class="place-section" id="settings-activity-section" aria-labelledby="settings-activity-title">
       <div class="place-section__intro">
-        <h2 class="place-section__title" id="settings-activity-title">My activity</h2>
+        <h2 class="place-section__title" id="settings-activity-title">Activity</h2>
       </div>
       <div class="place-box" id="settings-activity-box">
-        {{- range .ActivityLinks}}
-        <a class="place-row" href="{{.Href}}">
+        <a class="place-row" href="/profile">
           <span class="place-row__text">
-            <span class="place-row__label">{{.Name}}</span>
+            <span class="place-row__label">My activity</span>
           </span>
           <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
         </a>
-        {{- end}}
       </div>
     </section>
 

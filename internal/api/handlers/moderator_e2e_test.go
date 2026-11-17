@@ -735,9 +735,11 @@ func TestModeratorRemove(t *testing.T) {
 	if vote.StatusCode != http.StatusNotFound {
 		t.Errorf("a confirm on a removed report = %d, want 404", vote.StatusCode)
 	}
+	// Amended 2026-11-17 (quick 261117-vuf): the author's own reports left My
+	// activity with Posted, so the removed one is not listed there any more.
 	profile := getProfile(t, fx.author, base)
-	if got := strings.Count(profile, `data-moderation="removed"`); got != 1 {
-		t.Errorf("the author's Activity page shows data-moderation=removed %d times, want 1", got)
+	if got := strings.Count(profile, `data-moderation="removed"`); got != 0 {
+		t.Errorf("the author's My activity shows data-moderation=removed %d times, want 0", got)
 	}
 	if _, _, q, _ := modGetQueue(t, fx.moderator, base); q.Counts.Pending != 1 {
 		t.Errorf("pending count after Remove = %d, want 1", q.Counts.Pending)

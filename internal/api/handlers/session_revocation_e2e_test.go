@@ -224,6 +224,22 @@ func revPost(t *testing.T, client *http.Client, srv *httptest.Server) int64 {
 	return submitReportGetID(t, client, srv.URL, body)
 }
 
+// revConfirm has a fresh account (posterEmail) file a report with the marker
+// text and client confirm it, so the marker is on client's My activity.
+//
+// Amended 2026-11-17 (quick 261117-vuf, owner on the 7.1 UAT): the account's
+// own posts left My activity (they are on its profile), so the history these
+// tests follow across sign ins is the account's confirm, which My activity
+// still lists. Like a report, a vote follows the account, not the session id.
+func revConfirm(t *testing.T, client *http.Client, srv *httptest.Server, mailer *recordingMailer, posterEmail string) int64 {
+	t.Helper()
+	poster := newVerifiedClient(t, srv, mailer, posterEmail)
+	id := revPost(t, poster, srv)
+	resp := postVote(t, client, srv.URL, id, "confirm", map[string]any{"latitude": revLat, "longitude": revLon})
+	decodeVoteResponse(t, resp) // fails the test unless the confirm answered 200
+	return id
+}
+
 // revProfile reads GET /profile as client and returns the body.
 func revProfile(t *testing.T, client *http.Client, srv *httptest.Server) string {
 	t.Helper()
@@ -243,6 +259,9 @@ func TestRevocationKeepsAuthorship(t *testing.T) {
 	id := revPost(t, a, srv)
 	resp := postVote(t, b, srv.URL, id, "confirm", map[string]any{"latitude": revLat, "longitude": revLon})
 	decodeVoteResponse(t, resp) // fails the test unless B's confirm answered 200
+	// Amended 2026-11-17 (quick 261117-vuf): A's own report left My activity,
+	// so A also confirms a marked report, which My activity lists.
+	revConfirm(t, a, srv, mailer, "auth-poster@example.com")
 
 	before := revReportJSON(t, reader, srv, id)
 	revRevoke(t, pool, aID)
@@ -275,7 +294,7 @@ func TestRevocationKeepsAuthorship(t *testing.T) {
 		t.Fatalf("A signing in again: status %d: %s", status, body)
 	}
 	if !strings.Contains(revProfile(t, a2, srv), revMarker) {
-		t.Errorf("A's report is missing from My activity after A signed in again")
+		t.Errorf("A's confirmed report is missing from My activity after A signed in again")
 	}
 }
 
@@ -300,7 +319,7 @@ func TestRevokedBrowserSignsInAgainAsSameEmail(t *testing.T) {
 		t.Fatalf("the two browsers share session id %q", firstID)
 	}
 	aID := revAccountID(t, pool, "same-a@example.com")
-	revPost(t, second, srv)
+	revConfirm(t, second, srv, mailer, "same-poster@example.com")
 	secondOldCopy := revCookieCopy(t, second, srv)
 
 	revRevoke(t, pool, aID)
@@ -337,7 +356,7 @@ func TestRevokedBrowserSignsInAgainAsSameEmail(t *testing.T) {
 	revExpect(t, "second signed in again", second, srv, http.StatusOK, http.StatusOK)
 	revExpect(t, "copy of the old cookie", secondOldCopy, srv, http.StatusUnauthorized, http.StatusFound)
 	if !strings.Contains(revProfile(t, second, srv), revMarker) {
-		t.Errorf("A's report is missing from My activity after A signed in again on the same browser")
+		t.Errorf("A's confirmed report is missing from My activity after A signed in again on the same browser")
 	}
 
 	if _, revoked := revSession(t, pool, firstID); !revoked {
@@ -360,7 +379,7 @@ func TestCopiedCookieStaysDeadAfterLogoutAllAndSignInAgain(t *testing.T) {
 	if status, body, _ := revSignIn(t, browser2, srv, mailer, pool, email); status != http.StatusOK || !strings.Contains(body, revSignedInMarker) {
 		t.Fatalf("browser 2 sign in: status %d: %s", status, body)
 	}
-	revPost(t, browser1, srv)
+	revConfirm(t, browser1, srv, mailer, "copy-poster@example.com")
 	oldID := sessionIDFromJar(t, browser1, srv.URL)
 	revExpect(t, "stolen copy before", stolen, srv, http.StatusOK, http.StatusOK)
 
@@ -382,7 +401,7 @@ func TestCopiedCookieStaysDeadAfterLogoutAllAndSignInAgain(t *testing.T) {
 		t.Errorf("the copied session id %q was revived by the sign in", oldID)
 	}
 	if !strings.Contains(revProfile(t, browser1, srv), revMarker) {
-		t.Errorf("A's report is missing from My activity after A signed in again")
+		t.Errorf("A's confirmed report is missing from My activity after A signed in again")
 	}
 }
 
@@ -393,7 +412,7 @@ func TestRevokedBrowserSignsInAsDifferentEmailGetsFreshSession(t *testing.T) {
 	srv, mailer, pool := newRevServer(t)
 	browser := newVerifiedClient(t, srv, mailer, "swap-a@example.com")
 	aID := revAccountID(t, pool, "swap-a@example.com")
-	revPost(t, browser, srv)
+	revConfirm(t, browser, srv, mailer, "swap-poster@example.com")
 	oldID := sessionIDFromJar(t, browser, srv.URL)
 
 	revRevoke(t, pool, aID)
@@ -432,7 +451,7 @@ func TestRevokedBrowserSignsInAsDifferentEmailGetsFreshSession(t *testing.T) {
 		t.Fatalf("GET /profile as the new account = %d, want 200", got)
 	}
 	if strings.Contains(revProfile(t, browser, srv), revMarker) {
-		t.Errorf("the new account's My activity lists A's report")
+		t.Errorf("the new account's My activity lists the report A confirmed")
 	}
 
 	// A signing in again elsewhere still has it.
@@ -441,7 +460,7 @@ func TestRevokedBrowserSignsInAsDifferentEmailGetsFreshSession(t *testing.T) {
 		t.Fatalf("A signing in again: status %d: %s", status, body)
 	}
 	if !strings.Contains(revProfile(t, a2, srv), revMarker) {
-		t.Errorf("A's report is missing from My activity after A signed in again")
+		t.Errorf("A's confirmed report is missing from My activity after A signed in again")
 	}
 }
 

@@ -61,9 +61,6 @@ type settingsViewModel struct {
 	FollowersCount int
 	BlockedCount   int
 	MyUsername     string
-	// ActivityLinks are the five rows of the My activity section (quick
-	// 261117-lq0), in the hub's order with the hub's names and addresses.
-	ActivityLinks []activityLink
 	// MutedPeopleCount is how many people the caller muted (Phase 9 plan 20, D-12),
 	// for the Muted people row. It can exceed the list by the people whose new
 	// username is still pending, as the Blocked people count does.
@@ -153,7 +150,6 @@ func SettingsPage(tmpl *template.Template, accounts *service.AccountService, mut
 			AccountID:        acc.ID,
 			Nav:              navFor(NavSettings, navTitle("Settings"), navBack("/")),
 			Legal:            legalTextFor(chrome),
-			ActivityLinks:    activityLinks(),
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

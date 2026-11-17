@@ -302,9 +302,13 @@ func TestSettingsShowsOnlyExistingRows(t *testing.T) {
 	// section's five part rows came. The five are one range over ActivityLinks,
 	// so the template source holds one chevron for them: eleven in the source,
 	// fifteen drawn. My activity is the first section.
+	//
+	// Amended 2026-11-17 (quick 261117-vuf, owner on the 7.1 UAT): the section is
+	// called Activity and holds one My activity row, written out in the source, so
+	// still eleven in the source and now eleven drawn.
 	p421InOrder(t, "section order", page, `id="settings-activity-title"`, `id="settings-phone-title"`, `id="settings-people-title"`)
 	if got := strings.Count(page, "app-icon--chevron-right"); got != 11 {
-		t.Errorf("settings.html.tmpl holds %d chevrons, want eleven (ten rows plus the one in the My activity range)", got)
+		t.Errorf("settings.html.tmpl holds %d chevrons, want eleven (ten rows plus the My activity row)", got)
 	}
 	header := p421ReadTemplate(t, "account_header.html.tmpl")
 	for _, label := range waitingSettingsLabels {

@@ -61,77 +61,103 @@ func expireReport(t *testing.T, pool *pgxpool.Pool, reportID int64) {
 	}
 }
 
+// vufLoc is the point every report of these tests is posted at and voted from.
+var vufLoc = map[string]any{"latitude": 12.9716, "longitude": 77.5946}
+
+// vufVotedReport has poster post body and voter confirm it from vufLoc, and
+// returns the report id and the trust the confirm response carried.
+//
+// Amended 2026-11-17 (quick 261117-vuf, owner on the 7.1 UAT): Posted left My
+// activity (your posts are on your profile), so the page lists only the
+// reports the account confirmed or disputed. The tests that read a card's
+// server state now read the voter's card of someone else's report.
+func vufVotedReport(t *testing.T, srvURL string, poster, voter *http.Client, body map[string]any) (int64, map[string]any) {
+	t.Helper()
+	id := submitReportGetID(t, poster, srvURL, body)
+	return id, p15VoteTrust(t, postVote(t, voter, srvURL, id, "confirm", vufLoc))
+}
+
 // --- Task 2: the Activity page's real trust state ---
 
 // TestProfileShowsResolvedStateForAResolvedReport proves the Activity
 // page's visibility comes from the same service.Resolve every other read
-// path calls: a report the account resolved renders the retracted state
-// class and the "Resolved" visibility-tag label.
+// path calls: a report its reporter resolved renders the retracted state
+// class and the resolved reason on the card of the account that confirmed it.
 func TestProfileShowsResolvedStateForAResolvedReport(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
+	poster := newVerifiedClient(t, srv, mailer, "activity-resolved-poster@example.com")
 	client := newVerifiedClient(t, srv, mailer, "activity-resolved@example.com")
 
-	reportID := submitReportGetID(t, client, srv.URL, floodReportBody(12.9716, 77.5946))
-	resp := postVote(t, client, srv.URL, reportID, "resolve", map[string]any{"latitude": 12.9716, "longitude": 77.5946})
+	reportID, _ := vufVotedReport(t, srv.URL, poster, client, floodReportBody(12.9716, 77.5946))
+	resp := postVote(t, poster, srv.URL, reportID, "resolve", vufLoc)
 	visibility, _ := decodeVoteResponse(t, resp)
 	if visibility != "retracted" {
 		t.Fatalf("resolve response visibility = %q, want %q", visibility, "retracted")
 	}
 
 	// Honest limit of this test's claim: GET /profile returns the
-	// server-rendered HTML only — the "Resolved" chip text itself is built
+	// server-rendered HTML only. The "Resolved" chip text itself is built
 	// by activity.js/visibility.js client-side from these attributes, which
-	// a Go HTTP test cannot execute. This asserts the server-rendered
-	// hooks that make that chip build correctly; the rendered pixels are
-	// the end-of-phase <human-check>'s claim.
-	body := getProfile(t, client, srv.URL)
-	if !strings.Contains(body, "vis-retracted") {
-		t.Errorf("/profile does not carry the vis-retracted state class for the resolved report: %s", body)
+	// a Go HTTP test cannot execute.
+	row := p15ProfileRow(t, getProfile(t, client, srv.URL), reportID)
+	if !strings.Contains(row, "vis-retracted") {
+		t.Errorf("the card does not carry the vis-retracted state class for the resolved report: %s", row)
 	}
-	if !strings.Contains(body, `data-visibility="retracted"`) {
-		t.Errorf("/profile does not carry data-visibility=\"retracted\" for the resolved report: %s", body)
+	if !strings.Contains(row, `data-visibility="retracted"`) {
+		t.Errorf("the card does not carry data-visibility=\"retracted\" for the resolved report: %s", row)
 	}
-	if !strings.Contains(body, `data-visibility-reason="resolved"`) {
-		t.Errorf("/profile does not carry data-visibility-reason=\"resolved\" for the resolved report: %s", body)
+	if !strings.Contains(row, `data-visibility-reason="resolved"`) {
+		t.Errorf("the card does not carry data-visibility-reason=\"resolved\" for the resolved report: %s", row)
 	}
 }
 
 // TestProfileShowsLiveReportsWithoutARetractedMarker proves the marker is
 // a real signal, not a constant rendered on every row: an unresolved
-// report's row carries a non-retracted state.
+// report's card carries a non-retracted state.
 func TestProfileShowsLiveReportsWithoutARetractedMarker(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
+	poster := newVerifiedClient(t, srv, mailer, "activity-live-poster@example.com")
 	client := newVerifiedClient(t, srv, mailer, "activity-live@example.com")
 
-	submitReportGetID(t, client, srv.URL, floodReportBody(12.9716, 77.5946))
+	reportID, _ := vufVotedReport(t, srv.URL, poster, client, floodReportBody(12.9716, 77.5946))
 
-	body := getProfile(t, client, srv.URL)
-	if strings.Contains(body, "vis-retracted") {
-		t.Errorf("/profile carries vis-retracted for a report nobody resolved: %s", body)
+	row := p15ProfileRow(t, getProfile(t, client, srv.URL), reportID)
+	if strings.Contains(row, "vis-retracted") {
+		t.Errorf("the card carries vis-retracted for a report nobody resolved: %s", row)
 	}
-	if !strings.Contains(body, "vis-provisional") {
-		t.Errorf("/profile does not carry vis-provisional for a freshly-submitted, unconfirmed report: %s", body)
+	if v := p15Attr(t, row, "data-visibility"); v != "provisional" && v != "live" {
+		t.Errorf("the card's data-visibility = %q, want provisional or live for an open report", v)
 	}
 }
 
-// TestProfileStillListsEveryReportTheAccountFiled proves the existing
-// multi-device listing behaviour (01.1-07) is unchanged: a resolved
-// report is ADDED to what the page shows, never substituted for the
-// still-live one.
-func TestProfileStillListsEveryReportTheAccountFiled(t *testing.T) {
+// TestProfileNoLongerListsOwnPosts replaces TestProfileStillListsEveryReportTheAccountFiled.
+// Amended 2026-11-17 (quick 261117-vuf, owner: "You'll see the post twice,
+// right?"): the account's own posts, live or resolved, are on its profile and
+// no longer on My activity. The page has no Posted part, ?part=posted lands on
+// the list, and no card offers the poster's Reopen.
+func TestProfileNoLongerListsOwnPosts(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
 	client := newVerifiedClient(t, srv, mailer, "activity-multi@example.com")
 
 	submitReport(t, client, srv, "flood", "still-live report")
 	resolvedID := submitReportGetID(t, client, srv.URL, floodReportBody(13.05, 77.65))
-	postVote(t, client, srv.URL, resolvedID, "resolve", map[string]any{"latitude": 13.05, "longitude": 77.65})
+	postVote(t, client, srv.URL, resolvedID, "resolve", map[string]any{"latitude": 13.05, "longitude": 77.65}).Body.Close()
 
-	body := getProfile(t, client, srv.URL)
-	if !strings.Contains(body, "still-live report") {
-		t.Errorf("/profile is missing the unresolved report: %s", body)
-	}
-	if !strings.Contains(body, "Water rising near the bridge") {
-		t.Errorf("/profile is missing the resolved report's own description: %s", body)
+	for _, query := range []string{"", "part=posted", "tab=posts"} {
+		body := getProfileQuery(t, client, srv.URL, query)
+		for _, gone := range []string{
+			"still-live report", "Water rising near the bridge",
+			`data-report-id="` + strconv.FormatInt(resolvedID, 10) + `"`,
+			"activity-part--posted", `id="part-posted"`, "Posted by you", "Your reporter record",
+			"data-can-reopen", "data-undos-used",
+		} {
+			if strings.Contains(body, gone) {
+				t.Errorf("/profile?%s still holds %q; own posts left My activity", query, gone)
+			}
+		}
+		if !strings.Contains(body, `data-part=""`) {
+			t.Errorf("/profile?%s does not land on the list", query)
+		}
 	}
 }
 
@@ -149,90 +175,47 @@ func TestProfileNoLongerPromisesVotingHistory(t *testing.T) {
 
 // --- Task 3: Reopen ---
 
-// TestProfileOffersReopenOnARetractedReport proves a retracted, unexpired
-// report's row carries the reopen hook.
-func TestProfileOffersReopenOnARetractedReport(t *testing.T) {
-	srv, mailer, _ := newE2EServer(t)
-	client := newVerifiedClient(t, srv, mailer, "activity-reopen-hook@example.com")
-
-	reportID := submitReportGetID(t, client, srv.URL, floodReportBody(12.9716, 77.5946))
-	postVote(t, client, srv.URL, reportID, "resolve", map[string]any{"latitude": 12.9716, "longitude": 77.5946})
-
-	body := getProfile(t, client, srv.URL)
-	if !strings.Contains(body, "data-can-reopen") {
-		t.Errorf("/profile does not carry the reopen hook for a retracted, unexpired report: %s", body)
-	}
-}
-
-// TestProfileWithholdsReopenOnAnExpiredRetractedReport is the
-// discriminating test: a retracted report past its own expires_at still
-// carries the retracted state and its chip, but withholds the reopen
-// hook — a button rendered past expiry could only ever 409 (02-03a's
-// expiry rejection is not scoped by vote kind), and even a successful
-// reopen would put nothing back into the feed (NearbyReports filters on
-// expiry regardless of visibility).
-func TestProfileWithholdsReopenOnAnExpiredRetractedReport(t *testing.T) {
-	srv, mailer, pool := newE2EServer(t)
-	client := newVerifiedClient(t, srv, mailer, "activity-reopen-expired@example.com")
-
-	reportID := submitReportGetID(t, client, srv.URL, floodReportBody(12.9716, 77.5946))
-	postVote(t, client, srv.URL, reportID, "resolve", map[string]any{"latitude": 12.9716, "longitude": 77.5946})
-	expireReport(t, pool, reportID)
-
-	body := getProfile(t, client, srv.URL)
-	if !strings.Contains(body, "vis-retracted") {
-		t.Errorf("/profile no longer carries the retracted state for the expired report: %s", body)
-	}
-	if strings.Contains(body, "data-can-reopen") {
-		t.Errorf("/profile still carries the reopen hook for a retracted, EXPIRED report — a "+
-			"reopen there would 409 and, if it somehow succeeded, restore nothing to the feed: %s", body)
-	}
-}
-
-// TestProfileWithholdsReopenOnANonRetractedReport proves a live report
-// carries no reopen hook.
-func TestProfileWithholdsReopenOnANonRetractedReport(t *testing.T) {
-	srv, mailer, _ := newE2EServer(t)
-	client := newVerifiedClient(t, srv, mailer, "activity-reopen-live@example.com")
-
-	submitReportGetID(t, client, srv.URL, floodReportBody(12.9716, 77.5946))
-
-	body := getProfile(t, client, srv.URL)
-	if strings.Contains(body, "data-can-reopen") {
-		t.Errorf("/profile carries the reopen hook for a report nobody resolved: %s", body)
-	}
-}
-
-// TestProfileReopenIsInstantForTheReporter (D-16 amended 2026-09-15) is
-// the test the Activity page's fixed reopen-succeeded copy rests on: a
+// TestProfileReopenIsInstantForTheReporter (D-16 amended 2026-09-15): a
 // SINGLE reopen POST from the reporter, with no second account and no
 // threshold met, lifts the retraction. See 02-CONTEXT.md D-16's amendment
-// history — a reader who finds an older document describing a
-// no-carve-out reading must not "restore" a threshold here; that reading
-// was reversed by the user on 2026-09-15 and is locked.
+// history: a reader who finds an older document describing a no-carve-out
+// reading must not "restore" a threshold here; that reading was reversed by
+// the user on 2026-09-15 and is locked.
+//
+// Amended 2026-11-17 (quick 261117-vuf): the poster's Reopen left My activity
+// with Posted (the report's own page keeps it), so this test now reads the
+// result on the card of the account that confirmed the report, which is
+// retracted after the resolve and no longer after the single reopen, and never
+// carries a Reopen hook.
 func TestProfileReopenIsInstantForTheReporter(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
-	client := newVerifiedClient(t, srv, mailer, "activity-reopen-instant@example.com")
+	poster := newVerifiedClient(t, srv, mailer, "activity-reopen-instant@example.com")
+	voter := newVerifiedClient(t, srv, mailer, "activity-reopen-voter@example.com")
 
-	reportID := submitReportGetID(t, client, srv.URL, floodReportBody(12.9716, 77.5946))
-	postVote(t, client, srv.URL, reportID, "resolve", map[string]any{"latitude": 12.9716, "longitude": 77.5946})
+	reportID, _ := vufVotedReport(t, srv.URL, poster, voter, floodReportBody(12.9716, 77.5946))
+	postVote(t, poster, srv.URL, reportID, "resolve", vufLoc).Body.Close()
 
-	bodyBefore := getProfile(t, client, srv.URL)
-	if !strings.Contains(bodyBefore, "data-can-reopen") {
-		t.Fatalf("expected the reopen hook before reopening: %s", bodyBefore)
+	before := p15ProfileRow(t, getProfile(t, voter, srv.URL), reportID)
+	if !strings.Contains(before, "vis-retracted") {
+		t.Fatalf("the voter's card is not retracted after the resolve: %s", before)
 	}
 
-	resp := postVote(t, client, srv.URL, reportID, "reopen", map[string]any{"latitude": 12.9716, "longitude": 77.5946})
+	resp := postVote(t, poster, srv.URL, reportID, "reopen", vufLoc)
 	visibility, _ := decodeVoteResponse(t, resp)
 	if visibility == "retracted" {
 		t.Fatalf("after the reporter's single reopen POST: visibility = %q, want it to no longer "+
-			"be retracted — no second account voted and no threshold was met (D-16 amended 2026-09-15)",
+			"be retracted; no second account voted and no threshold was met (D-16 amended 2026-09-15)",
 			visibility)
 	}
 
-	bodyAfter := getProfile(t, client, srv.URL)
-	if strings.Contains(bodyAfter, "data-can-reopen") {
-		t.Errorf("/profile still carries the reopen hook after the report was reopened: %s", bodyAfter)
+	after := p15ProfileRow(t, getProfile(t, voter, srv.URL), reportID)
+	if strings.Contains(after, "vis-retracted") {
+		t.Errorf("the voter's card is still retracted after the reporter reopened it: %s", after)
+	}
+	for _, body := range []string{getProfile(t, poster, srv.URL), getProfile(t, voter, srv.URL)} {
+		if strings.Contains(body, "data-can-reopen") {
+			t.Errorf("/profile carries a Reopen hook; it left with Posted")
+		}
 	}
 }
 
@@ -343,7 +326,9 @@ func TestProfileRowsCarryTrustJSON(t *testing.T) {
 	reportID := submitReportGetID(t, reporter, srv.URL, floodReportBody(12.9716, 77.5946))
 	voteTrust := p15VoteTrust(t, postVote(t, confirmer, srv.URL, reportID, "confirm", loc))
 
-	row := p15ProfileRow(t, getProfile(t, reporter, srv.URL), reportID)
+	// Amended 2026-11-17 (quick 261117-vuf): the card is the confirmer's, since
+	// the reporter's own post is no longer listed on My activity.
+	row := p15ProfileRow(t, getProfile(t, confirmer, srv.URL), reportID)
 	rowTrust := p15ProfileTrust(t, row)
 	if !reflect.DeepEqual(rowTrust, voteTrust) {
 		t.Fatalf("Activity data-trust differs from the vote response trust:\nrow  = %v\nvote = %v", rowTrust, voteTrust)
@@ -370,7 +355,7 @@ func TestProfileRowsCarryTrustJSON(t *testing.T) {
 	}
 	resolveResp.Body.Close()
 	reopenTrust := p15VoteTrust(t, postVote(t, reporter, srv.URL, reportID, "reopen", loc))
-	reloaded := p15ProfileTrust(t, p15ProfileRow(t, getProfile(t, reporter, srv.URL), reportID))
+	reloaded := p15ProfileTrust(t, p15ProfileRow(t, getProfile(t, confirmer, srv.URL), reportID))
 	if !reflect.DeepEqual(reloaded, reopenTrust) {
 		t.Fatalf("reloaded data-trust differs from the Reopen response trust:\nrow    = %v\nreopen = %v", reloaded, reopenTrust)
 	}
@@ -382,15 +367,19 @@ func TestProfileRowsCarryTrustJSON(t *testing.T) {
 // TestProfileMarksExpiredReports proves A44 and R-08: the server decides
 // expiry, writes the flag and the first paint row class, and sends no still
 // current word for an expired or Retracted report.
+//
+// Amended 2026-11-17 (quick 261117-vuf): the three reports are another
+// account's, confirmed by this one, since own posts are no longer listed.
 func TestProfileMarksExpiredReports(t *testing.T) {
 	srv, mailer, pool := newE2EServer(t)
+	poster := newVerifiedClient(t, srv, mailer, "activity-p15-expired-poster@example.com")
 	client := newVerifiedClient(t, srv, mailer, "activity-p15-expired@example.com")
-	loc := map[string]any{"latitude": 12.9716, "longitude": 77.5946}
+	loc := vufLoc
 
-	freshID := submitReportGetID(t, client, srv.URL, floodReportBody(12.9716, 77.5946))
-	expiredID := submitReportGetID(t, client, srv.URL, floodReportBody(12.9716, 77.5946))
-	resolvedID := submitReportGetID(t, client, srv.URL, floodReportBody(12.9716, 77.5946))
-	resolveResp := postVote(t, client, srv.URL, resolvedID, "resolve", loc)
+	freshID, _ := vufVotedReport(t, srv.URL, poster, client, floodReportBody(12.9716, 77.5946))
+	expiredID, _ := vufVotedReport(t, srv.URL, poster, client, floodReportBody(12.9716, 77.5946))
+	resolvedID, _ := vufVotedReport(t, srv.URL, poster, client, floodReportBody(12.9716, 77.5946))
+	resolveResp := postVote(t, poster, srv.URL, resolvedID, "resolve", loc)
 	if resolveResp.StatusCode != http.StatusOK {
 		t.Fatalf("resolve status = %d, want 200", resolveResp.StatusCode)
 	}
@@ -471,8 +460,12 @@ func TestProfileMarksExpiredReports(t *testing.T) {
 // severity word from the start of the body into the chip on the right. The body
 // now starts with the tag and then the title, and the chip's severity span holds
 // the word. The sev class check is kept.
+//
+// Amended 2026-11-17 (quick 261117-vuf): the cards are this account's confirms
+// of another account's reports, since own posts are no longer listed.
 func TestProfileRendersSeverityLabel(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
+	poster := newVerifiedClient(t, srv, mailer, "activity-p15-severity-poster@example.com")
 	client := newVerifiedClient(t, srv, mailer, "activity-p15-severity@example.com")
 
 	cases := []struct{ level, word string }{
@@ -484,7 +477,7 @@ func TestProfileRendersSeverityLabel(t *testing.T) {
 	for i, c := range cases {
 		body := floodReportBody(12.9716, 77.5946)
 		body["severity"] = c.level
-		ids[i] = submitReportGetID(t, client, srv.URL, body)
+		ids[i], _ = vufVotedReport(t, srv.URL, poster, client, body)
 	}
 
 	page := getProfile(t, client, srv.URL)
@@ -578,16 +571,18 @@ func TestProfileListsReportsTheAccountVotedOn(t *testing.T) {
 		t.Errorf("A's page lists report %d, which only a third account voted on", thirdID)
 	}
 
-	// B's own row for the confirmed report carries the same trust A saw.
-	bRow := p15ProfileRow(t, getProfile(t, b, srv.URL), confirmedID)
-	if got := p15ProfileTrust(t, bRow); !reflect.DeepEqual(got, confirmTrust) {
-		t.Errorf("B's own row trust differs from the confirm response trust:\nrow  = %v\nvote = %v", got, confirmTrust)
+	// Amended 2026-11-17 (quick 261117-vuf): B's own reports are no longer
+	// listed on B's My activity (they are on B's profile), so B's page holds no
+	// card for the report A confirmed.
+	if bBody := getProfile(t, b, srv.URL); strings.Contains(bBody, `data-report-id="`+strconv.FormatInt(confirmedID, 10)+`"`) {
+		t.Errorf("B's My activity lists B's own report %d", confirmedID)
 	}
 }
 
-// TestProfileVotedRowNeverOffersReopen proves the Reopen hook stays on the
-// reporter's own card: after B resolves a report A confirmed, A's card shows
-// the resolved state and no hook, and B's card carries the hook.
+// TestProfileVotedRowNeverOffersReopen proves no card offers Reopen: after B
+// resolves a report A confirmed, A's card shows the resolved state and no hook.
+// Amended 2026-11-17 (quick 261117-vuf): B's own card, which carried the hook,
+// left with Posted, so B's page holds neither the card nor the hook.
 func TestProfileVotedRowNeverOffersReopen(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
 	a := newVerifiedClient(t, srv, mailer, "activity-wm5-reopen-a@example.com")
@@ -612,9 +607,9 @@ func TestProfileVotedRowNeverOffersReopen(t *testing.T) {
 		t.Errorf("A's voted card carries data-can-reopen: %s", aRow)
 	}
 
-	bRow := p15ProfileRow(t, getProfile(t, b, srv.URL), reportID)
-	if !p15HasAttr(bRow, "data-can-reopen") {
-		t.Errorf("B's own resolved card carries no data-can-reopen: %s", bRow)
+	bBody := getProfile(t, b, srv.URL)
+	if strings.Contains(bBody, `data-report-id="`+strconv.FormatInt(reportID, 10)+`"`) || strings.Contains(bBody, "data-can-reopen") {
+		t.Errorf("B's My activity lists B's own resolved report or a Reopen hook; both left with Posted")
 	}
 }
 
@@ -639,11 +634,12 @@ func TestProfileVoterWithoutPostsHasNoRecord(t *testing.T) {
 
 // --- Quick task 261013-lrw: the phone Activity page ---
 
-// TestProfileRendersTheReporterRecord proves the record card is built from the
-// account's own reporter signal: a fresh account with one report gets the
-// server's New reporter label and its real counts (nothing invented), and the
-// page keeps the back link, the email, the Activity heading and the row with
-// its data attributes.
+// TestProfileRendersTheReporterRecord proved the record card was built from the
+// account's own reporter signal and sat in the Posted by you part. Amended
+// 2026-11-17 (quick 261117-vuf, owner on the 7.1 UAT): Posted and its record
+// card left My activity (the profile shows your posts and your record), so an
+// account with a post gets no record card here, and the page keeps the My
+// activity heading with no back link and no email (T-34-32).
 func TestProfileRendersTheReporterRecord(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
 	client := newVerifiedClient(t, srv, mailer, "activity-record@example.com")
@@ -651,42 +647,17 @@ func TestProfileRendersTheReporterRecord(t *testing.T) {
 	reportID := submitReportGetID(t, client, srv.URL, floodReportBody(12.9716, 77.5946))
 	body := getProfile(t, client, srv.URL)
 
-	section := regexp.MustCompile(`(?s)<section class="profile-record"[^>]*>(.*?)</section>`).FindStringSubmatch(body)
-	if section == nil {
-		t.Fatalf("/profile has no reporter record card: %s", body)
-	}
-	for _, want := range []string{"Your reporter record", "New reporter", "0 of 0 confirmed"} {
-		if !strings.Contains(section[1], want) {
-			t.Errorf("record card does not contain %q: %s", want, section[1])
-		}
-	}
-	if !strings.Contains(body, `aria-label="Your reporter record"`) {
-		t.Errorf("record card has no accessible name: %s", body)
-	}
-
-	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to D-21,
-	// T-34-32): the back link and the email line are gone from the page, the
-	// heading is My activity, and the record card sits in the Posted by you
-	// part. The Phase 3.1 and Phase 4 hands-on tests are walked on this layout
-	// after Phase 3.4 is built.
-	for _, want := range []string{
-		`<h1 class="activity-heading">My activity</h1>`,
+	for _, gone := range []string{
+		`class="profile-record"`, "Your reporter record", "activity-part--posted",
 		`data-report-id="` + strconv.FormatInt(reportID, 10) + `"`,
+		`class="profile-back-link"`, "activity-record@example.com", `class="profile-email"`,
 	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("/profile lost %q: %s", want, body)
-		}
-	}
-	for _, gone := range []string{`class="profile-back-link"`, "activity-record@example.com", `class="profile-email"`} {
 		if strings.Contains(body, gone) {
 			t.Errorf("/profile still holds %q: %s", gone, body)
 		}
 	}
-	postedAt := strings.Index(body, `<section class="activity-part activity-part--posted"`)
-	confirmedAt := strings.Index(body, `<section class="activity-part activity-part--confirmed"`)
-	recordAt := strings.Index(body, `<section class="profile-record"`)
-	if postedAt == -1 || confirmedAt == -1 || recordAt < postedAt || recordAt > confirmedAt {
-		t.Errorf("the record card is not inside the Posted by you part (posted %d, record %d, confirmed %d)", postedAt, recordAt, confirmedAt)
+	if !strings.Contains(body, `<h1 class="activity-heading">My activity</h1>`) {
+		t.Errorf("/profile lost the My activity heading: %s", body)
 	}
 }
 
@@ -709,9 +680,10 @@ func TestProfileWithoutReportsRendersNoRecord(t *testing.T) {
 	// there is no All view now; every part of an empty account shows its own
 	// empty state in its box, with the UI-SPEC 3c words. The Phase 3.1 and Phase
 	// 4 hands-on tests are walked on this layout after Phase 3.4 is built.
+	//
+	// Amended 2026-11-17 (quick 261117-vuf): the list draws Confirmed, Disputed
+	// and Ended only, so the Updates and Posted empty states are not on it.
 	for _, words := range []string{
-		"No updates yet", "Changes on reports you posted or voted on will show here.",
-		"No reports yet", "Reports you post will appear here.",
 		"No confirmations yet", "Reports you confirm will appear here.",
 		"No disputes yet", "Reports you dispute will appear here.",
 		"No ended reports nearby", "Nothing in this area was resolved or faded out in the last 7 days.",
@@ -720,11 +692,17 @@ func TestProfileWithoutReportsRendersNoRecord(t *testing.T) {
 			t.Errorf("/profile lost the empty state words %q: %s", words, body)
 		}
 	}
-	// The four row parts hold a visible empty state; the Ended nearby one is
-	// the shell's hidden empty state.
+	// "No updates yet" is not checked: the bell's own empty line uses it.
+	for _, gone := range []string{"No reports yet", "Reports you post will appear here.", "Changes on reports you posted or voted on will show here."} {
+		if strings.Contains(body, gone) {
+			t.Errorf("/profile still holds the empty state words %q", gone)
+		}
+	}
+	// The two row parts hold a visible empty state; the Ended one is the
+	// shell's hidden empty state.
 	visibleEmpty := regexp.MustCompile(`<div class="empty-state profile-empty-state activity-empty">`)
-	if n := len(visibleEmpty.FindAllString(body, -1)); n != 4 {
-		t.Errorf("/profile has %d visible empty states, want 4 (Updates, Posted by you, You confirmed, You disputed)", n)
+	if n := len(visibleEmpty.FindAllString(body, -1)); n != 2 {
+		t.Errorf("/profile has %d visible empty states, want 2 (Confirmed, Disputed)", n)
 	}
 	if strings.Contains(body, `class="profile-report-list"`) {
 		t.Errorf("/profile renders a report list for an account with no reports")
@@ -771,29 +749,30 @@ func partSection(t *testing.T, body, key string) string {
 }
 
 // TestActivityPartsRenderFromTheAddress proves the server renders the page the
-// address names (Phase 3.4, D-18 to D-21). Account one holds two posts (one
-// resolved) and votes on two of account two's reports (one confirm, one
-// dispute), so the counts are Posted by you 2, You confirmed 1 and You disputed
-// 1. The list (/profile) has an empty data-part, the hub of five rows whose
-// counts equal the rows in each section, and five sections with the ids
-// part-updates, part-posted, part-confirmed, part-disputed and part-ended in that
-// order. A part address renders that part as the current one, with the part name
-// as the top bar title and the back arrow to /profile.
+// address names (Phase 3.4, D-18 to D-21). A part address renders that part as
+// the current one, with the part name as the top bar title, and the list has an
+// empty data-part and a hub whose counts equal the rows in each section.
 //
 // Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to D-21):
 // this replaces TestProfileTabsRenderFromTheAddress, which pinned the six tab
-// page. The Phase 3.1 and Phase 4 hands-on tests are walked on this layout after
-// Phase 3.4 is built.
+// page.
 //
-// Amended 2026-11-17 (quick 261117-lq0, owner on the 7.1 UAT): the parts open
-// from Settings now, so the list keeps the title My activity with a back arrow
-// to /settings, and a part screen's back arrow goes to /settings too, not to
-// the list. Everything else is unchanged.
+// Amended 2026-11-17 (quick 261117-lq0, owner on the 7.1 UAT): the list keeps
+// the title My activity with a back arrow to /settings, and a part screen's
+// back arrow goes to /settings too.
+//
+// Amended 2026-11-17 (quick 261117-vuf, owner on the 7.1 UAT: "can we like
+// shorten those names", "You'll see the post twice, right?"): the list, its hub
+// and the laptop stack hold exactly Confirmed, Disputed and Ended, in that
+// order, with one word names. Account one posts two reports (one resolved) and
+// votes on two of account two's, so its own posts are on no part and the
+// counts are Confirmed 1 and Disputed 1. No posted or updates section is drawn
+// on /profile or on a part screen, and part=posted lands on the list.
 func TestActivityPartsRenderFromTheAddress(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
 	one := newVerifiedClient(t, srv, mailer, "activity-parts-one@example.com")
 	two := newVerifiedClient(t, srv, mailer, "activity-parts-two@example.com")
-	loc := map[string]any{"latitude": 12.9716, "longitude": 77.5946}
+	loc := vufLoc
 
 	livePost := submitReportGetID(t, one, srv.URL, floodReportBody(12.9716, 77.5946))
 	resolvedPost := submitReportGetID(t, one, srv.URL, floodReportBody(12.9716, 77.5946))
@@ -803,17 +782,21 @@ func TestActivityPartsRenderFromTheAddress(t *testing.T) {
 	p15VoteTrust(t, postVote(t, one, srv.URL, confirmed, "confirm", loc))
 	p15VoteTrust(t, postVote(t, one, srv.URL, disputed, "dispute", loc))
 
-	keys := []string{"updates", "posted", "confirmed", "disputed", "ended"}
+	keys := []string{"confirmed", "disputed", "ended"}
 	wantIDs := map[string][]int64{
-		"updates":   nil,
-		"posted":    {resolvedPost, livePost},
 		"confirmed": {confirmed},
 		"disputed":  {disputed},
 		"ended":     nil,
 	}
-	names := map[string]string{
-		"updates": "Updates", "posted": "Posted by you", "confirmed": "You confirmed",
-		"disputed": "You disputed", "ended": "Ended nearby",
+	names := map[string]string{"confirmed": "Confirmed", "disputed": "Disputed", "ended": "Ended"}
+
+	sectionIDs := func(body string) string {
+		ids := regexp.MustCompile(`<section class="activity-part [^"]*" id="(part-[a-z]+)"`).FindAllStringSubmatch(body, -1)
+		var got []string
+		for _, m := range ids {
+			got = append(got, m[1])
+		}
+		return strings.Join(got, ",")
 	}
 
 	t.Run("the list", func(t *testing.T) {
@@ -825,31 +808,29 @@ func TestActivityPartsRenderFromTheAddress(t *testing.T) {
 			t.Errorf("/profile top bar must be titled My activity with a back arrow to /settings")
 		}
 
-		// The five sections, in order.
-		ids := regexp.MustCompile(`<section class="activity-part [^"]*" id="(part-[a-z]+)"`).FindAllStringSubmatch(body, -1)
-		var gotIDs []string
-		for _, m := range ids {
-			gotIDs = append(gotIDs, m[1])
+		// The three sections, in order: the laptop stack has no posted and no
+		// updates section.
+		if got := sectionIDs(body); got != "part-confirmed,part-disputed,part-ended" {
+			t.Errorf("section ids = %s, want part-confirmed,part-disputed,part-ended", got)
 		}
-		if got := strings.Join(gotIDs, ","); got != "part-updates,part-posted,part-confirmed,part-disputed,part-ended" {
-			t.Errorf("section ids = %s", got)
-		}
-		if n := strings.Count(body, `id="part-`); n != 5 {
-			t.Errorf(`found %d id="part- attributes, want 5 sections`, n)
+		for _, gone := range []string{`id="part-posted"`, `id="part-updates"`, "activity-part--posted", "activity-part--updates", "updates-rows", "activity-hub__new"} {
+			if strings.Contains(body, gone) {
+				t.Errorf("/profile still draws %q", gone)
+			}
 		}
 		if strings.Contains(body, " data-current") {
 			t.Errorf("the list marks a part as current")
 		}
 
-		// The hub: five links, in order, with the counts of the rows in each
+		// The hub: three links, in order, with the counts of the rows in each
 		// section.
 		hub := regexp.MustCompile(`(?s)<nav class="activity-hub" aria-label="My activity">(.*?)</nav>`).FindStringSubmatch(body)
 		if hub == nil {
 			t.Fatalf("/profile has no hub: %s", body)
 		}
 		rows := regexp.MustCompile(`(?s)<a class="activity-hub__row" href="([^"]*)" data-part-link="([^"]*)">(.*?)</a>`).FindAllStringSubmatch(hub[1], -1)
-		if len(rows) != 5 {
-			t.Fatalf("the hub has %d rows, want 5: %s", len(rows), hub[1])
+		if len(rows) != 3 {
+			t.Fatalf("the hub has %d rows, want 3: %s", len(rows), hub[1])
 		}
 		for i, r := range rows {
 			key := keys[i]
@@ -860,15 +841,7 @@ func TestActivityPartsRenderFromTheAddress(t *testing.T) {
 				t.Errorf("hub row %q does not carry the name %q: %s", key, names[key], r[3])
 			}
 			count := regexp.MustCompile(`activity-hub__count">(\d+)</span>`).FindStringSubmatch(r[3])
-			// Amended 2026-10-17 by Phase 3.2 plan 08 (UI-SPEC B1, D-05): the Updates
-			// part draws urow items, not report rows, so its rows are counted by
-			// li.urow. Every other part still counts report rows. This account has
-			// no updates, so the hub shows the count and not the N new tag.
-			rowMarker := `<li class="report-row`
-			if key == "updates" {
-				rowMarker = `<li class="urow`
-			}
-			rowCount := strings.Count(partSection(t, body, key), rowMarker)
+			rowCount := strings.Count(partSection(t, body, key), `<li class="report-row`)
 			if rowCount != len(wantIDs[key]) {
 				t.Errorf("part %q holds %d rows, want %d", key, rowCount, len(wantIDs[key]))
 			}
@@ -884,7 +857,8 @@ func TestActivityPartsRenderFromTheAddress(t *testing.T) {
 			}
 		}
 
-		// Each report is in exactly the part its kind belongs to.
+		// Each voted report is in exactly the part its kind belongs to, and the
+		// account's own posts are on no part.
 		for key, ids := range wantIDs {
 			section := partSection(t, body, key)
 			for _, id := range ids {
@@ -893,9 +867,14 @@ func TestActivityPartsRenderFromTheAddress(t *testing.T) {
 				}
 			}
 		}
-		for _, id := range []int64{livePost, resolvedPost, confirmed, disputed} {
+		for _, id := range []int64{confirmed, disputed} {
 			if n := strings.Count(body, `data-report-id="`+strconv.FormatInt(id, 10)+`"`); n != 1 {
 				t.Errorf("report %d is on the page %d times, want exactly once", id, n)
+			}
+		}
+		for _, id := range []int64{livePost, resolvedPost} {
+			if strings.Contains(body, `data-report-id="`+strconv.FormatInt(id, 10)+`"`) {
+				t.Errorf("the account's own report %d is on My activity; it is on the profile", id)
 			}
 		}
 	})
@@ -916,21 +895,26 @@ func TestActivityPartsRenderFromTheAddress(t *testing.T) {
 			if n := strings.Count(body, " data-current"); n != 1 {
 				t.Errorf("part %q: %d sections are marked current, want 1", key, n)
 			}
-			if !strings.Contains(partSection(t, body, key), " data-current") {
-				// The marker sits in the section's own opening tag, which
-				// partSection cuts off, so check the tag itself.
-				if !strings.Contains(body, `data-part-key="`+key+`" data-current`) {
-					t.Errorf("part %q: its own section is not marked current", key)
-				}
+			if !strings.Contains(body, `data-part-key="`+key+`" data-current`) {
+				t.Errorf("part %q: its own section is not marked current", key)
+			}
+			if got := sectionIDs(body); got != "part-confirmed,part-disputed,part-ended" {
+				t.Errorf("part %q: section ids = %s, want the three parts", key, got)
+			}
+			if strings.Contains(body, "app-bar__item--current") || strings.Contains(body, `aria-current="page"`) {
+				t.Errorf("part %q: a bar item is current", key)
 			}
 		}
 	})
 
-	t.Run("an unknown part renders the list", func(t *testing.T) {
-		for _, raw := range []string{"part=nonsense", "part=POSTED", "part=posted%20", "part="} {
+	t.Run("an unknown or removed part renders the list", func(t *testing.T) {
+		for _, raw := range []string{"part=nonsense", "part=POSTED", "part=posted%20", "part=", "part=posted"} {
 			body := getProfileQuery(t, one, srv.URL, raw)
 			if !strings.Contains(body, `data-part=""`) {
 				t.Errorf("%s did not render the list", raw)
+			}
+			if !strings.Contains(body, `<nav class="activity-hub"`) {
+				t.Errorf("%s did not draw the hub", raw)
 			}
 		}
 	})
@@ -1013,8 +997,33 @@ func TestActivityUpdatesPartRenders(t *testing.T) {
 	if !strings.Contains(section, `<span class="activity-part__count">3</span>`) {
 		t.Errorf("the part title does not carry the kept count 3")
 	}
-	if !strings.Contains(body, `<span class="activity-hub__new">1 new</span>`) {
-		t.Errorf("the hub row does not show the red 1 new tag")
+	// Amended 2026-11-17 (quick 261117-vuf, owner on the 7.1 UAT): Updates is no
+	// row of the list now, only the screen the bell's See all updates opens. It
+	// draws the Updates part alone on both sizes, titled Updates, with no hub and
+	// so no "1 new" tag there, and its back arrow goes to Nearby, where the bell
+	// is. The list draws no Updates.
+	if got := regexp.MustCompile(`<section class="activity-part [^"]*" id="(part-[a-z]+)"`).FindAllStringSubmatch(body, -1); len(got) != 1 || got[0][1] != "part-updates" {
+		t.Errorf("the Updates screen draws sections %v, want part-updates alone", got)
+	}
+	for _, gone := range []string{`<nav class="activity-hub"`, "activity-hub__new", "activity-part--confirmed", "activity-part--disputed", "activity-part--ended"} {
+		if strings.Contains(body, gone) {
+			t.Errorf("the Updates screen still draws %q", gone)
+		}
+	}
+	if !strings.Contains(body, `<h1 class="app-topbar__title">Updates</h1>`) {
+		t.Errorf("the Updates screen is not titled Updates")
+	}
+	if !strings.Contains(body, `<a class="app-topbar__back" href="/"`) || strings.Contains(body, `<a class="app-topbar__back" href="/settings"`) {
+		t.Errorf("the Updates screen's back arrow does not go to Nearby (/)")
+	}
+	if !strings.Contains(body, `data-part="updates"`) || !strings.Contains(body, `data-part-key="updates" data-current`) {
+		t.Errorf("the Updates screen is not marked as the current part")
+	}
+	list := getProfile(t, viewer, srv.URL)
+	for _, gone := range []string{`id="part-updates"`, "updates-rows", "activity-hub__new", `data-part-link="updates"`} {
+		if strings.Contains(list, gone) {
+			t.Errorf("the list still draws %q", gone)
+		}
 	}
 
 	// Another account has no updates: the shared empty state, no tag.
@@ -1042,8 +1051,11 @@ func TestActivityTabAliases(t *testing.T) {
 	client := newVerifiedClient(t, srv, mailer, "activity-aliases@example.com")
 	submitReportGetID(t, client, srv.URL, floodReportBody(12.9716, 77.5946))
 
+	// Amended 2026-11-17 (quick 261117-vuf): Posted left, so posts lands on the
+	// list like part=posted.
 	cases := []struct{ query, wantPart string }{
-		{"tab=posts", "posted"},
+		{"tab=posts", ""},
+		{"part=posted", ""},
 		{"tab=votes", "confirmed"},
 		{"tab=disputes", "disputed"},
 		{"tab=all", ""},

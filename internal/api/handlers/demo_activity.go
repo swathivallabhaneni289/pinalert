@@ -2,8 +2,9 @@ package handlers
 
 // demo_activity.go is the Demo's My activity place (plan 05-19, D-05, UI-SPEC
 // 4c). It shows what the visitor did in this visit and nothing else: the
-// practice reports posted, the reports confirmed and the reports disputed, plus
-// Ended nearby, which the page fills from the visit's own reports route. The
+// reports confirmed and the reports disputed, plus Ended, which the page fills
+// from the visit's own reports route (amended 2026-11-17, quick 261117-vuf: the
+// practice reports posted left with the real page's Posted). The
 // parts, the cards and the empty states are the real page's: the cards are
 // built by the same buildActivityPage and newProfileReport that the signed in
 // page uses, from the same service shapes, so a card reads exactly as it would
@@ -43,9 +44,9 @@ type demoActivityViewModel struct {
 
 // DemoActivityPage handles GET /demo/activity: the visit's My activity. The
 // visit is the one named by ?v= when it is valid and alive, else a new world,
-// as for the Demo's other places. ?part= picks one of the four parts on a phone
-// (the list otherwise); updates is not a Demo part and reads as the list, like
-// any other word. It is reached through DemoRoutes, behind the per IP visit
+// as for the Demo's other places. ?part= picks one of the three parts on a phone
+// (the list otherwise); updates and posted are not Demo parts and read as the
+// list, like any other word. It is reached through DemoRoutes, behind the per IP visit
 // limit.
 func DemoActivityPage(tmpl *template.Template, store *demo.Store, cfg PageConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -73,11 +74,11 @@ func DemoActivityPage(tmpl *template.Template, store *demo.Store, cfg PageConfig
 
 		from := demoFromWord(r)
 		listHref := demoPlaceHref(demoActivityPath, vm.Visit, from)
-		parts := make([]activityPart, 0, len(view.Parts))
-		for _, p := range view.Parts {
-			if p.Key == activityPartUpdates {
-				continue
-			}
+		// The same three parts as the real list (quick 261117-vuf): Confirmed,
+		// Disputed and Ended, with no Updates.
+		shown := activityShownParts(view.Parts, view.CurrentPart)
+		parts := make([]activityPart, 0, len(shown))
+		for _, p := range shown {
 			// The part screen's address stays in the Demo and in this visit. The
 			// key is always one of the part constants, never the request value.
 			p.Href = listHref + "&" + demoPartParam + "=" + p.Key
@@ -119,16 +120,10 @@ func demoActivityData(ctx context.Context, world *demo.World) (service.ActivityP
 		return service.ActivityPage{}, err
 	}
 
+	// Amended 2026-11-17 (quick 261117-vuf): the visitor's practice reports are
+	// no longer cards here, as the real page no longer lists your own posts, so
+	// they are not read.
 	page := service.ActivityPage{Posts: []service.ActivityReport{}, Votes: []service.VotedReport{}}
-	for _, id := range act.Posted {
-		ar, ok, err := demoActivityReport(ctx, world, id)
-		if err != nil {
-			return service.ActivityPage{}, err
-		}
-		if ok {
-			page.Posts = append(page.Posts, ar)
-		}
-	}
 	for _, id := range voted {
 		v, standing := votes[id]
 		if !standing || !v.Value.ValidFor(service.VoteKindContent) {

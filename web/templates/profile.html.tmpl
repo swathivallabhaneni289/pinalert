@@ -29,11 +29,14 @@
 
     <div class="queue-strip" id="queue-strip" hidden></div>
 
+    {{/* Quick 261117-vuf (owner, 2026-11-17): the list holds Confirmed, Disputed and Ended. Posted left (your posts are on your profile) and Updates is not a row: the bell's See all updates opens it as its own screen (part=updates), where the server hands over the Updates part alone and no list is drawn, on both sizes. */}}
+    {{if ne .CurrentPart "updates"}}
     <nav class="activity-hub" aria-label="My activity">
       {{range .Parts}}
-      <a class="activity-hub__row" href="{{.Href}}" data-part-link="{{.Key}}"><span class="activity-hub__tile" aria-hidden="true"><span class="app-icon app-icon--{{.Icon}}"></span></span><span class="activity-hub__text"><span class="activity-hub__name">{{.Name}}</span><span class="activity-hub__summary">{{.Summary}}</span></span>{{if .ShowCount}}{{if and (eq .Key "updates") .NewCount}}<span class="activity-hub__new">{{.NewCount}} new</span>{{else}}<span class="activity-hub__count">{{.Count}}</span>{{end}}{{else if eq .Key "ended"}}<span class="activity-hub__count" id="ended-hub-count" hidden></span>{{end}}<span class="app-icon app-icon--chevron-right activity-hub__chevron" aria-hidden="true"></span></a>
+      <a class="activity-hub__row" href="{{.Href}}" data-part-link="{{.Key}}"><span class="activity-hub__tile" aria-hidden="true"><span class="app-icon app-icon--{{.Icon}}"></span></span><span class="activity-hub__text"><span class="activity-hub__name">{{.Name}}</span><span class="activity-hub__summary">{{.Summary}}</span></span>{{if .ShowCount}}<span class="activity-hub__count">{{.Count}}</span>{{else if eq .Key "ended"}}<span class="activity-hub__count" id="ended-hub-count" hidden></span>{{end}}<span class="app-icon app-icon--chevron-right activity-hub__chevron" aria-hidden="true"></span></a>
       {{end}}
     </nav>
+    {{end}}
 
     {{range .Parts}}
     <section class="activity-part activity-part--{{.Key}}" id="part-{{.Key}}" data-part-key="{{.Key}}"{{if .Current}} data-current{{end}} aria-labelledby="activity-title-{{.Key}}">
@@ -42,16 +45,6 @@
         <p class="activity-part__line">{{.Line}}</p>
       </div>
       <div class="activity-part__body">
-        {{if eq .Key "posted"}}
-        {{with $.Record}}
-        <section class="profile-record" aria-label="Your reporter record">
-          <p class="profile-record__kicker">Your reporter record</p>
-          <p class="profile-record__label">{{.Label}}</p>
-          <p class="profile-record__counts">{{.Counts}}</p>
-        </section>
-        {{end}}
-        {{end}}
-
         {{if eq .Key "ended"}}
         <div class="activity-box" id="ended-nearby">
           <div class="activity-skeleton" id="ended-skeleton">
@@ -83,7 +76,7 @@
             <p>{{.EmptyText}}</p>
           </div>
           <div class="empty-state profile-empty-state activity-empty" id="ended-location" hidden>
-            <h3>Ended nearby needs your location</h3>
+            <h3>Ended needs your location</h3>
             <p>Open Nearby and allow location, then come back.</p>
           </div>
           <div class="error-state activity-empty" id="ended-error" hidden>
@@ -112,9 +105,7 @@
                 data-expired="{{.Expired}}"
                 {{if not .Moderation}}data-trust="{{.TrustJSON}}"{{end}}
                 {{if .ReporterProfilePath}}data-reporter-profile-path="{{.ReporterProfilePath}}"{{end}}
-                {{if .Moderation}}data-moderation="{{.Moderation}}"{{end}}
-                {{if .CanReopen}}data-can-reopen="true"{{end}}
-                {{if .UndosUsed}}data-undos-used="true"{{end}}>
+                {{if .Moderation}}data-moderation="{{.Moderation}}"{{end}}>
               <span class="icon-badge activity-card__icon" aria-hidden="true"><span class="icon-glyph {{.IconGlyph}}"></span></span>
               <div class="activity-card__report">
                 <p class="report-row__title">{{.Description}}</p>

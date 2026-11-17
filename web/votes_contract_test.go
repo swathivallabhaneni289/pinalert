@@ -2215,12 +2215,18 @@ func TestActivityModuleHasNoMarkupParsingSink(t *testing.T) {
 }
 
 // --- Plan 02-07 Task 3: Reopen ---
+//
+// Amended 2026-11-17 (quick 261117-vuf, owner on the 7.1 UAT): Posted left My
+// activity, and the poster's Reopen there lived only on its cards, so
+// activity.js no longer draws Reopen at all. The four Reopen tests of this
+// block pinned how that button posted, which toast it showed, that it read no
+// identity and that it applied the server's answer. What still holds is that
+// the module posts nothing of its own, reads no identity and computes no
+// threshold; the report's own Reopen is pinned with votes.js.
 
-// TestReopenButtonPostsThroughTheSharedTransport proves the reopen click
-// path in activity.js calls the votes module's transport with the reopen
-// action and, on success, uses the votes module's exported reopen-
-// succeeded copy constant — no request of its own, no location read, no
-// copy string declared here.
+// TestReopenButtonPostsThroughTheSharedTransport now proves activity.js makes
+// no request at all: no vote through the shared transport, no fetch, no
+// location read and no copy of the Reopen strings.
 func TestReopenButtonPostsThroughTheSharedTransport(t *testing.T) {
 	raw, err := fs.ReadFile(StaticFS, "static/js/activity.js")
 	if err != nil {
@@ -2228,35 +2234,19 @@ func TestReopenButtonPostsThroughTheSharedTransport(t *testing.T) {
 	}
 	text := stripCSSComments(string(raw))
 
-	if !strings.Contains(text, "PinalertVotes.castVote(") {
-		t.Errorf("activity.js does not call PinalertVotes.castVote( — the reopen button must post " +
-			"through the shared transport, never construct a request of its own")
-	}
-	if strings.Contains(text, "fetch(") {
-		t.Errorf("activity.js contains fetch( — every network call must go through PinalertVotes.castVote")
-	}
-	if strings.Contains(text, "navigator.geolocation") {
-		t.Errorf("activity.js references navigator.geolocation directly — location capture belongs " +
-			"to castVote alone")
-	}
-	if !strings.Contains(text, "PinalertVotes.REOPEN_SUCCEEDED_TOAST") {
-		t.Errorf("activity.js does not reference PinalertVotes.REOPEN_SUCCEEDED_TOAST — it must reuse " +
-			"the votes module's exported copy constant rather than declaring its own")
-	}
-	if strings.Contains(text, "'Report reopened.'") || strings.Contains(text, "\"Report reopened.\"") {
-		t.Errorf("activity.js declares its own copy of the reopen-succeeded string — it must " +
-			"reference PinalertVotes.REOPEN_SUCCEEDED_TOAST instead")
+	for _, gone := range []string{
+		"PinalertVotes.castVote(", "fetch(", "navigator.geolocation",
+		"PinalertVotes.REOPEN_SUCCEEDED_TOAST", "'Report reopened.'", "\"Report reopened.\"",
+	} {
+		if strings.Contains(text, gone) {
+			t.Errorf("activity.js contains %q; the page posts nothing now Reopen left with Posted", gone)
+		}
 	}
 }
 
-// TestReopenSuccessCopyIsAlwaysTheReopenedString is the amendment's
-// client-side gate (D-16 amended 2026-09-15): the reopen success path
-// reaches the toast with the reopen-succeeded constant on every branch —
-// no conditional selecting between two toast strings, and the
-// reopen-pending constant is never referenced by this module. This button
-// renders only on rows the viewer submitted, and 02-03a's amended
-// CastVote makes a reporter's reopen instant, so the pending outcome is
-// unreachable here.
+// TestReopenSuccessCopyIsAlwaysTheReopenedString now proves activity.js shows
+// no toast and decides no outcome: the pending constant, the outcome chooser
+// and every showToast call are gone with the button.
 func TestReopenSuccessCopyIsAlwaysTheReopenedString(t *testing.T) {
 	raw, err := fs.ReadFile(StaticFS, "static/js/activity.js")
 	if err != nil {
@@ -2264,29 +2254,18 @@ func TestReopenSuccessCopyIsAlwaysTheReopenedString(t *testing.T) {
 	}
 	text := stripCSSComments(string(raw))
 
-	if strings.Contains(text, "REOPEN_PENDING_TOAST") {
-		t.Errorf("activity.js references REOPEN_PENDING_TOAST — this button's outcome is always " +
-			"the reopen-succeeded string (D-16 amended); a later edit must not reintroduce the " +
-			"two-outcome branch")
-	}
-	if strings.Contains(text, "resolutionOutcomeMessage") {
-		t.Errorf("activity.js calls resolutionOutcomeMessage — on the Activity page a reopen has " +
-			"exactly one outcome, so this function (which DECIDES between two) must not be called here")
-	}
-
-	showToastCount := strings.Count(text, "Pinalert.showToast(")
-	if showToastCount != 1 {
-		t.Errorf("expected exactly one Pinalert.showToast( call in activity.js, found %d — the "+
-			"reopen outcome has exactly one possible toast", showToastCount)
+	for _, gone := range []string{"REOPEN_PENDING_TOAST", "resolutionOutcomeMessage", "Pinalert.showToast("} {
+		if strings.Contains(text, gone) {
+			t.Errorf("activity.js contains %q; the page shows no toast now Reopen left with Posted", gone)
+		}
 	}
 }
 
 // TestReopenHasNoClientSideIdentityOrThreshold is this plan's T-02-03
 // gate: activity.js contains no ownership or account-comparison read, no
-// threshold arithmetic, no second button and no confirmation block. The
-// row's own data attributes are the only inputs to whether the button
-// renders — the reporter's instant reopen is granted server-side, never
-// claimed client-side.
+// threshold arithmetic, no second button and no confirmation block. Amended
+// 2026-11-17 (quick 261117-vuf): the one delegated listener left with Reopen,
+// so the module attaches none.
 func TestReopenHasNoClientSideIdentityOrThreshold(t *testing.T) {
 	raw, err := fs.ReadFile(StaticFS, "static/js/activity.js")
 	if err != nil {
@@ -2297,32 +2276,25 @@ func TestReopenHasNoClientSideIdentityOrThreshold(t *testing.T) {
 	// "Threshold" (the identifier shape, matching
 	// service.IndependentAgreementThreshold) is checked rather than the
 	// bare lowercase word: stripCSSComments only strips CSS-style /* */
-	// blocks, not JS // line comments, and this file's own explanatory
-	// comments legitimately use the English word "threshold" (and
-	// "threshold-free") in prose describing why none is computed —
-	// banning the word outright would forbid documenting its own absence.
+	// blocks, not JS // line comments, and prose may use the English word.
 	for _, forbidden := range []string{
 		"is_own_report", "reporterAccountID", "ReporterReopened", "accountID",
 		"Threshold", "resolve-confirm", "vote-btn--confirm-resolve",
 	} {
 		if strings.Contains(text, forbidden) {
-			t.Errorf("activity.js references %q — the reporter's instant reopen is the server's to "+
-				"grant; this module must never read identity, compute a threshold, or build a "+
-				"confirmation step (T-02-03)", forbidden)
+			t.Errorf("activity.js references %q; this module must never read identity, compute a "+
+				"threshold, or build a confirmation step (T-02-03)", forbidden)
 		}
 	}
 
-	if n := strings.Count(text, "addEventListener"); n != 1 {
-		t.Errorf("expected exactly one addEventListener call in activity.js (one delegated listener "+
-			"on the report list), found %d", n)
+	if n := strings.Count(text, "addEventListener"); n != 0 {
+		t.Errorf("expected no addEventListener call in activity.js now Reopen left, found %d", n)
 	}
 }
 
-// TestReopenAppliesTheServerAnswerRatherThanGuessing proves the success
-// path applies the visibility the RESPONSE carried — updating the chip and
-// the state class — and removes the control block only when that
-// visibility is no longer the retracted slug. Fails if the button removes
-// itself optimistically before the response arrives.
+// TestReopenAppliesTheServerAnswerRatherThanGuessing now proves the rows still
+// take their chip and state class from the server's own attributes, and that
+// no Reopen response path is left to apply.
 func TestReopenAppliesTheServerAnswerRatherThanGuessing(t *testing.T) {
 	raw, err := fs.ReadFile(StaticFS, "static/js/activity.js")
 	if err != nil {
@@ -2330,17 +2302,13 @@ func TestReopenAppliesTheServerAnswerRatherThanGuessing(t *testing.T) {
 	}
 	text := stripCSSComments(string(raw))
 
-	if !strings.Contains(text, "PinalertVisibility.updateVisibilityTag(") {
-		t.Errorf("activity.js's reopen success path does not call " +
-			"PinalertVisibility.updateVisibilityTag( to rebuild the chip from the response")
+	for _, want := range []string{"PinalertVisibility.updateVisibilityTag(tag, report)", "PinalertVisibility.applyVisibilityClass(row, report)"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("activity.js does not call %s from the row's server attributes", want)
+		}
 	}
-	if !strings.Contains(text, "PinalertVisibility.applyVisibilityClass(") {
-		t.Errorf("activity.js's reopen success path does not call " +
-			"PinalertVisibility.applyVisibilityClass( to rebuild the state class from the response")
-	}
-	if !strings.Contains(text, "PinalertVotes.RETRACTED_VISIBILITY_SLUG") {
-		t.Errorf("activity.js does not reference PinalertVotes.RETRACTED_VISIBILITY_SLUG to decide " +
-			"whether the control block should be removed")
+	if strings.Contains(text, "PinalertVotes.RETRACTED_VISIBILITY_SLUG") || strings.Contains(text, "result.visibility") {
+		t.Errorf("activity.js still applies a Reopen response; Reopen left with Posted")
 	}
 }
 
@@ -2458,12 +2426,15 @@ func TestOwnReportResolutionSkipsLocation(t *testing.T) {
 		t.Errorf("block.isOwnReport must be assigned in exactly one place, found %d", n)
 	}
 
+	// Amended 2026-11-17 (quick 261117-vuf): the Activity page's Reopen, the
+	// other consumer of ownReport, left with Posted, so activity.js casts no
+	// vote at all and ownReport comes only from the block's own flag above.
 	actRaw, err := fs.ReadFile(StaticFS, "static/js/activity.js")
 	if err != nil {
 		t.Fatalf("failed to read embedded static/js/activity.js: %v", err)
 	}
-	if !strings.Contains(string(actRaw), "castVote(row.dataset.reportId, 'reopen', { ownReport: true })") {
-		t.Errorf("activity.js must pass ownReport true: every row there is the viewer's own report")
+	if strings.Contains(string(actRaw), "castVote(") {
+		t.Errorf("activity.js casts a vote; its Reopen left with Posted")
 	}
 }
 
