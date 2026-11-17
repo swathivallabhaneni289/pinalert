@@ -137,9 +137,14 @@ func TestSettingsRows(t *testing.T) {
 	// Amended 2026-11-17 (quick 261117-lq0, owner on the 7.1 UAT): the My
 	// activity section is first, with five link rows in the hub's order that go
 	// to the hub's own part addresses, then the three About Pinalert rows.
+	//
+	// Amended 2026-11-17 (quick 261117-lq0 review): each My activity row adds
+	// the part's section id as a fragment, so the laptop, which stacks all five
+	// parts, opens with the picked one in view. The hub keeps the plain address.
 	wantHrefs := []string{
-		"/profile?part=updates", "/profile?part=posted", "/profile?part=confirmed",
-		"/profile?part=disputed", "/profile?part=ended",
+		"/profile?part=updates#part-updates", "/profile?part=posted#part-posted",
+		"/profile?part=confirmed#part-confirmed", "/profile?part=disputed#part-disputed",
+		"/profile?part=ended#part-ended",
 		"/disclaimer", "/policy#policy", "/low",
 	}
 	if strings.Join(hrefs, ",") != strings.Join(wantHrefs, ",") {
