@@ -1490,9 +1490,18 @@
   // names the home area (the stored one or the one saved at step 4) with
   // textContent. A dialog that will not open sends the flow on without it. This
   // pop-up never turns alerts on and never asks the browser for anything.
+  // Step 1 of the guide is picked for this browser first (quick 261117-kqy);
+  // a notify.js without the picker, or one that throws, keeps the plain step.
   function openInstallAsk() {
     installShown = true;
     setText(installTitle, ASK_TITLE_START + (homeName !== '' ? homeName : ASK_TITLE_NO_HOME));
+    try {
+      if (window.PinalertNotify && typeof window.PinalertNotify.applyShareStep === 'function') {
+        window.PinalertNotify.applyShareStep(installDialog);
+      }
+    } catch (err) {
+      // The plain step stays.
+    }
     rememberInstallAsk();
     try {
       installDialog.showModal();

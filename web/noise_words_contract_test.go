@@ -204,6 +204,14 @@ func TestNotifyLeavesInstallToTheBrowser(t *testing.T) {
 // now reads "Open Pinalert from your Home Screen and sign in. Tap Allow when it
 // asks about alerts." with Allow in strong; the old "In Settings, turn on On
 // this device" ending appears nowhere. Every other assertion is unchanged.
+//
+// Amended 2026-11-17 by quick 261117-kqy (7.1 UAT test 7): step 1 holds three
+// wordings and one shows. plain ("Tap the Share button.", the share icon) is
+// the default with no hidden attribute; bar ("Tap Share at the bottom of the
+// screen.", the share icon) and menu ("Tap Menu (three dots) at the bottom
+// right, then Share.", the ellipsis icon) carry hidden until
+// PinalertNotify.applyShareStep picks one. The dots are three U+2022 in an
+// aria-hidden span. Steps 2 and 3, the lead and the rest are unchanged.
 func TestDeviceGuideCopy(t *testing.T) {
 	src := readEmbeddedCopyFile(t, "templates/device_guide.html.tmpl")
 	body := templateCopy(src)
@@ -214,10 +222,14 @@ func TestDeviceGuideCopy(t *testing.T) {
 		// T-01 (2026-10-25): list-style none drops the list role in Safari, so the
 		// ol carries role="list" and VoiceOver keeps "1 of 3".
 		`<ol class="device-guide__steps" role="list">`,
-		`<span class="app-icon app-icon--share" aria-hidden="true"></span>`,
+		`<li class="device-guide__step" data-share-step="plain">`,
+		`<span class="app-icon app-icon--share" aria-hidden="true" data-share-for="plain bar"></span>`,
+		`<span class="app-icon app-icon--ellipsis" aria-hidden="true" data-share-for="menu" hidden></span>`,
 		`<span class="app-icon app-icon--square-plus" aria-hidden="true"></span>`,
 		`<span class="app-icon app-icon--bell" aria-hidden="true"></span>`,
-		`Tap the <strong>Share</strong> button.`,
+		`<span data-share-for="plain">Tap the <strong>Share</strong> button.</span>`,
+		`<span data-share-for="bar" hidden>Tap <strong>Share</strong> at the bottom of the screen.</span>`,
+		`<span data-share-for="menu" hidden>Tap <strong>Menu</strong> <span aria-hidden="true">(` + "•••" + `)</span> at the bottom right, then <strong>Share</strong>.</span>`,
 		`Choose <strong>Add to Home Screen</strong>, then tap <strong>Add</strong>.`,
 		`Open Pinalert from your Home Screen and sign in. Tap <strong>Allow</strong> when it asks about alerts.`,
 	} {
@@ -225,15 +237,28 @@ func TestDeviceGuideCopy(t *testing.T) {
 			t.Errorf("device_guide.html.tmpl lacks %s", want)
 		}
 	}
-	if got := strings.Count(body, `<li class="device-guide__step">`); got != 3 {
+	if got := strings.Count(body, `<li class="device-guide__step"`); got != 3 {
 		t.Errorf("the guide holds %d steps, want 3", got)
 	}
 	if got := strings.Count(body, `class="device-guide__tile"`); got != 3 {
 		t.Errorf("the guide holds %d icon tiles, want 3", got)
 	}
-	// The plain text of the steps, tags removed.
+	// Exactly one wording and one icon per variant, and only plain shows
+	// without the script.
+	if got := strings.Count(body, `data-share-for=`); got != 5 {
+		t.Errorf("step 1 holds %d data-share-for nodes, want 5 (two icons, three wordings)", got)
+	}
+	if got := strings.Count(body, `data-share-for="menu" hidden`) + strings.Count(body, `data-share-for="bar" hidden`); got != 3 {
+		t.Errorf("%d of the menu and bar nodes carry hidden, want 3", got)
+	}
+	if strings.Contains(body, `data-share-for="plain" hidden`) || strings.Contains(body, `data-share-for="plain bar" hidden`) {
+		t.Errorf("the plain step must show without the script")
+	}
+	// The plain text of the steps, tags removed. Step 1 is read through its
+	// plain wording only; the other two are pinned above.
 	var steps []string
 	for _, li := range regexp.MustCompile(`(?s)<li[^>]*>.*?</li>`).FindAllString(body, -1) {
+		li = regexp.MustCompile(`(?s)<span data-share-for="(?:bar|menu)" hidden>.*?</strong>\.</span>`).ReplaceAllString(li, "")
 		steps = append(steps, strings.TrimSpace(htmlTagPattern.ReplaceAllString(li, "")))
 	}
 	wantSteps := []string{

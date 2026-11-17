@@ -768,6 +768,12 @@ var nonCategoryIcons = map[string]bool{
 	// TestPhase33IconsRegisteredAndUsed proves the files and the rules line up.
 	"static/icons/share.svg":       true,
 	"static/icons/square-plus.svg": true,
+	// Amended 2026-11-17 by quick 261117-kqy: ellipsis, the Lucide three dots,
+	// the glyph of step 1 of the install guide on iPhone Safari 26, where Share
+	// sits in the Menu. Drawn by a literal url("/static/icons/ellipsis.svg")
+	// mask rule in device-guide.css, same exemption reasoning as search.svg.
+	// TestNewIconsAreRegisteredAndUsed checks it through laterIcons.
+	"static/icons/ellipsis.svg": true,
 	// Phase 5 plan 09 (D-07, UI-SPEC Design System): octagon-alert and
 	// triangle-alert, the shapes of the Extreme and Severe level chips of the
 	// Official alerts page, drawn by literal url("/static/icons/<name>") mask
@@ -845,7 +851,10 @@ var nonCategoryIcons = map[string]bool{
 // Phase 9 plan 16 (UI-SPEC Design System): star.svg joins the list, masked by
 // stars.css for the unchosen star of the rating control. No other assertion
 // changed.
-var laterIcons = []string{"bell-off.svg", "share-2.svg", "link.svg", "thumbs-up.svg", "star-filled.svg", "star.svg"}
+//
+// Quick 261117-kqy: ellipsis.svg joins the list, masked by device-guide.css for
+// step 1 of the install guide on iPhone Safari 26. No other assertion changed.
+var laterIcons = []string{"bell-off.svg", "share-2.svg", "link.svg", "thumbs-up.svg", "star-filled.svg", "star.svg", "ellipsis.svg"}
 
 // phase34Icons lists the ten Phase 3.4 glyph files, all exempted through
 // nonCategoryIcons above.

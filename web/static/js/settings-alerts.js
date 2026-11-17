@@ -876,6 +876,16 @@
 
   if (deviceReady) {
     windows.guide = { win: guideWin, row: installRow, close: guideClose, title: guideTitle };
+    // Step 1 of the guide is picked for this browser once at load (quick
+    // 261117-kqy); a notify.js without the picker, or one that throws, keeps
+    // the plain step.
+    try {
+      if (hasNotify() && typeof window.PinalertNotify.applyShareStep === 'function') {
+        window.PinalertNotify.applyShareStep(guideWin);
+      }
+    } catch (err) {
+      // The plain step stays.
+    }
     deviceSwitch.addEventListener('change', onDeviceSwitch);
     installRow.addEventListener('click', function () { openWindow('guide'); });
     guideClose.addEventListener('click', function () { closeWindow('guide', true); });

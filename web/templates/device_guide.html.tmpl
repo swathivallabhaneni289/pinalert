@@ -14,10 +14,19 @@
   closes with its X and the pop-up with its Not now. The words are fixed copy;
   the key words are in strong, and the three icons are decoration (aria-hidden). settings.html.tmpl and
   welcome.html.tmpl link /static/css/device-guide.css.
+
+  Step 1 has three wordings and one shows (quick 261117-kqy, 7.1 UAT test 7):
+  menu for iPhone Safari 26 or newer, where Share sits in the Menu (the three
+  dots at the bottom right); bar for older iPhone Safari, where Share is in the
+  bar at the bottom; plain for everything else. Plain shows until
+  PinalertNotify.applyShareStep picks one, so the step reads right without the
+  script. data-share-for names the wordings an icon or text belongs to; the
+  rest are hidden. The dots are aria-hidden, so VoiceOver reads "Tap Menu at
+  the bottom right, then Share."
 */}}
 <p class="device-guide__lead">On this device, alerts work once Pinalert is on your Home Screen.</p>
 <ol class="device-guide__steps" role="list">
-  <li class="device-guide__step"><span class="device-guide__tile"><span class="app-icon app-icon--share" aria-hidden="true"></span></span><span class="device-guide__text">Tap the <strong>Share</strong> button.</span></li>
+  <li class="device-guide__step" data-share-step="plain"><span class="device-guide__tile"><span class="app-icon app-icon--share" aria-hidden="true" data-share-for="plain bar"></span><span class="app-icon app-icon--ellipsis" aria-hidden="true" data-share-for="menu" hidden></span></span><span class="device-guide__text"><span data-share-for="plain">Tap the <strong>Share</strong> button.</span><span data-share-for="bar" hidden>Tap <strong>Share</strong> at the bottom of the screen.</span><span data-share-for="menu" hidden>Tap <strong>Menu</strong> <span aria-hidden="true">(•••)</span> at the bottom right, then <strong>Share</strong>.</span></span></li>
   <li class="device-guide__step"><span class="device-guide__tile"><span class="app-icon app-icon--square-plus" aria-hidden="true"></span></span><span class="device-guide__text">Choose <strong>Add to Home Screen</strong>, then tap <strong>Add</strong>.</span></li>
   <li class="device-guide__step"><span class="device-guide__tile"><span class="app-icon app-icon--bell" aria-hidden="true"></span></span><span class="device-guide__text">Open Pinalert from your Home Screen and sign in. Tap <strong>Allow</strong> when it asks about alerts.</span></li>
 </ol>

@@ -46,6 +46,26 @@ func TestDeviceGuideLeadSpacing(t *testing.T) {
 	}
 }
 
+// TestDeviceGuideShareStepIcons (quick 261117-kqy): step 1's tile holds the
+// Share and the Menu (three dots) glyphs and only one shows. .app-icon sets
+// display: block, which outranks the browser's own [hidden] rule, so the guard
+// must hide the other one; each glyph keeps its own mask rule.
+func TestDeviceGuideShareStepIcons(t *testing.T) {
+	const guide = "static/css/device-guide.css"
+	if got := p31mRule(t, guide, "", ".device-guide__tile .app-icon[hidden]").Decls["display"]; got != "none" {
+		t.Errorf("the hidden glyph of step 1 has display %q, want none, or both glyphs show", got)
+	}
+	for head, file := range map[string]string{".app-icon--share": "share.svg", ".app-icon--ellipsis": "ellipsis.svg"} {
+		rule := p31mRule(t, guide, "", head)
+		want := `url("/static/icons/` + file + `")`
+		for _, prop := range []string{"mask-image", "-webkit-mask-image"} {
+			if got := rule.Decls[prop]; got != want {
+				t.Errorf("%s %s is %q, want %s", head, prop, got, want)
+			}
+		}
+	}
+}
+
 // TestPlainSettingsRowsHaveNoPointerCursor pins T-03. The blocked and
 // unsupported On this device rows are plain div rows (not a control), so the
 // bare .place-row rule must not set the pointer cursor; only the rows that act
