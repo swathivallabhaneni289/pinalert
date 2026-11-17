@@ -11,9 +11,16 @@ import "pinalert/internal/demo"
 // The keys of the places a page can mark as the current one. NavSettings is
 // not a main place: it has no entry in mainNavItems, so on the Settings screen
 // no item is current.
+//
+// Amended 2026-11-17 (quick 261117-lq0, owner on the 7.1 UAT: "yes build it"):
+// the third main place is Profile (NavProfile, your own profile at /me). My
+// activity is no longer a main place: its parts open from Settings, so on
+// /profile no item is current. NavActivity stays as the Demo's third place,
+// which keeps My activity (the Demo has no profile).
 const (
 	NavNearby   = "nearby"
 	NavAlerts   = "alerts"
+	NavProfile  = "profile"
 	NavActivity = "activity"
 	NavSettings = "settings"
 )
@@ -60,10 +67,21 @@ func (v NavView) ShowGear() bool {
 }
 
 // mainNavItems is the one ordered list of the main places. It is copied by
-// navFor and never changed, so a request cannot alter it.
+// navFor and never changed, so a request cannot alter it. Amended 2026-11-17
+// (quick 261117-lq0): the third place is Profile, your own profile; /me goes on
+// to /u/<username>.
 var mainNavItems = []NavItem{
 	{Key: NavNearby, Label: "Nearby", Href: "/", Icon: "map-pin"},
 	{Key: NavAlerts, Label: "Official alerts", Href: "/alerts", Icon: "megaphone"},
+	{Key: NavProfile, Label: "Profile", Href: "/me", Icon: "user"},
+}
+
+// demoNavItems is the Demo's list of places (quick 261117-lq0). The Demo has no
+// profile, so its third place stays My activity; the first two are the real
+// list's. demoNavFor rewrites each address to the Demo's own page.
+var demoNavItems = []NavItem{
+	mainNavItems[0],
+	mainNavItems[1],
 	{Key: NavActivity, Label: "My activity", Href: "/profile", Icon: "user"},
 }
 
@@ -81,8 +99,14 @@ func navBack(href string) navOption {
 // words the page passes through navTitle. T-34-13: every word comes from this
 // file's constants, so no request value reaches either bar.
 func navFor(current string, opts ...navOption) NavView {
-	items := make([]NavItem, len(mainNavItems))
-	copy(items, mainNavItems)
+	return navFrom(mainNavItems, current, opts...)
+}
+
+// navFrom builds the bar data from one list of places: the real list for navFor
+// and the Demo's list for demoNavFor. The list is copied, never changed.
+func navFrom(list []NavItem, current string, opts ...navOption) NavView {
+	items := make([]NavItem, len(list))
+	copy(items, list)
 	v := NavView{Items: items, Current: current}
 	for i := range v.Items {
 		if v.Items[i].Key == current {
@@ -145,9 +169,11 @@ func demoPlaceHref(path, visit, from string) string {
 // Demo. Each place's address carries the visit (and from=welcome when the
 // visitor came from the first-time flow), so Nearby, Official alerts and My
 // activity show one world in one visit. Every word and address comes from this
-// file's constants and the validated visit (T-34-13).
+// file's constants and the validated visit (T-34-13). Amended 2026-11-17
+// (quick 261117-lq0): the places are demoNavItems, not mainNavItems, so the
+// Demo keeps My activity while the real bar shows Profile.
 func demoNavFor(current, visit, from string, opts ...navOption) NavView {
-	v := navFor(current, opts...)
+	v := navFrom(demoNavItems, current, opts...)
 	v.Demo = true
 	for i := range v.Items {
 		if href, ok := demoNavHrefs[v.Items[i].Key]; ok {

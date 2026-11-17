@@ -872,13 +872,15 @@ func Profile(svc *service.AuthService, updates *service.UpdatesService, tmpl *te
 			PolicyPointerTail: policyTail,
 			LowDataDefault:    lowDataChosen(r),
 			AccountID:         acc.ID,
-			Nav:               navFor(NavActivity),
+			Nav:               navFor(NavActivity, navTitle(activityTitle), navBack(settingsHref)),
 			DefaultRadiusKm:   cfg.DefaultRadiusKm,
 		}
-		// On a part screen the phone top bar names the part and its back arrow
-		// returns to the list (D-19). The list keeps the plain My activity title.
+		// On a part screen the phone top bar names the part (D-19). Amended
+		// 2026-11-17 (quick 261117-lq0): My activity is no longer a main place, so
+		// no bar item is current here, and the parts open from Settings, so the
+		// back arrow goes to Settings on the list and on a part.
 		if name := view.CurrentName(); name != "" {
-			vm.Nav = navFor(NavActivity, navTitle(name), navBack(activityListHref))
+			vm.Nav = navFor(NavActivity, navTitle(name), navBack(settingsHref))
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

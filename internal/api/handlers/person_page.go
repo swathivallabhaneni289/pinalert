@@ -204,11 +204,15 @@ func PersonPage(tmpl *template.Template, people *service.PeopleService, reports 
 			vm.Profile = profile
 			vm.BlockedByYou = profile.BlockedByYou
 			vm.PageTitle = "Pinalert: " + profile.Username
-			title := personTitleOther
+			// Quick 261117-lq0 (owner, 2026-11-17): your own profile is the main
+			// place Profile, so it is marked current and draws no back arrow, like
+			// Nearby. Someone else's profile keeps no place current and the back
+			// arrow to /.
 			if profile.IsSelf {
-				title = personTitleOwn
+				vm.Nav = navFor(NavProfile, navTitle(personTitleOwn))
+			} else {
+				vm.Nav = navFor(navPerson, navTitle(personTitleOther), navBack("/"))
 			}
-			vm.Nav = navFor(navPerson, navTitle(title), navBack("/"))
 			vm.AccountID = acc.ID
 
 			// Quick 261113-t4y (owner decision 2026-11-13): your own page holds the

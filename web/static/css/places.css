@@ -267,13 +267,9 @@ a.place-row {
     padding: var(--space-sm) var(--space-md);
   }
 
-  /* Phase 9 plan 12 (D-04, UI-SPEC 7c): View my profile is the phone's way to
-     the profile page; the laptop reaches the same page from the first item of
-     the person menu. Named in sizeOnlyNamed. Same weight as the guarded
-     display rule above and later in the file, so it wins. */
-  .place-row.place-row--phone-only {
-    display: none;
-  }
+  /* Quick 261117-lq0 (owner, 2026-11-17): the phone only View my profile row
+     left Settings (Profile is in the bar now), so its laptop hide and its
+     sizeOnlyNamed entry are gone. */
 
   /* Official alerts: the empty state takes the right column. */
   .place-empty {

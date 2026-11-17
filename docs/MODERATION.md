@@ -278,8 +278,8 @@ Tests: `TestUsernameSaveScreening`, `TestUsernameSaveRules`, `TestCheckUsernameS
 
 ## Names on a public profile
 
-Phase 9 shows a person's Name on their profile once Let others follow me is on. The Name is screened
-when the switch goes on and on every later edit of the Name while it is on. The reserved words come
+Phase 9 shows a person's Name on their profile once Public profile is on (named Let others follow
+me before quick 261117-lq0, amended 2026-11-17). The Name is screened when the switch goes on and on every later edit of the Name while it is on. The reserved words come
 first, with no provider call, and then `ScreenAbuse`, the abuse screen again and not the gibberish
 rule. It fails closed: a borderline, rejected or unfinished check refuses the Name, because a Name
 is shown to strangers and nothing is held for later. A pending username is screened again when the

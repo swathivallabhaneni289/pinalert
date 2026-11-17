@@ -72,6 +72,10 @@ func appBarLinks(t *testing.T, body string) (top, bottom []appBarLink) {
 // carry the bars, the three places of the top bar and the first three items of
 // the bottom bar have the same addresses and the same words in the same order,
 // and the bottom bar adds only Report, which opens the report window.
+//
+// Amended 2026-11-17 (quick 261117-lq0, owner on the 7.1 UAT: "yes build it"):
+// the third place is Profile at /me in both bars, on every page that draws
+// them, Settings included.
 func TestAppBarRendersSameDestinations(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
 	client := newVerifiedClient(t, srv, mailer, "app-bar-same@example.com")
@@ -79,9 +83,9 @@ func TestAppBarRendersSameDestinations(t *testing.T) {
 	want := []appBarLink{
 		{href: "/", label: "Nearby"},
 		{href: "/alerts", label: "Official alerts"},
-		{href: "/profile", label: "My activity"},
+		{href: "/me", label: "Profile"},
 	}
-	for _, path := range []string{"/", "/profile"} {
+	for _, path := range []string{"/", "/profile", "/settings"} {
 		body := getPageBody(t, client, srv.URL, path)
 		top, bottom := appBarLinks(t, body)
 		if len(top) != len(want) {
@@ -113,35 +117,102 @@ func TestAppBarRendersSameDestinations(t *testing.T) {
 
 // TestAppBarCurrentItem proves the current place is marked in both bars from the
 // one list: Nearby on /, My activity on /profile, and exactly one place each.
+//
+// Amended 2026-11-17 (quick 261117-lq0): My activity is not a main place any
+// more, so /profile marks no place current; its phone title stays My activity
+// and its back arrow goes to /settings. Nearby on / is unchanged. Profile being
+// current on your own profile is pinned by TestAppBarProfileCurrent below.
 func TestAppBarCurrentItem(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
 	client := newVerifiedClient(t, srv, mailer, "app-bar-current@example.com")
 
-	for _, tc := range []struct{ path, current string }{
-		{"/", "Nearby"},
-		{"/profile", "My activity"},
+	for _, tc := range []struct{ path, current, title, back string }{
+		{"/", "Nearby", "Nearby", ""},
+		{"/profile", "", "My activity", "/settings"},
+		{"/profile?part=posted", "", "Posted by you", "/settings"},
 	} {
 		body := getPageBody(t, client, srv.URL, tc.path)
-		top, bottom := appBarLinks(t, body)
-		for name, links := range map[string][]appBarLink{"top bar": top, "bottom bar": bottom} {
-			var current []string
-			for _, l := range links {
-				if l.current {
-					current = append(current, l.label)
-				}
-			}
-			if len(current) != 1 || current[0] != tc.current {
-				t.Errorf("%s %s: current places are %v, want only %q", tc.path, name, current, tc.current)
-			}
-		}
-		// The phone title is the current place's name (the Nearby search field
-		// and the part screens arrive in later plans).
+		appBarCheckCurrent(t, tc.path, body, tc.current)
+		// The phone title is the current place's name, or the page's own words
+		// when no place is current.
 		title := regexp.MustCompile(`<h1 class="app-topbar__title">([^<]*)</h1>`).FindStringSubmatch(body)
-		if title == nil || title[1] != tc.current {
-			t.Errorf("%s: phone title is %v, want %q", tc.path, title, tc.current)
+		if title == nil || title[1] != tc.title {
+			t.Errorf("%s: phone title is %v, want %q", tc.path, title, tc.title)
 		}
+		appBarCheckBack(t, tc.path, body, tc.back)
 		if strings.Contains(body, `class="app-topbar__gear"`) == false {
 			t.Errorf("%s: the phone title bar has no Settings gear", tc.path)
 		}
+	}
+}
+
+// appBarCheckCurrent fails the test unless exactly the place named current is
+// marked in both bars, or none when current is empty.
+func appBarCheckCurrent(t *testing.T, path, body, current string) {
+	t.Helper()
+	top, bottom := appBarLinks(t, body)
+	for name, links := range map[string][]appBarLink{"top bar": top, "bottom bar": bottom} {
+		var got []string
+		for _, l := range links {
+			if l.current {
+				got = append(got, l.label)
+			}
+		}
+		if current == "" {
+			if len(got) != 0 {
+				t.Errorf("%s %s: current places are %v, want none", path, name, got)
+			}
+			continue
+		}
+		if len(got) != 1 || got[0] != current {
+			t.Errorf("%s %s: current places are %v, want only %q", path, name, got, current)
+		}
+	}
+}
+
+// appBarCheckBack fails the test unless the phone back arrow goes to back, or
+// is absent when back is empty.
+func appBarCheckBack(t *testing.T, path, body, back string) {
+	t.Helper()
+	m := regexp.MustCompile(`<a class="app-topbar__back" href="([^"]*)"`).FindStringSubmatch(body)
+	switch {
+	case back == "" && m != nil:
+		t.Errorf("%s: the phone top bar has a back arrow to %q, want none", path, m[1])
+	case back != "" && (m == nil || m[1] != back):
+		t.Errorf("%s: the phone back arrow is %v, want %q", path, m, back)
+	}
+}
+
+// TestAppBarProfileCurrent pins quick 261117-lq0 (owner, 2026-11-17, 7.1 UAT):
+// Profile is the current place on your own profile only, with the title My
+// profile and no back arrow, like Nearby. /me goes on to your profile. Someone
+// else's profile marks no place and keeps the title Profile and the back arrow
+// to /, and Settings marks no place.
+func TestAppBarProfileCurrent(t *testing.T) {
+	srv, mailer, pool := newE2EServer(t)
+	me, _ := p907Person(t, srv, mailer, pool, "lq0-me@example.com", "lq0_me", false)
+	p907Person(t, srv, mailer, pool, "lq0-other@example.com", "lq0_other", true)
+
+	resp, err := me.Get(srv.URL + "/me")
+	if err != nil {
+		t.Fatalf("GET /me: %v", err)
+	}
+	resp.Body.Close()
+	if resp.Request.URL.Path != "/u/lq0_me" {
+		t.Errorf("/me ended at %q, want /u/lq0_me", resp.Request.URL.Path)
+	}
+
+	for _, tc := range []struct{ path, current, title, back string }{
+		{"/u/lq0_me", "Profile", "My profile", ""},
+		{"/u/lq0_other", "", "Profile", "/"},
+		{"/settings", "", "Settings", "/"},
+	} {
+		body := getPageBody(t, me, srv.URL, tc.path)
+		appBarCheckCurrent(t, tc.path, body, tc.current)
+		title := regexp.MustCompile(`<h1 class="app-topbar__title">([^<]*)</h1>`).FindStringSubmatch(body)
+		if title == nil || title[1] != tc.title {
+			t.Errorf("%s: phone title is %v, want %q", tc.path, title, tc.title)
+		}
+		appBarCheckBack(t, tc.path, body, tc.back)
 	}
 }

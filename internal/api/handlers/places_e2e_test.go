@@ -134,9 +134,47 @@ func TestSettingsRows(t *testing.T) {
 	for _, m := range rows {
 		hrefs = append(hrefs, m[1])
 	}
-	wantHrefs := []string{"/disclaimer", "/policy#policy", "/low"}
+	// Amended 2026-11-17 (quick 261117-lq0, owner on the 7.1 UAT): the My
+	// activity section is first, with five link rows in the hub's order that go
+	// to the hub's own part addresses, then the three About Pinalert rows.
+	//
+	// Amended 2026-11-17 (quick 261117-lq0 review): each My activity row adds
+	// the part's section id as a fragment, so the laptop, which stacks all five
+	// parts, opens with the picked one in view. The hub keeps the plain address.
+	wantHrefs := []string{
+		"/profile?part=updates#part-updates", "/profile?part=posted#part-posted",
+		"/profile?part=confirmed#part-confirmed", "/profile?part=disputed#part-disputed",
+		"/profile?part=ended#part-ended",
+		"/disclaimer", "/policy#policy", "/low",
+	}
 	if strings.Join(hrefs, ",") != strings.Join(wantHrefs, ",") {
-		t.Errorf("About Pinalert rows go to %v, want %v", hrefs, wantHrefs)
+		t.Errorf("Settings link rows go to %v, want %v", hrefs, wantHrefs)
+	}
+	activity := regexp.MustCompile(`(?s)<section class="place-section" id="settings-activity-section" aria-labelledby="settings-activity-title">.*?</section>`).FindString(body)
+	if activity == "" {
+		t.Fatalf("/settings has no My activity section")
+	}
+	if first := strings.Index(body, `<section class="place-section"`); first != strings.Index(body, activity) {
+		t.Errorf("My activity is not the first section of Settings")
+	}
+	if !strings.Contains(activity, `<h2 class="place-section__title" id="settings-activity-title">My activity</h2>`) {
+		t.Errorf("the My activity section has no My activity title")
+	}
+	labels := regexp.MustCompile(`<span class="place-row__label">([^<]*)</span>`).FindAllStringSubmatch(activity, -1)
+	var names []string
+	for _, m := range labels {
+		names = append(names, m[1])
+	}
+	if strings.Join(names, ",") != "Updates,Posted by you,You confirmed,You disputed,Ended nearby" {
+		t.Errorf("the My activity rows are %v, want the hub's five part names in order", names)
+	}
+	if n := strings.Count(activity, "app-icon--chevron-right"); n != 5 {
+		t.Errorf("the My activity section draws %d chevrons, want 5", n)
+	}
+	for _, banned := range []string{"place-row__sub", "place-row__value", "app-icon--bell", "app-icon--history"} {
+		if strings.Contains(activity, banned) {
+			t.Errorf("the My activity section holds %q; its rows have no sub lines, counts or icons", banned)
+		}
 	}
 	// Amended 2026-10-17 by Phase 3.4 plan 06 (D-25, D-24b): About you renders
 	// first with its two rows, which are buttons that open edit windows, so the
@@ -187,8 +225,12 @@ func TestSettingsRows(t *testing.T) {
 	// profile): About you left Settings, so the Username, Name and Home area button
 	// rows are on the profile page behind Edit profile and the list starts with the
 	// install row.
-	if strings.Join(buttonIDs, ",") != "settings-device-install,settings-radius-nohome,settings-following-row,settings-followers-row,settings-muted-row,settings-muted-people-row,settings-blocked-row,settings-logout-all-row,settings-delete-row" {
-		t.Errorf("Settings button rows are %v, want the Alerts on this device install row, the distance row's Add a home area first, Following, Followers, Muted reports, Muted people, Blocked people, Log out of all devices, Delete my account", buttonIDs)
+	//
+	// Amended 2026-11-17 (quick 261117-lq0, owner: "I don't think the followers
+	// and following list should be on the settings"): the Following and Followers
+	// button rows are gone.
+	if strings.Join(buttonIDs, ",") != "settings-device-install,settings-radius-nohome,settings-muted-row,settings-muted-people-row,settings-blocked-row,settings-logout-all-row,settings-delete-row" {
+		t.Errorf("Settings button rows are %v, want the Alerts on this device install row, the distance row's Add a home area first, Muted reports, Muted people, Blocked people, Log out of all devices, Delete my account", buttonIDs)
 	}
 	for _, want := range []string{
 		// Amended 2026-10-22 (owner: "too much details under the heading for
@@ -434,10 +476,11 @@ func TestSettingsAboutYouValues(t *testing.T) {
 			t.Errorf("/settings still holds %q, About you moved to the profile page", gone)
 		}
 	}
-	// View my profile is the phone row, a link to /me, now the last row of People and
-	// reports.
-	if people, view := strings.Index(body, `id="settings-blocked-row"`), strings.Index(body, `id="settings-view-profile-row" href="/me"`); people == -1 || view == -1 || view < people {
-		t.Errorf("/settings must draw View my profile after Blocked people (blocked at %d, view at %d)", people, view)
+	// Amended 2026-11-17 (quick 261117-lq0, owner: "Even view my profile in
+	// settings is unnecessary"): the View my profile row is gone; Profile is in
+	// the bar, and the person menu still has My profile.
+	if strings.Contains(body, `id="settings-view-profile-row"`) || strings.Contains(body, "View my profile") {
+		t.Errorf("/settings still draws the View my profile row")
 	}
 
 	// A first username is free; the page exists from then on.

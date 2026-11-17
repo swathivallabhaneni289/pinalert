@@ -676,6 +676,10 @@ func TestTermsVersionFollowsPolicyDate(t *testing.T) {
 // of the first public deploy, when the owner moves them together; that move
 // covers these Phase 9 lines too (T-09-93). TestTermsVersionFollowsPolicyDate
 // above still holds them equal, so the pin here is equality and no date.
+//
+// Amended 2026-11-17 (quick 261117-lq0, owner: "use a different sentence or a
+// word"): the switch is named Public profile, so the three sentences that named
+// Let others follow me name Public profile. Nothing else in them changed.
 func TestPolicyNamesProfilesFollowingAndRatings(t *testing.T) {
 	rec := legalRender(t, handlers.AuthConfig{AssetVersion: "test"}, handlers.LegalPolicyPage, nil)
 	text := legalText(t, rec.Body.String())
@@ -685,7 +689,7 @@ func TestPolicyNamesProfilesFollowingAndRatings(t *testing.T) {
 	}
 	for _, phrase := range []string{
 		"Profiles, following and ratings",
-		"Your profile is off by default. It appears only after you switch on Let others follow me in Settings.",
+		"Your profile is off by default. It appears only after you switch on Public profile in Settings.",
 		"your username, your name, your home area, your stars, the month and year you joined, your reports from the last 30 days, and your Followers and Following lists",
 		"A report that has ended shows only a rough area and the date it ended, with no time and no link to the report.",
 		"appear only as a number, never by name",
@@ -696,7 +700,7 @@ func TestPolicyNamesProfilesFollowingAndRatings(t *testing.T) {
 		"your follows, blocks, mutes, Notify me choices and the ratings you gave and received are removed",
 		"The ratings you give, each with the person rated, the stars and the time.",
 		// Review fix WR-T03, 2026-10-30: the Name goes to OpenAI too.
-		"When you switch on Let others follow me, and whenever you change your name while it is on, your name is checked by the same service. Only the name is sent, never your account, your sign in, your network address or your location. A name the check refuses, or cannot finish checking, is not shown.",
+		"When you switch on Public profile, and whenever you change your name while it is on, your name is checked by the same service. Only the name is sent, never your account, your sign in, your network address or your location. A name the check refuses, or cannot finish checking, is not shown.",
 		"Report, comment, username and name checks: OpenAI, as described above.",
 		// Review fix WR-T04, 2026-10-30: every item Phase 9 stores.
 		"When a follow ends, it is kept with the time it ended and why (unfollowed, removed, blocked, profile switched off, or tag lost) until you delete your account.",
@@ -704,7 +708,11 @@ func TestPolicyNamesProfilesFollowingAndRatings(t *testing.T) {
 		"Whether your profile is switched on, and when you switched it on.",
 		"When you remove your own rating it stops counting, but the rating stays stored and a moderator can still see it.",
 		"If a moderator removes every rating you gave, your account can no longer rate, for good, and that is kept with the moderator and the time.",
-		"The name of the area, never the square, is also shown on your profile while Let others follow me is on.",
+		"The name of the area, never the square, is also shown on your profile while Public profile is on.",
+		// Amended 2026-11-17 (quick 261117-lq0 review): the name is shown while
+		// the profile is public, and following needs the Reliable reporter tag
+		// too, so this item no longer ties the name to following.
+		"Your name, which is shown to other people only if your profile is public.",
 	} {
 		if n := strings.Count(policy, phrase); n != 1 {
 			t.Errorf("the Policy holds %q %d times, want exactly once", phrase, n)
