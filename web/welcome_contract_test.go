@@ -891,12 +891,14 @@ func TestWelcomeStep4Required(t *testing.T) {
 		"{{else}}", "All three are needed to finish signing up.", "{{end}}</p>")
 
 	// The three fields in order, with their labels and their small lines.
+	// Amended 2026-11-17 (quick 261117-lq0): the switch is named Public profile,
+	// so the Name line says "Shown only if your profile is public."
 	p13Ordered(t, step4, "step 4 fields",
 		`<label class="app-window__label" for="welcome-username-input">Username</label>`,
 		`id="welcome-username-status"`,
 		`id="welcome-username-help">Shown on your comments, to everyone.</p>`,
 		`<label class="app-window__label" for="welcome-name-input">Name</label>`,
-		`id="welcome-name-help">Shown only if you let others follow you.</p>`,
+		`id="welcome-name-help">Shown only if your profile is public.</p>`,
 		`<label class="app-window__label" for="welcome-home-input">Home area</label>`,
 		`id="welcome-home-help">A town or area, never your street. Used for alerts.</p>`,
 		`id="welcome-error-4"`, `id="welcome-continue-4"`)

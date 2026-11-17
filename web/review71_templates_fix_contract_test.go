@@ -335,7 +335,8 @@ func TestPolicyNamesHomeSquareScreeningAndMail(t *testing.T) {
 	keeps := r71tPolicySection(t, "What Pinalert keeps")
 	// Amended 2026-10-30 by the Phase 9 review fix (WR-T04): the line ends with
 	// the sentence that the area's name also shows on a profile that is on.
-	const home = "<li>The name of your home area, a town or area and never a street, and a rough square about 5 km wide around it, used for alerts. The name of the area, never the square, is also shown on your profile while Let others follow me is on.</li>"
+	// Amended 2026-11-17 (quick 261117-lq0): the switch is named Public profile.
+	const home = "<li>The name of your home area, a town or area and never a street, and a rough square about 5 km wide around it, used for alerts. The name of the area, never the square, is also shown on your profile while Public profile is on.</li>"
 	if !strings.Contains(keeps, home) {
 		t.Errorf("the Policy's keeps list does not name the home area square:\n%s", home)
 	}
