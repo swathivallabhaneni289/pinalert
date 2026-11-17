@@ -88,7 +88,7 @@ const flush = async () => { for (let i = 0; i < 12; i += 1) { await Promise.reso
 
 // load builds the dialog markup of flag_dialog.html.tmpl as fakes, then runs
 // flag.js. fetches keeps each request with a hook to answer it.
-function load() {
+function load(opts) {
   const doc = { activeElement: null, byId: {}, body: null, controls: [] };
   const el = (tag, id, cls) => { const e = new FakeEl(doc, tag, id); if (cls) { e.className = cls; } return e; };
   const backdrop = el('div', 'flag-dialog', 'modal-backdrop flag-dialog');
@@ -144,6 +144,14 @@ function load() {
   const window = {
     setTimeout: (fn) => { timers.push(fn); return timers.length; },
   };
+  // Quick 261117-vvb: the page's votes script, when the test gives one,
+  // answers the known position the flag carries.
+  const known = { calls: 0 };
+  if (opts && Object.hasOwn(opts, 'position')) {
+    window.PinalertVotes = {
+      knownPosition() { known.calls += 1; return opts.position; },
+    };
+  }
   const fetch = (u, opts) => new Promise((resolve, reject) => {
     fetches.push({
       url: u,
@@ -165,7 +173,7 @@ function load() {
   api.updateFlagControl(control, report);
   const open = () => control.el.fire('click');
   const flushTimers = () => { timers.splice(0).forEach((fn) => fn()); };
-  return { doc, backdrop, panel, title, dispute, group, boxes, choose, text, count, textError, error, send, back, live, control, fetches, toasts, locks, open, flushTimers, api };
+  return { doc, backdrop, panel, title, dispute, group, boxes, choose, text, count, textError, error, send, back, live, control, fetches, toasts, locks, open, flushTimers, api, known };
 }
 
 test('Send with nothing ticked sends nothing and asks for a reason on the group', () => {
@@ -418,4 +426,47 @@ test('report mode unchanged', async () => {
   await flush();
   assert.deepEqual(t.toasts, ['You already flagged this report. Moderators will see it.']);
   assert.equal(t.control.el.textContent, 'Flagged');
+});
+
+// Quick 261117-vvb: a report flag carries the position the page already knows,
+// so flags from three different places can hide a report for review. It is the
+// votes script's known position, never a new prompt; with none, the body has
+// no position keys at all, and a comment flag never carries one.
+test('a report flag carries the known position', async () => {
+  const t = load({ position: { latitude: 12.95, longitude: 77.61 } });
+  t.open();
+  t.boxes[2].checked = true;
+  t.send.fire('click');
+  assert.equal(t.fetches.length, 1);
+  assert.deepEqual(t.fetches[0].body, { reasons: ['false'], note: '', latitude: 12.95, longitude: 77.61 });
+  assert.equal(t.known.calls, 1);
+  t.fetches[0].answer(201, { flagged: true });
+  await flush();
+  assert.equal(t.control.el.textContent, 'Flagged');
+});
+
+test('a report flag with no known position sends no position keys', () => {
+  const cases = [
+    { position: null },
+    undefined,
+    { position: { latitude: NaN, longitude: 77.61 } },
+    { position: { latitude: '12.95', longitude: '77.61' } },
+  ];
+  for (const opts of cases) {
+    const t = load(opts);
+    t.open();
+    t.boxes[0].checked = true;
+    t.send.fire('click');
+    assert.equal(t.fetches.length, 1);
+    assert.deepEqual(t.fetches[0].body, { reasons: ['spam'], note: '' });
+  }
+});
+
+test('a comment flag never carries a position', () => {
+  const t = load({ position: { latitude: 12.95, longitude: 77.61 } });
+  openComment(t);
+  t.boxes[0].checked = true;
+  t.send.fire('click');
+  assert.deepEqual(t.fetches[0].body, { reasons: ['spam'], note: '' });
+  assert.equal(t.known.calls, 0);
 });

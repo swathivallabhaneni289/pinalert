@@ -89,6 +89,19 @@ func TestModeratedReportsAreNeutralForRating(t *testing.T) {
 		want(t, "clear control", classify(p429Meta(service.SeverityLow, service.CategoryFlood, service.ModerationClear), 1, 2), service.OutcomeContradicted)
 	})
 
+	// Quick 261117-vvb: a review hide never counts against the author, at any
+	// severity. After Keep the report is clear and judged as if never hidden;
+	// after Remove it is removed and neutral, as a removal counts today.
+	t.Run("a report hidden for review is neutral whatever its votes", func(t *testing.T) {
+		for _, sev := range []service.Severity{service.SeverityLow, service.SeverityCritical} {
+			for _, tally := range [][2]int{{0, 0}, {2, 0}, {1, 2}, {0, 2}} {
+				name := fmt.Sprintf("review %s confirm %d dispute %d", sev, tally[0], tally[1])
+				want(t, name, classify(p429Meta(sev, service.CategoryFlood, service.ModerationReview), tally[0], tally[1]), service.OutcomeNeutral)
+			}
+		}
+		want(t, "clear control, disputed", classify(p429Meta(service.SeverityLow, service.CategoryFlood, service.ModerationClear), 1, 2), service.OutcomeContradicted)
+	})
+
 	t.Run("removed outranks the critical rule", func(t *testing.T) {
 		want(t, "removed critical flood disputed", classify(p429Meta(service.SeverityCritical, service.CategoryFlood, service.ModerationRemoved), 0, 2), service.OutcomeNeutral)
 		want(t, "clear critical flood disputed", classify(p429Meta(service.SeverityCritical, service.CategoryFlood, service.ModerationClear), 0, 2), service.OutcomeContradicted)

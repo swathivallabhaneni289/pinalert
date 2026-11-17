@@ -134,6 +134,7 @@ type fakeModerationQuerier struct {
 	inserts      []sqlcgen.InsertModerationActionParams
 	kept         []int64
 	removed      []int64
+	ownRows      []sqlcgen.InsertOwnReportUpdateParams
 }
 
 var _ service.ModerationQuerier = (*fakeModerationQuerier)(nil)
@@ -209,6 +210,28 @@ func (f *fakeModerationQuerier) LockModerationCheck(context.Context, int64) erro
 	defer f.mu.Unlock()
 	f.record("LockModerationCheck")
 	return nil
+}
+
+// LockReportModeration answers from the status row of the id, the same state
+// the real lock reads (quick 261117-vvb). An unknown id is no row.
+func (f *fakeModerationQuerier) LockReportModeration(_ context.Context, id int64) (sqlcgen.LockReportModerationRow, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("LockReportModeration")
+	row, ok := f.statuses[id]
+	if !ok {
+		return sqlcgen.LockReportModerationRow{}, pgx.ErrNoRows
+	}
+	return sqlcgen.LockReportModerationRow{ModerationState: row.ModerationState, Severity: row.Severity, Category: row.Category}, nil
+}
+
+// InsertOwnReportUpdate records the author's bell row (quick 261117-vvb).
+func (f *fakeModerationQuerier) InsertOwnReportUpdate(_ context.Context, arg sqlcgen.InsertOwnReportUpdateParams) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("InsertOwnReportUpdate")
+	f.ownRows = append(f.ownRows, arg)
+	return 1, nil
 }
 
 func (f *fakeModerationQuerier) KeepReport(_ context.Context, id int64) error {
@@ -704,8 +727,72 @@ func TestModerationKeepRemoveDecisions(t *testing.T) {
 		txCase(t, func(s *service.ModerationService) error { _, err := s.Remove(ctx, 5, 7); return err },
 			[]string{"begin", "LockModerationCheck", "ModerationStatusForReport", "InsertModerationAction", "RemoveReport", "commit", "ReportForModeration"}, nil, false)
 	})
+	// Amended 2026-11-17 (quick 261117-vvb): the report row lock right after
+	// the check row lock is now what finds an unknown id, so the status read
+	// is never reached.
 	t.Run("a 404 inside the transaction rolls back", func(t *testing.T) {
 		txCase(t, func(s *service.ModerationService) error { _, err := s.Keep(ctx, 99, 7); return err },
-			[]string{"begin", "LockModerationCheck", "ModerationStatusForReport", "rollback"}, service.ErrReportNotFound, true)
+			[]string{"begin", "LockModerationCheck", "rollback"}, service.ErrReportNotFound, true)
+	})
+	t.Run("the report row is locked after the check row and before the status read", func(t *testing.T) {
+		f := newFake(sqlcgen.ModerationStatusForReportRow{ModerationState: "review", InFlagged: true})
+		if _, err := modService(f).Keep(ctx, 5, 7); err != nil {
+			t.Fatalf("Keep error = %v", err)
+		}
+		want := []string{"LockModerationCheck", "LockReportModeration", "ModerationStatusForReport", "InsertModerationAction", "KeepReport", "InsertOwnReportUpdate"}
+		if got := modCallsAmong(f, want...); !reflect.DeepEqual(got, want) {
+			t.Errorf("calls = %v, want %v", got, want)
+		}
+	})
+
+	// Quick 261117-vvb: the author's one bell row, chosen from the state the
+	// report row lock read before the change.
+	ownCases := []struct {
+		name   string
+		status sqlcgen.ModerationStatusForReportRow
+		remove bool
+		want   string
+	}{
+		{"keep of a held report", sqlcgen.ModerationStatusForReportRow{ModerationState: "pending", Severity: "low", Category: "flood", InPending: true}, false, "own_shown"},
+		{"keep of a pending serious report that was already showing", sqlcgen.ModerationStatusForReportRow{ModerationState: "pending", Severity: "critical", Category: "flood", InPending: true}, false, ""},
+		{"keep of a report hidden for review", sqlcgen.ModerationStatusForReportRow{ModerationState: "review", Severity: "low", Category: "flood", InFlagged: true}, false, "own_kept"},
+		{"keep of a hidden critical report", sqlcgen.ModerationStatusForReportRow{ModerationState: "review", Severity: "critical", Category: "flood", InFlagged: true}, false, "own_kept"},
+		{"keep of a shown flagged report", sqlcgen.ModerationStatusForReportRow{ModerationState: "clear", Severity: "low", Category: "flood", InFlagged: true}, false, ""},
+		{"remove of a shown report", sqlcgen.ModerationStatusForReportRow{ModerationState: "clear", Severity: "low", Category: "flood"}, true, "own_removed"},
+		{"remove of a held report", sqlcgen.ModerationStatusForReportRow{ModerationState: "pending", Severity: "low", Category: "flood", InPending: true}, true, "own_removed"},
+		{"remove of a report hidden for review", sqlcgen.ModerationStatusForReportRow{ModerationState: "review", Severity: "low", Category: "flood", InFlagged: true}, true, "own_removed"},
+	}
+	for _, tc := range ownCases {
+		t.Run("bell row: "+tc.name, func(t *testing.T) {
+			f := newFake(tc.status)
+			var err error
+			if tc.remove {
+				_, err = modService(f).Remove(ctx, 5, 7)
+			} else {
+				_, err = modService(f).Keep(ctx, 5, 7)
+			}
+			if err != nil {
+				t.Fatalf("error = %v", err)
+			}
+			if tc.want == "" {
+				if len(f.ownRows) != 0 {
+					t.Errorf("bell rows = %v, want none", f.ownRows)
+				}
+				return
+			}
+			want := []sqlcgen.InsertOwnReportUpdateParams{{ReportID: 5, Kind: tc.want}}
+			if !reflect.DeepEqual(f.ownRows, want) {
+				t.Errorf("bell rows = %v, want %v", f.ownRows, want)
+			}
+		})
+	}
+	t.Run("bell row: a removed report is already handled and tells nobody again", func(t *testing.T) {
+		f := newFake(sqlcgen.ModerationStatusForReportRow{ModerationState: "removed", Severity: "low", Category: "flood"})
+		if _, err := modService(f).Remove(ctx, 5, 7); !errors.Is(err, service.ErrAlreadyHandled) {
+			t.Fatalf("error = %v, want ErrAlreadyHandled", err)
+		}
+		if len(f.ownRows) != 0 {
+			t.Errorf("bell rows = %v, want none", f.ownRows)
+		}
 	})
 }

@@ -547,10 +547,14 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 		_, props := p07WalkSwaggerDefinitions(t, defs.Definitions, []string{"handlers.UpdatesResponse"})
 		// Amended 2026-10-29 by Phase 9 plan 21 (D-09): the kind enum gained
 		// followed_posted, right before more; every other value is unchanged.
+		// Amended 2026-11-17 (quick 261117-vvb): the four rows about the reader's
+		// own report follow more, and the row gained the closed link value policy.
 		p14AssertEnum(t, p14SwaggerProp(t, props, "handlers.UpdateWire", "kind"), []string{
 			"reached_live", "hidden", "resolved", "fading", "reliable_nearby",
 			"comment_on_yours", "reply_to_yours", "followed_posted", "more",
+			"own_shown", "own_review", "own_kept", "own_removed",
 		})
+		p14AssertEnum(t, p14SwaggerProp(t, props, "handlers.UpdateWire", "link"), []string{"policy"})
 	}
 
 	// 04-15's contribution: every 429 Phase 4 wires so far is documented, on

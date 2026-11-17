@@ -52,7 +52,7 @@ func p407AssertNoWithheld(t *testing.T, label string, reports []feedReport, with
 		if r.Visibility == "withheld" {
 			t.Errorf("%s: report %d carries visibility withheld", label, r.ID)
 		}
-		if r.VisibilityReason == "removed_after_review" || r.VisibilityReason == "awaiting_text_check" {
+		if r.VisibilityReason == "removed_after_review" || r.VisibilityReason == "awaiting_text_check" || r.VisibilityReason == "hidden_for_review" {
 			t.Errorf("%s: report %d carries reason %q", label, r.ID, r.VisibilityReason)
 		}
 	}
@@ -70,6 +70,9 @@ func TestWithheldReportsInNoFeed(t *testing.T) {
 		descPendingCritical = "Family on the roof at the mill"
 		descPendingRescue   = "Neighbour trapped in the cellar"
 		descClearLow        = "Pump station is running again"
+		// Quick 261117-vvb: hidden for review by flags, at both severities.
+		descReviewLow      = "Fallen wires near the ration shop"
+		descReviewCritical = "Bridge cracked at the river crossing"
 	)
 	removedLow := submitReportGetID(t, author, srv.URL, p407ReportBody("flood", "low", descRemovedLow))
 	removedCritical := submitReportGetID(t, author, srv.URL, p407ReportBody("flood", "critical", descRemovedCritical))
@@ -77,14 +80,20 @@ func TestWithheldReportsInNoFeed(t *testing.T) {
 	pendingCritical := submitReportGetID(t, author, srv.URL, p407ReportBody("flood", "critical", descPendingCritical))
 	pendingRescue := storeReportAs(t, pool, author, srv.URL, p407ReportBody("rescue_needed", "low", descPendingRescue))
 	clearLow := submitReportGetID(t, author, srv.URL, p407ReportBody("flood", "low", descClearLow))
+	reviewLow := submitReportGetID(t, author, srv.URL, p407ReportBody("flood", "low", descReviewLow))
+	reviewCritical := submitReportGetID(t, author, srv.URL, p407ReportBody("flood", "critical", descReviewCritical))
 
 	p407SetModeration(t, pool, removedLow, "removed")
 	p407SetModeration(t, pool, removedCritical, "removed")
 	p407SetModeration(t, pool, heldLow, "pending")
 	p407SetModeration(t, pool, pendingCritical, "pending")
 	p407SetModeration(t, pool, pendingRescue, "pending")
+	p407SetModeration(t, pool, reviewLow, "review")
+	p407SetModeration(t, pool, reviewCritical, "review")
 
-	withheld := []int64{removedLow, removedCritical, heldLow}
+	// Amended 2026-11-17 (quick 261117-vvb): a report hidden for review is
+	// withheld like a removed one, at every severity, through the same guard.
+	withheld := []int64{removedLow, removedCritical, heldLow, reviewLow, reviewCritical}
 	published := []int64{pendingCritical, pendingRescue, clearLow}
 	clients := map[string]*http.Client{"author": author, "reader": reader}
 
@@ -120,7 +129,7 @@ func TestWithheldReportsInNoFeed(t *testing.T) {
 						t.Errorf("%s view=%s: report %d carries visibility withheld", who, view, r.ID)
 					}
 				}
-				for _, word := range []string{"withheld", "removed_after_review", "awaiting_text_check"} {
+				for _, word := range []string{"withheld", "removed_after_review", "awaiting_text_check", "hidden_for_review"} {
 					if strings.Contains(string(body), word) {
 						t.Errorf("%s view=%s: the body carries %q", who, view, word)
 					}
@@ -177,18 +186,18 @@ func TestWithheldReportsInNoFeed(t *testing.T) {
 	})
 
 	t.Run("a faded withheld report is in no Past view and its link is unavailable", func(t *testing.T) {
-		for _, id := range []int64{heldLow, removedLow, clearLow} {
+		for _, id := range []int64{heldLow, removedLow, reviewLow, clearLow} {
 			h10MovePast(t, pool, id, 7200, 3600)
 		}
 		for who, client := range clients {
 			list, _ := h10Get(t, client, h10URL(srv.URL, p407Lat, p407Lon, "view=past"))
-			if h10Find(list.Reports, heldLow) != nil || h10Find(list.Reports, removedLow) != nil {
+			if h10Find(list.Reports, heldLow) != nil || h10Find(list.Reports, removedLow) != nil || h10Find(list.Reports, reviewLow) != nil {
 				t.Errorf("%s: a withheld report is in the Past view", who)
 			}
 			if h10Find(list.Reports, clearLow) == nil {
 				t.Errorf("%s: the clear faded report is missing from the Past view, so the read is not live", who)
 			}
-			for _, id := range []int64{heldLow, removedLow} {
+			for _, id := range []int64{heldLow, removedLow, reviewLow} {
 				link, _ := h10Get(t, client, h10URL(srv.URL, p407Lat, p407Lon, "report="+strconv.FormatInt(id, 10)))
 				if link.Focus == nil || link.Focus.Status != "unavailable" {
 					t.Errorf("%s: link to withheld report %d: focus = %+v, want unavailable", who, id, link.Focus)

@@ -93,6 +93,111 @@ func TestServerCopyFlag(t *testing.T) {
 	}
 }
 
+// TestServerCopyReviewHide pins the words of quick 261117-vvb: the four bell
+// rows about the reader's own report, as the owner agreed them on 2026-11-17,
+// and the flag route's position refusal.
+func TestServerCopyReviewHide(t *testing.T) {
+	lines := []struct {
+		kind service.UpdateKind
+		want string
+	}{
+		{service.UpdateOwnShown, "Your report passed the text check and is now showing."},
+		{service.UpdateOwnReview, "Your report is hidden while it's reviewed."},
+		{service.UpdateOwnKept, "Your report is showing again. Sorry for the wait."},
+		{service.UpdateOwnRemoved, "Your report was removed after review."},
+	}
+	for _, l := range lines {
+		t.Run(string(l.kind), func(t *testing.T) {
+			got := service.OwnReportLine(l.kind)
+			if got != l.want {
+				t.Errorf("OwnReportLine(%q) = %q, want %q", l.kind, got, l.want)
+			}
+			assertServerCopy(t, got)
+			if got == service.UnavailableLine {
+				t.Errorf("%q reads as no longer available", l.kind)
+			}
+		})
+	}
+	if got := service.FlagPositionMessage; got != "Your location could not be read. Try again." {
+		t.Errorf("FlagPositionMessage = %q", got)
+	}
+	assertServerCopy(t, service.FlagPositionMessage)
+	if service.FlagHideThreshold != 3 {
+		t.Errorf("FlagHideThreshold = %d, want 3 (owner, 2026-11-17)", service.FlagHideThreshold)
+	}
+}
+
+// TestValidateFlagPosition: a position is optional, and one outside the map is
+// refused on its own field before anything is read (quick 261117-vvb).
+func TestValidateFlagPosition(t *testing.T) {
+	base := service.FlagInput{ReportID: 1, AccountID: 2, Reasons: []service.FlagReason{service.FlagSpam}}
+	cases := []struct {
+		name  string
+		pos   *service.FlagPosition
+		field string
+	}{
+		{"no position", nil, ""},
+		{"inside the map", &service.FlagPosition{Latitude: 12.95, Longitude: 77.61}, ""},
+		{"the corners", &service.FlagPosition{Latitude: -90, Longitude: 180}, ""},
+		{"latitude too far north", &service.FlagPosition{Latitude: 90.1, Longitude: 0}, "latitude"},
+		{"longitude too far west", &service.FlagPosition{Latitude: 0, Longitude: -180.1}, "longitude"},
+		{"a NaN latitude", &service.FlagPosition{Latitude: nan(), Longitude: 0}, "latitude"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			in := base
+			in.Position = c.pos
+			_, _, err := service.ValidateFlagInput(in)
+			var ve service.ValidationError
+			switch {
+			case c.field == "" && err != nil:
+				t.Errorf("error = %v, want none", err)
+			case c.field != "" && (!errors.As(err, &ve) || ve.Field != c.field || ve.Message != service.FlagPositionMessage):
+				t.Errorf("error = %v, want a %s validation error", err, c.field)
+			}
+		})
+	}
+	// A refused position makes no read and no write.
+	q := &fakeFlagQuerier{}
+	in := base
+	in.Position = &service.FlagPosition{Latitude: 91, Longitude: 0}
+	if err := service.NewFlagService(q).Flag(context.Background(), in); err == nil || len(q.calls) != 0 {
+		t.Errorf("Flag with a bad position: error %v, calls %v; want an error and no call", err, q.calls)
+	}
+}
+
+// nan is a NaN computed at run time.
+func nan() float64 {
+	zero := 0.0
+	return zero / zero
+}
+
+// TestFlagStoresOnlyTheCell: the plain querier path stores the place cell of
+// the position at the voter precision, and nil with no position.
+func TestFlagStoresOnlyTheCell(t *testing.T) {
+	other := int64(9)
+	row := sqlcgen.ReportVoteContextRow{Severity: "low", Category: "flood", ModerationState: "clear", ReporterAccountID: &other, ExpiresAt: time.Now().Add(time.Hour)}
+	q := &fakeFlagQuerier{row: row}
+	svc := service.NewFlagService(q)
+	ctx := context.Background()
+	if err := svc.Flag(ctx, service.FlagInput{ReportID: 1, AccountID: 2, Reasons: []service.FlagReason{service.FlagSpam},
+		Position: &service.FlagPosition{Latitude: 12.9716, Longitude: 77.5946}}); err != nil {
+		t.Fatalf("Flag: %v", err)
+	}
+	if err := svc.Flag(ctx, service.FlagInput{ReportID: 1, AccountID: 3, Reasons: []service.FlagReason{service.FlagSpam}}); err != nil {
+		t.Fatalf("Flag: %v", err)
+	}
+	if len(q.inserted) != 2 {
+		t.Fatalf("%d inserts, want 2", len(q.inserted))
+	}
+	if c := q.inserted[0].FlaggerCell; c == nil || *c != "tdr1v9q" {
+		t.Errorf("cell = %v, want tdr1v9q", c)
+	}
+	if c := q.inserted[1].FlaggerCell; c != nil {
+		t.Errorf("cell with no position = %q, want nil", *c)
+	}
+}
+
 func TestFlagReasons(t *testing.T) {
 	want := []service.FlagReason{"spam", "abusive", "false", "dangerous", "other"}
 	if !reflect.DeepEqual(service.FlagReasons, want) {

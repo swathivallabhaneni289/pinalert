@@ -114,6 +114,9 @@ func newE2EServerWith(t *testing.T, tweak func(d *api.Deps, q *sqlcgen.Queries))
 		// The moderator routes run their writes in the real transaction, as
 		// cmd/server/main.go wires them.
 		ModerationTx: service.PgxModerationTx(pool),
+		// A report flag and the review hide it may cause lock the report and
+		// commit together (quick 261117-vvb).
+		FlagTx: service.PgxFlagTx(pool),
 	}
 	if tweak != nil {
 		tweak(&deps, queries)

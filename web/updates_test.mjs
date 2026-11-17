@@ -11,8 +11,9 @@
 //     the first link; the list is frozen while open; closing drops the marks;
 //   - the loading, error and stale states;
 //   - a row is a link only when the server says it is available and its id
-//     passes the digits check; every word is written with textContent; the
-//     severity class comes from a closed table;
+//     passes the digits check, or (quick 261117-vvb) it carries the closed
+//     link value policy and opens the Policy page; every word is written with
+//     textContent; the severity class comes from a closed table;
 //   - on My activity the Updates rows are marked read once when they are on
 //     view (laptop stack on load, the phone part screen), then a poll runs.
 //
@@ -491,6 +492,43 @@ test('only an available row with a digits id is a link; the rest are plain', asy
   assert.equal(els[0].find('bell-row__event').textContent, 'And 2 more changes');
   assert.equal(els[1].find('bell-row__event').textContent, 'This report is no longer available');
   assert.equal(els[6].getAttribute('href'), '/?report=42');
+});
+
+// Quick 261117-vvb: the rows about the reader's own report. The hidden row is
+// plain, the showing rows open the report, the removed row opens the Policy
+// through the closed link value "policy" only, and no other link value or
+// address is ever followed.
+test('own report rows: hidden is plain, kept opens the report, removed opens the Policy', async () => {
+  const env = load();
+  const own = { report_line: '', category: '', severity: '', severity_level: '', trust: '', unread: false };
+  env.answer({
+    unread: 0,
+    updates: [
+      row({ ...own, id: 14, kind: 'own_removed', report_id: undefined, link: 'policy', event: 'Your report was removed after review.' }),
+      row({ ...own, id: 13, kind: 'own_kept', report_id: 41, event: 'Your report is showing again. Sorry for the wait.' }),
+      row({ ...own, id: 12, kind: 'own_review', report_id: undefined, event: "Your report is hidden while it's reviewed." }),
+      row({ ...own, id: 11, kind: 'own_shown', report_id: 40, event: 'Your report passed the text check and is now showing.' }),
+      row({ ...own, id: 10, kind: 'own_removed', report_id: undefined, link: 'https://example.com', event: 'Your report was removed after review.' }),
+      row({ ...own, id: 9, kind: 'own_removed', report_id: undefined, link: 'policy', available: false, event: 'Your report was removed after review.' })
+    ]
+  });
+  await flush();
+  env.clickBell();
+  await flush();
+  const els = env.rows.children.map((li) => li.children[0]);
+  assert.deepEqual(els.map((e) => e.tagName), ['A', 'A', 'DIV', 'A', 'DIV', 'DIV']);
+  assert.equal(els[0].getAttribute('href'), '/policy');
+  assert.equal(els[1].getAttribute('href'), '/?report=41');
+  assert.equal(els[2].hasAttribute('href'), false);
+  assert.equal(els[3].getAttribute('href'), '/?report=40');
+  assert.equal(els[4].hasAttribute('href'), false, 'an unknown link value opens nothing');
+  assert.equal(els[5].hasAttribute('href'), false, 'an unavailable row opens nothing');
+  assert.equal(els[2].find('bell-row__event').textContent, "Your report is hidden while it's reviewed.");
+  els.forEach((e) => {
+    assert.equal(e.find('bell-row__line'), null);
+    assert.equal(e.find('bell-row__what'), null);
+    assert.equal(e.find('bell-row__trust'), null);
+  });
 });
 
 test('while open the rows are frozen but the badge follows the poll; closing drops the marks', async () => {

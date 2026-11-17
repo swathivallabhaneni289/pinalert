@@ -422,6 +422,10 @@ func TestModerateScreenCopy(t *testing.T) {
 		"Keep report clears the flags on it. The report stays. Remove report hides it from everyone and tells the author.",
 		"Keep report accepts the text as it is and lets the report through the normal rules. Remove report hides it from everyone and tells the author.",
 		"Remove report hides it from everyone and tells the author.",
+		// Amended 2026-11-17 (quick 261117-vvb): a report flags from three places
+		// hid until a moderator acts is marked and explained in its own words.
+		"Hidden by flags",
+		"Keep report shows it again, and flags can't hide it again. Remove report hides it from everyone and tells the author.",
 	}
 	for _, s := range once {
 		if n := p426CountTemplateText(tmpl, s) + p426CountQuoted(js, s); n != 1 {

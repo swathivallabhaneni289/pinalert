@@ -675,6 +675,11 @@ func TestFlagRateLimit(t *testing.T) {
 	})
 }
 
+// TestFlagNeverChangesVisibility: five flags with no position never change a
+// report. Amended 2026-11-17 (quick 261117-vvb): flags that carry positions in
+// three different places do hide a report for review; TestReviewHideFlow and
+// the service's TestFlagReviewHide cover that rule. A flag with no position
+// still never counts toward it, which this test keeps proving unchanged.
 func TestFlagNeverChangesVisibility(t *testing.T) {
 	srv, mailer, pool := newE2EServerWith(t, p20Tweak(newP20Clock(), nil))
 	a := newVerifiedClient(t, srv, mailer, "p20-vis-a@example.com")
@@ -856,8 +861,15 @@ func TestFlagSwaggerCoversRoute(t *testing.T) {
 	// Amended 2026-10-22 by plan 04-31 (owner): the body gained reasons (a set)
 	// and note (up to 300 characters); the single reason field stays for an
 	// older cached page.
-	if len(reqProps) != 3 {
-		t.Errorf("FlagRequest has %d properties, want reasons, note and reason", len(reqProps))
+	// Amended 2026-11-17 (quick 261117-vvb): the body may also carry the
+	// flagger's latitude and longitude, both numbers.
+	if len(reqProps) != 5 {
+		t.Errorf("FlagRequest has %d properties, want reasons, note, reason, latitude and longitude", len(reqProps))
+	}
+	for _, k := range []string{"latitude", "longitude"} {
+		if p := reqProps[k]; p["type"] != "number" {
+			t.Errorf("FlagRequest.%s = %v, want a number", k, p)
+		}
 	}
 	if rs := reqProps["reasons"]; rs["type"] != "array" {
 		t.Errorf("FlagRequest.reasons = %v, want an array", rs)

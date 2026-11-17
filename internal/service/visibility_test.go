@@ -599,7 +599,9 @@ func TestResolveModeration(t *testing.T) {
 				t.Errorf("Visibilities[%d] = %q, want %q (valid)", i, service.Visibilities[i], w)
 			}
 		}
-		wantReasons := []service.ResolveReason{"resolved", "critical_bypasses_gates", "disputed", "awaiting_second_independent_confirmation", "confirmed", "removed_after_review", "awaiting_text_check"}
+		// Amended 2026-11-17 (quick 261117-vvb): hidden_for_review and the review
+		// state are appended last; every other entry and assertion is unchanged.
+		wantReasons := []service.ResolveReason{"resolved", "critical_bypasses_gates", "disputed", "awaiting_second_independent_confirmation", "confirmed", "removed_after_review", "awaiting_text_check", "hidden_for_review"}
 		if len(service.ResolveReasons) != len(wantReasons) {
 			t.Fatalf("ResolveReasons has %d entries, want %d", len(service.ResolveReasons), len(wantReasons))
 		}
@@ -608,7 +610,7 @@ func TestResolveModeration(t *testing.T) {
 				t.Errorf("ResolveReasons[%d] = %q, want %q", i, service.ResolveReasons[i], w)
 			}
 		}
-		wantStates := []service.ModerationState{"clear", "pending", "removed"}
+		wantStates := []service.ModerationState{"clear", "pending", "removed", "review"}
 		if len(service.ModerationStates) != len(wantStates) {
 			t.Fatalf("ModerationStates has %d entries, want %d", len(service.ModerationStates), len(wantStates))
 		}
