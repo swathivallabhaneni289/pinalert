@@ -176,9 +176,13 @@ func newAuthE2EServer(t *testing.T) (*httptest.Server, *pgxpool.Pool, *recording
 	ratings := service.NewRatingService(queries)
 	fm := &recordingMailer{}
 	deps := api.Deps{
-		Session:     mgr,
-		Sessions:    queries,
-		Reports:     service.NewReportService(queries, service.WithReportSignals(ratings)),
+		Session:  mgr,
+		Sessions: queries,
+		Reports:  service.NewReportService(queries, service.WithReportSignals(ratings)),
+		// Amended 2026-11-17 (quick 261117-vuf): the voting service too, so the
+		// My activity tests here can confirm a report; the account's own posts
+		// left My activity, and its confirms are the history the page lists.
+		Votes:       service.NewVotingService(queries, service.WithVotingSignals(ratings), service.WithVotingRatePrompts(ratings)),
 		AuthService: service.NewAuthService(queries, fm, "https://pinalert.example", service.WithAuthSignals(ratings)),
 		Ratings:     ratings,
 		Auth:        handlers.AuthConfig{AssetVersion: "test"},
@@ -468,12 +472,27 @@ func TestConfirmCodeExpired(t *testing.T) {
 //
 // Amended 2026-10-29 by Phase 7.1 plan 14: device A signs in with verifySession
 // (the password flow) instead of requesting and opening an emailed link.
+//
+// Amended 2026-11-17 (quick 261117-vuf, owner on the 7.1 UAT): the account's
+// own posts left My activity (they are on its profile), so each device now
+// confirms another account's report, and both confirms appear on one GET
+// /profile through device A's jar. The account's own report from device A is
+// not listed.
 func TestProfileListsOwnReportsAcrossSessions(t *testing.T) {
 	srv, pool, mailer := newAuthE2EServer(t)
 	clientA := newJarClient(t)
+	poster := newJarClient(t)
+	verifySession(t, poster, srv, mailer, "profile-multi-poster@example.com")
+	confirmAs := func(client *http.Client, description string) {
+		body := floodReportBody(12.9716, 77.5946)
+		body["description"] = description
+		id := submitReportGetID(t, poster, srv.URL, body)
+		decodeVoteResponse(t, postVote(t, client, srv.URL, id, "confirm", map[string]any{"latitude": 12.9716, "longitude": 77.5946}))
+	}
 
 	verifySession(t, clientA, srv, mailer, "profile-multi@example.com")
-	submitReport(t, clientA, srv, "flood", "report from device A")
+	submitReport(t, clientA, srv, "flood", "own report from device A")
+	confirmAs(clientA, "report from device A")
 
 	sessionA := sessionIDFromJar(t, clientA, srv.URL)
 	var accountID int64
@@ -492,7 +511,7 @@ func TestProfileListsOwnReportsAcrossSessions(t *testing.T) {
 	if _, err := q.BindSessionAccount(context.Background(), sqlcgen.BindSessionAccountParams{SessionID: sessionB, AccountID: &accountID}); err != nil {
 		t.Fatalf("binding device B to the same account: %v", err)
 	}
-	submitReport(t, clientB, srv, "fire", "report from device B")
+	confirmAs(clientB, "report from device B")
 
 	resp, err := clientA.Get(srv.URL + "/profile")
 	if err != nil {
@@ -514,10 +533,15 @@ func TestProfileListsOwnReportsAcrossSessions(t *testing.T) {
 	if !strings.Contains(bodyStr, "report from device B") {
 		t.Errorf("/profile is missing device B's report: %s", bodyStr)
 	}
+	if strings.Contains(bodyStr, "own report from device A") {
+		t.Errorf("/profile lists the account's own report; own posts are on the profile")
+	}
 }
 
 // TestProfileEmptyState proves a freshly-verified account with no reports
 // sees the honest "No reports yet" empty state — never a fabricated row.
+// Amended 2026-11-17 (quick 261117-vuf): Posted and its "No reports yet" left,
+// so the honest empty state is Confirmed's "No confirmations yet".
 func TestProfileEmptyState(t *testing.T) {
 	srv, _, mailer := newAuthE2EServer(t)
 	client := newJarClient(t)
@@ -537,8 +561,8 @@ func TestProfileEmptyState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading /profile body: %v", err)
 	}
-	if !strings.Contains(string(respBody), "No reports yet") {
-		t.Fatalf("/profile does not contain the empty-state heading: %s", respBody)
+	if !strings.Contains(string(respBody), "No confirmations yet") || strings.Contains(string(respBody), `<li class="report-row`) {
+		t.Fatalf("/profile does not show the empty state, or shows a row: %s", respBody)
 	}
 }
 
@@ -682,13 +706,22 @@ func TestLogoutReturnsToLoginGate(t *testing.T) {
 // Amended 2026-10-29 by Phase 7.1 plan 14: the second sign in is a real
 // POST /api/auth/sign-in with the password. It used to insert a sign in
 // link token row and open GET /auth/verify.
+//
+// Amended 2026-11-17 (quick 261117-vuf): the account's own posts left My
+// activity, so the history read back is the account's confirm of another
+// account's report, which follows the account the same way.
 func TestLogoutPreservesReportHistory(t *testing.T) {
 	srv, _, mailer := newAuthE2EServer(t)
 	client := newJarClient(t)
 	const email = "logout-preserve@example.com"
 
 	verifySession(t, client, srv, mailer, email)
-	submitReport(t, client, srv, "flood", "report before logout")
+	poster := newJarClient(t)
+	verifySession(t, poster, srv, mailer, "logout-preserve-poster@example.com")
+	body := floodReportBody(12.9716, 77.5946)
+	body["description"] = "report before logout"
+	id := submitReportGetID(t, poster, srv.URL, body)
+	decodeVoteResponse(t, postVote(t, client, srv.URL, id, "confirm", map[string]any{"latitude": 12.9716, "longitude": 77.5946}))
 
 	logoutResp, err := client.Post(srv.URL+"/auth/logout", "", nil)
 	if err != nil {

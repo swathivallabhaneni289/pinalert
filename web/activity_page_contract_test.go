@@ -122,10 +122,17 @@ func TestActivityPageTemplateMarkup(t *testing.T) {
 		t.Errorf("the Distance cell does not carry data-distance-for, data-lat and data-lon and the word Unknown")
 	}
 
+	// Amended 2026-11-17 (quick 261117-vuf): the Reopen and used undos hooks
+	// left with Posted, so no card carries them.
 	opening := wm5CardOpeningTag(t, tmpl)
-	for _, want := range []string{`activity-card--{{.Kind}}`, `data-report-id="{{.ReportID}}"`, `data-trust="{{.TrustJSON}}"`, `data-can-reopen="true"`} {
+	for _, want := range []string{`activity-card--{{.Kind}}`, `data-report-id="{{.ReportID}}"`, `data-trust="{{.TrustJSON}}"`} {
 		if !strings.Contains(opening, want) {
 			t.Errorf("the card opening tag does not contain %s", want)
+		}
+	}
+	for _, gone := range []string{`data-can-reopen`, `data-undos-used`} {
+		if strings.Contains(tmpl, gone) {
+			t.Errorf("profile.html.tmpl still writes %s; it left with Posted", gone)
 		}
 	}
 	if strings.Contains(opening, "hidden") {
@@ -424,61 +431,39 @@ func TestActivityNoOpacity(t *testing.T) {
 	check("the phone My activity section", phone[start:end])
 }
 
-// TestActivityUndosUsedSentence pins plan 03.1-07 (D-22, C52). The template
-// writes data-undos-used only from UndosUsed, and activity.js turns that hook
-// into one fixed sentence written through Pinalert.setText, never mounting the
-// Reopen control on such a card. The module keeps its one addEventListener and
-// its one showToast call, and makes no network call of its own.
-func TestActivityUndosUsedSentence(t *testing.T) {
-	tmpl := p13ReadTemplate(t, "profile.html.tmpl")
-	if n := strings.Count(tmpl, "data-undos-used"); n != 1 {
-		t.Fatalf("profile.html.tmpl writes data-undos-used %d times, want 1", n)
-	}
-	if !strings.Contains(tmpl, `{{if .UndosUsed}}data-undos-used="true"{{end}}`) {
-		t.Errorf("data-undos-used is not written only from UndosUsed")
-	}
-	if !strings.Contains(wm5CardOpeningTag(t, tmpl), "data-undos-used") {
-		t.Errorf("data-undos-used is not inside the card opening tag")
+// TestActivityOffersNoReopen replaces TestActivityUndosUsedSentence (plan
+// 03.1-07, D-22, C52). Amended 2026-11-17 (quick 261117-vuf, owner on the 7.1
+// UAT): Posted left My activity, and the poster's Reopen and the "used both
+// undos" sentence lived only on its cards, so the page carries neither hook and
+// activity.js mounts no control, listens for no click, shows no toast and still
+// makes no network call of its own. The shared Reopen builder in votes.js stays
+// for the report's own take back block.
+func TestActivityOffersNoReopen(t *testing.T) {
+	for _, name := range []string{"profile.html.tmpl", "demo_activity.html.tmpl"} {
+		tmpl := p13ReadTemplate(t, name)
+		for _, gone := range []string{"data-undos-used", "data-can-reopen", ".UndosUsed", ".CanReopen"} {
+			if strings.Contains(tmpl, gone) {
+				t.Errorf("%s still holds %q", name, gone)
+			}
+		}
 	}
 
 	raw := p15ReadStatic(t, "static/js/activity.js")
 	code := p15CodeLines(raw)
-	const sentence = "You have used both undos on this report."
-	if n := strings.Count(raw, sentence); n != 1 {
-		t.Errorf("activity.js holds the sentence %d times, want 1", n)
+	for _, gone := range []string{
+		"You have used both undos on this report.", "UNDOS_USED_SENTENCE", "createReopenControl", "onReopenClick",
+		"canReopen", "undosUsed", "castVote(", "Pinalert.showToast(", "addEventListener",
+	} {
+		if strings.Contains(code, gone) {
+			t.Errorf("activity.js still holds %q; the Reopen control left with Posted", gone)
+		}
 	}
-	if !regexp.MustCompile(`var UNDOS_USED_SENTENCE = '` + regexp.QuoteMeta(sentence) + `';`).MatchString(code) {
-		t.Errorf("the sentence is not held in one fixed constant")
-	}
-
-	hookAt := strings.Index(code, "row.dataset.undosUsed === 'true'")
-	reopenAt := strings.Index(code, "row.dataset.canReopen === 'true'")
-	mountAt := strings.Index(code, "PinalertVotes.createReopenControl(row.dataset.reportId)")
-	if hookAt == -1 || reopenAt == -1 || mountAt == -1 || !(reopenAt < mountAt && mountAt < hookAt) {
-		t.Fatalf("activity.js does not read the undos hook after the Reopen branch (reopen %d, mount %d, hook %d)", reopenAt, mountAt, hookAt)
-	}
-	if !strings.Contains(code[mountAt:], "} else if (row.dataset.undosUsed === 'true'") {
-		t.Errorf("the sentence branch is not an else of the Reopen branch, so Reopen could mount beside it")
-	}
-	branch := code[hookAt:]
-	if !regexp.MustCompile(`Pinalert\.setText\(\s*usedNote\s*,\s*UNDOS_USED_SENTENCE\s*\)`).MatchString(branch) {
-		t.Errorf("the sentence is not written through Pinalert.setText")
-	}
-	for _, banned := range []string{"innerHTML", "insertAdjacentHTML", "textContent ="} {
+	for _, banned := range []string{"innerHTML", "insertAdjacentHTML", "textContent =", "fetch(", "XMLHttpRequest", "sendBeacon"} {
 		if strings.Contains(code, banned) {
 			t.Errorf("activity.js contains %q", banned)
 		}
 	}
-
-	if n := strings.Count(raw, "Pinalert.showToast("); n != 1 {
-		t.Errorf("activity.js has %d Pinalert.showToast calls, want 1", n)
-	}
-	if n := strings.Count(raw, "addEventListener"); n != 1 {
-		t.Errorf("activity.js has %d addEventListener occurrences, want 1", n)
-	}
-	for _, banned := range []string{"fetch(", "XMLHttpRequest", "sendBeacon"} {
-		if strings.Contains(code, banned) {
-			t.Errorf("activity.js makes a network call of its own: %q", banned)
-		}
+	if !strings.Contains(p15ReadStatic(t, "static/js/votes.js"), "function createReopenControl(") {
+		t.Errorf("votes.js lost the shared createReopenControl builder the report's own block uses")
 	}
 }

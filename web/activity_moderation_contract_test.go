@@ -123,8 +123,10 @@ func TestActivityModerationRowsOmitTrust(t *testing.T) {
 			t.Errorf("activity.js does not contain %s", want)
 		}
 	}
-	if reopen := jsFunctionBody(t, code, "onReopenClick(row, block)"); strings.Contains(reopen, "moderation") {
-		t.Errorf("onReopenClick mentions moderation, a moderated row never offers Reopen")
+	// Amended 2026-11-17 (quick 261117-vuf): Posted left My activity and with it
+	// the Reopen control, so a moderated row can offer no Reopen here at all.
+	if strings.Contains(code, "onReopenClick") || strings.Contains(code, "createReopenControl") {
+		t.Errorf("activity.js still mounts a Reopen control; it left with Posted")
 	}
 
 	// The raw file, comments included, types no new state class and no label

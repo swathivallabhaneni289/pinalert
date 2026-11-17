@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -86,265 +87,121 @@ func p416HasClass(tokens []string, want string) bool {
 	return false
 }
 
+// p416VotedBy has poster post body and voter confirm it, and returns the id.
+func p416VotedBy(t *testing.T, srvURL string, poster, voter *http.Client, body map[string]any) int64 {
+	t.Helper()
+	id := submitReportGetID(t, poster, srvURL, body)
+	resp := postVote(t, voter, srvURL, id, "confirm", map[string]any{"latitude": 12.9716, "longitude": 77.5946})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("confirm on report %d status = %d, want 200", id, resp.StatusCode)
+	}
+	return id
+}
+
+// TestActivityHeldAndRemovedRows pinned the author's held and removed rows on My
+// activity: their state class, their note and no trust (plan 04-16, P4-A9,
+// P4-A10).
+//
+// Amended 2026-11-17 (quick 261117-vuf, owner on the 7.1 UAT): the author's own
+// reports left My activity with Posted (quick 261117-vvb tells the author in the
+// bell when one is held, shown again or removed). So the author's page lists
+// none of them, held, removed or clear, and the voter's page keeps the rule the
+// service already had: a voted report that is withheld (held or removed) is
+// dropped, while a clear report and a critical report still waiting for its
+// text check (published at once, so not withheld) keep their trust and carry
+// no moderation note.
 func TestActivityHeldAndRemovedRows(t *testing.T) {
 	srv, mailer, pool := newE2EServer(t)
 	author := newVerifiedClient(t, srv, mailer, "activity-p416-held@example.com")
+	voter := newVerifiedClient(t, srv, mailer, "activity-p416-held-voter@example.com")
 
-	clear := submitReportGetID(t, author, srv.URL, p416ReportBody("low", "flood", "Water over the road near the old school"))
-	held := submitReportGetID(t, author, srv.URL, p416ReportBody("low", "flood", "Bus stand flooded up to the knees"))
-	heldExpired := submitReportGetID(t, author, srv.URL, p416ReportBody("low", "flood", "Canal bank is giving way slowly"))
-	resolvedRemoved := submitReportGetID(t, author, srv.URL, p416ReportBody("low", "flood", "Lane behind the temple is under water"))
-	removedCritical := submitReportGetID(t, author, srv.URL, p416ReportBody("critical", "flood", "Boat needed at the old market"))
-	pendingCritical := submitReportGetID(t, author, srv.URL, p416ReportBody("critical", "flood", "Family stuck on a roof near the canal"))
-
-	p416SetModeration(t, pool, held, "pending")
-	p416SetModeration(t, pool, heldExpired, "pending")
-	expireReport(t, pool, heldExpired)
-	resp := postVote(t, author, srv.URL, resolvedRemoved, "resolve", map[string]any{"latitude": 12.9716, "longitude": 77.5946})
-	if visibility, _ := decodeVoteResponse(t, resp); visibility != "retracted" {
-		t.Fatalf("resolve visibility = %q, want retracted", visibility)
-	}
-	p416SetModeration(t, pool, resolvedRemoved, "removed")
-	p416SetModeration(t, pool, removedCritical, "removed")
-	p416SetModeration(t, pool, pendingCritical, "pending")
-
-	body := getProfile(t, author, srv.URL)
-
-	t.Run("held row", func(t *testing.T) {
-		row := p15ProfileRow(t, body, held)
-		if got := p15Attr(t, row, "data-moderation"); got != "held" {
-			t.Errorf("data-moderation = %q, want held", got)
-		}
-		tokens := p15ClassTokens(t, row)
-		if !p416HasClass(tokens, "vis-held") || p416HasClass(tokens, "vis-provisional") || p416HasClass(tokens, "vis-withheld") {
-			t.Errorf("class tokens = %v, want vis-held and neither vis-provisional nor vis-withheld", tokens)
-		}
-		if p15HasAttr(row, "data-trust") || p15HasAttr(row, "data-can-reopen") {
-			t.Errorf("held row carries data-trust or data-can-reopen: %s", row)
-		}
-		if got := p15Attr(t, row, "data-expired"); got != "false" {
-			t.Errorf("data-expired = %q, want false", got)
-		}
-		note, ok := p416Note(row)
-		if !ok {
-			t.Fatalf("held row has no moderation note: %s", row)
-		}
-		if got := p416Text(note); got != service.HeldSentence {
-			t.Errorf("note = %q, want %q", got, service.HeldSentence)
-		}
-		meta := strings.Index(row, `class="report-row__meta`)
-		if meta == -1 || strings.Index(row, "report-row__moderation-note") < meta {
-			t.Errorf("the note does not come after the first meta paragraph: %s", row)
-		}
-		if strings.Contains(row, "/policy") {
-			t.Errorf("held row links /policy: %s", row)
-		}
-	})
-
-	t.Run("held and expired row", func(t *testing.T) {
-		row := p15ProfileRow(t, body, heldExpired)
-		if got := p15Attr(t, row, "data-moderation"); got != "held" {
-			t.Errorf("data-moderation = %q, want held", got)
-		}
-		tokens := p15ClassTokens(t, row)
-		if !p416HasClass(tokens, "vis-expired") || p416HasClass(tokens, "vis-held") {
-			t.Errorf("class tokens = %v, want vis-expired and no vis-held", tokens)
-		}
-		if got := p15Attr(t, row, "data-expired"); got != "true" {
-			t.Errorf("data-expired = %q, want true", got)
-		}
-		if _, ok := p416Note(row); ok {
-			t.Errorf("held and expired row carries a note: %s", row)
-		}
-		if p15HasAttr(row, "data-trust") {
-			t.Errorf("held and expired row carries data-trust: %s", row)
-		}
-	})
-
-	t.Run("resolved then removed row", func(t *testing.T) {
-		row := p15ProfileRow(t, body, resolvedRemoved)
-		if got := p15Attr(t, row, "data-moderation"); got != "removed" {
-			t.Errorf("data-moderation = %q, want removed", got)
-		}
-		tokens := p15ClassTokens(t, row)
-		if !p416HasClass(tokens, "vis-removed") || p416HasClass(tokens, "vis-retracted") {
-			t.Errorf("class tokens = %v, want vis-removed and no vis-retracted", tokens)
-		}
-		if p15HasAttr(row, "data-can-reopen") || p15HasAttr(row, "data-trust") {
-			t.Errorf("removed row carries data-can-reopen or data-trust: %s", row)
-		}
-		note, ok := p416Note(row)
-		if !ok {
-			t.Fatalf("removed row has no moderation note: %s", row)
-		}
-		if got := p416Text(note); got != service.RemovedSentence {
-			t.Errorf("note = %q, want %q", got, service.RemovedSentence)
-		}
-	})
-
-	t.Run("removed critical row", func(t *testing.T) {
-		row := p15ProfileRow(t, body, removedCritical)
-		if got := p15Attr(t, row, "data-moderation"); got != "removed" {
-			t.Errorf("data-moderation = %q, want removed", got)
-		}
-		tokens := p15ClassTokens(t, row)
-		if !p416HasClass(tokens, "vis-removed") {
-			t.Errorf("class tokens = %v, want vis-removed", tokens)
-		}
-		if p15HasAttr(row, "data-trust") || p15HasAttr(row, "data-can-reopen") {
-			t.Errorf("removed critical row carries data-trust or data-can-reopen: %s", row)
-		}
-		note, ok := p416Note(row)
-		if !ok || p416Text(note) != service.RemovedSentence {
-			t.Errorf("removed critical note = %q (found %v), want %q", p416Text(note), ok, service.RemovedSentence)
-		}
-		// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to
-		// D-21): the severity word is a visually hidden word in the Status cell,
-		// and the chip says Removed after review. The Phase 3.1 and Phase 4
-		// hands-on tests are walked on this layout after Phase 3.4 is built.
-		if !strings.Contains(row, `<span class="visually-hidden">Critical severity. </span>`) || !strings.Contains(row, ">Removed after review</span>") {
-			t.Errorf("removed critical row lost its severity word: %s", row)
-		}
-	})
-
-	t.Run("pending critical row keeps its trust", func(t *testing.T) {
-		row := p15ProfileRow(t, body, pendingCritical)
-		if p15HasAttr(row, "data-moderation") {
-			t.Errorf("pending serious row carries data-moderation: %s", row)
-		}
-		if trust := p15ProfileTrust(t, row); trust == nil {
-			t.Errorf("pending serious row has no trust object")
-		}
-		if p416HasClass(p15ClassTokens(t, row), "vis-held") {
-			t.Errorf("pending serious row carries vis-held")
-		}
-		if _, ok := p416Note(row); ok {
-			t.Errorf("pending serious row carries a note: %s", row)
-		}
-	})
-
-	t.Run("clear row", func(t *testing.T) {
-		row := p15ProfileRow(t, body, clear)
-		if p15HasAttr(row, "data-moderation") {
-			t.Errorf("clear row carries data-moderation: %s", row)
-		}
-		if !p15HasAttr(row, "data-trust") {
-			t.Errorf("clear row has no data-trust: %s", row)
-		}
-		if _, ok := p416Note(row); ok {
-			t.Errorf("clear row carries a note: %s", row)
-		}
-	})
-}
-
-func TestProfileReportAcceptsWithheld(t *testing.T) {
-	srv, mailer, pool := newE2EServer(t)
-	author := newVerifiedClient(t, srv, mailer, "activity-p416-accepts@example.com")
-
-	held := submitReportGetID(t, author, srv.URL, p416ReportBody("low", "flood", "Tree down across the school road"))
-	removed := submitReportGetID(t, author, srv.URL, p416ReportBody("low", "flood", "Culvert washed out on the south lane"))
+	clear := p416VotedBy(t, srv.URL, author, voter, p416ReportBody("low", "flood", "Water over the road near the old school"))
+	held := p416VotedBy(t, srv.URL, author, voter, p416ReportBody("low", "flood", "Bus stand flooded up to the knees"))
+	removed := p416VotedBy(t, srv.URL, author, voter, p416ReportBody("low", "flood", "Lane behind the temple is under water"))
+	pendingCritical := p416VotedBy(t, srv.URL, author, voter, p416ReportBody("critical", "flood", "Family stuck on a roof near the canal"))
 	p416SetModeration(t, pool, held, "pending")
 	p416SetModeration(t, pool, removed, "removed")
+	p416SetModeration(t, pool, pendingCritical, "pending")
 
-	body := getProfile(t, author, srv.URL)
-	for _, tc := range []struct {
-		id     int64
-		reason service.ResolveReason
-	}{
-		{held, service.ReasonAwaitingTextCheck},
-		{removed, service.ReasonRemovedAfterReview},
-	} {
-		row := p15ProfileRow(t, body, tc.id)
-		if got := p15Attr(t, row, "data-visibility"); got != "withheld" {
-			t.Errorf("report %d data-visibility = %q, want withheld", tc.id, got)
+	authorBody := getProfile(t, author, srv.URL)
+	for _, id := range []int64{clear, held, removed, pendingCritical} {
+		if strings.Contains(authorBody, `data-report-id="`+strconv.FormatInt(id, 10)+`"`) {
+			t.Errorf("the author's My activity lists the author's own report %d", id)
 		}
-		if got := p15Attr(t, row, "data-visibility-reason"); got != string(tc.reason) {
-			t.Errorf("report %d data-visibility-reason = %q, want %q", tc.id, got, tc.reason)
+	}
+	for _, gone := range []string{"data-moderation", "report-row__moderation-note", service.HeldSentence, service.RemovedSentence} {
+		if strings.Contains(html.UnescapeString(authorBody), gone) {
+			t.Errorf("the author's My activity holds %q", gone)
 		}
-		for _, tok := range p15ClassTokens(t, row) {
-			if tok == "vis-provisional" || tok == "vis-withheld" {
-				t.Errorf("report %d carries class %q", tc.id, tok)
-			}
+	}
+
+	voterBody := getProfile(t, voter, srv.URL)
+	for _, id := range []int64{held, removed} {
+		if strings.Contains(voterBody, `data-report-id="`+strconv.FormatInt(id, 10)+`"`) {
+			t.Errorf("the voter's My activity lists withheld report %d", id)
+		}
+	}
+	for name, id := range map[string]int64{"clear": clear, "pending critical": pendingCritical} {
+		row := p15ProfileRow(t, voterBody, id)
+		if p15HasAttr(row, "data-moderation") {
+			t.Errorf("%s row carries data-moderation: %s", name, row)
+		}
+		if trust := p15ProfileTrust(t, row); trust == nil {
+			t.Errorf("%s row has no trust object", name)
+		}
+		if p416HasClass(p15ClassTokens(t, row), "vis-held") {
+			t.Errorf("%s row carries vis-held", name)
+		}
+		if _, ok := p416Note(row); ok {
+			t.Errorf("%s row carries a note: %s", name, row)
 		}
 	}
 }
 
+// TestRemovedPolicyPointerNeedsContact pinned the Policy pointer on the
+// author's removed row (D-24). Amended 2026-11-17 (quick 261117-vuf): the
+// author's removed row left My activity with Posted, so with or without a
+// contact address the page draws no removed row, no note and no Policy link.
 func TestRemovedPolicyPointerNeedsContact(t *testing.T) {
-	seed := func(t *testing.T, srv string, client *http.Client, pool *pgxpool.Pool, email string) (removed, held int64) {
-		removed = submitReportGetID(t, client, srv, p416ReportBody("low", "flood", "Pump house wall has fallen in"))
-		held = submitReportGetID(t, client, srv, p416ReportBody("low", "flood", "Footbridge is closed by the police"))
-		p416SetModeration(t, pool, removed, "removed")
-		p416SetModeration(t, pool, held, "pending")
-		return removed, held
-	}
+	for name, contact := range map[string]string{"no_contact": "", "contact_set": "help@pinalert.example"} {
+		t.Run(name, func(t *testing.T) {
+			srv, mailer, pool := newE2EServerWith(t, func(d *api.Deps, _ *sqlcgen.Queries) {
+				d.Chrome = handlers.Chrome{ContactEmail: contact}
+			})
+			client := newVerifiedClient(t, srv, mailer, "activity-p416-"+name+"@example.com")
+			removed := submitReportGetID(t, client, srv.URL, p416ReportBody("low", "flood", "Pump house wall has fallen in"))
+			p416SetModeration(t, pool, removed, "removed")
 
-	t.Run("no_contact", func(t *testing.T) {
-		srv, mailer, pool := newE2EServer(t)
-		client := newVerifiedClient(t, srv, mailer, "activity-p416-nocontact@example.com")
-		removed, _ := seed(t, srv.URL, client, pool, "")
-		row := p15ProfileRow(t, getProfile(t, client, srv.URL), removed)
-		note, ok := p416Note(row)
-		if !ok || p416Text(note) != service.RemovedSentence {
-			t.Errorf("note = %q (found %v), want exactly %q", p416Text(note), ok, service.RemovedSentence)
-		}
-		if strings.Contains(row, `href="/policy"`) {
-			t.Errorf("row links /policy with no contact address: %s", row)
-		}
-	})
-
-	t.Run("contact_set", func(t *testing.T) {
-		const contact = "help@pinalert.example"
-		srv, mailer, pool := newE2EServerWith(t, func(d *api.Deps, _ *sqlcgen.Queries) {
-			d.Chrome = handlers.Chrome{ContactEmail: contact}
+			body := getProfile(t, client, srv.URL)
+			if strings.Contains(body, `data-report-id="`+strconv.FormatInt(removed, 10)+`"`) {
+				t.Errorf("My activity lists the author's removed report")
+			}
+			if strings.Contains(body, `<a href="/policy">Policy page</a>`) || strings.Contains(body, "report-row__moderation-note") {
+				t.Errorf("My activity draws a removed note or its Policy link")
+			}
 		})
-		client := newVerifiedClient(t, srv, mailer, "activity-p416-contact@example.com")
-		removed, held := seed(t, srv.URL, client, pool, contact)
-		body := getProfile(t, client, srv.URL)
-
-		row := p15ProfileRow(t, body, removed)
-		if n := strings.Count(row, `<a href="/policy">Policy page</a>`); n != 1 {
-			t.Errorf("row has the Policy link %d times, want 1: %s", n, row)
-		}
-		note, ok := p416Note(row)
-		want := service.RemovedSentence + " " + service.RemovedPolicyPointer
-		if !ok || p416Text(note) != want {
-			t.Errorf("note = %q (found %v), want %q", p416Text(note), ok, want)
-		}
-		if strings.Contains(row, contact) {
-			t.Errorf("row contains the contact address: %s", row)
-		}
-
-		heldRow := p15ProfileRow(t, body, held)
-		heldNote, ok := p416Note(heldRow)
-		if !ok || p416Text(heldNote) != service.HeldSentence {
-			t.Errorf("held note = %q (found %v), want %q", p416Text(heldNote), ok, service.HeldSentence)
-		}
-		if strings.Contains(heldRow, "/policy") {
-			t.Errorf("held row links /policy: %s", heldRow)
-		}
-	})
+	}
 }
 
+// TestActivityWrittenLine proves P4-A8 on My activity: a report that reached
+// the server long after it was written shows its Written line on the Report
+// cell's detail line, and one written minutes before upload shows none.
+// Amended 2026-11-17 (quick 261117-vuf): the cards are a voter's, since the
+// author's own posts left My activity; the held late row left with them.
 func TestActivityWrittenLine(t *testing.T) {
 	srv, mailer, pool := newE2EServer(t)
 	author := newVerifiedClient(t, srv, mailer, "activity-p416-written@example.com")
+	voter := newVerifiedClient(t, srv, mailer, "activity-p416-written-voter@example.com")
 
-	late := submitReportGetID(t, author, srv.URL, p416ReportBody("low", "flood", "Road to the ferry is cut off"))
-	near := submitReportGetID(t, author, srv.URL, p416ReportBody("low", "flood", "Water is up to the first step"))
-	lateHeld := submitReportGetID(t, author, srv.URL, p416ReportBody("low", "flood", "Wall of the cattle shed collapsed"))
+	late := p416VotedBy(t, srv.URL, author, voter, p416ReportBody("low", "flood", "Road to the ferry is cut off"))
+	near := p416VotedBy(t, srv.URL, author, voter, p416ReportBody("low", "flood", "Water is up to the first step"))
 	p416SetWrittenAgo(t, pool, late, 4*time.Hour)
 	p416SetWrittenAgo(t, pool, near, 10*time.Minute)
-	p416SetWrittenAgo(t, pool, lateHeld, 4*time.Hour)
-	p416SetModeration(t, pool, lateHeld, "pending")
 
-	body := getProfile(t, author, srv.URL)
+	body := getProfile(t, voter, srv.URL)
 
 	lateRow := p15ProfileRow(t, body, late)
-	// Amended 2026-10-16 by Phase 3.4 (owner decision, 03.4-CONTEXT D-18 to D-21,
-	// UI-SPEC 3a): the Written line shares the Report cell's detail line,
-	// "{Category} · {Written line}", instead of a paragraph of its own. The
-	// Phase 3.1 and Phase 4 hands-on tests are walked on this layout after Phase
-	// 3.4 is built.
 	const line = `Flood &middot; Written 4 hours ago</p>`
 	if n := strings.Count(lateRow, line); n != 1 {
 		t.Fatalf("late row has the Written line %d times, want 1: %s", n, lateRow)
@@ -356,13 +213,6 @@ func TestActivityWrittenLine(t *testing.T) {
 
 	if nearRow := p15ProfileRow(t, body, near); strings.Contains(nearRow, "Written") {
 		t.Errorf("a report written 10 minutes before upload shows a Written line: %s", nearRow)
-	}
-
-	heldRow := p15ProfileRow(t, body, lateHeld)
-	writtenAt := strings.Index(heldRow, line)
-	noteAt := strings.Index(heldRow, "report-row__moderation-note")
-	if writtenAt == -1 || noteAt == -1 || writtenAt > noteAt {
-		t.Errorf("held row: Written line at %d, note at %d, want the line first: %s", writtenAt, noteAt, heldRow)
 	}
 }
 

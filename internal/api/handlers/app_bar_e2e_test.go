@@ -126,10 +126,14 @@ func TestAppBarCurrentItem(t *testing.T) {
 	srv, mailer, _ := newE2EServer(t)
 	client := newVerifiedClient(t, srv, mailer, "app-bar-current@example.com")
 
+	// Amended 2026-11-17 (quick 261117-vuf): Posted left, so a part screen is
+	// pinned with Confirmed, and the Updates screen the bell opens is titled
+	// Updates with its back arrow to Nearby.
 	for _, tc := range []struct{ path, current, title, back string }{
 		{"/", "Nearby", "Nearby", ""},
 		{"/profile", "", "My activity", "/settings"},
-		{"/profile?part=posted", "", "Posted by you", "/settings"},
+		{"/profile?part=confirmed", "", "Confirmed", "/settings"},
+		{"/profile?part=updates", "", "Updates", "/"},
 	} {
 		body := getPageBody(t, client, srv.URL, tc.path)
 		appBarCheckCurrent(t, tc.path, body, tc.current)

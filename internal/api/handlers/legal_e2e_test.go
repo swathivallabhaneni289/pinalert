@@ -292,7 +292,7 @@ func TestLegalPagesRender(t *testing.T) {
 		"Most reports last",
 		// Amended 2026-10-30 by quick task 261030-64q (backlog 999.12): a
 		// confirmation from a new spot starts the time again, up to the cap.
-		"A confirmation from someone at a new spot starts that time again, but no report lasts more than 24 hours after it was posted, or 48 hours for a critical report. Disputes never make a report last longer. When the time is up, a report is marked Expired and leaves the Nearby list. Ended reports stay under My activity, Ended nearby, for 7 days.",
+		"A confirmation from someone at a new spot starts that time again, but no report lasts more than 24 hours after it was posted, or 48 hours for a critical report. Disputes never make a report last longer. When the time is up, a report is marked Expired and leaves the Nearby list. Ended reports stay under Ended in My activity for 7 days.", // amended 2026-11-17 (quick 261117-vuf)
 	} {
 		if !strings.Contains(ptext, want) {
 			t.Errorf("page text lacks %q", want)

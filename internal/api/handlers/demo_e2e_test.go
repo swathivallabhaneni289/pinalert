@@ -528,26 +528,34 @@ func TestDemoActivityPageParts(t *testing.T) {
 		return body
 	}
 
+	// Amended 2026-11-17 (quick 261117-vuf, owner on the 7.1 UAT): the Demo
+	// mirrors the real page, three parts with one word names, Confirmed,
+	// Disputed and Ended, and no Posted, so the practice report is no card here.
 	fresh := get("")
 	parts := demoPartsOf(fresh)
-	if len(parts) != 4 {
-		t.Fatalf("the page has %d parts, want 4 (%v)", len(parts), parts)
+	if len(parts) != 3 {
+		t.Fatalf("the page has %d parts, want 3 (%v)", len(parts), parts)
 	}
 	for key, empty := range map[string]string{
-		"posted": "No reports yet", "confirmed": "No confirmations yet",
-		"disputed": "No disputes yet", "ended": "No ended reports nearby",
+		"confirmed": "No confirmations yet",
+		"disputed":  "No disputes yet", "ended": "No ended reports nearby",
 	} {
 		if !strings.Contains(parts[key], empty) {
 			t.Errorf("part %s lacks its empty state %q", key, empty)
 		}
 	}
 	last := -1
-	for _, name := range []string{"Posted by you", "You confirmed", "You disputed", "Ended nearby"} {
-		at := strings.Index(fresh, name)
+	for _, name := range []string{"Confirmed", "Disputed", "Ended"} {
+		at := strings.Index(fresh, `activity-hub__name">`+name+`</span>`)
 		if at <= last {
-			t.Errorf("part name %q is missing or out of order", name)
+			t.Errorf("hub name %q is missing or out of order", name)
 		}
 		last = at
+	}
+	for _, gone := range []string{"Posted by you", "You confirmed", "You disputed", "Ended nearby<", "activity-part--posted", "No reports yet"} {
+		if strings.Contains(fresh, gone) {
+			t.Errorf("the Demo page still holds %q", gone)
+		}
 	}
 	for _, banned := range []string{"Updates", "queue-strip", "reporter record", "data-account-id", "bell-trigger", "tel:"} {
 		if strings.Contains(fresh, banned) {
@@ -599,7 +607,7 @@ func TestDemoActivityPageParts(t *testing.T) {
 
 	busy := get("")
 	parts = demoPartsOf(busy)
-	want := map[string]int64{"posted": posted.Report.ID, "confirmed": confirmID, "disputed": disputeID}
+	want := map[string]int64{"confirmed": confirmID, "disputed": disputeID}
 	for key, id := range want {
 		section := parts[key]
 		ids := demoReportRe.FindAllStringSubmatch(section, -1)
@@ -613,19 +621,20 @@ func TestDemoActivityPageParts(t *testing.T) {
 			t.Errorf("part %s still shows an empty state beside its card", key)
 		}
 	}
-	if !strings.Contains(parts["posted"], "Posted just now") || !strings.Contains(parts["confirmed"], "You confirmed just now") ||
+	if !strings.Contains(parts["confirmed"], "You confirmed just now") ||
 		!strings.Contains(parts["disputed"], "You disputed just now") {
-		t.Errorf("the When cells do not read from the times of this visit: %q %q %q", parts["posted"], parts["confirmed"], parts["disputed"])
+		t.Errorf("the When cells do not read from the times of this visit: %q %q", parts["confirmed"], parts["disputed"])
 	}
-	if !strings.Contains(busy, "1 still happening, 0 resolved") {
-		t.Errorf("the Posted hub line does not count the practice report")
+	if len(parts) != 3 || strings.Contains(busy, `data-report-id="`+strconv.FormatInt(posted.Report.ID, 10)+`"`) {
+		t.Errorf("the practice report is listed on the Demo's My activity; Posted left")
 	}
 
-	// The part in the address is the current one; updates is not a Demo part.
-	if got := get("&part=confirmed"); !strings.Contains(got, `data-part="confirmed"`) {
-		t.Errorf("part=confirmed is not the current part")
+	// The part in the address is the current one, with its one word name as the
+	// phone title; updates and posted are not Demo parts.
+	if got := get("&part=confirmed"); !strings.Contains(got, `data-part="confirmed"`) || !strings.Contains(got, `<h1 class="app-topbar__title">Confirmed</h1>`) {
+		t.Errorf("part=confirmed is not the current part titled Confirmed")
 	}
-	for _, query := range []string{"&part=updates", "&part=nonsense", "&tab=votes"} {
+	for _, query := range []string{"&part=updates", "&part=posted", "&part=nonsense", "&tab=votes"} {
 		if got := get(query); !strings.Contains(got, `data-part=""`) {
 			t.Errorf("%s should read as the list (data-part is empty)", query)
 		}
@@ -726,9 +735,11 @@ func TestDemoPlacesWriteNothing(t *testing.T) {
 		t.Fatalf("confirm = %d: %s", status, body)
 	}
 
+	// Amended 2026-11-17 (quick 261117-vuf): the practice report is no card on
+	// My activity now (Posted left), so the page holds the one confirm.
 	status, activity := fetch(http.MethodGet, "/demo/activity?v="+visit, nil)
-	if status != http.StatusOK || strings.Count(activity, `class="report-row activity-card`) != 2 {
-		t.Fatalf("My activity = %d with %d cards, want 200 and the practice report and the confirm",
+	if status != http.StatusOK || strings.Count(activity, `class="report-row activity-card`) != 1 {
+		t.Fatalf("My activity = %d with %d cards, want 200 and the confirm",
 			status, strings.Count(activity, `class="report-row activity-card`))
 	}
 
@@ -807,15 +818,41 @@ func TestDemoNavKeepsVisit(t *testing.T) {
 		}
 	}
 
-	// The practice report shows in this visit's My activity, and not in another's.
+	// The visit's confirm shows in this visit's My activity, and not in
+	// another's. Amended 2026-11-17 (quick 261117-vuf): the practice report is
+	// no card on the Demo's My activity now (Posted left, as on the real page),
+	// so the visit's own mark is a confirm of a near sample report.
+	resp, feedBody := demoPageGet(t, client, api+demoFeedQuery)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET Demo feed = %d: %.200s", resp.StatusCode, feedBody)
+	}
+	var feed struct {
+		Reports []map[string]any `json:"reports"`
+	}
+	if err := json.Unmarshal([]byte(feedBody), &feed); err != nil {
+		t.Fatalf("decoding the feed: %v", err)
+	}
+	near := nearSeedReports(feed.Reports)
+	if len(near) < 1 {
+		t.Fatalf("no near seed report to confirm")
+	}
+	confirmID := reportIDOf(near[0])
+	pos := map[string]float64{"latitude": demo.PretendLat, "longitude": demo.PretendLon}
+	if status, raw = demoPostJSON(t, client, api+"/reports/"+strconv.FormatInt(confirmID, 10)+"/confirm", pos); status != http.StatusOK {
+		t.Fatalf("confirm = %d: %s", status, raw)
+	}
+	confirmAttr := `data-report-id="` + strconv.FormatInt(confirmID, 10) + `"`
 	_, mine := demoPageGet(t, client, srv.URL+"/demo/activity?v="+visit)
-	if !strings.Contains(mine, postedAttr) {
-		t.Errorf("My activity for the visit does not show the practice report %d", posted.Report.ID)
+	if !strings.Contains(mine, confirmAttr) {
+		t.Errorf("My activity for the visit does not show the confirmed report %d", confirmID)
+	}
+	if strings.Contains(mine, postedAttr) {
+		t.Errorf("My activity for the visit lists the practice report %d; Posted left", posted.Report.ID)
 	}
 	other := demoStartVisit(t, client, srv.URL)
 	_, theirs := demoPageGet(t, client, srv.URL+"/demo/activity?v="+other)
-	if other == visit || strings.Contains(theirs, postedAttr) {
-		t.Errorf("another visit (%s) shows this visit's practice report", other)
+	if other == visit || strings.Contains(theirs, confirmAttr) || strings.Contains(theirs, postedAttr) {
+		t.Errorf("another visit (%s) shows this visit's confirm or practice report", other)
 	}
 
 	// A missing, malformed or unknown visit starts a new world.

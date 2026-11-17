@@ -192,13 +192,16 @@ func TestQueueActivityStrip(t *testing.T) {
 		}
 	}
 
+	// Amended 2026-11-17 (quick 261117-vuf): the one listener, the one toast and
+	// the one focus move were the Reopen control's, which left with Posted, so
+	// each is now 0.
 	counts := []struct {
 		needle string
 		want   int
 	}{
-		{"accountID", 0}, {"addEventListener", 1}, {"Pinalert.showToast(", 1}, {"fetch(", 0},
+		{"accountID", 0}, {"addEventListener", 0}, {"Pinalert.showToast(", 0}, {"fetch(", 0},
 		{"indexedDB", 0}, {"localStorage", 0}, {"PinalertReportForm", 0},
-		{"location.search", 0}, {"URLSearchParams", 0}, {"PinalertTrust.focusToggle(", 1},
+		{"location.search", 0}, {"URLSearchParams", 0}, {"PinalertTrust.focusToggle(", 0},
 	}
 	for _, c := range counts {
 		if got := strings.Count(rawActivity, c.needle); got != c.want {

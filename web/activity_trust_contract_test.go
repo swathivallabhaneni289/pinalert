@@ -84,10 +84,14 @@ func TestProfileTemplateUsesServerSeverityAndTrust(t *testing.T) {
 		t.Errorf(".SeverityWord occurs %d times in the template, want exactly 1", n)
 	}
 
-	for _, hook := range []string{"data-report-id=", "data-visibility=", "data-visibility-reason=", "data-can-reopen"} {
+	// Amended 2026-11-17 (quick 261117-vuf): the Reopen hook left with Posted.
+	for _, hook := range []string{"data-report-id=", "data-visibility=", "data-visibility-reason="} {
 		if !strings.Contains(tmpl, hook) {
 			t.Errorf("profile.html.tmpl lost the %q hook", hook)
 		}
+	}
+	if strings.Contains(tmpl, "data-can-reopen") {
+		t.Errorf("profile.html.tmpl still writes the Reopen hook, which left with Posted")
 	}
 }
 
@@ -120,9 +124,10 @@ func p15InOrder(t *testing.T, where, text string, needles ...string) {
 }
 
 // TestActivityMountsTheTrustBlock proves the Activity page mounts the one
-// shared trust block with no options, fills it from the row's server written
-// JSON, refreshes it from the Reopen response and moves focus to its toggle
-// (V-38 Activity part, D-20, R-08, A29, A64).
+// shared trust block with no options and fills it from the row's server written
+// JSON (V-38 Activity part, D-20). Amended 2026-11-17 (quick 261117-vuf): the
+// Reopen response refresh, the focus move and the one listener and toast (R-08,
+// A29, A64) left with Posted's Reopen control, so the block is filled once.
 func TestActivityMountsTheTrustBlock(t *testing.T) {
 	raw := p15ReadStatic(t, "static/js/activity.js")
 	code := p15CodeLines(raw)
@@ -136,8 +141,8 @@ func TestActivityMountsTheTrustBlock(t *testing.T) {
 	if strings.Contains(code, "showScores") {
 		t.Errorf("activity.js mentions showScores, the Activity page shows no score numbers")
 	}
-	if n := strings.Count(code, "PinalertTrust.updateTrustBlock("); n != 2 {
-		t.Errorf("activity.js calls updateTrustBlock %d times, want 2", n)
+	if n := strings.Count(code, "PinalertTrust.updateTrustBlock("); n != 1 {
+		t.Errorf("activity.js calls updateTrustBlock %d times, want 1", n)
 	}
 	if !strings.Contains(code, "PinalertTrust.updateTrustBlock(trustBlock, readRowTrust(row))") {
 		t.Errorf("activity.js does not fill the block from readRowTrust(row)")
@@ -153,20 +158,11 @@ func TestActivityMountsTheTrustBlock(t *testing.T) {
 	p15InOrder(t, "activity.js row loop", code,
 		"PinalertVisibility.applyVisibilityClass(row, report)",
 		"PinalertTrust.createTrustBlock()",
-		"PinalertVotes.createReopenControl(row.dataset.reportId)")
-
-	reopen := jsFunctionBody(t, code, "onReopenClick(row, block)")
-	if !strings.Contains(reopen, "result && result.trust") {
-		t.Errorf("onReopenClick does not refresh the block from result.trust")
-	}
-	p15InOrder(t, "onReopenClick", reopen,
-		"PinalertVisibility.applyVisibilityClass(row, updated)",
-		"PinalertTrust.updateTrustBlock(",
-		"block.controls.remove()",
-		"block.error.remove()",
-		"PinalertTrust.focusToggle(")
-	if n := strings.Count(code, "PinalertTrust.focusToggle("); n != 1 {
-		t.Errorf("activity.js calls focusToggle %d times, want 1", n)
+		"PinalertTrust.updateTrustBlock(trustBlock, readRowTrust(row))")
+	for _, gone := range []string{"createReopenControl", "onReopenClick", "PinalertTrust.focusToggle("} {
+		if strings.Contains(code, gone) {
+			t.Errorf("activity.js still holds %q; Reopen left with Posted", gone)
+		}
 	}
 
 	for _, banned := range []string{"PinalertTrust.fadeStage(", "createSeverityLabel", "severity-label", "PinalertVotes.createVoteBlock("} {
@@ -177,11 +173,11 @@ func TestActivityMountsTheTrustBlock(t *testing.T) {
 	if regexp.MustCompile(`['"]\.?trust-`).MatchString(code) {
 		t.Errorf("activity.js carries a trust class literal")
 	}
-	if n := strings.Count(raw, "addEventListener"); n != 1 {
-		t.Errorf("activity.js has %d addEventListener occurrences, want 1 (A29)", n)
+	if n := strings.Count(code, "addEventListener"); n != 0 {
+		t.Errorf("activity.js has %d addEventListener occurrences, want 0 now Reopen left", n)
 	}
-	if n := strings.Count(raw, "Pinalert.showToast("); n != 1 {
-		t.Errorf("activity.js has %d Pinalert.showToast calls, want 1 (A29)", n)
+	if n := strings.Count(code, "Pinalert.showToast("); n != 0 {
+		t.Errorf("activity.js has %d Pinalert.showToast calls, want 0 now Reopen left", n)
 	}
 
 	tmpl := p15ReadTemplate(t, "profile.html.tmpl")
@@ -275,8 +271,9 @@ func TestActivityReadsExpiredFromTheServer(t *testing.T) {
 	if regexp.MustCompile(`\bDate\b|getTime\(|expires_?[aA]t|ExpiresAt`).MatchString(code) {
 		t.Errorf("activity.js compares dates, the server decides expiry")
 	}
-	if strings.Contains(jsFunctionBody(t, code, "onReopenClick(row, block)"), "expired") {
-		t.Errorf("onReopenClick must not carry expired, Reopen exists only on unexpired rows")
+	// Amended 2026-11-17 (quick 261117-vuf): onReopenClick left with Posted.
+	if strings.Contains(code, "onReopenClick") {
+		t.Errorf("activity.js still holds onReopenClick, which left with Posted")
 	}
 	for _, call := range []string{"PinalertVisibility.updateVisibilityTag(tag, report)", "PinalertVisibility.applyVisibilityClass(row, report)"} {
 		if !strings.Contains(code, call) {

@@ -19,7 +19,7 @@ var readerSentences = []string{
 	"Pinalert can't send help.",
 	"By using Pinalert you accept these rules.",
 	"A critical report is published at once and checked afterwards.",
-	"Ended reports stay under My activity, Ended nearby, for 7 days.",
+	"Ended reports stay under Ended in My activity for 7 days.", // amended 2026-11-17 (quick 261117-vuf)
 	"Nothing here is deleted on a schedule yet.",
 	"There are no advertising or tracking cookies.",
 }

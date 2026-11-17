@@ -167,11 +167,14 @@ func TestWithheldReportsInNoFeed(t *testing.T) {
 		}
 	})
 
-	t.Run("the author's Activity page still lists every report they filed", func(t *testing.T) {
+	// Amended 2026-11-17 (quick 261117-vuf, owner on the 7.1 UAT): the author's
+	// own reports left My activity with Posted, so the author's page lists none
+	// of them, withheld or not.
+	t.Run("the author's Activity page lists none of the reports they filed", func(t *testing.T) {
 		body := getProfile(t, author, srv.URL)
 		for _, desc := range []string{descRemovedLow, descRemovedCritical, descHeldLow, descPendingCritical, descPendingRescue, descClearLow} {
-			if !strings.Contains(body, desc) {
-				t.Errorf("/profile does not list %q", desc)
+			if strings.Contains(body, desc) {
+				t.Errorf("/profile lists the author's own report %q", desc)
 			}
 		}
 	})

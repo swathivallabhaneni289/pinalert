@@ -341,13 +341,12 @@ func TestToastAction(t *testing.T) {
 		"castVote(reportId, 'unresolve')", "Pinalert.fetchReports({ afterWrite: true })",
 		"focusAfterTakeBack(origin);", "takeBackSuccessMessage(wasClosed, result)", "takeBackErrorMessage(err)")
 
+	// Amended 2026-11-17 (quick 261117-vuf): activity.js's one toast was the
+	// Reopen success, which left with Posted, so it now shows no toast at all
+	// and so none with an action.
 	activity := p09ReadJS(t, "static/js/activity.js")
-	if n := strings.Count(activity, "showToast("); n != 1 {
-		t.Errorf("activity.js must keep exactly one showToast( call, found %d", n)
-	}
-	call := regexp.MustCompile(`Pinalert\.showToast\(([^;]*)\);`).FindStringSubmatch(activity)
-	if call == nil || strings.Contains(call[1], ",") {
-		t.Errorf("activity.js must call showToast with one argument, found %v", call)
+	if n := strings.Count(activity, "showToast("); n != 0 {
+		t.Errorf("activity.js must show no toast now Reopen left, found %d showToast( calls", n)
 	}
 }
 
