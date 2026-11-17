@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"fmt"
 	"sort"
 	"strconv"
 	"time"
@@ -9,13 +8,18 @@ import (
 	"pinalert/internal/service"
 )
 
-// The five parts of My activity (Phase 3.4, D-18, UI-SPEC Surface 3). The keys
-// are the only part values the page accepts from the address, matched exactly
-// and case sensitively, so a hand typed or hostile value can never reach a link
-// or a class name (T-34-30).
+// The parts of My activity (Phase 3.4, D-18, UI-SPEC Surface 3). The keys are
+// the only part values the page accepts from the address, matched exactly and
+// case sensitively, so a hand typed or hostile value can never reach a link or
+// a class name (T-34-30).
+//
+// Amended 2026-11-17 (quick 261117-vuf, owner, 7.1 UAT: "can we like shorten
+// those names", "You'll see the post twice, right?"): Posted left, because your
+// posts are on your profile. The list shows three parts, Confirmed, Disputed and
+// Ended. Updates is no longer a part of the list: it is the screen the bell's
+// "See all updates" opens (/profile?part=updates), drawn alone.
 const (
 	activityPartUpdates   = "updates"
-	activityPartPosted    = "posted"
 	activityPartConfirmed = "confirmed"
 	activityPartDisputed  = "disputed"
 	activityPartEnded     = "ended"
@@ -24,17 +28,17 @@ const (
 // The old six tab values of quick task 261013-wm5. They are read only aliases
 // now: a bookmark with one of them lands on the part that holds the same cards
 // (D-18). All, resolved and not-resolved have no part of their own and land on
-// the list.
+// the list. Amended 2026-11-17 (quick 261117-vuf): posts held the posts, whose
+// part left, so it lands on the list too.
 const (
-	activityTabPosts    = "posts"
 	activityTabVotes    = "votes"
 	activityTabDisputes = "disputes"
 )
 
 // Card kinds. The kind picks the tag, the action phrase, the icon and the
-// event colour of one card, and the part the card is listed in.
+// event colour of one card, and the part the card is listed in. Amended
+// 2026-11-17 (quick 261117-vuf): the post kind left with Posted.
 const (
-	activityKindPost    = "post"
 	activityKindVote    = "vote"
 	activityKindDispute = "dispute"
 )
@@ -63,25 +67,24 @@ type activityPartSpec struct {
 	EmptyText  string
 }
 
-// activityPartSpecs lists the five parts in the order the page draws them
-// (D-18).
+// activityPartSpecs lists the parts in the order buildActivityPage builds them
+// (D-18). Amended 2026-11-17 (quick 261117-vuf): Posted left and the names are
+// one word each. Updates stays first here so its screen can still be built and
+// filled, but activityShownParts keeps it out of the list and the laptop stack.
 var activityPartSpecs = []activityPartSpec{
 	{activityPartUpdates, "Updates", "Changes on reports you posted or voted on, newest first.", "bell",
 		"No updates yet", "Changes on reports you posted or voted on will show here."},
-	{activityPartPosted, "Posted by you", "Reports you posted. Open one to resolve or reopen it.", "circle-plus",
-		"No reports yet", "Reports you post will appear here."},
-	{activityPartConfirmed, "You confirmed", "Reports you said are true.", "check-circle",
+	{activityPartConfirmed, "Confirmed", "Reports you said are true.", "check-circle",
 		"No confirmations yet", "Reports you confirm will appear here."},
-	{activityPartDisputed, "You disputed", "Reports you said are wrong.", "circle-x",
+	{activityPartDisputed, "Disputed", "Reports you said are wrong.", "circle-x",
 		"No disputes yet", "Reports you dispute will appear here."},
-	{activityPartEnded, "Ended nearby", "Everyone's reports near you that ended in the last 7 days.", "history",
+	{activityPartEnded, "Ended", "Everyone's reports near you that ended in the last 7 days.", "history",
 		"No ended reports nearby", "Nothing in this area was resolved or faded out in the last 7 days."},
 }
 
 // The hub summary words that do not depend on the rows (P34-C13).
 const (
 	hubUpdatesNone     = "No updates yet"
-	hubPostedNone      = "Nothing posted yet"
 	hubConfirmedNone   = "Nothing confirmed yet"
 	hubDisputedNone    = "Nothing disputed yet"
 	hubEndedSummary    = "Last 7 days, near your area"
@@ -92,53 +95,41 @@ const (
 // Quick 261117-lq0 (owner, 2026-11-17): My activity is no longer a main place.
 // activityTitle is its phone top bar title on the list, and settingsHref is
 // where its back arrow goes on the list and on a part, because Settings is
-// where the parts are opened from now.
+// where My activity is opened from now. Amended 2026-11-17 (quick 261117-vuf):
+// Settings holds one My activity row now, and the Updates screen, which the
+// bell opens, takes its back arrow to Nearby (nearbyHref), where the bell is.
 const (
 	activityTitle = "My activity"
 	settingsHref  = "/settings"
+	nearbyHref    = "/"
 )
 
-// activityLink is one row of the My activity section of Settings (quick
-// 261117-lq0): the part's name and the same address the hub links to.
-type activityLink struct {
-	Name string
-	Href string
-}
-
-// activityLinks lists the five parts in the hub's order, with the hub's names
-// and addresses, for the My activity section of Settings. The words and the
-// addresses come from activityPartSpecs and activityPartHref only.
-//
-// Amended 2026-11-17 (quick 261117-lq0 review): each Settings row adds the
-// part's own section id as a fragment (#part-<key>). The laptop draws all five
-// parts stacked, so without it every row landed at the top with Updates in
-// view. On the phone the part screen shows only that part, so the fragment
-// changes nothing there. The hub and the bell keep the plain address.
-func activityLinks() []activityLink {
-	links := make([]activityLink, 0, len(activityPartSpecs))
-	for _, spec := range activityPartSpecs {
-		links = append(links, activityLink{Name: spec.Name, Href: activityPartHref(spec.Key) + activityPartFragment(spec.Key)})
-	}
-	return links
-}
-
-// activityPartFragment is the fragment of one part's section on the My
-// activity page, matching id="part-{{.Key}}" in profile.html.tmpl.
-func activityPartFragment(key string) string {
-	return "#part-" + key
-}
-
 // activityPartHref is the address of one part screen. The key is always one of
-// the five constants, never the raw request value.
+// the part constants, never the raw request value.
 func activityPartHref(key string) string {
 	return activityPartPrefix + key
+}
+
+// activityShownParts is the parts the page draws (quick 261117-vuf, owner
+// 2026-11-17): on the Updates screen only Updates, on both sizes; everywhere
+// else, the list and the three part screens, Confirmed, Disputed and Ended,
+// with no Updates. The hub and the laptop stack range over exactly these.
+func activityShownParts(parts []activityPart, current string) []activityPart {
+	shown := make([]activityPart, 0, len(parts))
+	for _, p := range parts {
+		if (p.Key == activityPartUpdates) == (current == activityPartUpdates) {
+			shown = append(shown, p)
+		}
+	}
+	return shown
 }
 
 // parseActivityPart turns the raw part and tab values of the address into a part
 // key, or the empty string for the list. Only an exact match counts: an empty,
 // unknown, upper case or padded value gives the list. A valid part wins over the
-// old tab value; the tab values posts, votes and disputes are read only aliases
-// of Posted by you, You confirmed and You disputed (D-18, T-34-30).
+// old tab value; the tab values votes and disputes are read only aliases of
+// Confirmed and Disputed (D-18, T-34-30). Amended 2026-11-17 (quick
+// 261117-vuf): part=posted and tab=posts are no part now and give the list.
 func parseActivityPart(rawPart, rawTab string) string {
 	for _, spec := range activityPartSpecs {
 		if rawPart == spec.Key {
@@ -146,8 +137,6 @@ func parseActivityPart(rawPart, rawTab string) string {
 		}
 	}
 	switch rawTab {
-	case activityTabPosts:
-		return activityPartPosted
 	case activityTabVotes:
 		return activityPartConfirmed
 	case activityTabDisputes:
@@ -285,12 +274,13 @@ func fillUpdatesPart(view *activityPageView, page service.UpdatesPage, failed bo
 	}
 }
 
-// activityPageView is what buildActivityPage hands the Profile handler: the five
-// parts in order, the reporter record card and the key of the part the address
-// asked for (empty for the list).
+// activityPageView is what buildActivityPage hands the Profile handler: every
+// part in the order of activityPartSpecs and the key of the part the address
+// asked for (empty for the list). Amended 2026-11-17 (quick 261117-vuf): the
+// reporter record card left with Posted, and activityShownParts picks the parts
+// a screen draws.
 type activityPageView struct {
 	Parts       []activityPart
-	Record      *profileRecord
 	CurrentPart string
 }
 
@@ -311,28 +301,26 @@ type activityEntry struct {
 	at   time.Time
 }
 
-// partOfKind is the one part a card of this kind is listed in (D-21): a post is
-// only in Posted by you, a confirm vote only in You confirmed and a dispute only
-// in You disputed.
+// partOfKind is the one part a card of this kind is listed in (D-21): a confirm
+// vote only in Confirmed and a dispute only in Disputed.
 func partOfKind(kind string) string {
-	switch kind {
-	case activityKindPost:
-		return activityPartPosted
-	case activityKindDispute:
+	if kind == activityKindDispute {
 		return activityPartDisputed
-	default:
-		return activityPartConfirmed
 	}
+	return activityPartConfirmed
 }
 
 // buildActivityPage is the whole My activity view model: every card is in
 // exactly one part, cards are ordered newest event first with ties by report id,
 // and each part carries a real count of its cards and the hub row's one line.
-// The record card is built from the account's own posts only, never from the
-// merged list, whose first card can be someone else's report (W-10). Voted
-// cards can never offer Reopen, whatever the report's state (W-09, T-wm5-05).
 // current is the part key from parseActivityPart; any other value reads as the
 // list. Nothing here changes a trust figure, it only places cards.
+//
+// Amended 2026-11-17 (quick 261117-vuf): the account's own posts are no longer
+// cards here (they are on the profile), so page.Posts is not read, and the
+// reporter record card built from them left too. Every card is a voted card, and
+// a voted card never offers Reopen, whatever the report's state (W-09,
+// T-wm5-05): the page has no Reopen control at all now.
 func buildActivityPage(page service.ActivityPage, current string, now time.Time) (activityPageView, error) {
 	known := false
 	for _, spec := range activityPartSpecs {
@@ -344,29 +332,12 @@ func buildActivityPage(page service.ActivityPage, current string, now time.Time)
 		current = ""
 	}
 
-	entries := make([]activityEntry, 0, len(page.Posts)+len(page.Votes))
-	for _, ar := range page.Posts {
-		pr, err := newProfileReport(ar, now)
-		if err != nil {
-			return activityPageView{}, err
-		}
-		pr.Kind = activityKindPost
-		pr.Tag = "Your post"
-		pr.Action = "You posted this report"
-		pr.When = profileRelativeTime(ar.Row.CreatedAt, now)
-		pr.WhenText = "Posted " + pr.When
-		pr.IconGlyph = pr.CategoryGlyph
-		entries = append(entries, activityEntry{card: pr, at: ar.Row.CreatedAt})
-	}
+	entries := make([]activityEntry, 0, len(page.Votes))
 	for _, vr := range page.Votes {
 		pr, err := newProfileReport(vr.ActivityReport, now)
 		if err != nil {
 			return activityPageView{}, err
 		}
-		pr.CanReopen = false
-		// The "used both undos" line is about the poster's own post. Clear it here
-		// so a voted card never prints it, whatever UndosLeft holds (IN-03).
-		pr.UndosUsed = false
 		pr.When = profileRelativeTime(vr.VotedAt, now)
 		if vr.Vote == service.VoteDispute {
 			pr.Kind = activityKindDispute
@@ -419,9 +390,6 @@ func buildActivityPage(page service.ActivityPage, current string, now time.Time)
 			// tag and the summary after this; here it starts as the empty part.
 			p.ShowCount = true
 			p.Summary = hubUpdatesNone
-		case activityPartPosted:
-			p.ShowCount = true
-			p.Summary = postedSummary(rows)
 		case activityPartConfirmed:
 			p.ShowCount = true
 			p.Summary = latestSummary(rows, hubConfirmedNone)
@@ -434,31 +402,7 @@ func buildActivityPage(page service.ActivityPage, current string, now time.Time)
 		parts = append(parts, p)
 	}
 
-	view := activityPageView{Parts: parts, CurrentPart: current}
-	if len(page.Posts) > 0 {
-		view.Record = newProfileRecord(page.Posts[0].Trust.Reporter)
-	}
-	return view, nil
-}
-
-// postedSummary is the hub line of Posted by you: how many posts are still
-// happening (open and not faded) and how many were resolved. A post that is
-// neither, such as one that faded out unresolved, is in the count but in
-// neither number.
-func postedSummary(rows []profileReport) string {
-	if len(rows) == 0 {
-		return hubPostedNone
-	}
-	ongoing, resolved := 0, 0
-	for _, r := range rows {
-		switch {
-		case r.Visibility == string(service.VisibilityRetracted):
-			resolved++
-		case !r.Expired && r.Moderation == "":
-			ongoing++
-		}
-	}
-	return fmt.Sprintf("%d still happening, %d resolved", ongoing, resolved)
+	return activityPageView{Parts: parts, CurrentPart: current}, nil
 }
 
 // latestSummary is the hub line of a voted part: the text of the newest card
