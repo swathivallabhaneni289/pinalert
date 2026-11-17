@@ -405,7 +405,8 @@ func TestModerateScreenCopy(t *testing.T) {
 		"Type the report id, or paste a link that includes report=", "Find report",
 		"Flagged by the automatic check", "Flagged by people", "Text check not finished",
 		"Posted normally, but the text scored near the line. Newest first.",
-		"People used Flag this report. Most flags first.",
+		// Amended 2026-11-18 (quick 261117-vvb review): hidden reports come first.
+		"People used Flag this report. Hidden by flags first, then most flags.",
 		"The check couldn't finish. Serious reports in this list are already published. Waiting longest first.",
 		"No reports flagged by the check.", "No reports flagged by people.", "No unfinished checks.",
 		"Nothing needs a decision here. Use Find a report to look up a post by id.",
