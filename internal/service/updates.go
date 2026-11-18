@@ -43,10 +43,11 @@ const (
 	UpdateMore UpdateKind = "more"
 )
 
-// The four rows an author gets about their own report (quick 261117-vvb,
-// owner 2026-11-17). The moderation paths write them straight to the author's
-// updates, whatever their follows or mutes, at most once per report and kind
-// (uq_updates_own_report). They are bell only: no phone note and no email.
+// The rows an author gets about their own report (quick 261117-vvb, owner
+// 2026-11-17, and two more in quick 261118-rz6). The moderation paths write
+// them straight to the author's updates, whatever their follows or mutes, as
+// one row per report and kind (uq_updates_own_report); since quick 261118-rz6
+// an event that happens again brings that one row back as unread and newest. They are bell only: no phone note and no email.
 // They are not in UpdateEventKinds, because they have no trust line and never
 // go through DecideUpdate or MayNotifyAboutReport, but they are in UpdateKinds.
 const (
@@ -61,13 +62,19 @@ const (
 	// UpdateOwnRemoved says the report was removed, by a moderator or by the
 	// late text check.
 	UpdateOwnRemoved UpdateKind = "own_removed"
+	// UpdateOwnRestored says a moderator restored a removed report (quick
+	// 261118-rz6).
+	UpdateOwnRestored UpdateKind = "own_restored"
+	// UpdateOwnStaysRemoved says a moderator answered the author's ask for
+	// review by keeping the report removed (quick 261118-rz6).
+	UpdateOwnStaysRemoved UpdateKind = "own_stays_removed"
 )
 
-// UpdateOwnKinds is the four rows about the reader's own report, in the order
-// they can happen.
-var UpdateOwnKinds = []UpdateKind{UpdateOwnShown, UpdateOwnReview, UpdateOwnKept, UpdateOwnRemoved}
+// UpdateOwnKinds is the six rows about the reader's own report, in the order
+// they can first happen.
+var UpdateOwnKinds = []UpdateKind{UpdateOwnShown, UpdateOwnReview, UpdateOwnKept, UpdateOwnRemoved, UpdateOwnRestored, UpdateOwnStaysRemoved}
 
-// IsOwnReport reports whether k is one of the four rows about the reader's own
+// IsOwnReport reports whether k is one of the six rows about the reader's own
 // report.
 func (k UpdateKind) IsOwnReport() bool {
 	for _, x := range UpdateOwnKinds {
@@ -102,16 +109,16 @@ const NotifyFollowsCap = 50
 // follow note (Phase 9, D-09) after them.
 var UpdateEventKinds = []UpdateKind{UpdateReachedLive, UpdateHidden, UpdateResolved, UpdateFading, UpdateReliableNearby, UpdateCommentOnYours, UpdateReplyToYours, UpdateFollowedPosted}
 
-// UpdateKinds is the thirteen kinds a list row can carry: the eight events,
-// the rolled up marker and the four rows about the reader's own report (quick
-// 261117-vvb). Comment rows never roll up into the marker and do not
+// UpdateKinds is the fifteen kinds a list row can carry: the eight events,
+// the rolled up marker and the six rows about the reader's own report (quick
+// 261117-vvb, quick 261118-rz6). Comment rows never roll up into the marker and do not
 // count toward UpdatesHourlyCeiling: the unread unique index of migration
 // 00019 is their only cap (Phase 8 plan 11). The follow note is an ordinary
 // event for the ceiling. The Reliable reporter alert is not: it has its own cap,
 // ReliableHourlyCeiling (review WR-01, quick 261103-jal).
-var UpdateKinds = []UpdateKind{UpdateReachedLive, UpdateHidden, UpdateResolved, UpdateFading, UpdateReliableNearby, UpdateCommentOnYours, UpdateReplyToYours, UpdateFollowedPosted, UpdateMore, UpdateOwnShown, UpdateOwnReview, UpdateOwnKept, UpdateOwnRemoved}
+var UpdateKinds = []UpdateKind{UpdateReachedLive, UpdateHidden, UpdateResolved, UpdateFading, UpdateReliableNearby, UpdateCommentOnYours, UpdateReplyToYours, UpdateFollowedPosted, UpdateMore, UpdateOwnShown, UpdateOwnReview, UpdateOwnKept, UpdateOwnRemoved, UpdateOwnRestored, UpdateOwnStaysRemoved}
 
-// Valid reports whether k is one of the thirteen kinds. Comparison is exact.
+// Valid reports whether k is one of the fifteen kinds. Comparison is exact.
 func (k UpdateKind) Valid() bool {
 	for _, x := range UpdateKinds {
 		if x == k {

@@ -82,7 +82,13 @@ RETURNING c.report_id, c.attempts, r.description, r.severity, r.category,
 -- showing, own_removed when the late check removed it). The worker decides the
 -- kind in Go from the state and the claimed report; SQL decides nothing about
 -- visibility. A report whose author has no account, or a deleted one, gets no
--- row, and the unique index makes a repeat a no-op.
+-- row.
+--
+-- Quick 261118-rz6: removed_reason is text_check when the worker removes the
+-- report and NULL otherwise, and removed_at is stamped with it, so the
+-- author's box and the moderator's Removed list read why and when. The bell
+-- row is an upsert: a row of the same kind that is already there moves to now
+-- and becomes unread again, so it is never a second row.
 WITH fin AS (
     UPDATE moderation_checks
     SET status = 'done',
@@ -97,7 +103,9 @@ WITH fin AS (
     RETURNING moderation_checks.report_id
 ), moved AS (
     UPDATE reports r
-    SET moderation_state = sqlc.arg(moderation_state)
+    SET moderation_state = sqlc.arg(moderation_state),
+        removed_reason = sqlc.narg(removed_reason)::text,
+        removed_at = CASE WHEN sqlc.narg(removed_reason)::text IS NULL THEN NULL ELSE now() END
     FROM fin
     WHERE r.id = fin.report_id
       AND r.moderation_state NOT IN ('removed', 'review')
@@ -110,7 +118,8 @@ JOIN sessions s ON s.session_id = m.session_id
 JOIN accounts a ON a.id = s.account_id
 WHERE sqlc.narg(own_kind)::text IS NOT NULL
   AND a.deleted_at IS NULL
-ON CONFLICT (account_id, report_id, kind) WHERE kind IN ('own_shown', 'own_review', 'own_kept', 'own_removed') DO NOTHING;
+ON CONFLICT (account_id, report_id, kind) WHERE kind IN ('own_shown', 'own_review', 'own_kept', 'own_removed', 'own_restored', 'own_stays_removed')
+DO UPDATE SET created_at = now(), read_at = NULL;
 
 -- name: RescheduleModerationCheck :exec
 -- The provider did not answer: try again later. last_error holds an error
@@ -219,7 +228,15 @@ SELECT
     (SELECT count(*) FROM reports r
        JOIN moderation_checks c ON c.report_id = r.id
       WHERE c.status = 'pending' AND r.expires_at > now()
-        AND r.moderation_state <> 'removed')::bigint AS pending_count;
+        AND r.moderation_state <> 'removed')::bigint AS pending_count,
+    -- Quick 261118-rz6: the Review asks and Removed headings, over the same
+    -- predicates as ReviewAskQueue and RemovedQueue.
+    (SELECT count(*) FROM report_review_asks a
+       JOIN reports r ON r.id = a.report_id
+      WHERE a.answered_at IS NULL AND r.moderation_state = 'removed')::bigint AS asks_count,
+    (SELECT count(*) FROM reports r
+      WHERE r.moderation_state = 'removed'
+        AND r.removed_at > now() - interval '30 days')::bigint AS removed_count;
 
 -- name: ModerationStatusForReport :one
 -- Which lists a report is on right now, for the 404 and 409 decisions on Keep
@@ -275,9 +292,11 @@ WHERE reports.id = sqlc.arg(report_id) AND reports.moderation_state IN ('pending
 
 -- name: RemoveReport :exec
 -- Remove as one statement, with the same two CTEs as Keep. The main statement
--- sets removed on any report, listed or not, and removal is terminal (D-08,
--- R-03). The check is closed so the worker never claims it again. Like Keep,
--- the service runs it inside a transaction after LockModerationCheck.
+-- sets removed on any report, listed or not (D-08, R-03). The check is closed
+-- so the worker never claims it again. Like Keep, the service runs it inside a
+-- transaction after LockModerationCheck. Quick 261118-rz6: the moderator's
+-- reason and the time are stored with it, and since then only a moderator's
+-- Restore (RestoreReport) brings a removed report back.
 WITH closed AS (
     UPDATE moderation_checks
     SET needs_review = false, status = 'done', lease_until = NULL
@@ -290,14 +309,17 @@ WITH closed AS (
     RETURNING id
 )
 UPDATE reports
-SET moderation_state = 'removed'
+SET moderation_state = 'removed',
+    removed_reason = sqlc.arg(removed_reason)::text,
+    removed_at = now()
 WHERE reports.id = sqlc.arg(report_id);
 
 -- name: InsertModerationAction :exec
--- One audit row per Keep or Remove. It holds the moderator's account id and
--- the action, never report text (T-04-15).
-INSERT INTO moderation_actions (report_id, moderator_account_id, action)
-VALUES (sqlc.arg(report_id), sqlc.arg(moderator_account_id), sqlc.arg(action));
+-- One audit row per Keep, Remove, Restore or Keep removed. It holds the
+-- moderator's account id, the action and, for a Remove, the reason picked
+-- (quick 261118-rz6), never report text (T-04-15).
+INSERT INTO moderation_actions (report_id, moderator_account_id, action, reason)
+VALUES (sqlc.arg(report_id), sqlc.arg(moderator_account_id), sqlc.arg(action), sqlc.narg(reason));
 
 -- name: InsertReportFlag :one
 -- One flag per account per report. No row back means this account already
@@ -347,10 +369,13 @@ WHERE r.id = sqlc.arg(report_id)
 
 -- name: InsertOwnReportUpdate :execrows
 -- Quick 261117-vvb: one bell row for the author of a report about what
--- moderation did to it (own_shown, own_review, own_kept, own_removed). It is
--- written straight to the author's updates, whatever their follows or mutes,
--- and never queued for a phone. A report whose author has no account, or a
--- deleted one, gets no row, and the unique index makes a repeat a no-op.
+-- moderation did to it (own_shown, own_review, own_kept, own_removed, and
+-- since quick 261118-rz6 own_restored and own_stays_removed). It is written
+-- straight to the author's updates, whatever their follows or mutes, and never
+-- queued for a phone. A report whose author has no account, or a deleted one,
+-- gets no row. Quick 261118-rz6: an own event can happen again, so a row of
+-- the same kind that is already there moves to now and becomes unread again
+-- instead of adding a second row (uq_updates_own_report).
 INSERT INTO updates (account_id, report_id, kind)
 SELECT s.account_id, r.id, sqlc.arg(kind)::text
 FROM reports r
@@ -358,4 +383,71 @@ JOIN sessions s ON s.session_id = r.session_id
 JOIN accounts a ON a.id = s.account_id
 WHERE r.id = sqlc.arg(report_id)
   AND a.deleted_at IS NULL
-ON CONFLICT (account_id, report_id, kind) WHERE kind IN ('own_shown', 'own_review', 'own_kept', 'own_removed') DO NOTHING;
+ON CONFLICT (account_id, report_id, kind) WHERE kind IN ('own_shown', 'own_review', 'own_kept', 'own_removed', 'own_restored', 'own_stays_removed')
+DO UPDATE SET created_at = now(), read_at = NULL;
+
+-- name: ReviewAskQueue :many
+-- Quick 261118-rz6, the Review asks list: each open ask for review on a report
+-- that is still removed, oldest first, at most 100 rows, in the moderator row
+-- shape with the reason of the removal and the author's note. The note is the
+-- author's own words for moderators only; nothing here names who asked.
+SELECT r.id, r.category, r.severity, r.description, r.created_at, r.expires_at,
+       r.client_written_at, r.moderation_state, r.removed_reason,
+       c.status AS check_status, c.verdict, c.scores, c.model,
+       COALESCE(c.needs_review, false)::bool AS needs_review,
+       (SELECT count(*) FROM report_flags f
+         WHERE f.report_id = r.id AND f.dismissed_at IS NULL)::bigint AS open_flag_total,
+       a.note AS ask_note
+FROM report_review_asks a
+JOIN reports r ON r.id = a.report_id
+LEFT JOIN moderation_checks c ON c.report_id = r.id
+WHERE a.answered_at IS NULL AND r.moderation_state = 'removed'
+ORDER BY a.created_at ASC, a.id ASC
+LIMIT 100;
+
+-- name: RemovedQueue :many
+-- Quick 261118-rz6, the Removed list: reports removed in the last 30 days,
+-- newest removal first, at most 100 rows, in the moderator row shape with the
+-- reason of the removal.
+SELECT r.id, r.category, r.severity, r.description, r.created_at, r.expires_at,
+       r.client_written_at, r.moderation_state, r.removed_reason,
+       c.status AS check_status, c.verdict, c.scores, c.model,
+       COALESCE(c.needs_review, false)::bool AS needs_review,
+       (SELECT count(*) FROM report_flags f
+         WHERE f.report_id = r.id AND f.dismissed_at IS NULL)::bigint AS open_flag_total
+FROM reports r
+LEFT JOIN moderation_checks c ON c.report_id = r.id
+WHERE r.moderation_state = 'removed'
+  AND r.removed_at > now() - interval '30 days'
+ORDER BY r.removed_at DESC, r.id DESC
+LIMIT 100;
+
+-- name: RestoreReport :execrows
+-- Quick 261118-rz6: a moderator's Restore shows a removed report again. It
+-- moves only a removed report, to clear, clears the reason and time of the
+-- removal, dismisses any open flags and stamps review_kept_at, so flags can
+-- never hide it again and it never sends a phone alert again. The time it
+-- lasts is not changed. One row back means this call restored it. The service
+-- runs it inside the Restore transaction after the two row locks.
+WITH dismissed AS (
+    UPDATE report_flags
+    SET dismissed_at = now()
+    WHERE report_id = sqlc.arg(report_id) AND dismissed_at IS NULL
+    RETURNING id
+)
+UPDATE reports
+SET moderation_state = 'clear',
+    removed_reason = NULL,
+    removed_at = NULL,
+    review_kept_at = now()
+WHERE reports.id = sqlc.arg(report_id) AND reports.moderation_state = 'removed';
+
+-- name: AnswerOpenReviewAsk :execrows
+-- Quick 261118-rz6: closes the report's open ask for review, if there is one,
+-- with the answer (restored or kept_removed) and the answering moderator. One
+-- row back means an open ask was answered.
+UPDATE report_review_asks
+SET answered_at = now(),
+    answer = sqlc.arg(answer)::text,
+    answered_by_account_id = sqlc.arg(moderator_account_id)::bigint
+WHERE report_id = sqlc.arg(report_id) AND answered_at IS NULL;

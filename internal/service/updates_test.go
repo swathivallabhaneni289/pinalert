@@ -30,8 +30,11 @@ func TestUpdateKindsClosed(t *testing.T) {
 	// Amended 2026-11-17 (quick 261117-vvb): the kinds grew by the four rows about
 	// the reader's own report, appended after UpdateMore, so the count is 13.
 	// They are not events, so the event count stays 8.
-	if len(UpdateKinds) != 13 {
-		t.Errorf("UpdateKinds has %d entries, want 13", len(UpdateKinds))
+	//
+	// Amended 2026-11-18 (quick 261118-rz6): two more own rows, own_restored and
+	// own_stays_removed, appended after the four, so the count is 15.
+	if len(UpdateKinds) != 15 {
+		t.Errorf("UpdateKinds has %d entries, want 15", len(UpdateKinds))
 	}
 	if len(UpdateEventKinds) != 8 {
 		t.Errorf("UpdateEventKinds has %d entries, want 8", len(UpdateEventKinds))
@@ -69,7 +72,8 @@ func TestUpdateKindsClosed(t *testing.T) {
 	}
 	// Quick 261117-vvb: the four rows about the reader's own report are stored
 	// kinds, in this order, right after more, and never events.
-	wantOwn := []UpdateKind{"own_shown", "own_review", "own_kept", "own_removed"}
+	// Amended 2026-11-18 (quick 261118-rz6): six rows, the two new ones last.
+	wantOwn := []UpdateKind{"own_shown", "own_review", "own_kept", "own_removed", "own_restored", "own_stays_removed"}
 	if len(UpdateOwnKinds) != len(wantOwn) {
 		t.Fatalf("UpdateOwnKinds = %v, want %v", UpdateOwnKinds, wantOwn)
 	}

@@ -68,6 +68,9 @@ const (
 	OwnReviewLine  = "Your report is hidden while it's reviewed."
 	OwnKeptLine    = "Your report is showing again. Sorry for the wait."
 	OwnRemovedLine = "Your report was removed after review."
+	// The two rows of quick 261118-rz6 (owner 2026-11-18).
+	OwnRestoredLine     = "Your report is back."
+	OwnStaysRemovedLine = "Your report stays removed."
 )
 
 // OwnReportLine is the one line of a row about the reader's own report, and
@@ -82,6 +85,10 @@ func OwnReportLine(k UpdateKind) string {
 		return OwnKeptLine
 	case UpdateOwnRemoved:
 		return OwnRemovedLine
+	case UpdateOwnRestored:
+		return OwnRestoredLine
+	case UpdateOwnStaysRemoved:
+		return OwnStaysRemovedLine
 	}
 	return ""
 }

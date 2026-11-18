@@ -202,6 +202,11 @@ type activityUpdateRow struct {
 	// for review. Unlike the other plain rows it carries the new mark while
 	// unread, as the bell does (quick 261117-vvb review, 2026-11-18).
 	OwnPlain bool
+	// ReviewReportID is set only on the removed and stays removed rows while
+	// the reader's report is still removed (quick 261118-rz6): the row is a
+	// button that opens the reader's box for that report, and carries the new
+	// mark while unread like a link row. Zero on every other row.
+	ReviewReportID int64
 }
 
 // updateSeverityClass is the closed lookup behind the severity dot class: only
@@ -268,12 +273,13 @@ func fillUpdatesPart(view *activityPageView, page service.UpdatesPage, failed bo
 			if item.Available && item.ReportID != nil && item.Kind != service.UpdateMore {
 				row.Href = "/?report=" + strconv.FormatInt(*item.ReportID, 10)
 			}
-			// Quick 261117-vvb: the row that says the reader's own report was
-			// removed opens the Policy page, like the bell's row. The other rows
-			// about the reader's own report link only through ReportID above, so
-			// the hidden row stays a plain row.
-			if item.PolicyLink {
-				row.Href = policyPagePath
+			// Quick 261118-rz6 (replacing vvb's Policy link): the rows that say
+			// the reader's own report was removed or stays removed open the
+			// reader's box while it is still removed, like the bell's rows. The
+			// other rows about the reader's own report link only through
+			// ReportID above, so the hidden row stays a plain row.
+			if item.ReviewReportID != nil {
+				row.ReviewReportID = *item.ReviewReportID
 			}
 			rows = append(rows, row)
 		}

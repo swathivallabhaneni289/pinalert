@@ -412,7 +412,7 @@ func (q *Queries) ReportExtrasForReports(ctx context.Context, arg ReportExtrasFo
 
 const reportForModeration = `-- name: ReportForModeration :one
 SELECT r.id, r.category, r.severity, r.description, r.created_at, r.expires_at,
-       r.client_written_at, r.moderation_state,
+       r.client_written_at, r.moderation_state, r.removed_reason,
        c.status AS check_status, c.verdict, c.scores, c.model,
        COALESCE(c.needs_review, false)::bool AS needs_review,
        (SELECT count(*) FROM report_flags f
@@ -442,6 +442,7 @@ type ReportForModerationRow struct {
 	ExpiresAt       time.Time
 	ClientWrittenAt pgtype.Timestamptz
 	ModerationState string
+	RemovedReason   *string
 	CheckStatus     *string
 	Verdict         *string
 	Scores          []byte
@@ -457,6 +458,8 @@ type ReportForModerationRow struct {
 // No session id, email or account id is selected. The check columns are NULL
 // for a report that never had a check (seeded and older rows). The text of the
 // report is the only free text here; the check row itself holds none.
+// Quick 261118-rz6: removed_reason is the reason of the current removal, NULL
+// for a report that is not removed or was removed before migration 00027.
 func (q *Queries) ReportForModeration(ctx context.Context, reportID int64) (ReportForModerationRow, error) {
 	row := q.db.QueryRow(ctx, reportForModeration, reportID)
 	var i ReportForModerationRow
@@ -469,6 +472,7 @@ func (q *Queries) ReportForModeration(ctx context.Context, reportID int64) (Repo
 		&i.ExpiresAt,
 		&i.ClientWrittenAt,
 		&i.ModerationState,
+		&i.RemovedReason,
 		&i.CheckStatus,
 		&i.Verdict,
 		&i.Scores,

@@ -16,8 +16,12 @@
 // This file needs no other script and no app global, so it works on every page
 // that has the bell. Every word comes from the server and is written with
 // textContent or setAttribute; no markup is ever built from a string. A row can
-// open only "/?report=" plus an id that passes a digits check, or the Policy
-// page for the row that says the reader's own report was removed.
+// open only "/?report=" plus an id that passes a digits check. Since quick
+// 261118-rz6 the rows that say the reader's own report was removed or stays
+// removed open the reader's box instead (why, and Ask for review), the
+// #review-ask-box dialog the page renders as a child of body; this file reads
+// and sends it through the same request helper, at
+// "/api/reports/" plus a checked id plus "/review-ask".
 //
 // The list is frozen while open: an update that arrives while a person reads
 // raises the count behind the list and shows the next time the list opens.
@@ -46,10 +50,10 @@
   // A report id the row link may carry: digits, no leading zero, at most 18.
   var ID_PATTERN = /^[1-9][0-9]{0,17}$/;
 
-  // The one other page a row may open: the Policy, for the removed row about
-  // the reader's own report (quick 261117-vvb).
-  var LINK_POLICY = 'policy';
-  var POLICY_URL = '/policy';
+  // The address of the reader's box for one report (quick 261118-rz6), built
+  // only around an id that passes ID_PATTERN.
+  var REVIEW_ASK_PREFIX = '/api/reports/';
+  var REVIEW_ASK_SUFFIX = '/review-ask';
 
   // The plain row that says the reader's own report is hidden for review.
   var KIND_OWN_REVIEW = 'own_review';
@@ -172,13 +176,23 @@
 
   // ---- Drawing the list ---------------------------------------------------
 
+  // boxId is the report id whose box a row opens, or the empty string: only
+  // the removed and stays removed rows about the reader's own report carry
+  // review_report_id, and only while that report is still removed (quick
+  // 261118-rz6, which replaced vvb's Policy link on the removed row). It is
+  // checked first, so a box row is never a link.
+  function boxId(u) {
+    if (u.available === true && ID_PATTERN.test(String(u.review_report_id))) {
+      return String(u.review_report_id);
+    }
+    return '';
+  }
+
   // rowHref is the one address a row opens, or the empty string for a plain
-  // row: the report for a link row, and the Policy page for the row that says
-  // the reader's own report was removed (quick 261117-vvb), which carries the
-  // closed value link "policy" and never an address of its own.
+  // row or a box row.
   function rowHref(u) {
-    if (u.available === true && u.link === LINK_POLICY) {
-      return POLICY_URL;
+    if (boxId(u) !== '') {
+      return '';
     }
     if (u.available === true && u.kind !== 'more' && ID_PATTERN.test(String(u.report_id))) {
       return '/?report=' + String(u.report_id);
@@ -191,10 +205,11 @@
   }
 
   // marksNew says whether a row may carry the new mark while unread: every link
-  // row, and the plain row that says the reader's own report is hidden for
-  // review (quick 261117-vvb review, 2026-11-18).
+  // row, every box row (quick 261118-rz6), and the plain row that says the
+  // reader's own report is hidden for review (quick 261117-vvb review,
+  // 2026-11-18).
   function marksNew(u) {
-    return isLinkRow(u) || (u.available === true && u.kind === KIND_OWN_REVIEW);
+    return isLinkRow(u) || boxId(u) !== '' || (u.available === true && u.kind === KIND_OWN_REVIEW);
   }
 
   function severityClass(level) {
@@ -216,25 +231,39 @@
   // is news, so it carries the new mark while unread like a link row, and says
   // New. to a screen reader through hidden text, since a plain block has no
   // label (quick 261117-vvb review, 2026-11-18). Other plain rows never do.
+  //
+  // A box row (quick 261118-rz6) is one button that opens the reader's box for
+  // that report. It is named by its label like a link row and carries the new
+  // mark the same way.
   function buildRow(u, newIds) {
     var li = document.createElement('li');
     var link = isLinkRow(u);
-    var ownPlain = !link && marksNew(u);
+    var box = boxId(u);
+    var ownPlain = !link && box === '' && marksNew(u);
     var isNew = marksNew(u) && newIds[Number(u.id)] === true;
     var classes = 'bell-row';
     if (isNew) {
       classes += ' bell-row--new';
     }
-    if (!link) {
+    if (!link && box === '') {
       classes += ' bell-row--plain';
+    }
+    if (box !== '') {
+      classes += ' bell-row--box';
     }
     if (u.kind === 'more') {
       classes += ' bell-row--more';
     }
-    var el = document.createElement(link ? 'a' : 'div');
+    var el = document.createElement(link ? 'a' : (box !== '' ? 'button' : 'div'));
     el.setAttribute('class', classes);
-    if (link) {
-      el.setAttribute('href', rowHref(u));
+    if (link || box !== '') {
+      if (link) {
+        el.setAttribute('href', rowHref(u));
+      } else {
+        el.setAttribute('type', 'button');
+        el.setAttribute('data-review-ask', box);
+        el.setAttribute('aria-haspopup', 'dialog');
+      }
       if (text(u.label) !== '') {
         el.setAttribute('aria-label', u.label);
       }
@@ -570,6 +599,212 @@
     }
     sendRead(maxId);
     return true;
+  }
+
+  // ---- The reader's box for their own removed report (quick 261118-rz6) ----
+
+  // The box is the #review-ask-box dialog the page renders as a child of body.
+  // Without it, or without dialog support, a box row does nothing. Every word
+  // in it is the template's or the server's: the Why line and a refused ask's
+  // line come from the answer, the rest is in the template.
+  var askBox = document.getElementById('review-ask-box');
+  var ask = null;
+  if (askBox && typeof askBox.showModal === 'function') {
+    ask = {
+      title: document.getElementById('review-ask-title'),
+      why: document.getElementById('review-ask-why'),
+      form: document.getElementById('review-ask-form'),
+      note: document.getElementById('review-ask-note'),
+      asked: document.getElementById('review-ask-asked'),
+      none: document.getElementById('review-ask-none'),
+      error: document.getElementById('review-ask-error'),
+      close: document.getElementById('review-ask-close'),
+      send: document.getElementById('review-ask-send'),
+      id: '', // the report the open box is about
+      opener: null, // the row button that opened it
+      busy: false
+    };
+    for (var part in ask) {
+      if (Object.prototype.hasOwnProperty.call(ask, part) && ask[part] === null && part !== 'opener') {
+        ask = null;
+        break;
+      }
+    }
+  }
+
+  function askAddress(id) {
+    return REVIEW_ASK_PREFIX + id + REVIEW_ASK_SUFFIX;
+  }
+
+  function showAskError(words) {
+    ask.error.textContent = text(words) !== '' ? words : text(ask.error.getAttribute('data-failed'));
+    ask.error.hidden = false;
+  }
+
+  // renderAsk draws one state of the box from the server's answer: the Why
+  // line when there is one, then the note and Ask for review (can_ask), the
+  // Asked. line (asked) or the No asks left. line (no_asks_left).
+  function renderAsk(body) {
+    var why = body && typeof body.why === 'string' ? body.why : '';
+    var state = body && typeof body.state === 'string' ? body.state : '';
+    ask.why.textContent = why;
+    ask.why.hidden = why === '';
+    ask.form.hidden = state !== 'can_ask';
+    ask.send.hidden = state !== 'can_ask';
+    ask.asked.hidden = state !== 'asked';
+    ask.none.hidden = state !== 'no_asks_left';
+    ask.error.hidden = true;
+  }
+
+  function setAskBusy(on) {
+    ask.busy = on;
+    if (on) {
+      ask.send.setAttribute('aria-disabled', 'true');
+    } else {
+      ask.send.removeAttribute('aria-disabled');
+    }
+  }
+
+  // openAsk reads the box of one report, then opens it with the title taking
+  // the first focus, so no button looks chosen. A report that is no longer the
+  // reader's removed report (restored since, say) answers 404: the box stays
+  // shut and the bell reads again, which draws that row plain.
+  function openAsk(id, opener) {
+    if (!ask || ask.busy || askBox.open) {
+      return;
+    }
+    ask.id = id;
+    ask.opener = opener;
+    ask.note.value = '';
+    setAskBusy(true);
+    function show() {
+      setAskBusy(false);
+      askBox.showModal();
+      ask.title.focus();
+    }
+    request(askAddress(id), {
+      method: 'GET',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { Accept: 'application/json' }
+    }, REQUEST_TIMEOUT_MS).then(function (answer) {
+      if (answer.status === 404) {
+        setAskBusy(false);
+        poll();
+        return;
+      }
+      if (answer.ok !== true) {
+        renderAsk(null);
+        showAskError('');
+        show();
+        return;
+      }
+      renderAsk(answer.body);
+      show();
+    }, function () {
+      renderAsk(null);
+      showAskError('');
+      show();
+    });
+  }
+
+  // sendAsk sends Ask for review with the note. On success the box shows
+  // Asked. in place. A refused ask (409) reads the box again, so it shows
+  // Asked. or No asks left. A too long note (400) shows the server's line.
+  function sendAsk() {
+    if (!ask || ask.busy || ask.id === '') {
+      return;
+    }
+    setAskBusy(true);
+    ask.error.hidden = true;
+    var id = ask.id;
+    request(askAddress(id), {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ note: ask.note.value })
+    }, REQUEST_TIMEOUT_MS).then(function (answer) {
+      setAskBusy(false);
+      if (answer.ok === true) {
+        renderAsk(answer.body);
+        ask.close.focus();
+        poll();
+        return;
+      }
+      if (answer.status === 409) {
+        setAskBusy(true);
+        return request(askAddress(id), {
+          method: 'GET',
+          credentials: 'same-origin',
+          cache: 'no-store',
+          headers: { Accept: 'application/json' }
+        }, REQUEST_TIMEOUT_MS).then(function (again) {
+          setAskBusy(false);
+          if (again.ok === true) {
+            renderAsk(again.body);
+            ask.close.focus();
+          } else {
+            showAskError('');
+          }
+        });
+      }
+      if (answer.status === 404) {
+        closeAsk();
+        poll();
+        return;
+      }
+      var line = answer.body && answer.body.error && typeof answer.body.error.message === 'string' ? answer.body.error.message : '';
+      showAskError(answer.status === 400 ? line : '');
+      return null;
+    }).then(null, function () {
+      setAskBusy(false);
+      showAskError('');
+    });
+  }
+
+  function closeAsk() {
+    if (askBox.open) {
+      askBox.close();
+    }
+  }
+
+  // onAskClosed runs however the box closes (Close, or Escape on a keyboard).
+  // Focus goes back to the row that opened it, or to the bell when that row
+  // sat in the bell list, which is closed by now.
+  function onAskClosed() {
+    var back = ask.opener;
+    ask.opener = null;
+    ask.id = '';
+    ask.busy = false;
+    if (back && panel.contains(back) && panel.hidden) {
+      back = trigger;
+    }
+    if (back && typeof back.focus === 'function') {
+      back.focus();
+    }
+  }
+
+  // onBoxRowClick opens the box for any box row on the page: the bell's and
+  // the full updates list's. The id is checked before any address is built.
+  function onBoxRowClick(e) {
+    var t = e.target;
+    var row = t && typeof t.closest === 'function' ? t.closest('[data-review-ask]') : null;
+    if (!row) {
+      return;
+    }
+    var id = text(row.getAttribute('data-review-ask'));
+    if (!ID_PATTERN.test(id)) {
+      return;
+    }
+    e.preventDefault();
+    openAsk(id, row);
+  }
+
+  if (ask) {
+    document.addEventListener('click', onBoxRowClick);
+    ask.close.addEventListener('click', closeAsk);
+    ask.send.addEventListener('click', sendAsk);
+    askBox.addEventListener('close', onAskClosed);
   }
 
   // ---- Start --------------------------------------------------------------

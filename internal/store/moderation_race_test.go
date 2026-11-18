@@ -135,7 +135,7 @@ func TestWorkerPassWaitingOnRemoveLeavesReportRemoved(t *testing.T) {
 		t.Fatalf("begin: %v", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := sqlcgen.New(tx).RemoveReport(ctx, r); err != nil {
+	if err := sqlcgen.New(tx).RemoveReport(ctx, sqlcgen.RemoveReportParams{ReportID: r, RemovedReason: "spam"}); err != nil {
 		t.Fatalf("RemoveReport: %v", err)
 	}
 

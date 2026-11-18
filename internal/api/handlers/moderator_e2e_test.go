@@ -633,11 +633,22 @@ type modActionWire struct {
 }
 
 // modAction posts keep or remove for a report id and returns the status and the
-// decoded answer.
+// decoded answer. Amended 2026-11-18 (quick 261118-rz6): Remove needs a reason,
+// so remove sends spam; modActionBody sends any body.
 func modAction(t *testing.T, client *http.Client, baseURL string, id int64, action string) (int, modActionWire) {
 	t.Helper()
+	body := "{}"
+	if action == "remove" {
+		body = `{"reason":"spam"}`
+	}
+	return modActionBody(t, client, baseURL, id, action, body)
+}
+
+// modActionBody posts one moderator action with a raw body.
+func modActionBody(t *testing.T, client *http.Client, baseURL string, id int64, action, body string) (int, modActionWire) {
+	t.Helper()
 	url := baseURL + "/api/moderation/reports/" + strconv.FormatInt(id, 10) + "/" + action
-	resp, err := client.Post(url, "application/json", strings.NewReader("{}"))
+	resp, err := client.Post(url, "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatalf("POST %s: %v", url, err)
 	}
@@ -830,7 +841,9 @@ func TestModeratorAuditRow(t *testing.T) {
 		}
 		names = append(names, n)
 	}
-	if want := []string{"action", "created_at", "id", "moderator_account_id", "report_id"}; !reflect.DeepEqual(names, want) {
-		t.Errorf("moderation_actions columns = %v, want %v (no text column)", names, want)
+	// Amended 2026-11-18 (quick 261118-rz6): reason is the closed removal reason
+	// (a CHECK of five slugs), not free text.
+	if want := []string{"action", "created_at", "id", "moderator_account_id", "reason", "report_id"}; !reflect.DeepEqual(names, want) {
+		t.Errorf("moderation_actions columns = %v, want %v (no free text column)", names, want)
 	}
 }

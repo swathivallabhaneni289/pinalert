@@ -29,15 +29,90 @@ const (
 	ModNotFoundMessage = "No report found with that id. Check the id and try again."
 )
 
-// The two actions written to moderation_actions.
+// The actions written to moderation_actions. Restore and Keep removed are
+// quick 261118-rz6.
 const (
-	ModerationActionKeep   = "keep"
-	ModerationActionRemove = "remove"
+	ModerationActionKeep        = "keep"
+	ModerationActionRemove      = "remove"
+	ModerationActionRestore     = "restore"
+	ModerationActionKeepRemoved = "keep_removed"
 )
 
 // ErrAlreadyHandled is returned by Keep and Remove for a report that is in no
-// list (Keep) or already removed (Remove). The handler maps it to 409.
+// list (Keep) or already removed (Remove), by Restore for a report that is not
+// removed and by Keep removed for a report with no open ask for review. The
+// handler maps it to 409.
 var ErrAlreadyHandled = errors.New("service: report already handled")
+
+// RemovalReason is why a report was removed (quick 261118-rz6, owner
+// 2026-11-18): one of the five a moderator picks, or RemovalTextCheck when the
+// late text check removed it. It is stored on the report while it is removed
+// and on the moderator's audit row.
+type RemovalReason string
+
+// The six removal reasons.
+const (
+	RemovalSpam      RemovalReason = "spam"
+	RemovalAbusive   RemovalReason = "abusive"
+	RemovalFalse     RemovalReason = "false"
+	RemovalDangerous RemovalReason = "dangerous"
+	RemovalOther     RemovalReason = "other"
+	RemovalTextCheck RemovalReason = "text_check"
+)
+
+// RemovalReasons is the five reasons a moderator picks from, in the order the
+// Remove box shows them. RemovalTextCheck is not one of them.
+var RemovalReasons = []RemovalReason{RemovalSpam, RemovalAbusive, RemovalFalse, RemovalDangerous, RemovalOther}
+
+// ModeratorValid reports whether r is one of the five reasons a moderator
+// may pick. Comparison is exact.
+func (r RemovalReason) ModeratorValid() bool {
+	for _, x := range RemovalReasons {
+		if x == r {
+			return true
+		}
+	}
+	return false
+}
+
+// RemovalReasonLabel is the one word the author's box and the moderator
+// screen show for a reason, and the empty string for anything else.
+func RemovalReasonLabel(r RemovalReason) string {
+	switch r {
+	case RemovalSpam:
+		return "Spam"
+	case RemovalAbusive:
+		return "Abusive"
+	case RemovalFalse:
+		return "False"
+	case RemovalDangerous:
+		return "Dangerous"
+	case RemovalOther:
+		return "Other"
+	case RemovalTextCheck:
+		return "Text check"
+	}
+	return ""
+}
+
+// RemovalWhyLine is the line of the author's box, "Why: False", and the empty
+// string when the removal has no known reason (a report removed before
+// migration 00027).
+func RemovalWhyLine(r RemovalReason) string {
+	label := RemovalReasonLabel(r)
+	if label == "" {
+		return ""
+	}
+	return "Why: " + label
+}
+
+// ErrRemovalReasonMissing is returned by Remove when the reason is not one of
+// the five a moderator picks. Nothing is written. The handler answers 400
+// before it calls Remove; this is the service's own guard.
+var ErrRemovalReasonMissing = errors.New("service: remove needs a reason")
+
+// RemovalReasonMessage answers a Remove without a valid reason.
+const RemovalReasonMessage = "Pick a reason."
 
 // The view slugs a ModerationRow carries. The first four are the Phase 3.1
 // FeedView values; ModViewNone is a report that is in no view at all (held,
@@ -81,8 +156,14 @@ type ModerationQuerier interface {
 	LockModerationCheck(ctx context.Context, reportID int64) error
 	LockReportModeration(ctx context.Context, reportID int64) (sqlcgen.LockReportModerationRow, error)
 	KeepReport(ctx context.Context, reportID int64) error
-	RemoveReport(ctx context.Context, reportID int64) error
+	RemoveReport(ctx context.Context, arg sqlcgen.RemoveReportParams) error
 	InsertModerationAction(ctx context.Context, arg sqlcgen.InsertModerationActionParams) error
+	// Quick 261118-rz6: the Review asks and Removed lists, Restore and Keep
+	// removed.
+	ReviewAskQueue(ctx context.Context) ([]sqlcgen.ReviewAskQueueRow, error)
+	RemovedQueue(ctx context.Context) ([]sqlcgen.RemovedQueueRow, error)
+	RestoreReport(ctx context.Context, reportID int64) (int64, error)
+	AnswerOpenReviewAsk(ctx context.Context, arg sqlcgen.AnswerOpenReviewAskParams) (int64, error)
 	InsertOwnReportUpdate(ctx context.Context, arg sqlcgen.InsertOwnReportUpdateParams) (int64, error)
 	CurrentVotesForReports(ctx context.Context, reportIds []int64) ([]sqlcgen.CurrentVotesForReportsRow, error)
 	ReporterAccountsForReports(ctx context.Context, reportIds []int64) ([]sqlcgen.ReporterAccountsForReportsRow, error)
@@ -183,15 +264,25 @@ type ModerationRow struct {
 	// FlagNotes are the open flags that carry a note, newest first, at most
 	// 20, each with the reasons it came with. Never nil.
 	FlagNotes []ModerationFlagNote
+	// RemovedReason is the reason of the current removal, empty for a report
+	// that is not removed or has no recorded reason (quick 261118-rz6).
+	RemovedReason RemovalReason
+	// AskNote is the author's note on an open ask for review, set only on a
+	// row of the Review asks list and empty when they wrote none. It is for
+	// moderators only and names nobody.
+	AskNote string
 }
 
-// ModerationQueues is the answer of Queues: the three lists in their SQL order
-// and the heading counts, which come from ModerationQueueCounts only.
+// ModerationQueues is the answer of Queues: the lists in their SQL order and
+// the heading counts, which come from ModerationQueueCounts only. Asks and
+// Removed are quick 261118-rz6.
 type ModerationQueues struct {
+	Asks    []ModerationRow
 	Review  []ModerationRow
 	Flagged []ModerationRow
 	Pending []ModerationRow
-	Counts  struct{ Review, Flagged, Pending int64 }
+	Removed []ModerationRow
+	Counts  struct{ Asks, Review, Flagged, Pending, Removed int64 }
 }
 
 // ModerationService is the moderator side of D-08. Steps of the reads:
@@ -352,6 +443,10 @@ type moderationRecord struct {
 	OpenFlagTotal   int64
 	FlagCounts      []byte
 	FlagNotes       []byte
+	// RemovedReason and AskNote are quick 261118-rz6: the reason of the
+	// current removal, and the author's note on an open ask (asks list only).
+	RemovedReason string
+	AskNote       string
 }
 
 func derefString(p *string) string {
@@ -363,22 +458,38 @@ func derefString(p *string) string {
 
 func recordFromReview(r sqlcgen.ReviewQueueRow) moderationRecord {
 	return moderationRecord{r.ID, r.Category, r.Severity, r.Description, r.CreatedAt, r.ExpiresAt, r.ClientWrittenAt,
-		r.ModerationState, r.CheckStatus, r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts, r.FlagNotes}
+		r.ModerationState, r.CheckStatus, r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts, r.FlagNotes, "", ""}
 }
 
 func recordFromFlag(r sqlcgen.FlagQueueRow) moderationRecord {
 	return moderationRecord{r.ID, r.Category, r.Severity, r.Description, r.CreatedAt, r.ExpiresAt, r.ClientWrittenAt,
-		r.ModerationState, derefString(r.CheckStatus), r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts, r.FlagNotes}
+		r.ModerationState, derefString(r.CheckStatus), r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts, r.FlagNotes, "", ""}
 }
 
 func recordFromPending(r sqlcgen.PendingQueueRow) moderationRecord {
 	return moderationRecord{r.ID, r.Category, r.Severity, r.Description, r.CreatedAt, r.ExpiresAt, r.ClientWrittenAt,
-		r.ModerationState, r.CheckStatus, r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts, r.FlagNotes}
+		r.ModerationState, r.CheckStatus, r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts, r.FlagNotes, "", ""}
 }
 
 func recordFromDetail(r sqlcgen.ReportForModerationRow) moderationRecord {
 	return moderationRecord{r.ID, r.Category, r.Severity, r.Description, r.CreatedAt, r.ExpiresAt, r.ClientWrittenAt,
-		r.ModerationState, derefString(r.CheckStatus), r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts, r.FlagNotes}
+		r.ModerationState, derefString(r.CheckStatus), r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts, r.FlagNotes,
+		derefString(r.RemovedReason), ""}
+}
+
+// recordFromAsk and recordFromRemoved serve the two lists of quick
+// 261118-rz6. Neither reads flag reasons or notes: a removed report's flags
+// were dismissed when it was removed.
+func recordFromAsk(r sqlcgen.ReviewAskQueueRow) moderationRecord {
+	return moderationRecord{r.ID, r.Category, r.Severity, r.Description, r.CreatedAt, r.ExpiresAt, r.ClientWrittenAt,
+		r.ModerationState, derefString(r.CheckStatus), r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, nil, nil,
+		derefString(r.RemovedReason), derefString(r.AskNote)}
+}
+
+func recordFromRemoved(r sqlcgen.RemovedQueueRow) moderationRecord {
+	return moderationRecord{r.ID, r.Category, r.Severity, r.Description, r.CreatedAt, r.ExpiresAt, r.ClientWrittenAt,
+		r.ModerationState, derefString(r.CheckStatus), r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, nil, nil,
+		derefString(r.RemovedReason), ""}
 }
 
 // buildRows turns records into ModerationRows. An empty slice reads nothing.
@@ -440,6 +551,10 @@ func (s *ModerationService) buildRows(ctx context.Context, recs []moderationReco
 			FlagTotal:   rec.OpenFlagTotal,
 			FlagReasons: []ModerationFlagCount{},
 			FlagNotes:   []ModerationFlagNote{},
+			AskNote:     rec.AskNote,
+		}
+		if r := RemovalReason(rec.RemovedReason); RemovalReasonLabel(r) != "" {
+			row.RemovedReason = r
 		}
 		if meta.Withheld() {
 			row.View = ModViewNone
@@ -494,12 +609,25 @@ func (s *ModerationService) Queues(ctx context.Context) (ModerationQueues, error
 	if err != nil {
 		return out, err
 	}
+	// Quick 261118-rz6: the Review asks and Removed lists share the same one
+	// batched vote read and reporter read.
+	asks, err := s.q.ReviewAskQueue(ctx)
+	if err != nil {
+		return out, err
+	}
+	removed, err := s.q.RemovedQueue(ctx)
+	if err != nil {
+		return out, err
+	}
 	counts, err := s.q.ModerationQueueCounts(ctx)
 	if err != nil {
 		return out, err
 	}
 
-	recs := make([]moderationRecord, 0, len(review)+len(flagged)+len(pending))
+	recs := make([]moderationRecord, 0, len(asks)+len(review)+len(flagged)+len(pending)+len(removed))
+	for _, r := range asks {
+		recs = append(recs, recordFromAsk(r))
+	}
 	for _, r := range review {
 		recs = append(recs, recordFromReview(r))
 	}
@@ -509,17 +637,30 @@ func (s *ModerationService) Queues(ctx context.Context) (ModerationQueues, error
 	for _, r := range pending {
 		recs = append(recs, recordFromPending(r))
 	}
+	for _, r := range removed {
+		recs = append(recs, recordFromRemoved(r))
+	}
 	rows, err := s.buildRows(ctx, recs)
 	if err != nil {
 		return out, err
 	}
 
-	out.Review = rows[:len(review)]
-	out.Flagged = rows[len(review) : len(review)+len(flagged)]
-	out.Pending = rows[len(review)+len(flagged):]
+	at := 0
+	take := func(n int) []ModerationRow {
+		part := rows[at : at+n]
+		at += n
+		return part
+	}
+	out.Asks = take(len(asks))
+	out.Review = take(len(review))
+	out.Flagged = take(len(flagged))
+	out.Pending = take(len(pending))
+	out.Removed = take(len(removed))
+	out.Counts.Asks = counts.AsksCount
 	out.Counts.Review = counts.ReviewCount
 	out.Counts.Flagged = counts.FlaggedCount
 	out.Counts.Pending = counts.PendingCount
+	out.Counts.Removed = counts.RemovedCount
 	return out, nil
 }
 
@@ -535,7 +676,7 @@ func (s *ModerationService) inTx(ctx context.Context, fn func(q ModerationQuerie
 // act is the shared body of Keep and Remove: the check row lock, the status
 // lookup, the decision, the audit row and the state change inside one
 // transaction, then the re-read, in that order.
-func (s *ModerationService) act(ctx context.Context, id, moderatorID int64, action string) (ModerationRow, error) {
+func (s *ModerationService) act(ctx context.Context, id, moderatorID int64, action string, reason RemovalReason) (ModerationRow, error) {
 	err := s.inTx(ctx, func(q ModerationQuerier) error {
 		if err := q.LockModerationCheck(ctx, id); err != nil {
 			return err
@@ -570,8 +711,13 @@ func (s *ModerationService) act(ctx context.Context, id, moderatorID int64, acti
 			}
 		}
 
+		var reasonArg *string
+		if action == ModerationActionRemove {
+			r := string(reason)
+			reasonArg = &r
+		}
 		if err := q.InsertModerationAction(ctx, sqlcgen.InsertModerationActionParams{
-			ReportID: id, ModeratorAccountID: moderatorID, Action: action,
+			ReportID: id, ModeratorAccountID: moderatorID, Action: action, Reason: reasonArg,
 		}); err != nil {
 			return err
 		}
@@ -579,7 +725,7 @@ func (s *ModerationService) act(ctx context.Context, id, moderatorID int64, acti
 			if err := q.KeepReport(ctx, id); err != nil {
 				return err
 			}
-		} else if err := q.RemoveReport(ctx, id); err != nil {
+		} else if err := q.RemoveReport(ctx, sqlcgen.RemoveReportParams{ReportID: id, RemovedReason: string(reason)}); err != nil {
 			return err
 		}
 		if kind := ownUpdateForAction(action, before); kind != "" {
@@ -640,13 +786,124 @@ func ownUpdateForAction(action string, before sqlcgen.LockReportModerationRow) U
 // Keep clears the automatic flag, dismisses the open people flags and releases
 // a pending report into the normal rules. See the steps on ModerationService.
 func (s *ModerationService) Keep(ctx context.Context, id, moderatorID int64) (ModerationRow, error) {
-	return s.act(ctx, id, moderatorID, ModerationActionKeep)
+	return s.act(ctx, id, moderatorID, ModerationActionKeep, "")
 }
 
 // Remove withholds any report from every feed, map, vote and history view. See
-// the steps on ModerationService.
-func (s *ModerationService) Remove(ctx context.Context, id, moderatorID int64) (ModerationRow, error) {
-	return s.act(ctx, id, moderatorID, ModerationActionRemove)
+// the steps on ModerationService. Quick 261118-rz6: it needs one of the five
+// RemovalReasons, stored on the report and on the audit row; any other reason
+// returns ErrRemovalReasonMissing before anything is read or written.
+func (s *ModerationService) Remove(ctx context.Context, id, moderatorID int64, reason RemovalReason) (ModerationRow, error) {
+	if !reason.ModeratorValid() {
+		return ModerationRow{}, ErrRemovalReasonMissing
+	}
+	return s.act(ctx, id, moderatorID, ModerationActionRemove, reason)
+}
+
+// Restore shows a removed report again (quick 261118-rz6, owner 2026-11-18),
+// from the Review asks list or the Removed list. In one transaction, after the
+// same two row locks as Keep and Remove (the check row, then the report row):
+//  1. A report that is not removed returns ErrAlreadyHandled and writes
+//     nothing, so a repeated or stale Restore answers 409.
+//  2. RestoreReport moves it to clear, clears the reason and time of the
+//     removal, dismisses open flags and stamps review_kept_at, so flags never
+//     hide it again and it never sends a phone alert again. The time it lasts
+//     is not changed: an expired report comes back into Past only.
+//  3. An open ask for review, if any, is closed as restored.
+//  4. The audit row (action restore) and the author's own_restored bell row,
+//     which comes back unread when it was there before.
+//
+// Then the report is read again as the answer, like Keep and Remove.
+func (s *ModerationService) Restore(ctx context.Context, id, moderatorID int64) (ModerationRow, error) {
+	return s.answerRemoved(ctx, id, moderatorID, ModerationActionRestore)
+}
+
+// KeepRemoved answers an open ask for review with no (quick 261118-rz6). In
+// one transaction after the two row locks: a report that is not removed, or
+// has no open ask, returns ErrAlreadyHandled and writes nothing; otherwise the
+// ask is closed as kept_removed, the audit row (action keep_removed) is
+// written and the author gets own_stays_removed, which opens their box again
+// so they may ask again while fewer than 3 asks are used. The report stays
+// removed with its reason.
+func (s *ModerationService) KeepRemoved(ctx context.Context, id, moderatorID int64) (ModerationRow, error) {
+	return s.answerRemoved(ctx, id, moderatorID, ModerationActionKeepRemoved)
+}
+
+// The two answers an open ask gets, as stored on report_review_asks.
+const (
+	reviewAskAnswerRestored    = "restored"
+	reviewAskAnswerKeptRemoved = "kept_removed"
+)
+
+// answerRemoved is the shared body of Restore and KeepRemoved.
+func (s *ModerationService) answerRemoved(ctx context.Context, id, moderatorID int64, action string) (ModerationRow, error) {
+	err := s.inTx(ctx, func(q ModerationQuerier) error {
+		if err := q.LockModerationCheck(ctx, id); err != nil {
+			return err
+		}
+		before, err := q.LockReportModeration(ctx, id)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrReportNotFound
+			}
+			return err
+		}
+		if ModerationState(before.ModerationState) != ModerationRemoved {
+			return ErrAlreadyHandled
+		}
+		var kind UpdateKind
+		switch action {
+		case ModerationActionRestore:
+			n, err := q.RestoreReport(ctx, id)
+			if err != nil {
+				return err
+			}
+			if n == 0 {
+				return ErrAlreadyHandled
+			}
+			if _, err := q.AnswerOpenReviewAsk(ctx, sqlcgen.AnswerOpenReviewAskParams{
+				ReportID: id, Answer: reviewAskAnswerRestored, ModeratorAccountID: moderatorID,
+			}); err != nil {
+				return err
+			}
+			kind = UpdateOwnRestored
+		case ModerationActionKeepRemoved:
+			n, err := q.AnswerOpenReviewAsk(ctx, sqlcgen.AnswerOpenReviewAskParams{
+				ReportID: id, Answer: reviewAskAnswerKeptRemoved, ModeratorAccountID: moderatorID,
+			})
+			if err != nil {
+				return err
+			}
+			if n == 0 {
+				return ErrAlreadyHandled
+			}
+			kind = UpdateOwnStaysRemoved
+		default:
+			return fmt.Errorf("service: unknown answer %q", action)
+		}
+		if err := q.InsertModerationAction(ctx, sqlcgen.InsertModerationActionParams{
+			ReportID: id, ModeratorAccountID: moderatorID, Action: action,
+		}); err != nil {
+			return err
+		}
+		_, err = q.InsertOwnReportUpdate(ctx, sqlcgen.InsertOwnReportUpdateParams{ReportID: id, Kind: string(kind)})
+		return err
+	})
+	if err != nil {
+		return ModerationRow{}, err
+	}
+	row, err := s.q.ReportForModeration(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ModerationRow{}, ErrReportNotFound
+		}
+		return ModerationRow{}, err
+	}
+	built, err := s.buildRows(ctx, []moderationRecord{recordFromDetail(row)})
+	if err != nil {
+		return ModerationRow{}, err
+	}
+	return built[0], nil
 }
 
 // Find reads one report by id and the lists it is in, in the order review,

@@ -39,15 +39,17 @@ type UpdateWire struct {
 	// ID orders the list and is what the read mark sends back as up_to.
 	ID int64 `json:"id" example:"41"`
 	// Kind is the closed kind of the row.
-	Kind string `json:"kind" enums:"reached_live,hidden,resolved,fading,reliable_nearby,comment_on_yours,reply_to_yours,followed_posted,more,own_shown,own_review,own_kept,own_removed" example:"reached_live"`
+	Kind string `json:"kind" enums:"reached_live,hidden,resolved,fading,reliable_nearby,comment_on_yours,reply_to_yours,followed_posted,more,own_shown,own_review,own_kept,own_removed,own_restored,own_stays_removed" example:"reached_live"`
 	// ReportID is the report the row opens. It is absent for the rolled up row
 	// and for a report that is no longer available, so a row never links to a
 	// report the reader may not open.
 	ReportID *int64 `json:"report_id,omitempty" example:"17"`
-	// Link is "policy" only on the row that says the reader's own report was
-	// removed: that row opens the Policy page. It is a closed value, never an
-	// address, and absent on every other row.
-	Link string `json:"link,omitempty" enums:"policy" example:"policy"`
+	// ReviewReportID is set only on the rows that say the reader's own report
+	// was removed or stays removed, while it is still removed: the row opens
+	// the reader's box for that report (why it was removed and Ask for
+	// review, GET /reports/{id}/review-ask), never the report itself. Absent on
+	// every other row.
+	ReviewReportID *int64 `json:"review_report_id,omitempty" example:"17"`
 	// Available is false when the report was held, removed or has gone since the
 	// update was made.
 	Available bool `json:"available" example:"true"`
@@ -211,42 +213,26 @@ func updateRowLabel(item service.UpdateItem, now time.Time) string {
 	return strings.Join(parts, " ")
 }
 
-// updateLinkPolicy is the one value of UpdateWire.Link, and policyPagePath the
-// page it stands for (quick 261117-vvb).
-const (
-	updateLinkPolicy = "policy"
-	policyPagePath   = "/policy"
-)
-
-// updateLink is the closed link value of one row: "policy" for the row that
-// says the reader's own report was removed, empty otherwise.
-func updateLink(item service.UpdateItem) string {
-	if item.PolicyLink {
-		return updateLinkPolicy
-	}
-	return ""
-}
-
 // updateWire maps one service row to its wire shape. All words come from the
 // service row or the page tables; nothing is composed from a request.
 func updateWire(item service.UpdateItem, now time.Time) UpdateWire {
 	return UpdateWire{
-		ID:            item.ID,
-		Kind:          string(item.Kind),
-		ReportID:      item.ReportID,
-		Link:          updateLink(item),
-		Available:     item.Available,
-		Unread:        item.Unread,
-		Event:         item.Event,
-		ReportLine:    item.ReportLine,
-		Category:      updateCategoryWord(item.Category),
-		Severity:      updateSeverityWord(item.Severity),
-		SeverityLevel: updateSeverityLevel(item.Severity),
-		Trust:         item.Trust,
-		When:          profileRelativeTime(item.CreatedAt, now),
-		Label:         updateRowLabel(item, now),
-		CreatedAt:     item.CreatedAt.UTC(),
-		MoreCount:     item.MoreCount,
+		ID:             item.ID,
+		Kind:           string(item.Kind),
+		ReportID:       item.ReportID,
+		ReviewReportID: item.ReviewReportID,
+		Available:      item.Available,
+		Unread:         item.Unread,
+		Event:          item.Event,
+		ReportLine:     item.ReportLine,
+		Category:       updateCategoryWord(item.Category),
+		Severity:       updateSeverityWord(item.Severity),
+		SeverityLevel:  updateSeverityLevel(item.Severity),
+		Trust:          item.Trust,
+		When:           profileRelativeTime(item.CreatedAt, now),
+		Label:          updateRowLabel(item, now),
+		CreatedAt:      item.CreatedAt.UTC(),
+		MoreCount:      item.MoreCount,
 	}
 }
 

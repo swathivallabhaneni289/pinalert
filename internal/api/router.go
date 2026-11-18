@@ -133,6 +133,12 @@ type Deps struct {
 	// the pool through service.PgxFlagTx. Nil runs the same steps on the plain
 	// querier with no transaction (tests only).
 	FlagTx service.FlagTxFunc
+	// ReviewAskTx runs an author's ask for review inside one transaction that
+	// locks the report first, so concurrent asks cannot pass the open ask or
+	// the cap of 3 (quick 261118-rz6). cmd/server/main.go sets it from the pool
+	// through service.PgxReviewAskTx. Nil runs the same steps on the plain
+	// querier with no transaction (tests only).
+	ReviewAskTx service.ReviewAskTxFunc
 	// CommentModerationTx runs the moderator Keep and Remove of a comment
 	// inside one transaction, so the change, the flag dismissal and the audit
 	// row commit together (Phase 8 plan 13, D-14). cmd/server/main.go sets it
@@ -711,6 +717,9 @@ func NewRouter(deps Deps) *chi.Mux {
 		flagOpts = append(flagOpts, service.WithFlagTx(deps.FlagTx))
 	}
 	flags := service.NewFlagService(deps.Sessions, flagOpts...)
+	// The author's box of quick 261118-rz6, built here like the flag service.
+	// Its note never goes to the text check, so it takes no screener.
+	reviewAsks := service.NewReviewAskService(deps.Sessions, deps.ReviewAskTx)
 	// The report history service (Phase 8, plan 01). Like the flag service it has
 	// no Deps field. Its Focus gate is the report service, so without one every
 	// read is an error and the route is never reached by a real request.
@@ -1000,6 +1009,13 @@ func NewRouter(deps Deps) *chi.Mux {
 		// FlagMiddleware, scoped to this one route with r.With. A cross site
 		// POST carries no session cookie (DEC-L), so no CSRF token is needed.
 		r.With(rateGate.FlagMiddleware()).Post("/api/reports/{id}/flag", handlers.FlagReport(flags))
+		// GET and POST /api/reports/{id}/review-ask (quick 261118-rz6): the
+		// author's box for their own removed report, and Ask for review. Gated
+		// because only the report's author may use it; every other caller of
+		// a gated route gets 404 with nothing revealed. The cap of 3 asks per
+		// report bounds the POST, so it takes no bucket.
+		r.Get("/api/reports/{id}/review-ask", handlers.ReviewAskState(reviewAsks))
+		r.Post("/api/reports/{id}/review-ask", handlers.ReviewAskCreate(reviewAsks))
 		// GET /api/reports/{id}/timeline (Phase 8 plan 01, PAGE-01, SC2): the
 		// report page's history, built from the vote log. Gated like every /api
 		// route and flat like the vote routes. No rate gate: it is a read polled
@@ -1218,6 +1234,10 @@ func NewRouter(deps Deps) *chi.Mux {
 		r.Handle("/api/moderation/reports/{id}", handlers.ModerationReport(moderation))
 		r.Handle("/api/moderation/reports/{id}/keep", handlers.ModerationKeep(moderation))
 		r.Handle("/api/moderation/reports/{id}/remove", handlers.ModerationRemove(moderation))
+		// Quick 261118-rz6: Restore a removed report, and Keep removed as the
+		// answer to an open ask for review.
+		r.Handle("/api/moderation/reports/{id}/restore", handlers.ModerationRestore(moderation))
+		r.Handle("/api/moderation/reports/{id}/keep-removed", handlers.ModerationKeepRemoved(moderation))
 		r.Handle("/api/moderation/comments", handlers.ModerationComments(commentModeration))
 		r.Handle("/api/moderation/comments/{id}/keep", handlers.ModerationCommentKeep(commentModeration))
 		r.Handle("/api/moderation/comments/{id}/remove", handlers.ModerationCommentRemove(commentModeration))

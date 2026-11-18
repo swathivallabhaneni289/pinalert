@@ -60,14 +60,16 @@ func vvbFlagAt(t *testing.T, client *http.Client, baseURL string, reportID int64
 
 // vvbUpdate is one row of the bell answer with the link field.
 type vvbUpdate struct {
-	Kind       string `json:"kind"`
-	ReportID   *int64 `json:"report_id"`
-	Link       string `json:"link"`
-	Available  bool   `json:"available"`
-	Event      string `json:"event"`
-	ReportLine string `json:"report_line"`
-	Category   string `json:"category"`
-	Trust      string `json:"trust"`
+	Kind     string `json:"kind"`
+	ReportID *int64 `json:"report_id"`
+	Link     string `json:"link"`
+	// ReviewReportID is quick 261118-rz6: the removed row opens the author's box.
+	ReviewReportID *int64 `json:"review_report_id"`
+	Available      bool   `json:"available"`
+	Event          string `json:"event"`
+	ReportLine     string `json:"report_line"`
+	Category       string `json:"category"`
+	Trust          string `json:"trust"`
 }
 
 func vvbBell(t *testing.T, client *http.Client, baseURL string) (map[string]vvbUpdate, string) {
@@ -181,7 +183,7 @@ func TestReviewHideFlow(t *testing.T) {
 		if !ok {
 			t.Fatalf("no own_review row in the author's bell: %s", raw)
 		}
-		if row.Event != "Your report is hidden while it's reviewed." || !row.Available || row.ReportID != nil || row.Link != "" {
+		if row.Event != "Your report is hidden while it's reviewed." || !row.Available || row.ReportID != nil || row.Link != "" || row.ReviewReportID != nil {
 			t.Errorf("own_review row = %+v, want the hidden line, available, no report id and no link", row)
 		}
 		if row.ReportLine != "" || row.Category != "" || row.Trust != "" {
@@ -240,7 +242,10 @@ func TestReviewHideFlow(t *testing.T) {
 		}
 	})
 
-	t.Run("Remove points the author to the Policy", func(t *testing.T) {
+	// Amended 2026-11-18 (quick 261118-rz6): the removed row no longer opens the
+	// Policy; it opens the author's box through review_report_id, and carries no
+	// link and no report id.
+	t.Run("Remove gives the author a row that opens their box", func(t *testing.T) {
 		if status, out := modAction(t, moderator, srv.URL, removed, "remove"); status != http.StatusOK {
 			t.Fatalf("remove status %d: %+v", status, out)
 		}
@@ -249,8 +254,9 @@ func TestReviewHideFlow(t *testing.T) {
 		if !ok {
 			t.Fatalf("no own_removed row: %s", raw)
 		}
-		if row.Event != "Your report was removed after review." || row.Link != "policy" || row.ReportID != nil || !row.Available {
-			t.Errorf("own_removed row = %+v, want the removed line, link policy and no report id", row)
+		if row.Event != "Your report was removed after review." || row.Link != "" || row.ReportID != nil || !row.Available ||
+			row.ReviewReportID == nil || *row.ReviewReportID != removed {
+			t.Errorf("own_removed row = %+v, want the removed line, no link, no report id and review_report_id %d", row, removed)
 		}
 		for _, banned := range []string{service.UnavailableLine, descRemoved, descHidden} {
 			if strings.Contains(raw, banned) {
@@ -280,9 +286,15 @@ func TestReviewHideFlow(t *testing.T) {
 		if !strings.Contains(keptRow, `href="/?report=`+strconv.FormatInt(hidden, 10)+`"`) {
 			t.Errorf("the kept row does not open the report: %s", keptRow)
 		}
+		// Amended 2026-11-18 (quick 261118-rz6): the removed row is a button that
+		// opens the author's box, with the new mark while unread, and no link.
 		removedRow := vvbRowOf(t, page, "Your report was removed after review.")
-		if !strings.Contains(removedRow, `href="/policy"`) {
-			t.Errorf("the removed row does not open the Policy: %s", removedRow)
+		if !strings.Contains(removedRow, `<button type="button" class="urow__link urow__box" data-review-ask="`+strconv.FormatInt(removed, 10)+`"`) ||
+			strings.Contains(removedRow, "href=") || !strings.Contains(removedRow, `urow--new`) {
+			t.Errorf("the removed row is not a box button with the new mark: %s", removedRow)
+		}
+		if strings.Contains(page, `href="/policy"`) {
+			t.Error("the updates list still links to the Policy")
 		}
 		if regexp.MustCompile(`href="/\?report=` + strconv.FormatInt(removed, 10) + `"`).MatchString(page) {
 			t.Error("the updates list links to the removed report")

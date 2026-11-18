@@ -135,6 +135,14 @@ type fakeModerationQuerier struct {
 	kept         []int64
 	removed      []int64
 	ownRows      []sqlcgen.InsertOwnReportUpdateParams
+
+	// Quick 261118-rz6.
+	asks           []sqlcgen.ReviewAskQueueRow
+	removedList    []sqlcgen.RemovedQueueRow
+	removedReasons []string
+	restored       []int64
+	answers        []sqlcgen.AnswerOpenReviewAskParams
+	noOpenAsk      bool
 }
 
 var _ service.ModerationQuerier = (*fakeModerationQuerier)(nil)
@@ -242,12 +250,48 @@ func (f *fakeModerationQuerier) KeepReport(_ context.Context, id int64) error {
 	return nil
 }
 
-func (f *fakeModerationQuerier) RemoveReport(_ context.Context, id int64) error {
+func (f *fakeModerationQuerier) RemoveReport(_ context.Context, arg sqlcgen.RemoveReportParams) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.record("RemoveReport")
-	f.removed = append(f.removed, id)
+	f.removed = append(f.removed, arg.ReportID)
+	f.removedReasons = append(f.removedReasons, arg.RemovedReason)
 	return nil
+}
+
+// The four methods of quick 261118-rz6. The two lists answer what the test
+// set; Restore and the ask answer report one row unless the test set zero.
+func (f *fakeModerationQuerier) ReviewAskQueue(context.Context) ([]sqlcgen.ReviewAskQueueRow, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("ReviewAskQueue")
+	return f.asks, nil
+}
+
+func (f *fakeModerationQuerier) RemovedQueue(context.Context) ([]sqlcgen.RemovedQueueRow, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("RemovedQueue")
+	return f.removedList, nil
+}
+
+func (f *fakeModerationQuerier) RestoreReport(_ context.Context, id int64) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("RestoreReport")
+	f.restored = append(f.restored, id)
+	return 1, nil
+}
+
+func (f *fakeModerationQuerier) AnswerOpenReviewAsk(_ context.Context, arg sqlcgen.AnswerOpenReviewAskParams) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("AnswerOpenReviewAsk")
+	f.answers = append(f.answers, arg)
+	if f.noOpenAsk {
+		return 0, nil
+	}
+	return 1, nil
 }
 
 func (f *fakeModerationQuerier) InsertModerationAction(_ context.Context, arg sqlcgen.InsertModerationActionParams) error {
@@ -640,7 +684,7 @@ func TestModerationKeepRemoveDecisions(t *testing.T) {
 
 	t.Run("remove on a removed report", func(t *testing.T) {
 		f := newFake(sqlcgen.ModerationStatusForReportRow{ModerationState: "removed"})
-		if _, err := modService(f).Remove(ctx, 5, 7); !errors.Is(err, service.ErrAlreadyHandled) {
+		if _, err := modService(f).Remove(ctx, 5, 7, service.RemovalSpam); !errors.Is(err, service.ErrAlreadyHandled) {
 			t.Errorf("error = %v, want ErrAlreadyHandled", err)
 		}
 		if got := modCallsAmong(f, writes...); len(got) != 0 {
@@ -650,7 +694,7 @@ func TestModerationKeepRemoveDecisions(t *testing.T) {
 
 	t.Run("remove on an unknown id", func(t *testing.T) {
 		f := newFake(sqlcgen.ModerationStatusForReportRow{})
-		if _, err := modService(f).Remove(ctx, 99, 7); !errors.Is(err, service.ErrReportNotFound) {
+		if _, err := modService(f).Remove(ctx, 99, 7, service.RemovalSpam); !errors.Is(err, service.ErrReportNotFound) {
 			t.Errorf("error = %v, want ErrReportNotFound", err)
 		}
 		if got := modCallsAmong(f, writes...); len(got) != 0 {
@@ -660,16 +704,21 @@ func TestModerationKeepRemoveDecisions(t *testing.T) {
 
 	t.Run("remove works on an unlisted report", func(t *testing.T) {
 		f := newFake(sqlcgen.ModerationStatusForReportRow{ModerationState: "clear"})
-		if _, err := modService(f).Remove(ctx, 5, 7); err != nil {
+		if _, err := modService(f).Remove(ctx, 5, 7, service.RemovalSpam); err != nil {
 			t.Fatalf("Remove error = %v", err)
 		}
 		want := []string{"InsertModerationAction", "RemoveReport", "ReportForModeration"}
 		if got := modCallsAmong(f, "InsertModerationAction", "KeepReport", "ReportForModeration", "RemoveReport"); !reflect.DeepEqual(got, want) {
 			t.Errorf("calls = %v, want %v", got, want)
 		}
-		wantInsert := sqlcgen.InsertModerationActionParams{ReportID: 5, ModeratorAccountID: 7, Action: "remove"}
-		if len(f.inserts) != 1 || f.inserts[0] != wantInsert {
-			t.Errorf("audit row = %v, want %v", f.inserts, wantInsert)
+		// Amended 2026-11-18 (quick 261118-rz6): the audit row carries the reason
+		// picked, and the report is removed with it.
+		if len(f.inserts) != 1 || f.inserts[0].ReportID != 5 || f.inserts[0].ModeratorAccountID != 7 ||
+			f.inserts[0].Action != "remove" || f.inserts[0].Reason == nil || *f.inserts[0].Reason != "spam" {
+			t.Errorf("audit row = %+v, want report 5, moderator 7, remove, reason spam", f.inserts)
+		}
+		if len(f.removedReasons) != 1 || f.removedReasons[0] != "spam" {
+			t.Errorf("removed with reasons %v, want [spam]", f.removedReasons)
 		}
 	})
 
@@ -677,7 +726,7 @@ func TestModerationKeepRemoveDecisions(t *testing.T) {
 		f := newFake(sqlcgen.ModerationStatusForReportRow{ModerationState: "clear"})
 		boom := errors.New("audit insert failed")
 		f.insertErr = boom
-		_, err := modService(f).Remove(ctx, 5, 7)
+		_, err := modService(f).Remove(ctx, 5, 7, service.RemovalSpam)
 		if !errors.Is(err, boom) || errors.Is(err, service.ErrAlreadyHandled) || errors.Is(err, service.ErrReportNotFound) {
 			t.Errorf("error = %v, want the insert error and no sentinel", err)
 		}
@@ -724,7 +773,10 @@ func TestModerationKeepRemoveDecisions(t *testing.T) {
 			[]string{"begin", "LockModerationCheck", "ModerationStatusForReport", "InsertModerationAction", "KeepReport", "commit", "ReportForModeration"}, nil, false)
 	})
 	t.Run("remove locks the check first inside the transaction", func(t *testing.T) {
-		txCase(t, func(s *service.ModerationService) error { _, err := s.Remove(ctx, 5, 7); return err },
+		txCase(t, func(s *service.ModerationService) error {
+			_, err := s.Remove(ctx, 5, 7, service.RemovalSpam)
+			return err
+		},
 			[]string{"begin", "LockModerationCheck", "ModerationStatusForReport", "InsertModerationAction", "RemoveReport", "commit", "ReportForModeration"}, nil, false)
 	})
 	// Amended 2026-11-17 (quick 261117-vvb): the report row lock right after
@@ -767,7 +819,7 @@ func TestModerationKeepRemoveDecisions(t *testing.T) {
 			f := newFake(tc.status)
 			var err error
 			if tc.remove {
-				_, err = modService(f).Remove(ctx, 5, 7)
+				_, err = modService(f).Remove(ctx, 5, 7, service.RemovalSpam)
 			} else {
 				_, err = modService(f).Keep(ctx, 5, 7)
 			}
@@ -788,7 +840,7 @@ func TestModerationKeepRemoveDecisions(t *testing.T) {
 	}
 	t.Run("bell row: a removed report is already handled and tells nobody again", func(t *testing.T) {
 		f := newFake(sqlcgen.ModerationStatusForReportRow{ModerationState: "removed", Severity: "low", Category: "flood"})
-		if _, err := modService(f).Remove(ctx, 5, 7); !errors.Is(err, service.ErrAlreadyHandled) {
+		if _, err := modService(f).Remove(ctx, 5, 7, service.RemovalSpam); !errors.Is(err, service.ErrAlreadyHandled) {
 			t.Fatalf("error = %v, want ErrAlreadyHandled", err)
 		}
 		if len(f.ownRows) != 0 {

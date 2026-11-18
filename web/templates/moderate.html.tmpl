@@ -33,6 +33,13 @@
     </form>
     <div id="mod-find-result" aria-live="polite"></div>
 
+    {{/* Quick 261118-rz6 (owner 2026-11-18): the open asks for review from the authors of removed reports, oldest first, each with Why, the author's note, Restore and Keep removed. Filled by script with text nodes only; nothing names who asked. */}}
+    <section class="mod-section" aria-labelledby="mod-h-asks">
+      <h2 id="mod-h-asks">Review asks <span class="mod-count" id="mod-count-asks"></span></h2>
+      <ol class="mod-list" id="mod-list-asks" role="list" aria-labelledby="mod-h-asks"></ol>
+      <p class="mod-empty" id="mod-empty-asks" hidden>No review asks.</p>
+    </section>
+
     <section class="mod-section" aria-labelledby="mod-h-auto">
       <h2 id="mod-h-auto">Flagged by the automatic check <span class="mod-count" id="mod-count-auto"></span></h2>
       <p class="mod-section__line">Posted normally, but the text scored near the line. Newest first.</p>
@@ -52,6 +59,13 @@
       <p class="mod-section__line">The check couldn't finish. Serious reports in this list are already published. Waiting longest first.</p>
       <ol class="mod-list" id="mod-list-pending" role="list" aria-labelledby="mod-h-pending"></ol>
       <p class="mod-empty" id="mod-empty-pending" hidden>No unfinished checks.</p>
+    </section>
+
+    {{/* Quick 261118-rz6: reports removed in the last 30 days, newest first, each with Why and Restore. */}}
+    <section class="mod-section" aria-labelledby="mod-h-removed">
+      <h2 id="mod-h-removed">Removed <span class="mod-count" id="mod-count-removed"></span></h2>
+      <ol class="mod-list" id="mod-list-removed" role="list" aria-labelledby="mod-h-removed"></ol>
+      <p class="mod-empty" id="mod-empty-removed" hidden>No removed reports.</p>
     </section>
 
     <section class="mod-section" aria-labelledby="mod-h-comments">
@@ -85,6 +99,24 @@
         <div class="logout-confirm__actions">
           <button type="button" class="btn" id="mod-ratings-confirm-cancel" data-mod-rating-action="box-cancel">Cancel</button>
           <button type="button" class="btn btn--destructive" id="mod-ratings-confirm-go" data-mod-rating-action="box-go">Remove all</button>
+        </div>
+      </div>
+    </dialog>
+
+    {{/* Quick 261118-rz6 (owner 2026-11-18): Remove report asks why first, in a box built like the Log out box (.logout-confirm). The title takes the first focus, no button is outlined on open, and only Cancel and Remove answer it. The five reasons are one radio group of real buttons; Remove stays off until one is picked. It sits inside main so the page script reaches its buttons. */}}
+    <dialog id="mod-remove-confirm" class="logout-confirm" aria-labelledby="mod-remove-title">
+      <div class="logout-confirm__body">
+        <h2 class="logout-confirm__title" id="mod-remove-title" tabindex="-1">Why remove?</h2>
+        <div class="mod-reasons" id="mod-remove-reasons" role="radiogroup" aria-labelledby="mod-remove-title">
+          <button type="button" class="btn mod-reason" role="radio" aria-checked="false" tabindex="0" data-mod-reason="spam">Spam</button>
+          <button type="button" class="btn mod-reason" role="radio" aria-checked="false" tabindex="-1" data-mod-reason="abusive">Abusive</button>
+          <button type="button" class="btn mod-reason" role="radio" aria-checked="false" tabindex="-1" data-mod-reason="false">False</button>
+          <button type="button" class="btn mod-reason" role="radio" aria-checked="false" tabindex="-1" data-mod-reason="dangerous">Dangerous</button>
+          <button type="button" class="btn mod-reason" role="radio" aria-checked="false" tabindex="-1" data-mod-reason="other">Other</button>
+        </div>
+        <div class="logout-confirm__actions mod-remove-confirm__actions">
+          <button type="button" class="btn" id="mod-remove-cancel" data-mod-remove-box="cancel">Cancel</button>
+          <button type="button" class="btn btn--destructive btn--off" id="mod-remove-go" data-mod-remove-box="go" aria-disabled="true">Remove</button>
         </div>
       </div>
     </dialog>

@@ -1,0 +1,36 @@
+{{/*
+  review_ask_box: the author's box for their own removed report (quick
+  261118-rz6, owner 2026-11-18). It opens from the bell row "Your report was
+  removed after review." or "Your report stays removed." and from the same rows
+  of the full updates list, on phone and laptop. It is the Log out box: the
+  .logout-confirm classes of auth.css. updates.js fills and opens it, puts focus
+  on the title with no button outlined, and only its buttons close it.
+
+  Few words, nothing more: the title, the Why line from the server (none when no
+  reason was recorded), then one of three states. Can ask: the Note (optional)
+  box, at most 200 characters with no placeholder, Close and Ask for review.
+  Asked and waiting: Asked. and Close. Three asks used: No asks left. and Close.
+  It never shows the report's words, flag counts, who flagged, places or the
+  moderator.
+
+  Every page that loads updates.js includes it as a direct child of the body,
+  never inside the bell dropdown, so no scrolling or clipped parent can cut it
+  off on iPhone Safari.
+*/}}
+  <dialog id="review-ask-box" class="logout-confirm review-ask" aria-labelledby="review-ask-title">
+    <div class="logout-confirm__body">
+      <h2 class="logout-confirm__title" id="review-ask-title" tabindex="-1">Removed</h2>
+      <p class="review-ask__why" id="review-ask-why" hidden></p>
+      <div class="review-ask__note" id="review-ask-form" hidden>
+        <label for="review-ask-note">Note (optional)</label>
+        <textarea id="review-ask-note" maxlength="200" rows="3" autocomplete="off"></textarea>
+      </div>
+      <p class="review-ask__state" id="review-ask-asked" hidden>Asked.</p>
+      <p class="review-ask__state" id="review-ask-none" hidden>No asks left.</p>
+      <p class="inline-error" id="review-ask-error" role="alert" data-failed="Couldn't send. Try again." hidden></p>
+      <div class="logout-confirm__actions">
+        <button type="button" class="btn" id="review-ask-close">Close</button>
+        <button type="button" class="btn btn--primary" id="review-ask-send" hidden>Ask for review</button>
+      </div>
+    </div>
+  </dialog>

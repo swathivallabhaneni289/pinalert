@@ -172,21 +172,33 @@ func TestModerateUsesSetTextOnly(t *testing.T) {
 // TestModerateRemoveIsConfirmed (D-08, P4-A17, P4-A5): Remove report opens a
 // named confirmation first and only the confirm button sends a remove.
 //
+// Amended 2026-11-18 (quick 261118-rz6, owner): the inline "Remove this
+// report?" confirmation with Go back and Yes, remove report is replaced by one
+// Why remove? box built on the Log out box (.logout-confirm). Remove report
+// opens it and sends nothing; the box picks one of five reasons as one radio
+// group of real buttons; its Remove stays off until a reason is picked and is
+// the only thing that sends a remove, with the reason in the body; Cancel and
+// Escape send nothing and put focus back on the row's Remove report.
+//
 // Honest limit of this test's claim: static inspection proves the call graph
 // and the DOM order; it cannot prove focus lands where the code says in a real
 // browser, which the human check does.
 func TestModerateRemoveIsConfirmed(t *testing.T) {
 	js := p426ReadJS(t)
+	tmpl := p426ReadTemplate(t)
 
-	for _, s := range []string{"'/remove'", "'/keep'"} {
+	for _, s := range []string{"'/remove'", "'/keep'", "'/restore'", "'/keep-removed'"} {
 		if n := strings.Count(js, s); n != 1 {
 			t.Errorf("%s occurs %d times, want exactly 1", s, n)
 		}
 	}
-	send := jsFunctionBody(t, js, "sendAction(entry, action)")
-	p426WantAll(t, "sendAction", send, "'/remove'", "'/keep'")
-	if n := strings.Count(js, "sendAction(entry, 'remove')"); n != 1 {
-		t.Errorf("sendAction(entry, 'remove') occurs %d times, want 1", n)
+	send := jsFunctionBody(t, js, "sendAction(entry, action, reason)")
+	p426WantAll(t, "sendAction", send, "ACTION_SUFFIX[action]", "{ reason: reason }", "action === 'remove'")
+	if n := strings.Count(js, "sendAction(entry, 'remove', reason)"); n != 1 {
+		t.Errorf("sendAction(entry, 'remove', reason) occurs %d times, want 1", n)
+	}
+	if n := strings.Count(js, "sendAction(entry, 'remove'"); n != 1 {
+		t.Errorf("sendAction(entry, 'remove' occurs %d times, want 1 (only the box sends a remove)", n)
 	}
 	if n := strings.Count(js, "sendAction(entry, 'keep')"); n != 1 {
 		t.Errorf("sendAction(entry, 'keep') occurs %d times, want 1", n)
@@ -199,28 +211,41 @@ func TestModerateRemoveIsConfirmed(t *testing.T) {
 	}
 	p426WantAll(t, "remove branch", w, "openRemoveConfirm(entry)")
 	p426WantNone(t, "remove branch", w, "sendAction(")
-	w, okA, okT = windowAfter(click, "action === 'confirm-remove'", "}")
-	if !okA || !okT {
-		t.Fatalf("the confirm-remove branch of onRootClick was not found (anchor %v, terminator %v)", okA, okT)
-	}
-	p426WantAll(t, "confirm-remove branch", w, "sendAction(entry, 'remove')")
 
-	c := jsFunctionBody(t, js, "buildRemoveConfirm(entry)")
-	p426WantAll(t, "buildRemoveConfirm", c, "setAttribute('role', 'group')", "'aria-labelledby'", "REMOVE_QUESTION",
-		"GO_BACK_LABEL", "CONFIRM_REMOVE_LABEL", "'btn btn--destructive'", "'confirm-remove'", "'back'")
-	back, confirm := strings.Index(c, "appendChild(goBack)"), strings.Index(c, "appendChild(confirmBtn)")
-	if back < 0 || confirm < 0 || back >= confirm {
-		t.Errorf("Go back must be appended before Yes, remove report (indexes %d and %d)", back, confirm)
-	}
+	confirm := jsFunctionBody(t, js, "confirmRemove()")
+	p426WantAll(t, "confirmRemove", confirm, "reason === ''", "closeRemoveConfirm(false)", "sendAction(entry, 'remove', reason)")
+	p426InOrder(t, "confirmRemove", confirm, "reason === ''", "sendAction(")
 
-	p426WantAll(t, "openRemoveConfirm", jsFunctionBody(t, js, "openRemoveConfirm(entry)"), "entry.goBack.focus()")
-	p426WantAll(t, "closeRemoveConfirm", jsFunctionBody(t, js, "closeRemoveConfirm(entry, returnFocus)"),
+	p426WantAll(t, "openRemoveConfirm", jsFunctionBody(t, js, "openRemoveConfirm(entry)"),
+		"setRemoveReason('')", "showModal()", "removeBox.title.focus()")
+	p426WantAll(t, "closeRemoveConfirm", jsFunctionBody(t, js, "closeRemoveConfirm(returnFocus)"),
 		"entry.removeBtn.focus()")
-	p426WantAll(t, "onRootKeydown", jsFunctionBody(t, js, "onRootKeydown(evt)"), "'Escape'", "closeRemoveConfirm(", "entry.busy")
+	p426WantAll(t, "setRemoveReason", jsFunctionBody(t, js, "setRemoveReason(slug)"),
+		"'aria-checked'", "'tabindex'", "setButtonOff(removeBox.go, removeBox.reason === '')")
+	p426WantAll(t, "onRemoveBoxKeydown", jsFunctionBody(t, js, "onRemoveBoxKeydown(evt)"),
+		"'ArrowRight'", "'ArrowLeft'", "'ArrowDown'", "'ArrowUp'", "setRemoveReason(")
+	p426WantAll(t, "onRemoveBoxCancel", jsFunctionBody(t, js, "onRemoveBoxCancel(evt)"),
+		"evt.preventDefault()", "closeRemoveConfirm(true)")
 
-	const question = `var REMOVE_QUESTION = 'Remove this report? The author is told it was removed after review.';`
-	if n := strings.Count(js, question); n != 1 {
-		t.Errorf("the REMOVE_QUESTION line occurs %d times, want exactly 1", n)
+	// The box: the Log out box's classes, the title first, five reasons as one
+	// radio group, then Cancel and Remove, with Remove off on load.
+	box := findTagWindow(t, tmpl, `id="mod-remove-confirm"`)
+	p426WantAll(t, "the box", box, `<dialog`, `class="logout-confirm"`, `aria-labelledby="mod-remove-title"`)
+	p426InOrder(t, "the Why remove? box", tmpl,
+		`id="mod-remove-confirm"`, `id="mod-remove-title" tabindex="-1">Why remove?</h2>`,
+		`role="radiogroup" aria-labelledby="mod-remove-title"`,
+		`data-mod-reason="spam">Spam</button>`, `data-mod-reason="abusive">Abusive</button>`,
+		`data-mod-reason="false">False</button>`, `data-mod-reason="dangerous">Dangerous</button>`,
+		`data-mod-reason="other">Other</button>`,
+		`id="mod-remove-cancel" data-mod-remove-box="cancel">Cancel</button>`,
+		`class="btn btn--destructive btn--off" id="mod-remove-go" data-mod-remove-box="go" aria-disabled="true">Remove</button>`)
+	if n := strings.Count(tmpl, `role="radio" aria-checked="false"`); n != 5 {
+		t.Errorf(`the box holds %d reason radios, want 5`, n)
+	}
+	for _, gone := range []string{"Remove this report?", "Yes, remove report", "Go back", "mod-confirm"} {
+		if strings.Contains(js, gone) || strings.Contains(tmpl, gone) {
+			t.Errorf("the old inline confirmation is still there: %q", gone)
+		}
 	}
 }
 
@@ -296,12 +321,15 @@ func TestModerateFindParsesReportParam(t *testing.T) {
 func TestModerateHeadingCountsFromServer(t *testing.T) {
 	js := p426ReadJS(t)
 
-	p426WantAll(t, "applyQueue", jsFunctionBody(t, js, "applyQueue(data)"), "data.counts.review", "data.counts.flagged",
-		"data.counts.pending", "toCount(")
+	// Amended 2026-11-18 (quick 261118-rz6): applyQueue reads every list's count
+	// from the server's counts object by its key, the two new lists included.
+	p426WantAll(t, "applyQueue", jsFunctionBody(t, js, "applyQueue(data)"), "data.counts[list.key]", "toCount(")
 	r := jsFunctionBody(t, js, "renderCounts()")
 	p426WantAll(t, "renderCounts", r, "counts[", "Pinalert.setText(", "'('")
 	p426WantNone(t, "renderCounts", r, ".length", "children", "childElementCount", "querySelectorAll")
-	d := jsFunctionBody(t, js, "dropReport(id, extraKeys)")
+	// Amended 2026-11-18 (quick 261118-rz6): Keep removed drops a report from
+	// the asks list only, so dropReport takes the lists to drop it from.
+	d := jsFunctionBody(t, js, "dropReport(id, extraKeys, onlyKeys)")
 	p426WantAll(t, "dropReport", d, "Math.max(0, counts[", "seen[", "renderCounts()", "renderEmpties()")
 
 	for i, line := range strings.Split(js, "\n") {
@@ -323,7 +351,7 @@ func TestModerateRowStructure(t *testing.T) {
 
 	row := jsFunctionBody(t, js, "buildRow(report, listKey, lists)")
 	p426InOrder(t, "buildRow", row, "buildIdLine(entry, report)", "Pinalert.relativeTime(report.created_at)",
-		"Pinalert.writtenLine(report)", "report.description", "buildWhy(", "KEEP_LABEL", "buildRemoveConfirm(entry)",
+		"Pinalert.writtenLine(report)", "report.description", "buildWhy(", "KEEP_LABEL", "'aria-haspopup', 'dialog'",
 		"'mod-row__does'", "MAIN_PAGE_LINK_TEXT")
 	p426WantAll(t, "buildRow", row, "'aria-labelledby'", "'Keep report ' + ", "'Remove report ' + ", "'data-mod-key'",
 		"REMOVED_SENTENCE")
@@ -342,7 +370,9 @@ func TestModerateRowStructure(t *testing.T) {
 	p426WantAll(t, "buildUnfinished", jsFunctionBody(t, js, "buildUnfinished(report)"), "UNFINISHED_INTRO",
 		"postedLine(report)", "HELD_LINE", "SERIOUS_PENDING_LINE")
 	p426WantAll(t, "setBusy", jsFunctionBody(t, js, "setBusy(entry, busy, action)"), "'aria-busy'", "'aria-disabled'",
-		"SENDING_LABEL", "'Sending, remove report ' + ", "'Yes, remove report ' + ")
+		// Amended 2026-11-18 (quick 261118-rz6): with the box, the row's own
+		// Remove report shows Sending while the remove is sent.
+		"SENDING_LABEL", "'Sending, remove report ' + ", "'Remove report ' + ")
 	p426WantAll(t, "showRowError", jsFunctionBody(t, js, "showRowError(entry, message)"), "'inline-error mod-row__error'",
 		"setAttribute('role', 'alert')")
 	msg := jsFunctionBody(t, js, "showFindMessage(text, look)")
@@ -381,11 +411,13 @@ func TestModerateTransportAndNoPolling(t *testing.T) {
 		"document.addEventListener", "window.addEventListener")
 	// Amended 2026-10-29 by Phase 9 plan 15: the Ratings form and its box add two
 	// listeners (the form's submit and the box's cancel), so the count is 5.
-	if n := strings.Count(js, "addEventListener("); n != 5 {
-		t.Errorf("addEventListener( occurs %d times, want exactly 5", n)
+	// Amended 2026-11-18 (quick 261118-rz6): the Why remove? box adds its cancel
+	// listener, so the count is 6, and sendAction sends the reason as the body.
+	if n := strings.Count(js, "addEventListener("); n != 6 {
+		t.Errorf("addEventListener( occurs %d times, want exactly 6", n)
 	}
-	send := jsFunctionBody(t, js, "sendAction(entry, action)")
-	p426WantAll(t, "sendAction", send, "apiRequest('POST', ", ", 0)")
+	send := jsFunctionBody(t, js, "sendAction(entry, action, reason)")
+	p426WantAll(t, "sendAction", send, "apiRequest('POST', ", ", 0, payload)")
 	p426WantAll(t, "loadLists", jsFunctionBody(t, js, "loadLists(manual)"),
 		"apiRequest('GET', '/api/moderation/queue', REQUEST_TIMEOUT_MS)", "'aria-busy'", "REFRESHED_TOAST", "TOAST_MS")
 }
@@ -411,14 +443,16 @@ func TestModerateScreenCopy(t *testing.T) {
 		"No reports flagged by the check.", "No reports flagged by people.", "No unfinished checks.",
 		"Nothing needs a decision here. Use Find a report to look up a post by id.",
 		"Enter a report id or a link that includes report=.", "Couldn't look that up. Try again.",
-		"No signal. Try again when you have a signal.", "Keep report", "Remove report", "Go back",
-		"Yes, remove report", "Sending", "Show all scores", "View on the main page", "Held, shown to no one",
+		"No signal. Try again when you have a signal.", "Keep report", "Remove report",
+		// Amended 2026-11-18 (quick 261118-rz6): Go back, Yes, remove report and
+		// the Remove this report? question left with the inline confirmation.
+		"Sending", "Show all scores", "View on the main page", "Held, shown to no one",
 		"Removed after review", "Removed after review.", "The check scored this text:",
 		"The text check hasn't finished.",
 		"Held. It isn't shown to anyone until the check finishes or you keep it.",
 		"Serious report, already published while the check waits.", "Couldn't save that. Try again.",
 		"No signal. Nothing changed. Try again.", "This report was already handled. Refresh the lists.",
-		"Lists refreshed.", "Remove this report? The author is told it was removed after review.",
+		"Lists refreshed.",
 		"Keep report clears the flag. The report stays. Remove report hides it from everyone and tells the author.",
 		"Keep report clears the flags on it. The report stays. Remove report hides it from everyone and tells the author.",
 		"Keep report accepts the text as it is and lets the report through the normal rules. Remove report hides it from everyone and tells the author.",
@@ -427,11 +461,30 @@ func TestModerateScreenCopy(t *testing.T) {
 		// hid until a moderator acts is marked and explained in its own words.
 		"Hidden by flags",
 		"Keep report shows it again, and flags can't hide it again. Remove report hides it from everyone and tells the author.",
+		// Amended 2026-11-18 (quick 261118-rz6): the Review asks and Removed
+		// sections, their row words and the Why remove? box.
+		"Review asks", "No review asks.", "No removed reports.", "Why remove?",
+		"Restore shows it again. Keep removed tells the author it stays removed.",
+		"Restore shows it again and tells the author.", "Keep removed", "Restore",
+		"Why: ", "Note: ",
 	}
 	for _, s := range once {
 		if n := p426CountTemplateText(tmpl, s) + p426CountQuoted(js, s); n != 1 {
 			t.Errorf("%q appears %d times across the template and the script, want exactly 1", s, n)
 		}
+	}
+	// Quick 261118-rz6: each removal reason word is a button of the Why remove?
+	// box once, and the Why line's word for the same slug once in the script.
+	for slug, word := range map[string]string{"spam": "Spam", "abusive": "Abusive", "false": "False", "dangerous": "Dangerous", "other": "Other"} {
+		if n := strings.Count(tmpl, `data-mod-reason="`+slug+`">`+word+`</button>`); n != 1 {
+			t.Errorf("the %s reason button occurs %d times, want 1", slug, n)
+		}
+		if n := strings.Count(js, `'`+slug+`': '`+word+`'`); n != 1 {
+			t.Errorf("REASON_WORDS holds %s as %q %d times, want 1", slug, word, n)
+		}
+	}
+	if n := strings.Count(js, `'text_check': 'Text check'`); n != 1 {
+		t.Errorf("REASON_WORDS holds text_check %d times, want 1", n)
 	}
 
 	p426WantAll(t, "composed fragments", js, `'No report found with id '`, `'. Check the id and try again.'`,
@@ -554,12 +607,17 @@ func TestModeratePageAssets(t *testing.T) {
 	// is the fifth section and its line the fourth mod-section__line, and the
 	// title of its Remove all box is a sixth heading. TestModeratorRatingsSection
 	// pins that section and box.
-	if n := strings.Count(tmpl, "<h2"); n != 6 {
-		t.Errorf("<h2 occurs %d times, want 6", n)
+	// Amended 2026-11-18 (quick 261118-rz6): the Review asks section comes first
+	// and the Removed section after Text check not finished, two more headings
+	// and sections with no mod-section__line, and the Why remove? box title is a
+	// ninth heading.
+	if n := strings.Count(tmpl, "<h2"); n != 9 {
+		t.Errorf("<h2 occurs %d times, want 9", n)
 	}
-	if n := strings.Count(tmpl, `class="mod-section"`); n != 5 {
-		t.Errorf(`class="mod-section" occurs %d times, want 5`, n)
+	if n := strings.Count(tmpl, `class="mod-section"`); n != 7 {
+		t.Errorf(`class="mod-section" occurs %d times, want 7`, n)
 	}
+	p426InOrder(t, "the new sections", tmpl, `id="mod-h-asks"`, `id="mod-h-auto"`, `id="mod-h-pending"`, `id="mod-h-removed"`, `id="mod-h-comments"`)
 	if n := strings.Count(tmpl, `class="mod-section__line"`); n != 4 {
 		t.Errorf(`class="mod-section__line" occurs %d times, want 4`, n)
 	}
@@ -735,8 +793,11 @@ func TestModerateStylesheet(t *testing.T) {
 	}
 	want(".mod-find input", "border-radius", "8px")
 	want(".mod-row__actions:not([hidden])", "display", "grid", "grid-template-columns", "minmax(0, 1fr)")
-	want(".mod-confirm__buttons:not([hidden])", "display", "grid", "grid-template-columns", "minmax(0, 1fr)")
-	for _, sel := range []string{".mod-row__actions:not([hidden])", ".mod-confirm__buttons:not([hidden])"} {
+	// Amended 2026-11-18 (quick 261118-rz6): the inline confirmation and its
+	// .mod-confirm rules left; the Why remove? box puts its five reasons two to a
+	// row at every width.
+	want(".mod-reasons:not([hidden])", "display", "grid", "grid-template-columns", "repeat(2, minmax(0, 1fr))")
+	for _, sel := range []string{".mod-row__actions:not([hidden])"} {
 		r, ok := p426RuleWithSelector(parseCSSRules(minBlock), sel)
 		if !ok {
 			t.Errorf("the 360px block has no rule for %q", sel)
@@ -841,8 +902,9 @@ func TestModerateCommentsSection(t *testing.T) {
 	if n := strings.Count(js, "fetch("); n != 1 {
 		t.Errorf("fetch( occurs %d times, want exactly 1", n)
 	}
-	if n := strings.Count(js, "addEventListener("); n != 5 {
-		t.Errorf("addEventListener( occurs %d times, want exactly 5", n)
+	// Amended 2026-11-18 (quick 261118-rz6): 6, with the Why remove? box.
+	if n := strings.Count(js, "addEventListener("); n != 6 {
+		t.Errorf("addEventListener( occurs %d times, want exactly 6", n)
 	}
 	p426WantNone(t, "moderate.js", js, "innerHTML", "setInterval")
 

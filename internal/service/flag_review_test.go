@@ -331,7 +331,7 @@ func TestFlagReviewHide(t *testing.T) {
 		r.mustFlag(id, frAt(1))
 		r.mustFlag(id, frAt(2))
 		r.mustFlag(id, frAt(3))
-		if _, err := r.mods.Remove(ctx, id, r.mod); err != nil {
+		if _, err := r.mods.Remove(ctx, id, r.mod, service.RemovalSpam); err != nil {
 			t.Fatalf("Remove: %v", err)
 		}
 		if got := r.state(id); got != "removed" {
@@ -340,7 +340,7 @@ func TestFlagReviewHide(t *testing.T) {
 		if n := r.own(id, service.UpdateOwnRemoved); n != 1 {
 			t.Errorf("own_removed rows = %d, want 1", n)
 		}
-		if _, err := r.mods.Remove(ctx, id, r.mod); !errors.Is(err, service.ErrAlreadyHandled) {
+		if _, err := r.mods.Remove(ctx, id, r.mod, service.RemovalSpam); !errors.Is(err, service.ErrAlreadyHandled) {
 			t.Errorf("second Remove: %v, want ErrAlreadyHandled", err)
 		}
 		if n := r.own(id, service.UpdateOwnRemoved); n != 1 {
@@ -589,7 +589,7 @@ func TestOwnShownAndRemovedRows(t *testing.T) {
 
 	t.Run("a moderator Remove of a shown report", func(t *testing.T) {
 		id := r.report(service.SeverityLow, service.ModerationClear)
-		if _, err := r.mods.Remove(ctx, id, r.mod); err != nil {
+		if _, err := r.mods.Remove(ctx, id, r.mod, service.RemovalSpam); err != nil {
 			t.Fatalf("Remove: %v", err)
 		}
 		if n := r.own(id, service.UpdateOwnRemoved); n != 1 {
@@ -681,7 +681,7 @@ func TestReviewHideLeavesTheRating(t *testing.T) {
 	}
 	same("after Keep", signal(), before)
 
-	if _, err := r.mods.Remove(ctx, bad[0], r.mod); err != nil {
+	if _, err := r.mods.Remove(ctx, bad[0], r.mod, service.RemovalSpam); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
 	if got := signal(); got.JudgedReports != 6 || got.CorroboratedReports != 5 {

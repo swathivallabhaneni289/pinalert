@@ -58,11 +58,19 @@ func TestModeratorRatingsSection(t *testing.T) {
 	for _, s := range []string{
 		"Ratings", "Find one reporter's tapped ratings. Removed ratings stop counting at once.",
 		"Reporter's username", "Show ratings",
-		"Their ratings stop counting for every reporter, and they cannot rate again.", "Cancel", "Remove all",
+		"Their ratings stop counting for every reporter, and they cannot rate again.", "Remove all",
 	} {
 		if n := p426CountTemplateText(tmpl, s); n != 1 {
 			t.Errorf("%q occurs %d times in the template as the text of an element, want 1", s, n)
 		}
+	}
+	// Amended 2026-11-18 (quick 261118-rz6): the Why remove? box has its own
+	// Cancel, so the template holds two, one in each box.
+	if n := p426CountTemplateText(tmpl, "Cancel"); n != 2 {
+		t.Errorf(`"Cancel" occurs %d times in the template as the text of an element, want 2`, n)
+	}
+	if !strings.Contains(tmpl, `id="mod-ratings-confirm-cancel" data-mod-rating-action="box-cancel">Cancel</button>`) {
+		t.Error("the Remove all box lost its Cancel")
 	}
 	for _, s := range []string{
 		"No ratings for this person.", "Couldn't load ratings. Try again.", "Removed", "Cleared by the rater", "Remove",

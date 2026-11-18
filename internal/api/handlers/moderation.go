@@ -8,6 +8,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"html/template"
 	"log"
@@ -114,21 +115,34 @@ type modRowJSON struct {
 	Scores         map[string]float64 `json:"scores,omitempty"`
 	Model          string             `json:"model,omitempty"`
 	Flags          modFlagsJSON       `json:"flags"`
+	// RemovedReason is the closed reason of the current removal (spam,
+	// abusive, false, dangerous, other, text_check), absent when the report is
+	// not removed or has none recorded (quick 261118-rz6).
+	RemovedReason string `json:"removed_reason,omitempty"`
+	// AskNote is the author's note on an open ask for review, only on a row of
+	// the asks list and absent when they wrote none. It names nobody.
+	AskNote string `json:"ask_note,omitempty"`
 }
 
 // modCountsJSON holds the heading counts, which come from the store's uncapped
 // count query and never from the length of a list.
 type modCountsJSON struct {
+	Asks    int64 `json:"asks"`
 	Review  int64 `json:"review"`
 	Flagged int64 `json:"flagged"`
 	Pending int64 `json:"pending"`
+	Removed int64 `json:"removed"`
 }
 
-// modQueueJSON is the answer of GET /api/moderation/queue.
+// modQueueJSON is the answer of GET /api/moderation/queue. Asks and Removed
+// are quick 261118-rz6: the open asks for review, oldest first, and the
+// reports removed in the last 30 days, newest first.
 type modQueueJSON struct {
+	Asks    []modRowJSON  `json:"asks"`
 	Review  []modRowJSON  `json:"review"`
 	Flagged []modRowJSON  `json:"flagged"`
 	Pending []modRowJSON  `json:"pending"`
+	Removed []modRowJSON  `json:"removed"`
 	Counts  modCountsJSON `json:"counts"`
 }
 
@@ -167,6 +181,8 @@ func modRowToJSON(r service.ModerationRow) modRowJSON {
 		Scores:         r.Scores,
 		Model:          r.Model,
 		Flags:          modFlagsJSON{Total: r.FlagTotal, Reasons: reasons, Notes: notes},
+		RemovedReason:  string(r.RemovedReason),
+		AskNote:        r.AskNote,
 	}
 }
 
@@ -222,10 +238,15 @@ func ModerationQueue(svc *service.ModerationService) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, modQueueJSON{
+			Asks:    modRowsToJSON(q.Asks),
 			Review:  modRowsToJSON(q.Review),
 			Flagged: modRowsToJSON(q.Flagged),
 			Pending: modRowsToJSON(q.Pending),
-			Counts:  modCountsJSON{Review: q.Counts.Review, Flagged: q.Counts.Flagged, Pending: q.Counts.Pending},
+			Removed: modRowsToJSON(q.Removed),
+			Counts: modCountsJSON{
+				Asks: q.Counts.Asks, Review: q.Counts.Review, Flagged: q.Counts.Flagged,
+				Pending: q.Counts.Pending, Removed: q.Counts.Removed,
+			},
 		})
 	}
 }
@@ -235,10 +256,40 @@ type modActionJSON struct {
 	Report modRowJSON `json:"report"`
 }
 
-// modAct is the shared body of the two POST handlers. act is svc.Keep or
-// svc.Remove and logErr writes the one log line of the calling handler for an
-// error that is neither a 404 nor a 409.
-func modAct(logErr func(error), act func(ctx context.Context, id, moderatorID int64) (service.ModerationRow, error)) http.HandlerFunc {
+// maxModRemoveBodyBytes caps the Remove body, which is one reason slug.
+const maxModRemoveBodyBytes = 1024
+
+// modRemoveRequest is the Remove body (quick 261118-rz6): one of the five
+// reasons a moderator picks, spam, abusive, false, dangerous or other.
+type modRemoveRequest struct {
+	Reason string `json:"reason"`
+}
+
+// modRemoveReason reads the Remove body and answers 400 itself for a body that
+// is missing or malformed, or a reason that is not one of the five.
+func modRemoveReason(w http.ResponseWriter, r *http.Request) (service.RemovalReason, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxModRemoveBodyBytes)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	var req modRemoveRequest
+	if err := dec.Decode(&req); err != nil {
+		writeFieldError(w, http.StatusBadRequest, "body", "Request body is missing or malformed.")
+		return "", false
+	}
+	reason := service.RemovalReason(req.Reason)
+	if !reason.ModeratorValid() {
+		writeFieldError(w, http.StatusBadRequest, "reason", service.RemovalReasonMessage)
+		return "", false
+	}
+	return reason, true
+}
+
+// modAct is the shared body of the report POST handlers. act is svc.Keep,
+// svc.Remove, svc.Restore or svc.KeepRemoved, logErr writes the one log line
+// of the calling handler for an error that is neither a 404 nor a 409, and
+// withReason reads the Remove body's reason first (quick 261118-rz6); the other
+// actions read no body.
+func modAct(logErr func(error), withReason bool, act func(ctx context.Context, id, moderatorID int64, reason service.RemovalReason) (service.ModerationRow, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		acc, ok := modGuard(w, r, http.MethodPost)
 		if !ok {
@@ -248,9 +299,17 @@ func modAct(logErr func(error), act func(ctx context.Context, id, moderatorID in
 		if !ok {
 			return
 		}
-		row, err := act(r.Context(), id, acc.ID)
+		var reason service.RemovalReason
+		if withReason {
+			if reason, ok = modRemoveReason(w, r); !ok {
+				return
+			}
+		}
+		row, err := act(r.Context(), id, acc.ID, reason)
 		if err != nil {
 			switch {
+			case errors.Is(err, service.ErrRemovalReasonMissing):
+				writeFieldError(w, http.StatusBadRequest, "reason", service.RemovalReasonMessage)
 			case errors.Is(err, service.ErrReportNotFound):
 				writeFieldError(w, http.StatusNotFound, "id", service.ModNotFoundMessage)
 			case errors.Is(err, service.ErrAlreadyHandled):
@@ -265,14 +324,36 @@ func modAct(logErr func(error), act func(ctx context.Context, id, moderatorID in
 	}
 }
 
+// noReason adapts an action that takes no reason to modAct.
+func noReason(act func(ctx context.Context, id, moderatorID int64) (service.ModerationRow, error)) func(ctx context.Context, id, moderatorID int64, _ service.RemovalReason) (service.ModerationRow, error) {
+	return func(ctx context.Context, id, moderatorID int64, _ service.RemovalReason) (service.ModerationRow, error) {
+		return act(ctx, id, moderatorID)
+	}
+}
+
 // ModerationKeep produces the handler of POST /api/moderation/reports/{id}/keep.
 func ModerationKeep(svc *service.ModerationService) http.HandlerFunc {
-	return modAct(func(err error) { log.Printf("handlers: ModerationKeep: %v", err) }, svc.Keep)
+	return modAct(func(err error) { log.Printf("handlers: ModerationKeep: %v", err) }, false, noReason(svc.Keep))
 }
 
 // ModerationRemove produces the handler of POST /api/moderation/reports/{id}/remove.
+// Since quick 261118-rz6 its body must name one of the five reasons, else 400.
 func ModerationRemove(svc *service.ModerationService) http.HandlerFunc {
-	return modAct(func(err error) { log.Printf("handlers: ModerationRemove: %v", err) }, svc.Remove)
+	return modAct(func(err error) { log.Printf("handlers: ModerationRemove: %v", err) }, true, svc.Remove)
+}
+
+// ModerationRestore produces the handler of POST
+// /api/moderation/reports/{id}/restore (quick 261118-rz6): a removed report is
+// shown again; any other answers 409.
+func ModerationRestore(svc *service.ModerationService) http.HandlerFunc {
+	return modAct(func(err error) { log.Printf("handlers: ModerationRestore: %v", err) }, false, noReason(svc.Restore))
+}
+
+// ModerationKeepRemoved produces the handler of POST
+// /api/moderation/reports/{id}/keep-removed (quick 261118-rz6): an open ask
+// for review is answered no; a report with no open ask answers 409.
+func ModerationKeepRemoved(svc *service.ModerationService) http.HandlerFunc {
+	return modAct(func(err error) { log.Printf("handlers: ModerationKeepRemoved: %v", err) }, false, noReason(svc.KeepRemoved))
 }
 
 // ModerationReport produces the handler of GET /api/moderation/reports/{id}:
