@@ -27,3 +27,15 @@ WHERE r.id = sqlc.arg(report_id);
 -- The note is trimmed plain text or NULL.
 INSERT INTO report_review_asks (report_id, account_id, note)
 VALUES (sqlc.arg(report_id), sqlc.arg(account_id), sqlc.narg(note));
+
+-- name: BlankAccountReviewAskNotes :execrows
+-- Delete my account (quick 261118-uoe): the person's own written words on
+-- their asks for review go with the account, the way their comments do. Only
+-- the note is cleared. The ask rows stay, with their report, time, answer and
+-- answering moderator, so the moderator's history and the cap of 3 stay
+-- correct, and an open ask stays open without its note. Account deletion is a
+-- scrub, so the table's ON DELETE CASCADE never fires.
+UPDATE report_review_asks
+SET note = NULL
+WHERE account_id = sqlc.arg(account_id)::bigint
+  AND note IS NOT NULL;

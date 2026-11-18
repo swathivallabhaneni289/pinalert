@@ -585,8 +585,9 @@ removes every rating one account gave, the account is also barred from rating fo
 moderator and the time are kept on the account. Deleting an account removes its follows, blocks, mutes, bell choices and the ratings it gave
 and received in the one transaction, and switches its profile off. Quick 261118-rz6 adds the reason
 for a removed report and when it was removed, and each ask for review with the author's note, the
-answer, when it was answered and the moderator who answered. Deleting an account keeps its asks
-and their notes, like its reports. A report's share token stays with the report. An expired report only
+answer, when it was answered and the moderator who answered. Deleting an account blanks the notes
+on its asks for review and keeps the rest of each ask (report, time, answer and moderator), so an
+open ask stays open and the cap of 3 still counts it. A report's share token stays with the report. An expired report only
 stops showing in the lists. The Policy page says the same in general and offers removal through
 the contact line when `CONTACT_EMAIL` is set. One small gap: the Policy page lists the scores
 "for borderline reports", which understates the retry case above. If the Policy page is edited,

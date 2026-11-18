@@ -9,6 +9,27 @@ import (
 	"context"
 )
 
+const blankAccountReviewAskNotes = `-- name: BlankAccountReviewAskNotes :execrows
+UPDATE report_review_asks
+SET note = NULL
+WHERE account_id = $1::bigint
+  AND note IS NOT NULL
+`
+
+// Delete my account (quick 261118-uoe): the person's own written words on
+// their asks for review go with the account, the way their comments do. Only
+// the note is cleared. The ask rows stay, with their report, time, answer and
+// answering moderator, so the moderator's history and the cap of 3 stay
+// correct, and an open ask stays open without its note. Account deletion is a
+// scrub, so the table's ON DELETE CASCADE never fires.
+func (q *Queries) BlankAccountReviewAskNotes(ctx context.Context, accountID int64) (int64, error) {
+	result, err := q.db.Exec(ctx, blankAccountReviewAskNotes, accountID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const insertReviewAsk = `-- name: InsertReviewAsk :exec
 INSERT INTO report_review_asks (report_id, account_id, note)
 VALUES ($1, $2, $3)
