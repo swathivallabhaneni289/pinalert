@@ -539,6 +539,13 @@ button.urow__link {
   line-height: var(--line-height-body);
 }
 
+/* After an ask, focus moves to the state line shown (tabindex -1) so a screen
+   reader reads it; like the box title it draws no ring (review fix,
+   2026-11-18). */
+.review-ask__state:focus {
+  outline: none;
+}
+
 .logout-confirm__title:has(+ .review-ask__why:not([hidden])),
 .logout-confirm__title:has(+ .review-ask__why[hidden] + .review-ask__note:not([hidden])) {
   margin-bottom: var(--space-sm);

@@ -669,6 +669,12 @@
   // the first focus, so no button looks chosen. A report that is no longer the
   // reader's removed report (restored since, say) answers 404: the box stays
   // shut and the bell reads again, which draws that row plain.
+  //
+  // A box opened from the bell list closes that list first, without moving
+  // focus, the way the Log out box closes the person menu, so nothing behind
+  // the box changes while it is open (review fix, 2026-11-18). It sets the two
+  // attributes app-bar.js setOpen(false) sets; app-bar.js then finds nothing
+  // left to close. Close sends focus to the bell (onAskClosed).
   function openAsk(id, opener) {
     if (!ask || ask.busy || askBox.open) {
       return;
@@ -679,6 +685,10 @@
     setAskBusy(true);
     function show() {
       setAskBusy(false);
+      if (ask.opener && panel.contains(ask.opener) && !panel.hidden) {
+        panel.hidden = true;
+        trigger.setAttribute('aria-expanded', 'false');
+      }
       askBox.showModal();
       ask.title.focus();
     }
@@ -708,6 +718,20 @@
     });
   }
 
+  // focusAskOutcome moves focus to the state line the answer shows, Asked. or
+  // No asks left. (tabindex -1, drawn with no ring), so a screen reader reads
+  // the outcome; with neither shown it goes to Close (review fix, 2026-11-18).
+  // Ask for review is hidden by then, so focus must move somewhere.
+  function focusAskOutcome() {
+    if (!ask.asked.hidden) {
+      ask.asked.focus();
+    } else if (!ask.none.hidden) {
+      ask.none.focus();
+    } else {
+      ask.close.focus();
+    }
+  }
+
   // sendAsk sends Ask for review with the note. On success the box shows
   // Asked. in place. A refused ask (409) reads the box again, so it shows
   // Asked. or No asks left. A too long note (400) shows the server's line.
@@ -727,7 +751,7 @@
       setAskBusy(false);
       if (answer.ok === true) {
         renderAsk(answer.body);
-        ask.close.focus();
+        focusAskOutcome();
         poll();
         return;
       }
@@ -742,7 +766,7 @@
           setAskBusy(false);
           if (again.ok === true) {
             renderAsk(again.body);
-            ask.close.focus();
+            focusAskOutcome();
           } else {
             showAskError('');
           }

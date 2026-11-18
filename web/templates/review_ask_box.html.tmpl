@@ -10,6 +10,7 @@
   reason was recorded), then one of three states. Can ask: the Note (optional)
   box, at most 200 characters with no placeholder, Close and Ask for review.
   Asked and waiting: Asked. and Close. Three asks used: No asks left. and Close.
+  After an ask, focus moves to the state line shown, so it is read out.
   It never shows the report's words, flag counts, who flagged, places or the
   moderator.
 
@@ -25,8 +26,8 @@
         <label for="review-ask-note">Note (optional)</label>
         <textarea id="review-ask-note" maxlength="200" rows="3" autocomplete="off"></textarea>
       </div>
-      <p class="review-ask__state" id="review-ask-asked" hidden>Asked.</p>
-      <p class="review-ask__state" id="review-ask-none" hidden>No asks left.</p>
+      <p class="review-ask__state" id="review-ask-asked" tabindex="-1" hidden>Asked.</p>
+      <p class="review-ask__state" id="review-ask-none" tabindex="-1" hidden>No asks left.</p>
       <p class="inline-error" id="review-ask-error" role="alert" data-failed="Couldn't send. Try again." hidden></p>
       <div class="logout-confirm__actions">
         <button type="button" class="btn" id="review-ask-close">Close</button>

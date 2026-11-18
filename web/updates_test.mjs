@@ -630,6 +630,8 @@ test('a box row reads its box and opens it with the Why line and the note when i
   await flush();
   assert.equal(env.askBox.open, true);
   assert.equal(env.doc.activeElement, askPart(env, 'title'), 'the title takes the first focus, no button looks chosen');
+  assert.equal(env.panel.hidden, true, 'the bell list behind the box closes as the box opens');
+  assert.equal(env.trigger.getAttribute('aria-expanded'), 'false');
   assert.equal(askPart(env, 'why').hidden, false);
   assert.equal(askPart(env, 'why').textContent, 'Why: False');
   assert.equal(askPart(env, 'form').hidden, false);
@@ -667,7 +669,7 @@ test('Ask for review sends the note and shows Asked. in place', async () => {
   assert.equal(askPart(env, 'asked').hidden, false);
   assert.equal(askPart(env, 'form').hidden, true);
   assert.equal(askPart(env, 'send').hidden, true);
-  assert.equal(env.doc.activeElement, askPart(env, 'close'));
+  assert.equal(env.doc.activeElement, askPart(env, 'asked'), 'focus moves to Asked. so a screen reader reads it');
   assert.equal(env.pending().some((f) => f.url === '/api/updates'), true, 'the bell reads again');
 });
 
@@ -684,6 +686,7 @@ test('a refused ask reads the box again, and a too long note shows the server li
   env.answer({ state: 'no_asks_left' });
   await flush();
   assert.equal(askPart(env, 'none').hidden, false);
+  assert.equal(env.doc.activeElement, askPart(env, 'none'), 'focus moves to No asks left. so a screen reader reads it');
 
   const second = await openBoxFrom();
   second.env.answer({ state: 'can_ask' });
@@ -702,22 +705,35 @@ test('a row for a report that is no longer removed opens nothing and the bell re
   await flush();
   assert.equal(env.askBox.shown, 0);
   assert.equal(env.pending().some((f) => f.url === '/api/updates'), true);
+  assert.equal(env.panel.hidden, false, 'with no box the bell list stays open');
 });
 
-test('Close shuts the box and focus goes back to the row, or to the bell once the list closed', async () => {
-  const { env, button } = await openBoxFrom();
+// Review fix 2026-11-18: a box opened from the bell closes the list behind it,
+// so Close sends focus to the bell; a box opened from a row outside the bell
+// (the full updates list) sends it back to that row.
+test('Close shuts the box and focus goes to the bell, or back to a row outside the bell', async () => {
+  const { env } = await openBoxFrom();
   env.answer({ state: 'asked' });
   await flush();
+  assert.equal(env.panel.hidden, true);
   askPart(env, 'close').fire('click');
   assert.equal(env.askBox.open, false);
-  assert.equal(env.doc.activeElement, button, 'the list is still open, so the row takes focus');
+  assert.equal(env.doc.activeElement, env.trigger, 'the list closed with the box open, so the bell takes focus');
+  assert.equal(env.panel.hidden, true, 'Close does not open the list again');
 
-  const second = await openBoxFrom();
-  second.env.answer({ state: 'asked' });
+  const page = load({ box: true });
+  page.answer({ unread: 0, updates: [] });
   await flush();
-  second.env.panel.hidden = true;
-  askPart(second.env, 'close').fire('click');
-  assert.equal(second.env.doc.activeElement, second.env.trigger, 'a closed list sends focus to the bell');
+  const listRow = new FakeEl(page.doc, 'button');
+  listRow.setAttribute('data-review-ask', '41');
+  page.doc.documentElement.appendChild(listRow);
+  page.doc.fireDoc('click', { target: listRow, preventDefault() {} });
+  page.answer({ state: 'asked' });
+  await flush();
+  assert.equal(page.askBox.open, true);
+  assert.equal(page.trigger.getAttribute('aria-expanded'), 'false', 'a row outside the bell leaves the bell as it was');
+  askPart(page, 'close').fire('click');
+  assert.equal(page.doc.activeElement, listRow, 'a row outside the bell takes focus back');
 });
 
 test('a network failure opens the box with the failure line only', async () => {
