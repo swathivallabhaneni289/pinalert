@@ -110,8 +110,7 @@ the license header) and add it where they expect.
 
 - Fix only this. Do not touch other copy, the pop-up layout, steps 2 and 3, or the lead.
 - No em or en dashes in code comments, copy or commits. No Python at all.
-- No repo file or commit may mention portfolio, recruiters, interviews, job applications or
-  hiring.
+- Keep all wording neutral, as the owner's wording rule asks.
 - Path limited commits (`git commit -- <paths>`), each ending with the trailer
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Never stage .planning/STATE.md,
   ROADMAP.md or REQUIREMENTS.md.

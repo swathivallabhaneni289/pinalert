@@ -142,8 +142,7 @@ the full updates list (`/profile?part=updates`) on phone and laptop, unread like
   and helpers only it uses. Do not delete moderation copy constants the activity page uses.
 - Comments keep "a flag never hides a comment".
 - No em or en dashes in code comments, copy or commits. No Python at all.
-- No repo file or commit may mention portfolio, recruiters, interviews, job applications or
-  hiring.
+- Keep all wording neutral, as the owner's wording rule asks.
 - Path limited commits (`git commit -- <paths>`), each ending with the trailer
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Never stage .planning/STATE.md,
   ROADMAP.md or REQUIREMENTS.md.

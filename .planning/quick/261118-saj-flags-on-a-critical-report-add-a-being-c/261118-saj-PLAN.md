@@ -125,8 +125,7 @@ goes when a moderator removes it. Owner: "yes".
 - Fix only this. Do not change the threshold, the non serious hide, disputes, comment moderation,
   rz6's asks and Restore, My activity, Settings or any Policy line other than the one above.
 - No em or en dashes in code comments, copy or commits. No Python at all.
-- No repo file or commit may mention portfolio, recruiters, interviews, job applications or
-  hiring.
+- Keep all wording neutral, as the owner's wording rule asks.
 - Path limited commits (`git commit -- <paths>`), each ending with the trailer
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Never stage .planning/STATE.md,
   ROADMAP.md or REQUIREMENTS.md. Do not edit UAT files.

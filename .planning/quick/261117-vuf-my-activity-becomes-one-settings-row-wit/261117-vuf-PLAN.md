@@ -113,8 +113,7 @@ it to name where that report shows now in the Demo. The Demo bar is unchanged.
   person_page.go), migrations, docs/MODERATION.md, or any Policy line other than the one above:
   quick 261117-vvb works on those at the same time.
 - No em or en dashes in code comments, copy or commits. No Python at all.
-- No repo file or commit may mention portfolio, recruiters, interviews, job applications or
-  hiring.
+- Keep all wording neutral, as the owner's wording rule asks.
 - Path limited commits (`git commit -- <paths>`), each ending with the trailer
   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Never stage .planning/STATE.md,
   ROADMAP.md or REQUIREMENTS.md.
