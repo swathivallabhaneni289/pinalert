@@ -122,6 +122,9 @@ type modRowJSON struct {
 	// AskNote is the author's note on an open ask for review, only on a row of
 	// the asks list and absent when they wrote none. It names nobody.
 	AskNote string `json:"ask_note,omitempty"`
+	// BeingChecked is true while flags have the Being checked mark on this
+	// serious report, which is still showing (quick 261118-saj). Always present.
+	BeingChecked bool `json:"being_checked"`
 }
 
 // modCountsJSON holds the heading counts, which come from the store's uncapped
@@ -183,6 +186,7 @@ func modRowToJSON(r service.ModerationRow) modRowJSON {
 		Flags:          modFlagsJSON{Total: r.FlagTotal, Reasons: reasons, Notes: notes},
 		RemovedReason:  string(r.RemovedReason),
 		AskNote:        r.AskNote,
+		BeingChecked:   r.BeingChecked,
 	}
 }
 

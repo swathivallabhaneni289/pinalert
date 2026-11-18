@@ -486,6 +486,8 @@ JOIN reports r ON r.id = u.report_id
 WHERE u.account_id = $2::bigint
   AND u.kind IN ('reached_live', 'hidden', 'resolved', 'fading', 'comment_on_yours', 'reply_to_yours')
   AND u.report_id IS NOT NULL
+  -- Quick 261118-saj: nothing is queued for a report with the Being checked mark.
+  AND NOT (r.flag_check_at IS NOT NULL AND r.review_kept_at IS NULL)
   AND u.created_at > $3::timestamptz
   AND NOT (
       u.kind = 'reached_live'
@@ -1185,6 +1187,7 @@ const pushReportFacts = `-- name: PushReportFacts :one
 SELECT r.id, r.severity, r.category, r.happening, r.area_name,
        r.latitude, r.longitude,
        r.created_at, r.expires_at, r.moderation_state, r.review_kept_at,
+       r.flag_check_at,
        ss.account_id AS reporter_account_id
 FROM reports r
 LEFT JOIN sessions ss ON ss.session_id = r.session_id
@@ -1203,6 +1206,7 @@ type PushReportFactsRow struct {
 	ExpiresAt         time.Time
 	ModerationState   string
 	ReviewKeptAt      pgtype.Timestamptz
+	FlagCheckAt       pgtype.Timestamptz
 	ReporterAccountID *int64
 }
 
@@ -1211,7 +1215,11 @@ type PushReportFactsRow struct {
 // area name is read by no feed query. reporter_account_id comes from the
 // session binding and is NULL for a report posted without an account.
 // review_kept_at (quick 261117-vvb) is set once a moderator kept the report
-// after a review hide; such a report is never pushed again.
+// after a review hide; such a report is never pushed again. flag_check_at
+// (quick 261118-saj, migration 00028) is set when flags put the Being checked
+// mark on a serious report: while review_kept_at is not set the mark is on and
+// nothing is pushed, and once a moderator kept it from the mark both are set
+// and it is pushed like any shown report (loadPushFacts reads the pair).
 func (q *Queries) PushReportFacts(ctx context.Context, reportID int64) (PushReportFactsRow, error) {
 	row := q.db.QueryRow(ctx, pushReportFacts, reportID)
 	var i PushReportFactsRow
@@ -1227,6 +1235,7 @@ func (q *Queries) PushReportFacts(ctx context.Context, reportID int64) (PushRepo
 		&i.ExpiresAt,
 		&i.ModerationState,
 		&i.ReviewKeptAt,
+		&i.FlagCheckAt,
 		&i.ReporterAccountID,
 	)
 	return i, err

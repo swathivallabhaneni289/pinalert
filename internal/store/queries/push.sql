@@ -270,10 +270,15 @@ LIMIT sqlc.arg(row_cap)::int;
 -- area name is read by no feed query. reporter_account_id comes from the
 -- session binding and is NULL for a report posted without an account.
 -- review_kept_at (quick 261117-vvb) is set once a moderator kept the report
--- after a review hide; such a report is never pushed again.
+-- after a review hide; such a report is never pushed again. flag_check_at
+-- (quick 261118-saj, migration 00028) is set when flags put the Being checked
+-- mark on a serious report: while review_kept_at is not set the mark is on and
+-- nothing is pushed, and once a moderator kept it from the mark both are set
+-- and it is pushed like any shown report (loadPushFacts reads the pair).
 SELECT r.id, r.severity, r.category, r.happening, r.area_name,
        r.latitude, r.longitude,
        r.created_at, r.expires_at, r.moderation_state, r.review_kept_at,
+       r.flag_check_at,
        ss.account_id AS reporter_account_id
 FROM reports r
 LEFT JOIN sessions ss ON ss.session_id = r.session_id
@@ -505,6 +510,8 @@ JOIN reports r ON r.id = u.report_id
 WHERE u.account_id = sqlc.arg(account_id)::bigint
   AND u.kind IN ('reached_live', 'hidden', 'resolved', 'fading', 'comment_on_yours', 'reply_to_yours')
   AND u.report_id IS NOT NULL
+  -- Quick 261118-saj: nothing is queued for a report with the Being checked mark.
+  AND NOT (r.flag_check_at IS NOT NULL AND r.review_kept_at IS NULL)
   AND u.created_at > sqlc.arg(since)::timestamptz
   AND NOT (
       u.kind = 'reached_live'

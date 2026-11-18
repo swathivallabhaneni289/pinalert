@@ -7,7 +7,10 @@ package service
 // changes the report. Amended 2026-11-17 (quick 261117-vvb, owner): once the
 // open flags of a shown report come from FlagHideThreshold different place
 // cells, the report is hidden for review until a moderator keeps or removes
-// it, and its author is told in the bell. The flagger's position, when the
+// it, and its author is told in the bell. Amended 2026-11-18 (quick
+// 261118-saj, owner): a serious report is never hidden that way; it stays shown
+// with the Being checked mark and sends no phone notification until a
+// moderator looks (writeFlag). The flagger's position, when the
 // browser knows one, becomes a place cell here and only the cell is stored; it
 // is never returned, shown or logged. A report nobody may see (missing or
 // withheld) reads as not found, and the flagger is never exposed to anyone.
@@ -139,12 +142,15 @@ type FlagQuerier interface {
 
 // FlagHideQuerier is the store surface of the flag write with the review hide
 // (quick 261117-vvb): lock the report, insert the flag, hide the report when
-// the threshold is met, and tell its author. Its only reports write is
-// HideReportForReview, which moves a clear report to review and nothing else.
+// the threshold is met, and tell its author. Its only reports writes are
+// HideReportForReview, which moves a clear report to review and nothing else,
+// and, since quick 261118-saj, MarkReportForFlagCheck, which only sets the
+// Being checked mark of a serious report and never hides it.
 type FlagHideQuerier interface {
 	LockReportModeration(ctx context.Context, reportID int64) (sqlcgen.LockReportModerationRow, error)
 	InsertReportFlag(ctx context.Context, arg sqlcgen.InsertReportFlagParams) (int64, error)
 	HideReportForReview(ctx context.Context, arg sqlcgen.HideReportForReviewParams) (int64, error)
+	MarkReportForFlagCheck(ctx context.Context, arg sqlcgen.MarkReportForFlagCheckParams) (int64, error)
 	InsertOwnReportUpdate(ctx context.Context, arg sqlcgen.InsertOwnReportUpdateParams) (int64, error)
 }
 
@@ -382,6 +388,15 @@ func (s *FlagService) Flag(ctx context.Context, in FlagInput) error {
 //     hidden by the next flag.
 //  4. Only when that statement hid the report, its author gets the own_review
 //     bell row, so the row is written exactly once.
+//
+// Quick 261118-saj (owner, 2026-11-18): a serious report (ReportMeta.Serious,
+// read from the locked row) is never hidden by flags, as disputes never hide
+// it. Step 3 is MarkReportForFlagCheck for it instead: at the same threshold,
+// by the same count and under the same lock, it gets the Being checked mark,
+// stays shown, sends no phone notification until a moderator looks and comes
+// first on the moderator's flagged list. A shown pending serious report gets
+// the mark at once. No bell row is written for the mark: the report was never
+// hidden.
 func writeFlag(ctx context.Context, q FlagHideQuerier, arg sqlcgen.InsertReportFlagParams) error {
 	locked, err := q.LockReportModeration(ctx, arg.ReportID)
 	if err != nil {
@@ -402,6 +417,13 @@ func writeFlag(ctx context.Context, q FlagHideQuerier, arg sqlcgen.InsertReportF
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrAlreadyFlagged
 		}
+		return err
+	}
+	if meta.Serious() {
+		_, err := q.MarkReportForFlagCheck(ctx, sqlcgen.MarkReportForFlagCheckParams{
+			ReportID:  arg.ReportID,
+			Threshold: FlagHideThreshold,
+		})
 		return err
 	}
 	hid, err := q.HideReportForReview(ctx, sqlcgen.HideReportForReviewParams{

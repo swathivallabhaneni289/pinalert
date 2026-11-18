@@ -327,6 +327,7 @@ type Report struct {
 	ReviewKeptAt          pgtype.Timestamptz
 	RemovedReason         *string
 	RemovedAt             pgtype.Timestamptz
+	FlagCheckAt           pgtype.Timestamptz
 }
 
 type ReportFlag struct {

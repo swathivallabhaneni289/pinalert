@@ -1149,6 +1149,8 @@ func (s *ReportService) Nearby(ctx context.Context, q NearbyQuery) ([]ReportView
 			CommentsOpen: CommentsOpen(vis, r.ExpiresAt, now),
 			// The server's word on the popup's promise (backlog 999.12), display only.
 			ConfirmExtends: ConfirmExtends(r.Severity, vis, r.CreatedAt, r.ExpiresAt, now),
+			// The Being checked mark, display only (quick 261118-saj).
+			BeingChecked: ex.BeingChecked,
 		})
 		// Beside IsOwnReport and never inside Trust (D-04). Only a live view
 		// reaches here, and your own report links nowhere.

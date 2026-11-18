@@ -4624,6 +4624,11 @@ const docTemplate = `{
                     "type": "boolean",
                     "example": false
                 },
+                "being_checked": {
+                    "description": "BeingChecked is true while people in different places have flagged this\nCritical report and no moderator has looked yet. The report stays shown\nwith a small mark that reads Being checked, and it sends no phone\nnotification until a moderator keeps or removes it. Only a boolean: it\nnever says how many flagged, where from or who. The same for every reader.\nAlways present.",
+                    "type": "boolean",
+                    "example": false
+                },
                 "category": {
                     "description": "rescue_needed appears only on a report stored before 2026-10-16 (internal/service.Categories).",
                     "type": "string",

@@ -106,7 +106,9 @@ WITH fin AS (
     UPDATE reports r
     SET moderation_state = sqlc.arg(moderation_state),
         removed_reason = sqlc.narg(removed_reason)::text,
-        removed_at = CASE WHEN sqlc.narg(removed_reason)::text IS NULL THEN NULL ELSE now() END
+        removed_at = CASE WHEN sqlc.narg(removed_reason)::text IS NULL THEN NULL ELSE now() END,
+        -- Quick 261118-saj: a removal takes the Being checked mark with it.
+        flag_check_at = CASE WHEN sqlc.narg(removed_reason)::text IS NULL THEN r.flag_check_at ELSE NULL END
     FROM fin
     WHERE r.id = fin.report_id
       AND r.moderation_state NOT IN ('removed', 'review')
@@ -162,10 +164,13 @@ LIMIT 100;
 -- name: FlagQueue :many
 -- List (b): posts with at least one open flag, most flags first and then
 -- newest, at most 100 rows. Quick 261117-vvb: a report hidden for review by
--- flags comes before every other row. LEFT JOIN because a flagged report may have no
--- check row (seeded and older reports).
+-- flags comes before every other row. Quick 261118-saj: a serious report with
+-- the Being checked mark (being_checked) comes first together with them.
+-- LEFT JOIN because a flagged report may have no check row (seeded and older
+-- reports).
 SELECT r.id, r.category, r.severity, r.description, r.created_at, r.expires_at,
        r.client_written_at, r.moderation_state,
+       (r.flag_check_at IS NOT NULL AND r.review_kept_at IS NULL)::bool AS being_checked,
        c.status AS check_status, c.verdict, c.scores, c.model,
        COALESCE(c.needs_review, false)::bool AS needs_review,
        (SELECT count(*) FROM report_flags f
@@ -185,7 +190,8 @@ FROM reports r
 LEFT JOIN moderation_checks c ON c.report_id = r.id
 WHERE EXISTS (SELECT 1 FROM report_flags f WHERE f.report_id = r.id AND f.dismissed_at IS NULL)
   AND r.moderation_state <> 'removed'
-ORDER BY (r.moderation_state = 'review') DESC, open_flag_total DESC, r.created_at DESC, r.id DESC
+ORDER BY (r.moderation_state = 'review' OR (r.flag_check_at IS NOT NULL AND r.review_kept_at IS NULL)) DESC,
+         open_flag_total DESC, r.created_at DESC, r.id DESC
 LIMIT 100;
 
 -- name: PendingQueue :many
@@ -275,6 +281,12 @@ FOR UPDATE;
 -- Quick 261117-vvb: a report hidden for review is released to clear too, and
 -- only then is review_kept_at stamped, so flags can never hide it again. The
 -- SET reads the state before this statement, which is why the stamp is a CASE.
+--
+-- Quick 261118-saj: Keep of a report with the Being checked mark (shown, or
+-- pending and serious) stamps review_kept_at too. That takes the mark off and
+-- settles the report: flags never mark or hide it again. flag_check_at stays,
+-- which is how push tells a report kept from the mark (alerts again) from one
+-- kept after a hide (stays silent).
 WITH closed AS (
     UPDATE moderation_checks
     SET needs_review = false, status = 'done', lease_until = NULL
@@ -288,8 +300,14 @@ WITH closed AS (
 )
 UPDATE reports
 SET moderation_state = 'clear',
-    review_kept_at = CASE WHEN reports.moderation_state = 'review' THEN now() ELSE reports.review_kept_at END
-WHERE reports.id = sqlc.arg(report_id) AND reports.moderation_state IN ('pending', 'review');
+    review_kept_at = CASE
+        WHEN reports.moderation_state = 'review' THEN now()
+        WHEN reports.flag_check_at IS NOT NULL AND reports.review_kept_at IS NULL THEN now()
+        ELSE reports.review_kept_at END
+WHERE reports.id = sqlc.arg(report_id)
+  AND (reports.moderation_state IN ('pending', 'review')
+       OR (reports.moderation_state = 'clear'
+           AND reports.flag_check_at IS NOT NULL AND reports.review_kept_at IS NULL));
 
 -- name: RemoveReport :exec
 -- Remove as one statement, with the same two CTEs as Keep. The main statement
@@ -297,7 +315,8 @@ WHERE reports.id = sqlc.arg(report_id) AND reports.moderation_state IN ('pending
 -- so the worker never claims it again. Like Keep, the service runs it inside a
 -- transaction after LockModerationCheck. Quick 261118-rz6: the moderator's
 -- reason and the time are stored with it, and since then only a moderator's
--- Restore (RestoreReport) brings a removed report back.
+-- Restore (RestoreReport) brings a removed report back. Quick 261118-saj: the
+-- Being checked mark goes with the removal (flag_check_at cleared).
 WITH closed AS (
     UPDATE moderation_checks
     SET needs_review = false, status = 'done', lease_until = NULL
@@ -312,7 +331,8 @@ WITH closed AS (
 UPDATE reports
 SET moderation_state = 'removed',
     removed_reason = sqlc.arg(removed_reason)::text,
-    removed_at = now()
+    removed_at = now(),
+    flag_check_at = NULL
 WHERE reports.id = sqlc.arg(report_id);
 
 -- name: InsertModerationAction :exec
@@ -361,6 +381,27 @@ UPDATE reports r
 SET moderation_state = 'review'
 WHERE r.id = sqlc.arg(report_id)
   AND r.moderation_state = 'clear'
+  AND r.review_kept_at IS NULL
+  AND (SELECT count(DISTINCT f.flagger_cell)
+         FROM report_flags f
+        WHERE f.report_id = r.id
+          AND f.dismissed_at IS NULL
+          AND f.flagger_cell IS NOT NULL) >= sqlc.arg(threshold)::bigint;
+
+-- name: MarkReportForFlagCheck :execrows
+-- Quick 261118-saj: the serious report's side of HideReportForReview. A
+-- serious report (the service decides that in Go from the locked row) is never
+-- hidden by flags; once its open flags come from at least threshold different
+-- place cells, by the same count as the hide, it gets the Being checked mark
+-- and stays shown. Only a report that is shown (clear, or pending and serious,
+-- which is published while its check retries), not marked yet and not settled
+-- (review_kept_at, one settled marker for the hide and the mark) moves, so the
+-- mark is set at most once. One row back means this call set it.
+UPDATE reports r
+SET flag_check_at = now()
+WHERE r.id = sqlc.arg(report_id)
+  AND r.moderation_state IN ('clear', 'pending')
+  AND r.flag_check_at IS NULL
   AND r.review_kept_at IS NULL
   AND (SELECT count(DISTINCT f.flagger_cell)
          FROM report_flags f
@@ -432,7 +473,9 @@ LIMIT 100;
 -- removal, dismisses any open flags and stamps review_kept_at, so flags can
 -- never hide it again and it never sends a phone alert again. The time it
 -- lasts is not changed. One row back means this call restored it. The service
--- runs it inside the Restore transaction after the two row locks.
+-- runs it inside the Restore transaction after the two row locks. Quick
+-- 261118-saj: flag_check_at is cleared too (a removal already clears it), so a
+-- restored report is settled and silent, never read as kept from the mark.
 WITH dismissed AS (
     UPDATE report_flags
     SET dismissed_at = now()
@@ -443,7 +486,8 @@ UPDATE reports
 SET moderation_state = 'clear',
     removed_reason = NULL,
     removed_at = NULL,
-    review_kept_at = now()
+    review_kept_at = now(),
+    flag_check_at = NULL
 WHERE reports.id = sqlc.arg(report_id) AND reports.moderation_state = 'removed';
 
 -- name: AnswerOpenReviewAsk :execrows
