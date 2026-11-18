@@ -217,7 +217,8 @@ All three review findings were confirmed in the code and fixed. None was skipped
 - `go test ./... -p 1 -count=1 -v` on a fresh `p9_saj_fix` with `env -i`: exit 0, 22 packages ok. 7043 PASS lines (2535 top level), 0 FAIL, the same 3 SKIP.
 
 **Live look** on port 8793 over `p9_saj_fix` with the reviewer's made up example.com data, Playwright WebKit:
-- Nearby, touch, flag 30px and 6px above the app bar at 320x640 (light) and 320x568 (dark): the line opens above the flag, whole, nothing on top of it at its centre or corners, nothing scrolls sideways. With room (200px at 320x640, every case at 390x844) it stays below.
+- Nearby, touch, flag 30px and 6px above the app bar at 320x640 (light) and 320x568 (dark): the line opens above the flag, whole, nothing on top of it at its centre or corners, nothing scrolls sideways. With room (200px at 320x640) it stays below. At 390x844 the list was too short to bring the flag near the app bar, so those runs had room and stayed below; the reviewer's place search case at 390 was not rerun. The 320 runs exercise the same sheet clip and app bar.
+- In the flipped shots the line sits over the previous row's text (Nearby) or the row's own "Posted" line (profile), never over a button.
 - Profile `/u/look_asha`, touch, mark 20px and 6px under the top bar at 320, 360 and 390: the line opens below the mark, whole and on top. At 44px it stays above.
 - Laptop 1280, light and dark, hover: Nearby stays below, profile stays above, both whole.
 - One probe at 320x568 with the flag 200px above the bar did not open: the flag had scrolled under the list's sticky head (`#feed-count`), so the tap hit the head. That is the probe's scroll, not the line; at 100px it opens below and whole.
