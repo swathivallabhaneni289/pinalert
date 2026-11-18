@@ -4716,6 +4716,8 @@ paths:
         still accepted on its own as a one reason flag. The body may carry the flagger's latitude and
         longitude, both or neither; only the place cell is kept. One flag never hides the report: once
         people in three different places flag it, it is hidden until a moderator keeps or removes it.
+        A Critical report is never hidden that way: it stays shown with being_checked true and sends
+        no phone notification until a moderator keeps or removes it.
         Each account can flag a report once, and a repeat gets 409. Your own report gets 403. A
         report that does not exist, or that is not shown in any feed, gets 404. Flagging is limited per
         verified account, and a blocked flag gets 429 with a Retry-After header.

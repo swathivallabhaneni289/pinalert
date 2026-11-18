@@ -177,6 +177,8 @@ Since 2026-11-17 (quick 261117-vvb) a report hidden for review comes first in th
 marked "Hidden by flags", with the usual reasons, notes and counts. Keep shows it again, dismisses
 its open flags and stamps `review_kept_at`, so flags can never hide it again; later flags still
 reach this list. Remove works as for any report. The place cells of the flags are never shown.
+Since 2026-11-18 (quick 261118-saj) a Critical report with the Being checked mark comes first
+with them, tagged "Still showing"; Keep takes the mark off for good and it alerts again.
 
 ## Flag this report
 
@@ -227,7 +229,9 @@ by flag count alone, and neither does Pinalert: a moderator still decides.
   least 3 accounts too. A flag with no cell never counts, but still reaches the moderator. Only a
   shown report (`moderation_state = 'clear'`) that no moderator kept after a review hide can be
   hidden; a held or removed report never moves to review, and a pending serious report stays
-  pending.
+  pending. Amended 2026-11-18 (quick 261118-saj, owner): a serious report (critical, or a stored
+  Rescue needed report, `ReportMeta.Serious`) is never hidden this way. It gets the Being checked
+  mark instead; see the next section. The rule above is unchanged for every other report.
 - **Exactly once.** The flag, the decision and the author's bell row run in one transaction that
   first takes the report's row lock (`LockReportModeration`, `FOR NO KEY UPDATE`). Two flags on
   one report queue on that lock, so each sees the other's committed flag: concurrent flags can
@@ -246,6 +250,41 @@ by flag count alone, and neither does Pinalert: a moderator still decides.
   (amended 2026-11-18, review fix; it was neutral, which let three accounts take a good report
   out of someone's rating or a poor one out of their own). After Keep nothing changes; after
   Remove it counts the way a removal counts (neutral). `TestReviewHideLeavesTheRating`.
+
+### Being checked (since 2026-11-18)
+
+Disputes never hide a Critical report (the critical bypass), so flags must not either: a hidden
+Critical report would never alert people who arrive later. The owner wanted a fake Critical report
+to get a moderator's attention without hiding a real one. Quick 261118-saj:
+
+- **The mark.** When the open flags of a shown serious report reach the same threshold as above
+  (3 place cells, decided in the same transaction and under the same row lock), it is not hidden.
+  `MarkReportForFlagCheck` stamps `reports.flag_check_at` (migration 00028) and the report stays
+  `clear`. A pending serious report, which is shown while its check retries, gets the mark at once;
+  the late check passing it keeps the mark, removing it clears the mark. No bell row is written:
+  the report was never hidden.
+- **One settled marker.** The mark is on while `flag_check_at IS NOT NULL AND review_kept_at IS
+  NULL`. Keep stamps `review_kept_at`, the settled marker of the hide, which takes the mark off and
+  stops flags from marking or hiding the report again. `flag_check_at` stays set after Keep: that
+  is how push tells a report kept from the mark (alerts again) from one kept after a hide or
+  restored (silent, as before). Remove, a late text check removal and Restore clear
+  `flag_check_at`.
+- **What readers see.** Everything a clear Critical report shows, plus a small flag button next to
+  its severity tag (Nearby rows, the map popup, the report page and focus, the Low data rows). A
+  mouse resting on it, a tap, Enter or Space show one line, "Being checked."; a second press,
+  Escape or a press elsewhere close it. The answer carries only `being_checked` (a boolean, the
+  same for every reader), never a count, a cell or a flagger. Resolve never reads it.
+- **Alerts pause.** While the mark is on nothing is queued for a phone (the Critical first alert,
+  the follow note, the confirmed update, changed notes) and nothing already queued is sent (each
+  kind is skipped at send time). The Critical and follow passes are not marked done while the
+  mark is on, so after Keep the next evaluation serves every reader in range, the ones who waited
+  and the ones who arrived later. The one first alert per person and report index means nobody
+  gets the same alert twice; a first alert that was queued before the mark and skipped while it
+  was on is not queued again for that person. `TestPushFlagCheckPausesUntilKeep`.
+- **The moderator.** A marked report comes first in the flagged list together with the hidden
+  ones, tagged "Still showing" in place of the showing word, with the same Keep and Remove. A
+  repeat answers 409, as for any handled report.
+- **The rating** never moves because of the mark.
 
 The author's bell gets one row per event, written straight to their updates whatever their
 follows or mutes, one row per report and kind (`uq_updates_own_report`). They are bell only:

@@ -59,6 +59,8 @@ type FlagResponse struct {
 // @Description still accepted on its own as a one reason flag. The body may carry the flagger's latitude and
 // @Description longitude, both or neither; only the place cell is kept. One flag never hides the report: once
 // @Description people in three different places flag it, it is hidden until a moderator keeps or removes it.
+// @Description A Critical report is never hidden that way: it stays shown with being_checked true and sends
+// @Description no phone notification until a moderator keeps or removes it.
 // @Description Each account can flag a report once, and a repeat gets 409. Your own report gets 403. A
 // @Description report that does not exist, or that is not shown in any feed, gets 404. Flagging is limited per
 // @Description verified account, and a blocked flag gets 429 with a Retry-After header.
