@@ -170,6 +170,13 @@ func (f *fakeDeleteQuerier) DeleteAccountPersonMutes(ctx context.Context, accoun
 	return 0, f.step("DeleteAccountPersonMutes")
 }
 
+// Amended 2026-11-18 by quick 261118-uoe: the fake gained the review ask notes
+// blanking.
+func (f *fakeDeleteQuerier) BlankAccountReviewAskNotes(ctx context.Context, accountID int64) (int64, error) {
+	f.accountIDs["BlankAccountReviewAskNotes"] = accountID
+	return 0, f.step("BlankAccountReviewAskNotes")
+}
+
 func (f *fakeDeleteQuerier) RevokeAccountSessions(ctx context.Context, arg sqlcgen.RevokeAccountSessionsParams) (int64, error) {
 	f.revokeArg = arg
 	return 2, f.step("RevokeAccountSessions")
@@ -237,6 +244,11 @@ func (f *fakeDeleteQuerier) ScrubDeletedAccount(ctx context.Context, arg sqlcgen
 // runs right before DeleteAccountFollows, so the twenty steps became twenty one
 // (and twenty became twenty one in wantDeleteOrderKeyed too). Every old step and
 // its order is kept.
+//
+// Amended 2026-11-18 by quick 261118-uoe: BlankAccountReviewAskNotes now runs
+// right after DeleteAccountPersonMutes and just before RevokeAccountSessions, so
+// the twenty steps became twenty one (and twenty one became twenty two in
+// wantDeleteOrderKeyed). Every old step and its order is kept.
 var wantDeleteOrder = []string{
 	"AccountEmailForDelete",
 	"DeleteEmailCooldownForEmail",
@@ -256,6 +268,7 @@ var wantDeleteOrder = []string{
 	"DeleteAccountBlocks",
 	"DeleteAccountRatings",
 	"DeleteAccountPersonMutes",
+	"BlankAccountReviewAskNotes",
 	"RevokeAccountSessions",
 	"ScrubDeletedAccount",
 }
@@ -281,6 +294,7 @@ var wantDeleteOrderKeyed = []string{
 	"DeleteAccountBlocks",
 	"DeleteAccountRatings",
 	"DeleteAccountPersonMutes",
+	"BlankAccountReviewAskNotes",
 	"RevokeAccountSessions",
 	"ScrubDeletedAccount",
 }
@@ -460,6 +474,10 @@ func TestDeleteAccountRunsInOneTx(t *testing.T) {
 // a third named exception of the same kind: it deletes the person_mutes rows
 // that name the person as muter or muted. It touches no vote, report, flag or
 // moderation action.
+//
+// Amended 2026-11-18 by quick 261118-uoe: BlankAccountReviewAskNotes is not an
+// exception. It only clears the note on the person's own asks for review and
+// keeps every ask row, so no other person's data changes.
 func TestDeleteAccountTouchesNoOtherPersonsData(t *testing.T) {
 	typ := reflect.TypeOf((*service.AccountDeleteQuerier)(nil)).Elem()
 	// Amended 2026-10-29 by Phase 7.1 plan 06: the interface also holds
@@ -862,6 +880,83 @@ func TestDeleteAccountRemovesRatings(t *testing.T) {
 	}
 	if n := count(`SELECT count(*) FROM profile_ratings WHERE reporter_id = $1`, reporterA); n != 2 {
 		t.Errorf("the other reporter's remaining ratings = %d, want the 2 of the live raters", n)
+	}
+}
+
+// TestDeleteAccountBlanksReviewAskNotes (quick 261118-uoe): deleting an account
+// sets the note of every ask for review it made to NULL and keeps each ask row
+// (report, time, answer and answering moderator), so an open ask stays open
+// and the cap of 3 still counts it. Another account's note is untouched, and a
+// failed deletion changes no note. It needs a database and skips without
+// DATABASE_URL.
+func TestDeleteAccountBlanksReviewAskNotes(t *testing.T) {
+	pool := testutil.NewTestDB(t)
+	ctx := context.Background()
+	q := sqlcgen.New(pool)
+
+	a := testutil.SeedReporterAccount(t, pool, "ask-del-a@example.com", "ask-del-a-sess")
+	b := testutil.SeedReporterAccount(t, pool, "ask-del-b@example.com", "ask-del-b-sess")
+	mod := testutil.SeedReporterAccount(t, pool, "ask-del-mod@example.com", "ask-del-mod-sess")
+	reportA := testutil.SeedHistoryReport(t, pool, "ask-del-a-sess", "low", "flood", time.Now().Add(time.Hour))
+	reportB := testutil.SeedHistoryReport(t, pool, "ask-del-b-sess", "low", "flood", time.Now().Add(time.Hour))
+	testutil.MustExec(t, pool, `UPDATE reports SET moderation_state = 'removed', removed_reason = 'false', removed_at = now() WHERE id = ANY($1)`,
+		[]int64{reportA, reportB})
+	answeredAt := time.Date(2026, 11, 18, 9, 0, 0, 0, time.UTC)
+	testutil.MustExec(t, pool,
+		`INSERT INTO report_review_asks (report_id, account_id, note, created_at, answered_at, answer, answered_by_account_id)
+		 VALUES ($1, $2, 'my first words', $5::timestamptz - interval '1 hour', $5, 'kept_removed', $4),
+		        ($1, $2, 'my second words', $5::timestamptz + interval '1 hour', NULL, NULL, NULL),
+		        ($3, $6, 'words that stay', $5, NULL, NULL, NULL)`,
+		reportA, a, reportB, mod, answeredAt, b)
+
+	count := func(query string, args ...any) int {
+		t.Helper()
+		var n int
+		if err := pool.QueryRow(ctx, query, args...).Scan(&n); err != nil {
+			t.Fatalf("counting: %v", err)
+		}
+		return n
+	}
+	notesOf := func(account int64) int {
+		return count(`SELECT count(*) FROM report_review_asks WHERE account_id = $1 AND note IS NOT NULL`, account)
+	}
+
+	// A failed scrub rolls the blanking back with every other step.
+	failTx := func(ctx context.Context, fn func(q service.AccountDeleteQuerier) error) error {
+		return pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error { return fn(failingScrubQuerier{sqlcgen.New(tx)}) })
+	}
+	if err := service.NewAccountDeletionService(q, failTx).DeleteAccount(ctx, a); !errors.Is(err, errBoom) {
+		t.Fatalf("DeleteAccount with a failing scrub: want errBoom, got %v", err)
+	}
+	if n := notesOf(a); n != 2 {
+		t.Fatalf("a failed deletion must keep the notes: %d of 2 left", n)
+	}
+
+	if err := service.NewAccountDeletionService(q, service.PgxAccountTx(pool)).DeleteAccount(ctx, a); err != nil {
+		t.Fatalf("DeleteAccount: %v", err)
+	}
+	if n := notesOf(a); n != 0 {
+		t.Errorf("the deleted account still has %d asks with a note, want 0", n)
+	}
+	// Both ask rows stay, with their report, time, answer and moderator.
+	if n := count(`SELECT count(*) FROM report_review_asks WHERE account_id = $1 AND report_id = $2`, a, reportA); n != 2 {
+		t.Errorf("asks of the deleted account = %d, want 2 kept", n)
+	}
+	if n := count(`SELECT count(*) FROM report_review_asks
+		WHERE account_id = $1 AND report_id = $2 AND note IS NULL AND answer = 'kept_removed'
+		  AND answered_at = $3 AND answered_by_account_id = $4 AND created_at = $3::timestamptz - interval '1 hour'`,
+		a, reportA, answeredAt, mod); n != 1 {
+		t.Errorf("the answered ask lost its answer, time or moderator: %d matching rows, want 1", n)
+	}
+	if n := count(`SELECT count(*) FROM report_review_asks
+		WHERE account_id = $1 AND report_id = $2 AND note IS NULL AND answered_at IS NULL AND answer IS NULL
+		  AND answered_by_account_id IS NULL AND created_at = $3::timestamptz + interval '1 hour'`,
+		a, reportA, answeredAt); n != 1 {
+		t.Errorf("the open ask must stay open without its note: %d matching rows, want 1", n)
+	}
+	// The other account's note is untouched.
+	if n := count(`SELECT count(*) FROM report_review_asks WHERE account_id = $1 AND report_id = $2 AND note = 'words that stay'`, b, reportB); n != 1 {
+		t.Errorf("the other account's note = %d rows, want 1 untouched", n)
 	}
 }
 

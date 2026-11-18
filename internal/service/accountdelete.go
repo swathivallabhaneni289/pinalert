@@ -67,6 +67,9 @@ type AccountDeleteQuerier interface {
 	// Phase 9 plan 18 (D-12, research G6): the mutes the account made and the
 	// mutes of it are hard deleted.
 	DeleteAccountPersonMutes(ctx context.Context, accountID int64) (int64, error)
+	// Quick 261118-uoe: the notes the person wrote on their asks for review
+	// are blanked; the ask rows stay.
+	BlankAccountReviewAskNotes(ctx context.Context, accountID int64) (int64, error)
 	RevokeAccountSessions(ctx context.Context, arg sqlcgen.RevokeAccountSessionsParams) (int64, error)
 	ScrubDeletedAccount(ctx context.Context, arg sqlcgen.ScrubDeletedAccountParams) (int64, error)
 }
@@ -174,6 +177,13 @@ func DeletedEmailFor(accountID int64) string {
 // reporter's stars at once, so deleting an account can change another
 // reporter's score by removing one tapped rating (and can end that reporter's
 // follows the next time the tag is read, if the tag drops).
+//
+// Amended 2026-11-18 by quick 261118-uoe: right after the person mutes, the
+// notes the person wrote on their asks for review (quick 261118-rz6) are set to
+// NULL, because a person's own written words go with the account the way their
+// comments do. The ask rows themselves stay (report, time, answer, answering
+// moderator), so the moderator's history and the cap of 3 asks per report stay
+// correct, and an open ask stays open without its note.
 //
 // Its effect on other people: none beyond the follow, block and rating rows above.
 // Reports and votes are not touched, so they
@@ -285,6 +295,11 @@ func (s *AccountDeletionService) DeleteAccount(ctx context.Context, accountID in
 		// outlives the account it names.
 		if _, err := q.DeleteAccountPersonMutes(ctx, accountID); err != nil {
 			return fmt.Errorf("service: DeleteAccount: account %d: deleting person mutes: %w", accountID, err)
+		}
+		// Quick 261118-uoe: the person's notes on their asks for review go, the
+		// asks stay. Same transaction, before the scrub.
+		if _, err := q.BlankAccountReviewAskNotes(ctx, accountID); err != nil {
+			return fmt.Errorf("service: DeleteAccount: account %d: blanking review ask notes: %w", accountID, err)
 		}
 		now := pgtype.Timestamptz{Time: s.now(), Valid: true}
 		if _, err := q.RevokeAccountSessions(ctx, sqlcgen.RevokeAccountSessionsParams{Now: now, AccountID: &accountID}); err != nil {
