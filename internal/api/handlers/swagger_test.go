@@ -583,9 +583,9 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 		p14AssertEnum(t, p14SwaggerProp(t, props, "handlers.UpdateWire", "kind"), []string{
 			"reached_live", "hidden", "resolved", "fading", "reliable_nearby",
 			"comment_on_yours", "reply_to_yours", "followed_posted", "more",
-		// Amended 2026-11-18 (quick 261118-rz6): two more own rows follow, and the
-		// closed link value policy left with the Policy link of the removed row;
-		// that row now carries review_report_id, an integer.
+			// Amended 2026-11-18 (quick 261118-rz6): two more own rows follow, and the
+			// closed link value policy left with the Policy link of the removed row;
+			// that row now carries review_report_id, an integer.
 			"own_shown", "own_review", "own_kept", "own_removed", "own_restored", "own_stays_removed",
 		})
 		if _, ok := props["handlers.UpdateWire"]["link"]; ok {
