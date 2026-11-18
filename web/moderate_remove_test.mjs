@@ -316,6 +316,7 @@ test('Review asks rows show Why and the note as text with Restore and Keep remov
   assert.ok(buttonOf(ask, 'keep-removed'));
   assert.equal(buttonOf(ask, 'remove'), null);
   assert.equal(buttonOf(ask, 'keep'), null);
+  assert.doesNotMatch(ask.textContent, /Restore shows|tells the author/, 'no does sentence on an ask row (review fix 2026-11-18)');
   const removed = rowsOf(env, 'removed');
   assert.equal(removed.length, 3);
   assert.match(removed[0].textContent, /Why: False/);
@@ -325,6 +326,7 @@ test('Review asks rows show Why and the note as text with Restore and Keep remov
     assert.ok(buttonOf(r, 'restore'));
     assert.equal(buttonOf(r, 'keep-removed'), null);
     assert.doesNotMatch(r.textContent, /Note:/);
+    assert.doesNotMatch(r.textContent, /Restore shows|tells the author/, 'no does sentence on a removed row');
   });
   assert.equal(env.doc.byId['mod-count-asks'].textContent, '(1)');
   assert.equal(env.doc.byId['mod-count-removed'].textContent, '(3)');

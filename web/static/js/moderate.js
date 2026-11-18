@@ -62,13 +62,14 @@
   // marks the three lists of Phase 4 that the Nothing needs a decision line
   // speaks for. Quick 261118-rz6 added asks first (the open asks for review,
   // with Restore and Keep removed) and removed last (reports removed in the
-  // last 30 days, with Restore); find never lists them.
+  // last 30 days, with Restore); find never lists them. Those two carry no
+  // does sentence: the owner's agreed rows are the report, Why, the note and
+  // the buttons, nothing more (review fix, 2026-11-18).
   var LISTS = [
     {
       key: 'asks',
       slug: 'asks',
-      answers: true,
-      does: 'Restore shows it again. Keep removed tells the author it stays removed.'
+      answers: true
     },
     {
       key: 'review',
@@ -91,8 +92,7 @@
     {
       key: 'removed',
       slug: 'removed',
-      answers: true,
-      does: 'Restore shows it again and tells the author.'
+      answers: true
     }
   ];
 
@@ -699,9 +699,6 @@
     }
     entry.actions = actions;
     entry.row.appendChild(actions);
-    var does = makeEl('p', 'mod-row__does');
-    Pinalert.setText(does, list.does);
-    entry.row.appendChild(does);
   }
 
   function buildRow(report, listKey, lists) {
@@ -783,7 +780,7 @@
         doesText = list.does;
       } else {
         for (var i = 0; i < LISTS.length; i += 1) {
-          if (entry.lists.indexOf(LISTS[i].key) !== -1) {
+          if (LISTS[i].does && entry.lists.indexOf(LISTS[i].key) !== -1) {
             doesText = LISTS[i].does;
             break;
           }

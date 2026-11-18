@@ -463,14 +463,21 @@ func TestModerateScreenCopy(t *testing.T) {
 		"Keep report shows it again, and flags can't hide it again. Remove report hides it from everyone and tells the author.",
 		// Amended 2026-11-18 (quick 261118-rz6): the Review asks and Removed
 		// sections, their row words and the Why remove? box.
+		// Review fix 2026-11-18: the two new lists carry no does sentence.
 		"Review asks", "No review asks.", "No removed reports.", "Why remove?",
-		"Restore shows it again. Keep removed tells the author it stays removed.",
-		"Restore shows it again and tells the author.", "Keep removed", "Restore",
+		"Keep removed", "Restore",
 		"Why: ", "Note: ",
 	}
 	for _, s := range once {
 		if n := p426CountTemplateText(tmpl, s) + p426CountQuoted(js, s); n != 1 {
 			t.Errorf("%q appears %d times across the template and the script, want exactly 1", s, n)
+		}
+	}
+	// Review fix 2026-11-18: the rows of Review asks and Removed hold only the
+	// report, Why, the note and the buttons the owner agreed, no does sentence.
+	for _, s := range []string{"Restore shows it again", "tells the author it stays removed"} {
+		if strings.Contains(js, s) || strings.Contains(tmpl, s) {
+			t.Errorf("the moderator screen still says %q", s)
 		}
 	}
 	// Quick 261118-rz6: each removal reason word is a button of the Why remove?
