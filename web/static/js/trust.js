@@ -885,6 +885,66 @@
   var openCheck = null;
   var checkListening = false;
 
+  // checkRoom is the band of the screen the line can be seen in: inside every
+  // box around the mark that clips what passes its edge (the list, the sheet,
+  // the map), below the top bar and above the phone's app bar. It answers
+  // null where nothing can be measured.
+  function checkRoom(el) {
+    if (typeof window.getComputedStyle !== 'function' || !document.body) {
+      return null;
+    }
+    var top = 0;
+    var bottom = window.innerHeight || Infinity;
+    for (var n = el.parentNode; n && n.nodeType === 1 && n !== document.body; n = n.parentNode) {
+      var style = window.getComputedStyle(n);
+      if (style && style.overflowY && style.overflowY !== 'visible') {
+        var box = n.getBoundingClientRect();
+        top = Math.max(top, box.top);
+        bottom = Math.min(bottom, box.bottom);
+      }
+    }
+    var topBar = document.querySelector('.top-chrome');
+    if (topBar) {
+      var tb = topBar.getBoundingClientRect();
+      if (tb.height > 0) {
+        top = Math.max(top, tb.bottom);
+      }
+    }
+    var appBar = document.querySelector('body > .app-bar');
+    if (appBar) {
+      var ab = appBar.getBoundingClientRect();
+      if (ab.height > 0) {
+        bottom = Math.min(bottom, ab.top);
+      }
+    }
+    return { top: top, bottom: bottom };
+  }
+
+  // placeCheckLine opens the line below the flag, or above it when below it
+  // would pass the bottom of the list or reach under the app bar and above
+  // it has more room (review of quick 261118-saj).
+  function placeCheckLine(mark) {
+    mark.el.classList.remove('check-mark--above');
+    if (typeof mark.tip.getBoundingClientRect !== 'function') {
+      return;
+    }
+    var room = checkRoom(mark.el);
+    if (!room) {
+      return;
+    }
+    var below = mark.tip.getBoundingClientRect();
+    var pastBelow = Math.max(0, below.bottom - room.bottom) + Math.max(0, room.top - below.top);
+    if (pastBelow === 0) {
+      return;
+    }
+    mark.el.classList.add('check-mark--above');
+    var above = mark.tip.getBoundingClientRect();
+    var pastAbove = Math.max(0, above.bottom - room.bottom) + Math.max(0, room.top - above.top);
+    if (pastAbove >= pastBelow) {
+      mark.el.classList.remove('check-mark--above');
+    }
+  }
+
   function showCheckLine(mark, pinned) {
     if (openCheck && openCheck !== mark) {
       hideCheckLine(openCheck);
@@ -893,6 +953,7 @@
     mark.pinned = pinned;
     mark.button.setAttribute('aria-expanded', 'true');
     mark.el.classList.add('check-mark--open');
+    placeCheckLine(mark);
     openCheck = mark;
   }
 
@@ -901,6 +962,7 @@
     mark.pinned = false;
     mark.button.setAttribute('aria-expanded', 'false');
     mark.el.classList.remove('check-mark--open');
+    mark.el.classList.remove('check-mark--above');
     if (openCheck === mark) {
       openCheck = null;
     }

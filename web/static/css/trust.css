@@ -2013,3 +2013,10 @@
   white-space: nowrap;
   pointer-events: none;
 }
+
+/* The line opens above the flag when below it would be cut off by the list
+   or covered by the phone's app bar; trust.js sets this while it is open. */
+.check-mark--above .check-mark__tip:not([hidden]) {
+  top: auto;
+  bottom: calc(100% + var(--space-sm));
+}

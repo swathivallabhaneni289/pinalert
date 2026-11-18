@@ -145,3 +145,56 @@ test('at most one line is open, and the words stay in the link for a screen read
   assert.equal(a.mark.querySelector('.visually-hidden').textContent, 'Being checked.');
   assert.equal(a.tip.getAttribute('aria-hidden'), 'true', 'the line is not read a second time');
 });
+
+// underBar loads one row inside the page's scroller, which starts under the
+// sticky top bar at y 60, and gives the line the boxes a browser would: above
+// the mark it spans aboveBox, below it belowBox (review of quick 261118-saj).
+function underBar(aboveBox, belowBox) {
+  const r = row();
+  const docHandlers = {};
+  const body = new El('body');
+  body.nodeType = 1;
+  const content = body.append(new El('app-content'));
+  content.nodeType = 1;
+  content.scrolls = true;
+  content.getBoundingClientRect = () => ({ top: 60, bottom: 740, height: 680 });
+  content.append(r.link);
+  r.link.nodeType = 1;
+  r.link.children[0].nodeType = 1;
+  const topBar = { getBoundingClientRect: () => ({ top: 0, bottom: 60, height: 60 }) };
+  const document = {
+    readyState: 'complete',
+    body,
+    querySelector: (sel) => (sel === '.top-chrome' ? topBar : (sel === '.person-report__distance' ? {} : null)),
+    querySelectorAll: (sel) => (sel === '[data-check-mark]' ? [r.mark] : []),
+    addEventListener(type, fn) { (docHandlers[type] = docHandlers[type] || []).push(fn); }
+  };
+  const window = {
+    PinalertPosition: { read: () => null },
+    innerHeight: 740,
+    getComputedStyle: (n) => ({ overflowY: n.scrolls ? 'auto' : 'visible' })
+  };
+  r.tip.getBoundingClientRect = () => {
+    const [top, bottom] = r.mark.getAttribute('data-tip-below') !== null ? belowBox : aboveBox;
+    return { top, bottom, height: bottom - top };
+  };
+  vm.runInNewContext(source, { document, window, Math, Number, isFinite });
+  return r;
+}
+
+test('a line that would sit under the top bar opens below the mark', () => {
+  const r = underBar([30, 60], [99, 128]);
+  r.mark.dispatch('click');
+  assert.equal(r.tip.hidden, false);
+  assert.notEqual(r.mark.getAttribute('data-tip-below'), null);
+  r.mark.dispatch('click');
+  assert.equal(r.tip.hidden, true);
+  assert.equal(r.mark.getAttribute('data-tip-below'), null, 'closing drops the side');
+});
+
+test('a line with room above the mark stays above it', () => {
+  const r = underBar([200, 229], [269, 298]);
+  r.mark.dispatch('pointerenter', { pointerType: 'mouse' });
+  assert.equal(r.tip.hidden, false);
+  assert.equal(r.mark.getAttribute('data-tip-below'), null);
+});

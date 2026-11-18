@@ -715,6 +715,13 @@ a.person-report__body:hover .person-report__label {
   pointer-events: none;
 }
 
+/* The line opens below the mark when above it would sit under the sticky
+   top bar; person-reports.js sets this while it is open. */
+.person-report__check[data-tip-below] .person-report__check-tip:not([hidden]) {
+  top: calc(100% + var(--space-sm));
+  bottom: auto;
+}
+
 .person-report__disputed {
   color: var(--color-severity-critical);
   font-size: var(--font-size-label);

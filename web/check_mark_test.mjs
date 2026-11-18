@@ -139,7 +139,7 @@ function load() {
     for (const h of (docHandlers[type] || [])) { h.fn(evt); }
     return evt;
   };
-  return { trust: window.PinalertTrust, doc, fire };
+  return { trust: window.PinalertTrust, doc, fire, window };
 }
 
 // mounted builds a mark inside a row that opens a report on click, Enter and
@@ -294,4 +294,55 @@ test('a refresh that drops the mark closes its line', () => {
   assert.equal(shown(mark), false);
   assert.equal(mark.button.getAttribute('aria-expanded'), 'false');
   assert.equal(env.trust.closeCheckLine(), false, 'nothing is left open');
+});
+
+// inList builds a mark in a row inside a list that scrolls, with the phone's
+// app bar under it, and gives the line the boxes a browser would: below the
+// flag it spans belowBox, above it spans aboveBox. The list ends at y 575 and
+// the app bar starts there too (review of quick 261118-saj).
+function inList(belowBox, aboveBox) {
+  const env = load();
+  const list = new FakeEl(env.doc, 'ul');
+  list.scrolls = true;
+  list.getBoundingClientRect = () => ({ top: 300, bottom: 575, height: 275 });
+  env.doc.body.appendChild(list);
+  const bar = new FakeEl(env.doc, 'nav');
+  bar.getBoundingClientRect = () => ({ top: 575, bottom: 640, height: 65 });
+  env.doc.querySelector = (sel) => (sel === 'body > .app-bar' ? bar : null);
+  env.window.innerHeight = 640;
+  env.window.getComputedStyle = (n) => ({ overflowY: n.scrolls ? 'auto' : 'visible' });
+  const row = new FakeEl(env.doc, 'li');
+  list.appendChild(row);
+  const mark = env.trust.createCheckMark();
+  row.appendChild(mark.el);
+  env.trust.updateCheckMark(mark, { being_checked: true });
+  mark.tip.getBoundingClientRect = () => {
+    const [top, bottom] = mark.el.classList.contains('check-mark--above') ? aboveBox : belowBox;
+    return { top, bottom, height: bottom - top };
+  };
+  return { env, mark };
+}
+
+const above = (mark) => mark.el.classList.contains('check-mark--above');
+
+test('a line that would pass the list or reach under the app bar opens above the flag', () => {
+  const { mark } = inList([578, 607], [517, 546]);
+  mark.button.dispatch('click');
+  assert.equal(shown(mark), true);
+  assert.equal(above(mark), true);
+  mark.button.dispatch('click');
+  assert.equal(above(mark), false, 'closing drops the side');
+});
+
+test('a line with room below the flag stays below it', () => {
+  const { mark } = inList([420, 449], [359, 388]);
+  mark.button.dispatch('pointerenter', { pointerType: 'mouse' });
+  assert.equal(shown(mark), true);
+  assert.equal(above(mark), false);
+});
+
+test('a line with less room above than below stays below the flag', () => {
+  const { mark } = inList([560, 589], [250, 279]);
+  mark.button.dispatch('click');
+  assert.equal(above(mark), false);
 });
