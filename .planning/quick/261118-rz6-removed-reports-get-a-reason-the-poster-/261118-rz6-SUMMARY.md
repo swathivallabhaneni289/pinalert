@@ -143,3 +143,19 @@ A moderator now removes a report with one of five reasons. The author's bell row
 - e2ec5cb6, f130c513, 194b1b8f and 0e106d81 are ancestors of HEAD.
 - `.planning/STATE.md`, ROADMAP.md and REQUIREMENTS.md were not touched.
 - The scratch databases `p9_rz6` and `p9_rz6_live` were dropped, the server on 8793 was stopped, and its log and binary were deleted.
+
+## Review fixes
+
+All five review findings were confirmed in the code and fixed. None was skipped.
+
+1. **An own row that comes back takes a fresh id** (82144e4b). Both upserts in `moderation.sql` now set `id = nextval(...)` along with the time and `read_at`. Without it, a read mark for a list drawn before the row came back marked it read (`MarkUpdatesRead` uses `id <= up_to`). Item 2 above ("It keeps its id") no longer holds; MODERATION.md and the query comments now say so. New test: `TestRevivedOwnRowSurvivesAnOlderReadMark`. It fails without the fix.
+2. **The bell list closes when the author's box opens from it** (96f3dfb3). It closes the same way the Log out box closes the person menu, so nothing behind the box changes. Close sends focus to the bell. A box opened from the full list leaves the bell as it was. On a 404 the list stays open. This replaces the second "For the owner to judge" point.
+3. **The outcome is read out** (96f3dfb3). "Asked." and "No asks left." have `tabindex="-1"` with no focus ring. After an ask, and after a refused ask is read again, focus moves to the line that is shown instead of Close.
+4. **No describing line on Review asks and Removed rows** (5635deab). The two sentences from deviation 8 are gone. The rows show the report, Why, the note and the buttons, as agreed.
+5. **Retention** (0f06d3aa). MODERATION.md now lists the removal reason and time, and each ask with the author's note, the answer, when it was answered and by which moderator. It also says plainly that deleting an account keeps the asks and their notes, like the reports. There is no new delete step: the Policy makes no promise about these notes, and no Policy line could change.
+
+Tests after the fixes:
+- `node --test web/*.mjs`: 1670 pass, 0 fail.
+- `go build ./...` and `go vet ./...`: clean.
+- `go test ./... -p 1 -count=1 -v` on the scratch database `p9_rz6_fix` with `env -i`: exit 0, 22 packages ok. 7005 PASS lines (2519 at the top level), 0 FAIL, and the same 3 SKIP.
+- `p9_rz6_fix` was dropped afterwards. No server was started.
