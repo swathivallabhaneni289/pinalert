@@ -414,12 +414,14 @@
     margin: var(--space-sm) 0 var(--space-xs);
   }
 
-  /* Quick 261118-saj: the Being checked mark on the first line, right after
-     the severity tag and the grid's 8px gap. */
+  /* Quick 261118-saj: the Being checked mark right under the severity tag,
+     as on the laptop card. The first line has no room for it beside Flag this
+     report at 320px, and its line would land on Flag. */
   .report-row--low .report-row__body > .check-mark:not([hidden]) {
-    grid-row: 1;
-    grid-column: 3;
+    grid-row: 2;
+    grid-column: 2 / -1;
     justify-self: start;
+    margin-top: var(--space-sm);
   }
 
   /* The card is wide enough now; trust.css lets the line reach into the

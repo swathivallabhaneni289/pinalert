@@ -1052,3 +1052,15 @@
   content: "\00b7" / "";
   margin-left: var(--space-sm);
 }
+
+/* The phone row's gap is 4px (phone.css), so the mark adds 4px of its own to
+   keep 8px from the tag, and its dot takes the phone's dot spacing. */
+@media (max-width: 899.98px) {
+  #report-list .report-row .check-mark:not([hidden]) {
+    margin-left: var(--space-xs);
+  }
+
+  #report-list .report-row .check-mark:not([hidden])::after {
+    margin-left: var(--space-xs);
+  }
+}
