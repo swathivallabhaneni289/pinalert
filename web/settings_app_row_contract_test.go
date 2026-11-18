@@ -73,7 +73,9 @@ func TestSettingsDockWindow(t *testing.T) {
 		`<h2 class="app-window__title" id="settings-dock-title" tabindex="-1">Add to Dock</h2>`,
 		`<button type="button" class="app-window__close" id="settings-dock-close" aria-label="Close">`,
 		`<ol class="device-guide__steps" role="list">`,
-		`Choose <strong>File</strong> &gt; <strong>Add to Dock</strong>.`,
+		// Amended 2026-11-18 (owner on the 7.1 UAT: "can we be more specific
+		// about what file or like where to locate it?"): step 1 says where File is.
+		`In the bar at the top of the screen, click <strong>File</strong>, then <strong>Add to Dock</strong>.`,
 		`Click <strong>Add</strong>, then open Pinalert from your Dock.`,
 		`app-icon--square-plus`, `app-icon--map-pin`,
 	} {
