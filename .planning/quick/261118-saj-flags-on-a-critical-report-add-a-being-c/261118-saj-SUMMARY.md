@@ -194,3 +194,33 @@ The final check found two plan items not met. Both are now built. Deviation 1 ab
 - Screenshots: `profile-{320,390,1280}-{light,dark}.png`, in the same shots folder. The other screenshot names are unchanged from the rerun.
 
 **Teardown**: the server was stopped, `p9_saj` and `p9_saj_live` were dropped, and the server log, binary and session state were deleted.
+
+## Review fixes
+
+All three review findings were confirmed in the code and fixed. None was skipped.
+
+1. **Nearby: the line opened below the flag even at the bottom of the phone list** (should fix, `trust.css` and `trust.js`).
+   - `showCheckLine` now places the line. It measures the line against every box around the mark that clips (the list, the sheet, the map), the bottom of the app bar and the top bar.
+   - If the line would pass that room below the flag, and above it has more room, the mark gets `check-mark--above`, which opens the line above the flag. Closing drops it.
+   - Commit `62e5d6b6`.
+2. **Profile: the line opened above the mark even under the sticky top bar** (should fix, `person.css` and `person-reports.js`).
+   - `showMark` does the same measure. If the line would sit under `.top-chrome` or past the top of `.app-content`, and below it has more room, the mark gets `data-tip-below`, which opens the line below the mark. Closing drops it.
+   - The profile page does not load `trust.js`, so it has its own small copy of the measure. An attribute is used because the row is server drawn.
+   - Commit `62e5d6b6`.
+3. **docs/MODERATION.md "What readers see" left out the profile rows** (should fix).
+   - The list now names the live rows of a public profile. One clause says that there the mark is text inside the row's link, not a button: a mouse resting on it or a tap shows the line, and its words are part of the link's name.
+   - Commit `1476e915`.
+
+**Tests**
+- New node tests: 3 in `web/check_mark_test.mjs` (opens above when below would pass the list and the app bar; stays below with room; stays below when above has less room) and 2 in `web/person_check_mark_test.mjs` (opens below under the top bar, closing drops it; stays above with room).
+- `node --test web/*.mjs`: 1714 pass, 0 fail, 0 skipped.
+- `go test ./... -p 1 -count=1 -v` on a fresh `p9_saj_fix` with `env -i`: exit 0, 22 packages ok. 7043 PASS lines (2535 top level), 0 FAIL, the same 3 SKIP.
+
+**Live look** on port 8793 over `p9_saj_fix` with the reviewer's made up example.com data, Playwright WebKit:
+- Nearby, touch, flag 30px and 6px above the app bar at 320x640 (light) and 320x568 (dark): the line opens above the flag, whole, nothing on top of it at its centre or corners, nothing scrolls sideways. With room (200px at 320x640, every case at 390x844) it stays below.
+- Profile `/u/look_asha`, touch, mark 20px and 6px under the top bar at 320, 360 and 390: the line opens below the mark, whole and on top. At 44px it stays above.
+- Laptop 1280, light and dark, hover: Nearby stays below, profile stays above, both whole.
+- One probe at 320x568 with the flag 200px above the bar did not open: the flag had scrolled under the list's sticky head (`#feed-count`), so the tap hit the head. That is the probe's scroll, not the line; at 100px it opens below and whole.
+- Screenshots in `/private/tmp/claude-501/-Users-swathivallabhaneni-code-pinalert/2574caf2-6d41-4dbd-95b5-bd3c870af095/scratchpad/saj-fix/shots/`: `rows-edge-320x640-{6,30,200}.png`, `rows-edge-320x568-{6,30,100}.png`, `rows-edge-390x844-{6,30,200}.png`, `profile-topedge-{320,360,390}-{6,20,44}.png`, `{nearby,profile}-hover-1280-{light,dark}.png`.
+
+**Teardown**: the server was stopped, `p9_saj_fix` was dropped, and the server binary, log and session state were deleted.
