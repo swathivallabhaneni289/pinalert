@@ -212,6 +212,13 @@ a.place-row {
   pointer-events: none;
 }
 
+/* Quick 261118-srq: the first About Pinalert row (Add to Dock or Install app)
+   is hidden on most browsers. A hidden first child is still a sibling, so the
+   row after it would draw a line along the top of the box; it draws none. */
+.place-page--settings .place-box > [hidden]:first-child + *::before {
+  content: none;
+}
+
 .place-page--settings .place-row {
   padding: var(--space-12) var(--space-md);
 }

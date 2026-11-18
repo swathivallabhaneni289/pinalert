@@ -69,6 +69,9 @@ var noiseCheckedFiles = []string{
 	// Phase 9 plan 17: votes.js now draws the star box after Yes, mark resolved,
 	// so its words are scanned too.
 	"static/js/votes.js",
+	// Quick 261118-srq: the script that keeps the browser's install offer for
+	// the Install app row of Settings is scanned too.
+	"static/js/install-app.js",
 }
 
 var (
@@ -187,6 +190,12 @@ func TestNoNoiseWordsInUserCopy(t *testing.T) {
 // laptop browsers keep their own install control, so notify.js never names the
 // Chromium install prompt event, never keeps an install event to prompt later,
 // and adds no listener of its own.
+//
+// Amended 2026-11-18 by quick 261118-srq (owner, 7.1 UAT test 8): Settings has
+// an Install app row where the browser offers a one click install. The offer
+// is kept and shown by static/js/install-app.js, which only Settings loads, so
+// notify.js still names no install event and adds no listener; it only answers
+// which row fits (installRow). The assertions below are unchanged.
 func TestNotifyLeavesInstallToTheBrowser(t *testing.T) {
 	code := stripJSComments(readEmbeddedCopyFile(t, "static/js/notify.js"))
 	for _, forbidden := range []string{"beforeinstallprompt", "appinstalled", "deferredPrompt", "installPrompt", ".prompt(", "addEventListener"} {

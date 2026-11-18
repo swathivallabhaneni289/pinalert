@@ -34,6 +34,7 @@ import vm from 'node:vm';
 
 const here = path.dirname(url.fileURLToPath(import.meta.url));
 const source = fs.readFileSync(path.join(here, 'static', 'js', 'settings-alerts.js'), 'utf8');
+const installSource = fs.readFileSync(path.join(here, 'static', 'js', 'install-app.js'), 'utf8');
 
 class FakeEl {
   constructor(doc, tag, id) {
@@ -108,7 +109,7 @@ class FakeEl {
 
 // The markup of settings.html.tmpl, as the ids and nesting settings-alerts.js
 // reads. withMarkup false builds a page that has none of the new rows.
-function buildPage({ count = 0, withMarkup = true, home = true, radius = 5, dialog = true, key = 'BPUBLICKEY' } = {}) {
+function buildPage({ count = 0, withMarkup = true, home = true, radius = 5, dialog = true, key = 'BPUBLICKEY', appRow = true } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -236,18 +237,47 @@ function buildPage({ count = 0, withMarkup = true, home = true, radius = 5, dial
   make('h2', 'device-guide-title', guideHead);
   make('button', 'device-guide-close', guideHead);
 
+  // Quick 261118-srq: the first About Pinalert row (a hidden wrapper with the
+  // Add to Dock and Install app buttons, both hidden) and the Add to Dock window.
+  // appRow false builds a page without them.
+  let appWrap = null;
+  let dockRow = null;
+  let installRow = null;
+  let dock = null;
+  if (appRow) {
+    appWrap = make('div', 'settings-app-row', main);
+    appWrap.hidden = true;
+    dockRow = make('button', 'settings-dock-row', appWrap);
+    dockRow.hidden = true;
+    installRow = make('button', 'settings-install-row', appWrap);
+    installRow.hidden = true;
+    dock = make('div', 'settings-dock-window', doc.body);
+    dock.hidden = true;
+    const dockPanel = make('div', '', dock);
+    const dockHead = make('div', '', dockPanel);
+    make('h2', 'settings-dock-title', dockHead);
+    make('button', 'settings-dock-close', dockHead);
+  }
+
   return {
     doc, bar, main, bottom, muted, logout, del, select,
     radiusRow, radiusNoHome, deviceOn, deviceSwitch,
-    deviceInstall, deviceBlocked, deviceUnsupported, guide
+    deviceInstall, deviceBlocked, deviceUnsupported, guide,
+    appWrap, dockRow, installRow, dock
   };
 }
 
 // fakeNotify stands in for notify.js (Phase 3.3 plan 06). Each of enable,
 // disable and reconcile is answered by hand: enables, disables and reconciles
 // hold the pending calls, and every call is kept in calls.
-function fakeNotify({ base = 'maybe' } = {}) {
+function fakeNotify({ base = 'maybe', row } = {}) {
   const api = { calls: [], enables: [], disables: [], reconciles: [], base };
+  // Quick 261118-srq: row is what installRowHere answers, a fixed word or a
+  // function of hasOffer. Left out, the fake has no installRowHere at all.
+  if (row !== undefined) {
+    api.offers = [];
+    api.installRowHere = (hasOffer) => { api.offers.push(hasOffer); return typeof row === 'function' ? row(hasOffer) : row; };
+  }
   api.baseState = () => { api.calls.push(['baseState']); return api.base; };
   api.deviceState = (key) => { api.calls.push(['deviceState', key]); return Promise.resolve('ready'); };
   api.enable = (key) => {
@@ -326,9 +356,19 @@ function loadAlerts(options = {}) {
     alert(message) { alerted.push(String(message)); }
   };
   sandbox.window = sandbox;
+  // Quick 261118-srq: options.install loads the real install-app.js first, with
+  // a window that records its listeners, so a test can fire the browser's
+  // install offer and appinstalled.
+  const windowListeners = {};
+  if (options.install) {
+    sandbox.addEventListener = (type, fn) => { (windowListeners[type] = windowListeners[type] || []).push(fn); };
+    vm.createContext(sandbox);
+    vm.runInContext(installSource, sandbox, { filename: 'install-app.js' });
+  }
+  const fireWindow = (type, event) => (windowListeners[type] || []).forEach((fn) => fn(event));
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox, { filename: 'settings-alerts.js' });
-  return { ...page, api: sandbox.PinalertSettingsAlerts, requests, assigned, advance, sandbox, opened, asked, alerted, notify };
+  return { ...page, api: sandbox.PinalertSettingsAlerts, requests, assigned, advance, sandbox, opened, asked, alerted, notify, fireWindow };
 }
 
 const flush = async () => { for (let i = 0; i < 8; i++) { await new Promise((r) => setImmediate(r)); } };
@@ -1311,4 +1351,137 @@ test('every device string reaches the page as text', async () => {
   page.notify.enables[0].resolve({ ok: false, state: 'ready', reason: 'failed', message: '<b>bad</b>' });
   await flush();
   assert.equal(deviceError(page).textContent, TURN_ON_FAILED);
+});
+
+// ---- Add to Dock and Install app (quick 261118-srq) --------------------------
+
+// offerRow is what notify.js answers on Chrome or Edge: install with an offer,
+// none without.
+const offerRow = (hasOffer) => (hasOffer ? 'install' : '');
+
+const appShown = (page) => ({
+  wrap: page.appWrap.hidden === false,
+  dock: page.dockRow.hidden === false,
+  install: page.installRow.hidden === false
+});
+
+function fakeOffer() {
+  const offer = { prompts: 0, prevented: 0, type: 'beforeinstallprompt' };
+  offer.userChoice = new Promise((resolve) => { offer.choose = (outcome) => resolve({ outcome, platform: 'web' }); });
+  offer.prompt = () => { offer.prompts += 1; return Promise.resolve(); };
+  offer.preventDefault = () => { offer.prevented += 1; };
+  return offer;
+}
+
+test('with no answer from notify.js the app row stays hidden', () => {
+  const page = loadAlerts();
+  assert.deepEqual(appShown(page), { wrap: false, dock: false, install: false });
+  const none = loadAlerts({ notify: null });
+  assert.deepEqual(appShown(none), { wrap: false, dock: false, install: false });
+});
+
+test('a browser that gets no row (iPhone, Firefox, installed) keeps it hidden', () => {
+  const page = loadAlerts({ notifyOptions: { row: '' }, install: true });
+  assert.deepEqual(appShown(page), { wrap: false, dock: false, install: false });
+  assert.deepEqual(page.notify.offers, [false]);
+});
+
+test('the script leaves the app row alone on a page without its markup', () => {
+  const page = loadAlerts({ appRow: false, notifyOptions: { row: 'dock' } });
+  assert.equal(page.api.drawAppRow(), '');
+  assert.deepEqual(page.notify.offers, []);
+});
+
+test('Mac Safari draws Add to Dock, and only it', () => {
+  const page = loadAlerts({ notifyOptions: { row: 'dock' } });
+  assert.deepEqual(appShown(page), { wrap: true, dock: true, install: false });
+});
+
+test('an answer that is not dock or install draws no row', () => {
+  const page = loadAlerts({ notifyOptions: { row: '<b>dock</b>' } });
+  assert.deepEqual(appShown(page), { wrap: false, dock: false, install: false });
+});
+
+test('Add to Dock opens its window with focus on the title, and the X returns focus to the row', () => {
+  const page = loadAlerts({ notifyOptions: { row: 'dock' } });
+  fire(page.dockRow, 'click');
+  assert.equal(page.dock.hidden, false);
+  assert.equal(page.doc.activeElement, byId(page, 'settings-dock-title'));
+  assert.equal(page.main.inert, true);
+  fire(byId(page, 'settings-dock-close'), 'click');
+  assert.equal(page.dock.hidden, true);
+  assert.equal(page.main.inert, false);
+  assert.equal(page.doc.activeElement, page.dockRow);
+});
+
+test('Escape closes the Add to Dock window; a click on the window closes nothing; Tab stays inside', () => {
+  const page = loadAlerts({ notifyOptions: { row: 'dock' } });
+  fire(page.dockRow, 'click');
+  assert.equal((page.dock.handlers.click || []).length, 0, 'no click handler on the window');
+  const close = byId(page, 'settings-dock-close');
+  close.focus();
+  const forward = fire(page.dock, 'keydown', { key: 'Tab' });
+  assert.equal(forward.prevented, true);
+  assert.equal(page.doc.activeElement, close);
+  fire(page.dock, 'keydown', { key: 'Escape' });
+  assert.equal(page.dock.hidden, true);
+  assert.equal(page.doc.activeElement, page.dockRow);
+});
+
+test('Chrome with no offer at load draws nothing, then the offer draws Install app', () => {
+  const page = loadAlerts({ notifyOptions: { row: offerRow }, install: true });
+  assert.deepEqual(appShown(page), { wrap: false, dock: false, install: false });
+  const offer = fakeOffer();
+  page.fireWindow('beforeinstallprompt', offer);
+  assert.equal(offer.prevented, 1);
+  assert.deepEqual(appShown(page), { wrap: true, dock: false, install: true });
+});
+
+test('Install app calls prompt once; a second tap while it shows does nothing; accepted hides the row', async () => {
+  const page = loadAlerts({ notifyOptions: { row: offerRow }, install: true });
+  const offer = fakeOffer();
+  page.fireWindow('beforeinstallprompt', offer);
+  fire(page.installRow, 'click');
+  fire(page.installRow, 'click');
+  assert.equal(offer.prompts, 1);
+  offer.choose('accepted');
+  await flush();
+  assert.equal(offer.prompts, 1);
+  assert.deepEqual(appShown(page), { wrap: false, dock: false, install: false });
+  assert.equal(page.requests.length, 0, 'the row sends nothing to the server');
+});
+
+test('a dismissed install keeps the row; a tap with no new offer prompts nothing; a new offer works', async () => {
+  const page = loadAlerts({ notifyOptions: { row: offerRow }, install: true });
+  const offer = fakeOffer();
+  page.fireWindow('beforeinstallprompt', offer);
+  fire(page.installRow, 'click');
+  offer.choose('dismissed');
+  await flush();
+  assert.deepEqual(appShown(page), { wrap: true, dock: false, install: true });
+  fire(page.installRow, 'click');
+  await flush();
+  assert.equal(offer.prompts, 1, 'a used offer is never shown again');
+  assert.deepEqual(appShown(page), { wrap: true, dock: false, install: true });
+  const again = fakeOffer();
+  page.fireWindow('beforeinstallprompt', again);
+  fire(page.installRow, 'click');
+  assert.equal(again.prompts, 1);
+  again.choose('accepted');
+  await flush();
+  assert.deepEqual(appShown(page), { wrap: false, dock: false, install: false });
+});
+
+test('appinstalled hides the Install app row', () => {
+  const page = loadAlerts({ notifyOptions: { row: offerRow }, install: true });
+  page.fireWindow('beforeinstallprompt', fakeOffer());
+  assert.equal(appShown(page).install, true);
+  page.fireWindow('appinstalled', { type: 'appinstalled' });
+  assert.deepEqual(appShown(page), { wrap: false, dock: false, install: false });
+});
+
+test('without install-app.js an install answer draws no row', () => {
+  const page = loadAlerts({ notifyOptions: { row: 'install' } });
+  assert.deepEqual(appShown(page), { wrap: false, dock: false, install: false });
+  fire(page.installRow, 'click');
 });
