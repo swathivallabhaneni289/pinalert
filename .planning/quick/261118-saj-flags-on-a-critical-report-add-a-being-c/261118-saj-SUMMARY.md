@@ -3,9 +3,9 @@ quick_id: 261118-saj
 slug: flags-on-a-critical-report-add-a-being-c
 date: 2026-11-18
 status: complete
-commits: 5
+commits: 7
 plan_head_before: e98bee6070a7623d222e593da290d50d61679ddb
-plan_head_after: fa6d51b1
+plan_head_after: 68878cc4
 ---
 
 # Quick 261118-saj: flags on a Critical report add a Being checked mark and pause its alerts
@@ -156,3 +156,41 @@ Flags from three places no longer hide a Critical report (severity critical, or 
 - These exist: `00028_add_flag_check_mark.sql`, `flag_check_test.go`, `push_flag_check_db_test.go`, `pushworker_flag_check_test.go`, `flag_check_e2e_test.go`, `check_mark_test.mjs`, `check_mark_contract_test.go` and `web/static/icons/flag.svg`.
 - 9a08d5f5, 655b0022, f24b893b, a1f6911d and fa6d51b1 are ancestors of HEAD.
 - `.planning/STATE.md`, ROADMAP.md, REQUIREMENTS.md and the UAT files were not touched.
+
+## Follow-up after the final check (68878cc4)
+
+The final check found two plan items not met. Both are now built. Deviation 1 above is replaced by the first item.
+
+1. **Profile lists carry the mark.**
+   - The public profile's live row shows "Flood · Critical" as visible words, so the mark belongs there.
+   - The row is one link, so the mark sits inside it after the label words, as text, not a second control:
+     - its words, "Being checked.", are part of the link's name;
+     - a mouse resting on it shows the line, and leaving hides it;
+     - a tap or click on it shows the line instead of opening the report, until a second press, Escape or a press elsewhere (`person-reports.js`);
+     - the line opens above it, so the laptop box's clipping never cuts it.
+   - Keyboard users hear the words in the link and get the full mark in the opened report.
+   - My activity, Past and followed lists draw no visible severity tag, so they still get no mark.
+   - Files: `person_page.go` (`BeingChecked`), `person.html.tmpl`, `person.css` and `person-reports.js`.
+   - Tests: `TestPersonReportRowsBeingChecked`, `web/person_check_mark_test.mjs` (4 tests) and the contract test.
+2. **The existing visibility guard is extended.**
+   - `TestReviewIsWithheldEverywhere` now also proves that a clear serious report resolves Live by the critical bypass at every severity, category and tally, and is listable. That is the state a marked report keeps.
+   - It also proves that `ReportMeta` has only its three fields and that `visibility.go` never names the mark.
+   - `TestFlagCheckFlow` now confirms a marked report and reads its comments and history (200). The hidden ordinary report answers 404 on each.
+3. **After Keep without a direct evaluation.** Nothing pokes the dispatcher on Keep. The 30 second sweep (`RecentReportsForPush`) looks back `PushChangedWindow` (2 hours), which covers the 1 hour `PushInitialWindow`, so a report kept inside its first hour is served by the next sweep.
+
+**Tests after the follow-up**
+- `go test ./... -p 1 -count=1 -v` on a fresh `p9_saj` with `env -i`: exit 0, 22 packages ok. 7043 PASS lines (2535 top level), 0 FAIL, the same 3 SKIP.
+- `node --test web/*.mjs`: 1709 pass, 0 fail, 0 skipped.
+- `go build ./...` and `go vet ./...`: clean.
+
+**Live look, rerun on a fresh `p9_saj_live`**
+- Everything above plus the profile `/u/saj_asha` at 320, 390 and 1280, light and dark.
+- 160 of 160 checks passed, in the same `live-results.txt`.
+- On the profile:
+  - the mark sits after "Flood · Critical" with 8px of room;
+  - it is whole, and the link's words include "Being checked.";
+  - a tap (phones) or hover (laptop) shows the line without leaving the page, and the line is whole;
+  - a second tap, or a click then Escape, closes it.
+- Screenshots: `profile-{320,390,1280}-{light,dark}.png`, in the same shots folder. The other screenshot names are unchanged from the rerun.
+
+**Teardown**: the server was stopped, `p9_saj` and `p9_saj_live` were dropped, and the server log, binary and session state were deleted.
