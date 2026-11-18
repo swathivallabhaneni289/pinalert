@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"net/url"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -401,5 +402,54 @@ func TestFeedReportWireReliableKey(t *testing.T) {
 		if b != want {
 			t.Errorf("kept_by_reliable_filter = %v, want %v", b, want)
 		}
+	}
+}
+
+// TestFeedReportWireBeingCheckedKey pins being_checked (quick 261118-saj):
+// always present as a JSON boolean, false by default and true when the view
+// says so, and the only key about the mark, so no flag count, cell or flagger
+// rides with it.
+func TestFeedReportWireBeingCheckedKey(t *testing.T) {
+	now := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	v := service.ReportView{
+		Report: service.Report{
+			ID: 9, Category: service.CategoryFlood, Severity: service.SeverityCritical,
+			Description: "Water on the road", CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+		},
+		View:       service.FeedViewActive,
+		Visibility: service.VisibilityLive,
+	}
+	var keysOff, keysOn []string
+	for _, want := range []bool{false, true} {
+		view := v
+		view.BeingChecked = want
+		raw, err := json.Marshal(reportViewToResponse(view))
+		if err != nil {
+			t.Fatalf("marshalling: %v", err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatalf("decoding: %v", err)
+		}
+		got, ok := m["being_checked"].(bool)
+		if !ok || got != want {
+			t.Errorf("being_checked = %v (%T), want the boolean %v", m["being_checked"], m["being_checked"], want)
+		}
+		keys := make([]string, 0, len(m))
+		for k := range m {
+			keys = append(keys, k)
+			if strings.Contains(k, "flag") && k != "viewer_flagged" {
+				t.Errorf("the report answer carries the key %q", k)
+			}
+		}
+		sort.Strings(keys)
+		if want {
+			keysOn = keys
+		} else {
+			keysOff = keys
+		}
+	}
+	if strings.Join(keysOff, ",") != strings.Join(keysOn, ",") {
+		t.Errorf("the mark changes the keys: %v and %v", keysOff, keysOn)
 	}
 }
