@@ -465,8 +465,11 @@ func TestAccessGateAllowsVerified(t *testing.T) {
 // slash never answer 200 (the unknown token answers exactly 404). Every older
 // row and loop is unchanged. The table now has 24 rows (the 23 of the Phase 7.1
 // paragraph above plus this one).
+//
+// Amended 2026-11-18 by quick 261118-v75: the globe pictures ship embedded in
+// the binary, so the "globe tile" row is answered from the embedded picture, not
+// a fake upstream (Deps.GlobeUpstream is gone). Every row and loop is unchanged.
 func TestAccessGateExemptRoutes(t *testing.T) {
-	globeUp := fakeGlobeUpstream(t)
 	demoStore := demo.NewStore(demo.WithWorldSetup(demo.SeedSetup))
 	demoWorld, err := demoStore.Create()
 	if err != nil {
@@ -474,7 +477,6 @@ func TestAccessGateExemptRoutes(t *testing.T) {
 	}
 	demoFeedPath := "/demo/api/v/" + demoWorld.ID + "/reports?lat=16.5424&lon=80.6386&radius_km=10"
 	srv, pool, _ := newGateTestServerWith(t, func(d *Deps, _ *sqlcgen.Queries) {
-		d.GlobeUpstream = globeUp.URL
 		d.Demo = demoStore
 		// Amended 2026-10-29 by plan 05-12: the refresh door for the rows below.
 		d.Official = &refreshStub{}
