@@ -28,7 +28,7 @@ func uoeRuleBody(t *testing.T, file, css, selector string) string {
 func TestReviewAskButtonsStack(t *testing.T) {
 	css := p421ReadStatic(t, "css/updates.css")
 	row := uoeRuleBody(t, "updates.css", css, ".review-ask .logout-confirm__actions:not([hidden])")
-	for _, want := range []string{"flex-direction: column-reverse;", "flex-wrap: nowrap;"} {
+	for _, want := range []string{"flex-direction: column;", "flex-wrap: nowrap;"} {
 		if !strings.Contains(row, want) {
 			t.Errorf("the box's button row lacks %q", want)
 		}
@@ -63,11 +63,12 @@ func TestReviewAskButtonsStack(t *testing.T) {
 		t.Error("auth.css's shared buttons are no longer equal halves")
 	}
 
-	// The words and the order of the two buttons are unchanged.
+	// The words are unchanged. Amended 2026-11-18: Ask for review comes first in
+	// the markup as on screen, so keyboard order matches the stack.
 	box := p421ReadTemplate(t, "review_ask_box.html.tmpl")
 	p421InOrder(t, "the box buttons", box,
-		`id="review-ask-close">Close</button>`,
-		`id="review-ask-send" hidden>Ask for review</button>`)
+		`id="review-ask-send" hidden>Ask for review</button>`,
+		`id="review-ask-close">Close</button>`)
 
 	for _, path := range []string{"static/css/updates.css", "review_ask_buttons_contract_test.go"} {
 		text := rzReadRepo(t, path)

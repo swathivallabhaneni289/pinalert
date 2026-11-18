@@ -590,9 +590,11 @@ button.urow__link {
    box's button row has 238px at 320 wide, so in equal halves Ask for review
    wrapped onto two lines at every width. In this box only, the two buttons
    stack full width at every width, the action on top, with the Log out box's
-   own gap between them. The Log out, Delete and other boxes keep their row. */
+   own gap between them. The Log out, Delete and other boxes keep their row.
+   Ask for review comes first in the markup too, so Tab reaches the top button
+   first (keyboard order matches what is seen). */
 .review-ask .logout-confirm__actions:not([hidden]) {
-  flex-direction: column-reverse;
+  flex-direction: column;
   flex-wrap: nowrap;
 }
 

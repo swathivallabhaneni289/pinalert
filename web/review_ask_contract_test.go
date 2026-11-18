@@ -36,8 +36,9 @@ func TestReviewAskBoxMarkup(t *testing.T) {
 		`id="review-ask-asked" tabindex="-1" hidden>Asked.</p>`,
 		`id="review-ask-none" tabindex="-1" hidden>No asks left.</p>`,
 		`id="review-ask-error" role="alert" data-failed="Couldn't send. Try again." hidden></p>`,
-		`id="review-ask-close">Close</button>`,
+		// Amended 2026-11-18: the action first, as on screen (quick 261118-uoe stack).
 		`id="review-ask-send" hidden>Ask for review</button>`,
+		`id="review-ask-close">Close</button>`,
 		`</dialog>`)
 	for _, banned := range []string{"placeholder", "flag", "moderator said", "Policy"} {
 		if strings.Contains(strings.SplitN(box, "*/}}", 2)[1], banned) {
