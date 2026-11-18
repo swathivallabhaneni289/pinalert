@@ -270,9 +270,11 @@ to get a moderator's attention without hiding a real one. Quick 261118-saj:
   restored (silent, as before). Remove, a late text check removal and Restore clear
   `flag_check_at`.
 - **What readers see.** Everything a clear Critical report shows, plus a small flag button next to
-  its severity tag (Nearby rows, the map popup, the report page and focus, the Low data rows). A
-  mouse resting on it, a tap, Enter or Space show one line, "Being checked."; a second press,
-  Escape or a press elsewhere close it. The answer carries only `being_checked` (a boolean, the
+  its severity tag (Nearby rows, the map popup, the report page and focus, the Low data rows, the
+  live rows of a public profile). A mouse resting on it, a tap, Enter or Space show one line,
+  "Being checked."; a second press, Escape or a press elsewhere close it. On a profile row the
+  mark is text inside the row's link, not a button: a mouse resting on it or a tap shows the line,
+  and its words are part of the link's name. The answer carries only `being_checked` (a boolean, the
   same for every reader), never a count, a cell or a flagger. Resolve never reads it.
 - **Alerts pause.** While the mark is on nothing is queued for a phone (the Critical first alert,
   the follow note, the confirmed update, changed notes) and nothing already queued is sent (each
