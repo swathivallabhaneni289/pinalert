@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -203,9 +204,12 @@ func TestGlobeTilesNeverReachTheNetwork(t *testing.T) {
 // TestGlobeTileFolderContract: the picture folder holds exactly the 85 files
 // {z}/{y}/{x}.jpg for zoom 0 to 3 and nothing else, each a 256 by 256 JPEG
 // starting with FF D8 FF and under 1 MB. And no other raster image sits in the
-// repo's source tree: walking from the module root, skipping the directories
-// whose names start with a dot (.git, .github, .planning and .claude, where
-// other working copies live), the only raster files are these 85.
+// repo's source tree: among the files git tracks (git ls-files at the module
+// root), skipping any path with a part that starts with a dot (.github,
+// .planning and .claude), the only raster files are these 85. Untracked
+// folders in a checkout, such as local design references, do not count, so
+// the test reads the same on the Mac as on a fresh clone. Without git, or
+// outside a git work tree, that half is skipped.
 func TestGlobeTileFolderContract(t *testing.T) {
 	want := map[string]bool{}
 	for z := 0; z <= GlobeMaxZoom; z++ {
@@ -265,33 +269,56 @@ func TestGlobeTileFolderContract(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "go.mod")); err != nil {
 		t.Fatalf("%s is not the module root: %v", root, err)
 	}
-	tiles, err := filepath.Abs("globetiles")
+	tilesAbs, err := filepath.Abs("globetiles")
 	if err != nil {
 		t.Fatalf("finding globetiles: %v", err)
 	}
+	tilesRel, err := filepath.Rel(root, tilesAbs)
+	if err != nil {
+		t.Fatalf("placing globetiles under the module root: %v", err)
+	}
+	tilesPrefix := filepath.ToSlash(tilesRel) + "/"
+
+	gitBin, err := exec.LookPath("git")
+	if err != nil {
+		t.Skipf("git is not installed, so the tracked file scan is skipped: %v", err)
+	}
+	inside := exec.Command(gitBin, "-C", root, "rev-parse", "--is-inside-work-tree")
+	if out, err := inside.Output(); err != nil || strings.TrimSpace(string(out)) != "true" {
+		t.Skipf("%s is not a git work tree, so the tracked file scan is skipped", root)
+	}
+	list, err := exec.Command(gitBin, "-C", root, "ls-files", "-z").Output()
+	if err != nil {
+		t.Fatalf("listing the tracked files: %v", err)
+	}
 	raster := []string{".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp", ".avif", ".heic", ".tif", ".tiff"}
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+	tracked := 0
+	for _, rel := range strings.Split(string(list), "\x00") {
+		if rel == "" {
+			continue
 		}
-		if d.IsDir() {
-			if path != root && (strings.HasPrefix(d.Name(), ".") || d.Name() == "node_modules") {
-				return filepath.SkipDir
-			}
-			if path == tiles {
-				return filepath.SkipDir
-			}
-			return nil
+		tracked++
+		if strings.HasPrefix(rel, tilesPrefix) {
+			continue
 		}
-		name := strings.ToLower(d.Name())
+		hidden := false
+		for _, part := range strings.Split(rel, "/") {
+			if strings.HasPrefix(part, ".") || part == "node_modules" {
+				hidden = true
+				break
+			}
+		}
+		if hidden {
+			continue
+		}
+		name := strings.ToLower(rel)
 		for _, ext := range raster {
 			if strings.HasSuffix(name, ext) {
-				t.Errorf("%s: the only raster images allowed in the repo are the 85 globe tiles", path)
+				t.Errorf("%s: the only raster images allowed in the repo are the 85 globe tiles", rel)
 			}
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking the repo: %v", err)
+	}
+	if tracked == 0 {
+		t.Fatalf("git ls-files at %s listed no files", root)
 	}
 }
