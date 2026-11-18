@@ -74,9 +74,10 @@ func TestSettingsDockWindow(t *testing.T) {
 		`<button type="button" class="app-window__close" id="settings-dock-close" aria-label="Close">`,
 		`<ol class="device-guide__steps" role="list">`,
 		// Amended 2026-11-18 (owner on the 7.1 UAT: "can we be more specific
-		// about what file or like where to locate it?"): step 1 says where File is.
-		`In the bar at the top of the screen, click <strong>File</strong>, then <strong>Add to Dock</strong>.`,
-		`Click <strong>Add</strong>, then open Pinalert from your Dock.`,
+		// about what file or like where to locate it?", then "can we keep it
+		// professional"): step 1 names the menu bar in Apple's own wording.
+		`In the Safari menu bar, choose <strong>File</strong> &gt; <strong>Add to Dock</strong>.`,
+		`Click <strong>Add</strong>, then open Pinalert from the Dock.`,
 		`app-icon--square-plus`, `app-icon--map-pin`,
 	} {
 		if !strings.Contains(win, want) {
