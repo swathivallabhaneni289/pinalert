@@ -159,15 +159,6 @@ type Deps struct {
 	// harness unchanged; cmd/server/main.go turns it on once the /welcome page
 	// exists (plan 10).
 	OnboardingGate bool
-	// GlobeUpstream replaces the NASA GIBS base address behind the sign in
-	// globe's tile routes. Only tests set it, to point at a fake server; empty,
-	// which is what every Deps{} literal and production gives, means the NASA
-	// constant (plan 05-04).
-	GlobeUpstream string
-	// GlobeUserAgent is the User-Agent sent to NASA GIBS when a tile is fetched.
-	// cmd/server/main.go builds it from BASE_URL and CONTACT_EMAIL. Empty sends
-	// Go's stock agent, which only a test harness gives.
-	GlobeUserAgent string
 	// Official backs GET /api/official/alerts (plan 05-08): the reader's
 	// official alerts and whether the answer can be trusted right now. Typed as
 	// the handlers.OfficialReader interface so this file needs no import of
@@ -576,8 +567,9 @@ var compressibleContentTypes = []string{"text/html", "text/css", "text/javascrip
 // Amended 2026-10-28 by Phase 5 plan 05-04 (D-13): 85 more exact GET paths join
 // the exempt set, /globe/tiles/{z}/{y}/{x}.jpg for zoom 0 to 3, listed once in
 // handlers.GlobeTilePaths. They are the Earth pictures of the sign in globe,
-// served from Pinalert's memory after one fetch each from NASA GIBS, and they
-// skip the session middleware like the app assets. The skip function now takes
+// copies of NASA GIBS pictures that ship with Pinalert (quick 261118-v75: no
+// fetch from NASA any more), and they skip the session middleware like the app
+// assets. The skip function now takes
 // one rule set, sessionSkip: exact GET paths, exact POST paths and path
 // prefixes, all built in sessionSkipSet, so the later sessionless routes of
 // Phase 5 join that set instead of adding a second bypass.
@@ -637,12 +629,12 @@ func NewRouter(deps Deps) *chi.Mux {
 	if err != nil {
 		panic("api: building the installable app assets: " + err.Error())
 	}
-	// The globe tiles are fetched lazily, once each, so building this fetches
-	// nothing.
-	globeTiles := handlers.NewGlobeTiles(handlers.GlobeTilesConfig{
-		Upstream:  deps.GlobeUpstream,
-		UserAgent: deps.GlobeUserAgent,
-	})
+	// The globe tiles are the 85 pictures embedded in the binary (quick
+	// 261118-v75); building this reads them once and contacts nothing.
+	globeTiles, err := handlers.NewGlobeTiles()
+	if err != nil {
+		panic("api: building the globe tiles: " + err.Error())
+	}
 
 	r := chi.NewRouter()
 
@@ -881,8 +873,8 @@ func NewRouter(deps Deps) *chi.Mux {
 	// The sign in globe's Earth pictures (plan 05-04, D-13): the same shape, one
 	// exact GET route for each of the 85 entries of handlers.GlobeTilePaths, which
 	// is also what feeds the session bypass above. Public because the sign in page
-	// is where a visitor lands; each picture is fetched once from NASA and served
-	// from memory.
+	// is where a visitor lands; each picture ships embedded in the binary and
+	// the server never contacts NASA (quick 261118-v75).
 	for _, path := range handlers.GlobeTilePaths() {
 		h, ok := globeTiles.Handler(path)
 		if !ok {

@@ -508,21 +508,6 @@ func main() {
 		pushUpdates.set(service.NewUpdatesService(queries, reportService))
 	}
 
-	// The User-Agent NASA GIBS sees when a globe tile is fetched (plan 05-04): the
-	// public address and the contact address, whichever are set, else the
-	// repository URL the geocoder falls back to.
-	globeUserAgent := "Pinalert/1.0 (+https://github.com/swathivallabhaneni289/pinalert)"
-	if publicURL := os.Getenv("BASE_URL"); publicURL != "" || contactEmail != "" {
-		switch {
-		case publicURL != "" && contactEmail != "":
-			globeUserAgent = "Pinalert/1.0 (+" + publicURL + "; contact " + contactEmail + ")"
-		case publicURL != "":
-			globeUserAgent = "Pinalert/1.0 (+" + publicURL + ")"
-		default:
-			globeUserAgent = "Pinalert/1.0 (contact " + contactEmail + ")"
-		}
-	}
-
 	// The official alerts service (plan 05-08): reads the stored NDMA SACHET
 	// alerts for a reader and refreshes them lazily. It is built once here, and
 	// the later Phase 5 plans add their hooks and feeds to it through options.
@@ -619,8 +604,6 @@ func main() {
 			Every: placeRateLimitEvery,
 		},
 		ClientIPHeader: clientIPHeader,
-		// Sent to NASA GIBS when a sign in globe tile is fetched (plan 05-04).
-		GlobeUserAgent: globeUserAgent,
 		// The bearer secret of the external cron's refresh endpoint, read above;
 		// empty keeps the endpoint a 404 (plan 05-12).
 		OfficialRefreshToken: officialRefreshToken,
