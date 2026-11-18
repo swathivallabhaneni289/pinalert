@@ -3390,3 +3390,267 @@ func TestMigration00026(t *testing.T) {
 		t.Errorf("after Up again: %d of 2 columns, %d of 1 index", c, i)
 	}
 }
+
+// TestMigration00027 pins the removal reasons and review asks migration (quick
+// 261118-rz6): a removed report carries the reason and time of its removal and
+// no other report does, the audit row takes a reason and the restore and
+// keep_removed actions, an ask for review holds a note of at most 200
+// characters with at most one open ask per report, the bell learns
+// own_restored and own_stays_removed, and the one own row per account, report
+// and kind now covers all six own kinds. Up, Down and Up again; Down deletes
+// the two new bell kinds and the two new audit actions and leaves a restored
+// report clear.
+func TestMigration00027(t *testing.T) {
+	const file = "migrations/00027_add_removal_reasons_and_review_asks.sql"
+	contents, err := MigrationsFS.ReadFile(file)
+	if err != nil {
+		t.Fatalf("reading embedded %s: %v", file, err)
+	}
+	text := string(contents)
+	up := strings.Index(text, "+goose Up")
+	down := strings.Index(text, "+goose Down")
+	if up < 0 || down < 0 || down < up {
+		t.Fatalf("%s must carry +goose Up then +goose Down", file)
+	}
+	var code []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		code = append(code, line)
+	}
+	if strings.Contains(strings.ToUpper(strings.Join(code, "\n")), "CONCURRENTLY") {
+		t.Error("migration 00027 must not use CONCURRENTLY: goose runs it inside a transaction")
+	}
+	for _, name := range []string{"ADD COLUMN removed_reason TEXT", "ADD COLUMN removed_at TIMESTAMPTZ",
+		"'spam', 'abusive', 'false', 'dangerous', 'other', 'text_check'",
+		"CHECK (action IN ('keep', 'remove', 'restore', 'keep_removed'))", "CREATE TABLE report_review_asks",
+		"ON DELETE CASCADE", "char_length(note) <= 200", "CREATE UNIQUE INDEX uq_report_review_asks_open",
+		"'own_removed', 'own_restored', 'own_stays_removed'", "CREATE UNIQUE INDEX uq_updates_own_report"} {
+		if !strings.Contains(text[:down], name) {
+			t.Errorf("migration 00027 Up must contain %s", name)
+		}
+	}
+	for _, want := range []string{"DELETE FROM updates WHERE kind IN ('own_restored', 'own_stays_removed')",
+		"DELETE FROM moderation_actions WHERE action IN ('restore', 'keep_removed')",
+		"CHECK (action IN ('keep', 'remove'))", "DROP TABLE report_review_asks",
+		"WHERE kind IN ('own_shown', 'own_review', 'own_kept', 'own_removed');", "DROP COLUMN removed_reason"} {
+		if !strings.Contains(text[down:], want) {
+			t.Errorf("migration 00027 Down must contain %q", want)
+		}
+	}
+	if strings.Contains(text[down:], "UPDATE reports SET moderation_state") {
+		t.Error("migration 00027 Down must not move any report: a restored report stays clear")
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping the database part of the 00027 migration test")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("opening database: %v", err)
+	}
+	defer db.Close()
+
+	goose.SetBaseFS(MigrationsFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up: %v", err)
+	}
+
+	var a, mod, report, restored int64
+	const sessionID = "migration-00027-session"
+	t.Cleanup(func() {
+		_ = goose.Up(db, "migrations")
+		for _, id := range []int64{report, restored} {
+			if id != 0 {
+				_, _ = db.Exec("DELETE FROM updates WHERE report_id = $1", id)
+				_, _ = db.Exec("DELETE FROM report_review_asks WHERE report_id = $1", id)
+				_, _ = db.Exec("DELETE FROM moderation_actions WHERE report_id = $1", id)
+				_, _ = db.Exec("DELETE FROM reports WHERE id = $1", id)
+			}
+		}
+		for _, id := range []int64{a, mod} {
+			if id != 0 {
+				_, _ = db.Exec("DELETE FROM sessions WHERE account_id = $1", id)
+				_, _ = db.Exec("DELETE FROM accounts WHERE id = $1", id)
+			}
+		}
+	})
+
+	count := func(query string, args ...any) (n int) {
+		t.Helper()
+		if err := db.QueryRow(query, args...).Scan(&n); err != nil {
+			t.Fatalf("counting with %q: %v", query, err)
+		}
+		return
+	}
+	shape := func() (cols, tables, indexes int) {
+		t.Helper()
+		cols = count(`SELECT count(*) FROM information_schema.columns
+			WHERE table_schema = 'public'
+			  AND ((table_name = 'reports' AND column_name IN ('removed_reason', 'removed_at'))
+			    OR (table_name = 'moderation_actions' AND column_name = 'reason'))`)
+		tables = count(`SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'report_review_asks'`)
+		indexes = count(`SELECT count(*) FROM pg_indexes WHERE indexname IN ('idx_reports_removed_at')`)
+		return
+	}
+	ownIndexDef := func() string {
+		t.Helper()
+		var def string
+		if err := db.QueryRow(`SELECT indexdef FROM pg_indexes WHERE indexname = 'uq_updates_own_report'`).Scan(&def); err != nil {
+			t.Fatalf("reading uq_updates_own_report: %v", err)
+		}
+		return def
+	}
+	if c, tb, i := shape(); c != 3 || tb != 1 || i != 1 {
+		t.Errorf("after Up: %d of 3 columns, %d of 1 table, %d of 1 index", c, tb, i)
+	}
+	if def := ownIndexDef(); !strings.Contains(def, "own_restored") || !strings.Contains(def, "own_stays_removed") {
+		t.Errorf("after Up: uq_updates_own_report is %q, want the six own kinds", def)
+	}
+
+	for _, acc := range []struct {
+		email string
+		id    *int64
+	}{{"migration-00027-a@example.com", &a}, {"migration-00027-mod@example.com", &mod}} {
+		if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ($1) RETURNING id`, acc.email).Scan(acc.id); err != nil {
+			t.Fatalf("inserting account: %v", err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO sessions (session_id, account_id) VALUES ($1, $2)`, sessionID, a); err != nil {
+		t.Fatalf("inserting session: %v", err)
+	}
+	insertReport := func(id *int64) {
+		t.Helper()
+		if err := db.QueryRow(`INSERT INTO reports
+			(session_id, category, severity, description, latitude, longitude, geohash, created_at, expires_at)
+			VALUES ($1, 'flood', 'medium', 'migration test report', 12.9716, 77.5946, 'tdr1v8y',
+			        now() - interval '1 hour', now() + interval '5 hours') RETURNING id`, sessionID).Scan(id); err != nil {
+			t.Fatalf("inserting report: %v", err)
+		}
+	}
+	insertReport(&report)
+	insertReport(&restored)
+
+	wantCode := func(label, code, query string, args ...any) {
+		t.Helper()
+		_, err := db.Exec(query, args...)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != code {
+			t.Errorf("%s: want SQLSTATE %s, got %v", label, code, err)
+		}
+	}
+	// The reason and time belong to a removed report only, from a closed list.
+	wantCode("a reason on a shown report", "23514",
+		`UPDATE reports SET removed_reason = 'spam', removed_at = now() WHERE id = $1`, report)
+	wantCode("an unknown reason", "23514",
+		`UPDATE reports SET moderation_state = 'removed', removed_reason = 'rude', removed_at = now() WHERE id = $1`, report)
+	for _, reason := range []string{"spam", "abusive", "false", "dangerous", "other", "text_check"} {
+		if _, err := db.Exec(`UPDATE reports SET moderation_state = 'removed', removed_reason = $2, removed_at = now() WHERE id = $1`, report, reason); err != nil {
+			t.Errorf("removing with %s: %v", reason, err)
+		}
+	}
+	if _, err := db.Exec(`UPDATE reports SET moderation_state = 'removed', removed_reason = NULL, removed_at = now() WHERE id = $1`, report); err != nil {
+		t.Errorf("a removal with no recorded reason: %v", err)
+	}
+	wantCode("back to clear keeping the reason", "23514",
+		`UPDATE reports SET moderation_state = 'clear' WHERE id = $1 AND removed_at IS NOT NULL`, report)
+
+	// The audit row: a reason only on a Remove, from the five; two new actions.
+	if _, err := db.Exec(`INSERT INTO moderation_actions (report_id, moderator_account_id, action, reason) VALUES ($1, $2, 'remove', 'false')`, report, mod); err != nil {
+		t.Errorf("a remove with a reason: %v", err)
+	}
+	wantCode("text_check is not a moderator reason", "23514",
+		`INSERT INTO moderation_actions (report_id, moderator_account_id, action, reason) VALUES ($1, $2, 'remove', 'text_check')`, report, mod)
+	wantCode("a reason on a keep", "23514",
+		`INSERT INTO moderation_actions (report_id, moderator_account_id, action, reason) VALUES ($1, $2, 'keep', 'spam')`, report, mod)
+	for _, action := range []string{"restore", "keep_removed"} {
+		if _, err := db.Exec(`INSERT INTO moderation_actions (report_id, moderator_account_id, action) VALUES ($1, $2, $3)`, report, mod, action); err != nil {
+			t.Errorf("action %s: %v", action, err)
+		}
+	}
+	wantCode("an unknown action", "23514",
+		`INSERT INTO moderation_actions (report_id, moderator_account_id, action) VALUES ($1, $2, 'unremove')`, report, mod)
+
+	// Asks: at most one open per report, a note of at most 200 characters, an
+	// answer and its time together.
+	if _, err := db.Exec(`INSERT INTO report_review_asks (report_id, account_id, note) VALUES ($1, $2, $3)`, report, a, strings.Repeat("é", 200)); err != nil {
+		t.Errorf("a 200 character note: %v", err)
+	}
+	wantCode("a second open ask", "23505", `INSERT INTO report_review_asks (report_id, account_id) VALUES ($1, $2)`, report, a)
+	wantCode("an answer with no time", "23514", `UPDATE report_review_asks SET answer = 'restored' WHERE report_id = $1`, report)
+	wantCode("an unknown answer", "23514", `UPDATE report_review_asks SET answer = 'maybe', answered_at = now() WHERE report_id = $1`, report)
+	if _, err := db.Exec(`UPDATE report_review_asks SET answer = 'kept_removed', answered_at = now(), answered_by_account_id = $2 WHERE report_id = $1`, report, mod); err != nil {
+		t.Errorf("answering: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO report_review_asks (report_id, account_id) VALUES ($1, $2)`, report, a); err != nil {
+		t.Errorf("a second ask once the first was answered: %v", err)
+	}
+	wantCode("a 201 character note", "23514",
+		`INSERT INTO report_review_asks (report_id, account_id, note) VALUES ($1, $2, $3)`, restored, a, strings.Repeat("a", 201))
+
+	// The two new own kinds, and still one row per account, report and kind.
+	for _, kind := range []string{"own_restored", "own_stays_removed"} {
+		if _, err := db.Exec(`INSERT INTO updates (account_id, report_id, kind) VALUES ($1, $2, $3)`, a, restored, kind); err != nil {
+			t.Errorf("own kind %s: %v", kind, err)
+		}
+	}
+	wantCode("a second own_stays_removed row", "23505",
+		`INSERT INTO updates (account_id, report_id, kind) VALUES ($1, $2, 'own_stays_removed')`, a, restored)
+	// The restored report is clear now and stays so through Down.
+	if _, err := db.Exec(`UPDATE reports SET moderation_state = 'clear', review_kept_at = now() WHERE id = $1`, restored); err != nil {
+		t.Fatalf("restoring: %v", err)
+	}
+
+	version, err := goose.NumericComponent("00027_add_removal_reasons_and_review_asks.sql")
+	if err != nil {
+		t.Fatalf("parsing version: %v", err)
+	}
+	if err := goose.DownTo(db, "migrations", version-1); err != nil {
+		t.Fatalf("goose down to %d: %v", version-1, err)
+	}
+	if c, tb, i := shape(); c != 0 || tb != 0 || i != 0 {
+		t.Errorf("after Down: %d columns, %d tables, %d indexes still present", c, tb, i)
+	}
+	if def := ownIndexDef(); strings.Contains(def, "own_restored") || !strings.Contains(def, "own_removed") {
+		t.Errorf("after Down: uq_updates_own_report is %q, want the four kinds of 00026", def)
+	}
+	if n := count(`SELECT count(*) FROM updates WHERE report_id = $1`, restored); n != 0 {
+		t.Errorf("after Down: %d rows of the new kinds, want 0", n)
+	}
+	if n := count(`SELECT count(*) FROM moderation_actions WHERE report_id = $1`, report); n != 1 {
+		t.Errorf("after Down: %d audit rows, want the one remove", n)
+	}
+	var state string
+	if err := db.QueryRow(`SELECT moderation_state FROM reports WHERE id = $1`, restored).Scan(&state); err != nil {
+		t.Fatalf("reading state: %v", err)
+	}
+	if state != "clear" {
+		t.Errorf("after Down: a restored report is %q, want clear", state)
+	}
+	wantCode("own_restored after Down", "23514",
+		`INSERT INTO updates (account_id, report_id, kind) VALUES ($1, $2, 'own_restored')`, a, restored)
+	wantCode("restore after Down", "23514",
+		`INSERT INTO moderation_actions (report_id, moderator_account_id, action) VALUES ($1, $2, 'restore')`, report, mod)
+
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up again: %v", err)
+	}
+	if c, tb, i := shape(); c != 3 || tb != 1 || i != 1 {
+		t.Errorf("after Up again: %d of 3 columns, %d of 1 table, %d of 1 index", c, tb, i)
+	}
+	// Up again gives the removed report a time and no reason, as for any
+	// report removed before this migration.
+	var reason sql.NullString
+	var at sql.NullTime
+	if err := db.QueryRow(`SELECT removed_reason, removed_at FROM reports WHERE id = $1`, report).Scan(&reason, &at); err != nil {
+		t.Fatalf("reading the backfill: %v", err)
+	}
+	if reason.Valid || !at.Valid {
+		t.Errorf("after Up again: reason %v and time %v, want no reason and a time", reason, at)
+	}
+}
