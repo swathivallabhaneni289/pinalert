@@ -365,6 +365,31 @@ test('Restore from the asks list drops the report from the Removed list too', as
   assert.equal(env.doc.byId['mod-count-removed'].textContent, '(2)');
 });
 
+// Quick 261118-saj: a Critical report flags marked Being checked is tagged
+// Still showing in place of the showing word, keeps Keep and Remove and its
+// main page link, and a hidden one keeps its own tag.
+test('a marked report is tagged Still showing with Keep, Remove and its link; a hidden one keeps Hidden by flags', async () => {
+  const env = await load({
+    ...QUEUE,
+    flagged: [
+      report(11, { severity: 'critical', serious: true, being_checked: true }),
+      report(12, { moderation: 'review', view: 'none', visibility_word: undefined, being_checked: false }),
+      report(13, { being_checked: false })
+    ],
+    counts: { ...QUEUE.counts, flagged: 3 }
+  });
+  const [marked, hidden, plain] = rowsOf(env, 'people');
+  assert.match(marked.textContent, /Still showing/);
+  assert.doesNotMatch(marked.textContent, /Showing to everyone/);
+  assert.ok(buttonOf(marked, 'keep'));
+  assert.ok(buttonOf(marked, 'remove'));
+  assert.ok(marked.querySelector('a'), 'a marked report is shown, so it keeps its main page link');
+  assert.match(hidden.textContent, /Hidden by flags/);
+  assert.doesNotMatch(hidden.textContent, /Still showing/);
+  assert.doesNotMatch(plain.textContent, /Still showing/);
+  assert.match(plain.textContent, /Showing to everyone/);
+});
+
 test('a stale Restore shows the already handled line and keeps the row', async () => {
   const env = await load(QUEUE);
   const row = rowsOf(env, 'removed')[1];

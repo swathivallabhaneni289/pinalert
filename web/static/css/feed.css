@@ -1035,3 +1035,20 @@
 #report-list .report-row .severity-label:not([hidden])::after {
   margin-left: calc(var(--space-sm) - var(--space-xs));
 }
+
+/* Quick 261118-saj: the Being checked mark sits right after the severity
+   word, 8px from it, and carries the dot that ends the severity part, so the
+   tag and its mark read as one part with clear room on both sides. */
+#report-list .report-row .check-mark:not([hidden]) {
+  order: 1;
+}
+
+#report-list .report-row .severity-label:not([hidden]):has(+ .check-mark:not([hidden]))::after {
+  content: none;
+}
+
+#report-list .report-row .check-mark:not([hidden])::after {
+  content: "\00b7";
+  content: "\00b7" / "";
+  margin-left: var(--space-sm);
+}

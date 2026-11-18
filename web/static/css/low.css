@@ -369,6 +369,13 @@
   .report-row--low .report-row__body > .trust-block {
     margin-bottom: auto;
   }
+
+  /* Quick 261118-saj: the Being checked mark on its own line right under the
+     severity tag, which ends with 8px of its own room. */
+  .report-row--low .report-row__body > .check-mark:not([hidden]) {
+    align-self: flex-start;
+    margin: 0 0 var(--space-sm);
+  }
 }
 
 /* Phone (owner, 2026-10-22: the cards are too big): a denser card. The icon
@@ -405,6 +412,14 @@
 
   .report-row--low .report-row__body > .report-row__title {
     margin: var(--space-sm) 0 var(--space-xs);
+  }
+
+  /* Quick 261118-saj: the Being checked mark on the first line, right after
+     the severity tag and the grid's 8px gap. */
+  .report-row--low .report-row__body > .check-mark:not([hidden]) {
+    grid-row: 1;
+    grid-column: 3;
+    justify-self: start;
   }
 
   /* The card is wide enough now; trust.css lets the line reach into the

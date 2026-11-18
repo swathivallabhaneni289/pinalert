@@ -1083,6 +1083,9 @@ window.PinalertMap = (function () {
     var tag = PinalertVisibility.createVisibilityTag();
     pills.appendChild(badge);
     pills.appendChild(severity);
+    // Quick 261118-saj: the Being checked mark, right after the severity pill.
+    var check = PinalertTrust.createCheckMark();
+    pills.appendChild(check.el);
     // The Demo tag in the badge row of the popup and the detail sheet (plan
     // 05-13, D-02): every report on the Demo page is a pretend one.
     if (window.PinalertDemoPage === true) {
@@ -1199,6 +1202,7 @@ window.PinalertMap = (function () {
       el: el,
       glyph: glyph,
       severity: severity,
+      check: check,
       tag: tag,
       title: titleEl,
       metaGlyph: metaGlyph,
@@ -1232,6 +1236,7 @@ window.PinalertMap = (function () {
     card.metaGlyph.className = Pinalert.iconClass(report.category);
 
     PinalertTrust.updateSeverityLabel(card.severity, report);
+    PinalertTrust.updateCheckMark(card.check, report);
     PinalertVisibility.updateVisibilityTag(card.tag, report);
 
     // A finished Rescue report arrives approximate with a blank description,

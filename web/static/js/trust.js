@@ -421,6 +421,11 @@
     if (document.documentElement.hasAttribute('data-modal-open')) {
       return false;
     }
+    // An open Being checked line closes first (quick 261118-saj), and focus
+    // stays on its mark.
+    if (closeCheckLine()) {
+      return true;
+    }
 
     var active = document.activeElement;
     var popupEl = openPopupEl();
@@ -862,12 +867,156 @@
     target.profileLink = link;
   }
 
+  // ---- The Being checked mark (quick 261118-saj, owner 2026-11-18) ----
+  //
+  // People in different places flagged this Critical report and no moderator
+  // has looked yet, so the server sends being_checked true. The report stays
+  // shown; next to its severity tag sits a small flag button whose one line is
+  // "Being checked." and nothing else: no count, no reason, nobody's name. The
+  // line shows while a mouse rests on the flag, and a tap, a click, Enter or
+  // Space shows it until a second press, Escape or a press anywhere else. At
+  // most one line is open on the page. Its name is "Being checked" and the
+  // line is its description, so a screen reader says the words. A press on
+  // the flag never reaches the row or the card behind it, so it never opens
+  // the report. Only a true boolean shows the mark; anything else hides it.
+  var CHECK_NAME = 'Being checked';
+  var CHECK_WORDS = 'Being checked.';
+  var checkSeq = 0;
+  var openCheck = null;
+  var checkListening = false;
+
+  function showCheckLine(mark, pinned) {
+    if (openCheck && openCheck !== mark) {
+      hideCheckLine(openCheck);
+    }
+    mark.tip.hidden = false;
+    mark.pinned = pinned;
+    mark.button.setAttribute('aria-expanded', 'true');
+    mark.el.classList.add('check-mark--open');
+    openCheck = mark;
+  }
+
+  function hideCheckLine(mark) {
+    mark.tip.hidden = true;
+    mark.pinned = false;
+    mark.button.setAttribute('aria-expanded', 'false');
+    mark.el.classList.remove('check-mark--open');
+    if (openCheck === mark) {
+      openCheck = null;
+    }
+  }
+
+  // closeCheckLine closes the open line, if any, and says whether it did.
+  function closeCheckLine() {
+    if (!openCheck) {
+      return false;
+    }
+    hideCheckLine(openCheck);
+    return true;
+  }
+
+  // onCheckOutside closes the open line on a press outside its mark.
+  function onCheckOutside(evt) {
+    if (!openCheck) {
+      return;
+    }
+    var target = evt.target;
+    if (target && typeof openCheck.el.contains === 'function' && openCheck.el.contains(target)) {
+      return;
+    }
+    hideCheckLine(openCheck);
+  }
+
+  function isMousePointer(evt) {
+    return !!evt && evt.pointerType === 'mouse';
+  }
+
+  // createCheckMark builds the mark, hidden; updateCheckMark is always called
+  // after it.
+  function createCheckMark() {
+    if (!checkListening) {
+      checkListening = true;
+      document.addEventListener('pointerdown', onCheckOutside, true);
+    }
+    checkSeq += 1;
+    var tipId = 'check-mark-tip-' + checkSeq;
+
+    var el = document.createElement('span');
+    el.className = 'check-mark';
+    el.hidden = true;
+
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'check-mark__button';
+    button.setAttribute('aria-label', CHECK_NAME);
+    button.setAttribute('aria-expanded', 'false');
+    button.setAttribute('aria-describedby', tipId);
+    var glyph = document.createElement('span');
+    glyph.className = 'check-mark__glyph';
+    glyph.setAttribute('aria-hidden', 'true');
+    button.appendChild(glyph);
+
+    var tip = document.createElement('span');
+    tip.className = 'check-mark__tip';
+    tip.id = tipId;
+    tip.setAttribute('role', 'tooltip');
+    tip.hidden = true;
+    Pinalert.setText(tip, CHECK_WORDS);
+
+    el.appendChild(button);
+    el.appendChild(tip);
+
+    var mark = { el: el, button: button, tip: tip, pinned: false };
+
+    button.addEventListener('click', function (evt) {
+      evt.stopPropagation();
+      if (!mark.tip.hidden && mark.pinned) {
+        hideCheckLine(mark);
+        return;
+      }
+      showCheckLine(mark, true);
+    });
+    // Enter and Space press the button; the row behind it must not open.
+    button.addEventListener('keydown', function (evt) {
+      if (evt.key === 'Enter' || evt.key === ' ' || evt.key === 'Spacebar') {
+        evt.stopPropagation();
+      }
+    });
+    button.addEventListener('pointerenter', function (evt) {
+      if (isMousePointer(evt) && mark.tip.hidden) {
+        showCheckLine(mark, false);
+      }
+    });
+    button.addEventListener('pointerleave', function (evt) {
+      if (isMousePointer(evt) && !mark.pinned && !mark.tip.hidden) {
+        hideCheckLine(mark);
+      }
+    });
+    return mark;
+  }
+
+  // updateCheckMark shows the mark only for being_checked true and closes its
+  // line when it goes.
+  function updateCheckMark(mark, report) {
+    if (!mark) {
+      return;
+    }
+    var on = !!report && report.being_checked === true;
+    if (!on && !mark.tip.hidden) {
+      hideCheckLine(mark);
+    }
+    mark.el.hidden = !on;
+  }
+
   // The one capture phase key listener for the whole page (A23).
   document.addEventListener('keydown', onDocumentEscape, true);
 
   window.PinalertTrust = {
     createSeverityLabel: createSeverityLabel,
     updateSeverityLabel: updateSeverityLabel,
+    createCheckMark: createCheckMark,
+    updateCheckMark: updateCheckMark,
+    closeCheckLine: closeCheckLine,
     createTrustBlock: createTrustBlock,
     createTrustCard: createTrustCard,
     createStateLine: createStateLine,

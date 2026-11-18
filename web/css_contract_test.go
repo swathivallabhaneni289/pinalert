@@ -828,6 +828,13 @@ var nonCategoryIcons = map[string]bool{
 	// reasoning as search.svg. TestNewIconsAreRegisteredAndUsed checks it
 	// through laterIcons, so the exemption cannot hide an orphan.
 	"static/icons/star.svg": true,
+	// Amended 2026-11-18 by quick 261118-saj (owner): flag, the Lucide flag,
+	// the glyph of the Being checked mark beside a flagged Critical report's
+	// tag, drawn by a literal url("/static/icons/flag.svg") mask rule in
+	// trust.css, same exemption reasoning as search.svg.
+	// TestNewIconsAreRegisteredAndUsed checks it through laterIcons, so the
+	// exemption cannot hide an orphan.
+	"static/icons/flag.svg": true,
 }
 
 // laterIcons lists the glyphs added after Phase 3.4 (plan 04-30: bell-off).
@@ -854,7 +861,10 @@ var nonCategoryIcons = map[string]bool{
 //
 // Quick 261117-kqy: ellipsis.svg joins the list, masked by device-guide.css for
 // step 1 of the install guide on iPhone Safari 26. No other assertion changed.
-var laterIcons = []string{"bell-off.svg", "share-2.svg", "link.svg", "thumbs-up.svg", "star-filled.svg", "star.svg", "ellipsis.svg"}
+//
+// Quick 261118-saj: flag.svg joins the list, masked by trust.css for the Being
+// checked mark. No other assertion changed.
+var laterIcons = []string{"bell-off.svg", "share-2.svg", "link.svg", "thumbs-up.svg", "star-filled.svg", "star.svg", "ellipsis.svg", "flag.svg"}
 
 // phase34Icons lists the ten Phase 3.4 glyph files, all exempted through
 // nonCategoryIcons above.

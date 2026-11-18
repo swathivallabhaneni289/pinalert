@@ -438,7 +438,10 @@ func TestModerateScreenCopy(t *testing.T) {
 		"Flagged by the automatic check", "Flagged by people", "Text check not finished",
 		"Posted normally, but the text scored near the line. Newest first.",
 		// Amended 2026-11-18 (quick 261117-vvb review): hidden reports come first.
-		"People used Flag this report. Hidden by flags first, then most flags.",
+		// Amended 2026-11-18 (quick 261118-saj): Critical reports marked Being
+		// checked come first with them, tagged Still showing.
+		"People used Flag this report. Hidden by flags and Still showing first, then most flags.",
+		"Still showing",
 		"The check couldn't finish. Serious reports in this list are already published. Waiting longest first.",
 		"No reports flagged by the check.", "No reports flagged by people.", "No unfinished checks.",
 		"Nothing needs a decision here. Use Find a report to look up a post by id.",
