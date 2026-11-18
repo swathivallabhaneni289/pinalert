@@ -3708,6 +3708,128 @@ const docTemplate = `{
                 }
             }
         },
+        "/reports/{id}/review-ask": {
+            "get": {
+                "description": "For the author of a removed report: why it was removed (absent when no reason was recorded)\nand whether they can ask a moderator to review it. A report can be asked about 3 times in\ntotal, one at a time. Any report that is not the caller's own removed report gets 404 with\nnothing revealed. Requires a session verified by email; an unverified caller receives 401.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Read the box of your own removed report",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Report id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ReviewAskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "For the author of a removed report: asks a moderator to look again, with an optional note of at\nmost 200 characters that only moderators see. The note is never sent to the text check. A report\ncan be asked about 3 times in total, one at a time: an ask while one is open, or after 3, gets 409.\nA moderator answers by restoring the report or keeping it removed, and the author is told in the\nbell. Any report that is not the caller's own removed report gets 404 with nothing revealed.\nRequires a session verified by email; an unverified caller receives 401.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Ask a moderator to review your own removed report",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Report id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "An optional note for the moderators",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ReviewAskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ReviewAskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/reports/{id}/share": {
             "post": {
                 "description": "Makes, or returns, the share link of one report. The link opens a public page with\nthe report's live status. The response carries the absolute link, a title and one\nfixed line, and never a count; repeated calls answer the same link. A report that\ndoes not exist, is too old, or is not shown to the reader gets 404 and no link is\nmade. Sharing is limited per signed in account, and a blocked call gets 429 with a\nRetry-After header. Requires a signed in session; otherwise 401.",
@@ -5996,6 +6118,34 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.ReviewAskRequest": {
+            "type": "object",
+            "properties": {
+                "note": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "example": "The road really was flooded, I took the photo myself."
+                }
+            }
+        },
+        "handlers.ReviewAskResponse": {
+            "type": "object",
+            "properties": {
+                "state": {
+                    "type": "string",
+                    "enum": [
+                        "can_ask",
+                        "asked",
+                        "no_asks_left"
+                    ],
+                    "example": "can_ask"
+                },
+                "why": {
+                    "type": "string",
+                    "example": "Why: False"
+                }
+            }
+        },
         "handlers.ShareResponse": {
             "type": "object",
             "properties": {
@@ -6327,7 +6477,9 @@ const docTemplate = `{
                         "own_shown",
                         "own_review",
                         "own_kept",
-                        "own_removed"
+                        "own_removed",
+                        "own_restored",
+                        "own_stays_removed"
                     ],
                     "example": "reached_live"
                 },
@@ -6335,14 +6487,6 @@ const docTemplate = `{
                     "description": "Label is the row's accessible name, built whole on the server (UI-SPEC P32-C8).",
                     "type": "string",
                     "example": "New. Now confirmed. Flood, Critical. Confirmed by 3 people at different spots. 12 minutes ago"
-                },
-                "link": {
-                    "description": "Link is \"policy\" only on the row that says the reader's own report was\nremoved: that row opens the Policy page. It is a closed value, never an\naddress, and absent on every other row.",
-                    "type": "string",
-                    "enum": [
-                        "policy"
-                    ],
-                    "example": "policy"
                 },
                 "more_count": {
                     "description": "MoreCount is how many changes the rolled up row stands for. Only that row\ncarries it.",
@@ -6358,6 +6502,11 @@ const docTemplate = `{
                     "description": "ReportLine is the first line of the report's text (Q1 owner confirmed\n2026-10-18). It is absent for a finished Rescue report, an unavailable\nreport and the rolled up row. It is never the whole description.",
                     "type": "string",
                     "example": "Water over the bridge"
+                },
+                "review_report_id": {
+                    "description": "ReviewReportID is set only on the rows that say the reader's own report\nwas removed or stays removed, while it is still removed: the row opens\nthe reader's box for that report (why it was removed and Ask for\nreview, GET /reports/{id}/review-ask), never the report itself. Absent on\nevery other row.",
+                    "type": "integer",
+                    "example": 17
                 },
                 "severity": {
                     "description": "Severity is the severity word, empty when unavailable.",

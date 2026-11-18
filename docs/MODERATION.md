@@ -165,9 +165,13 @@ The screen has three lists, each oldest first and capped at 100 rows:
 - reports with open flags, with a count per reason and the notes people wrote;
 - reports waiting for a text check.
 
+Since 2026-11-18 (quick 261118-rz6) two more lists frame them: Review asks comes first and Removed
+comes after the three (see Removal reasons, asks for review and Restore below).
+
 The heading counts come from one count query and never from the length of a list. Find a report
 by id opens any report, including a held or removed one. Keep and a confirmed Remove each write
 one `moderation_actions` row, which holds no report text. No flagger identity is ever shown.
+Since 2026-11-18 Remove is confirmed in a "Why remove?" box with a reason, not in the row.
 
 Since 2026-11-17 (quick 261117-vvb) a report hidden for review comes first in the flagged list,
 marked "Hidden by flags", with the usual reasons, notes and counts. Keep shows it again, dismisses
@@ -244,16 +248,24 @@ by flag count alone, and neither does Pinalert: a moderator still decides.
   Remove it counts the way a removal counts (neutral). `TestReviewHideLeavesTheRating`.
 
 The author's bell gets one row per event, written straight to their updates whatever their
-follows or mutes, at most once per report and kind (`uq_updates_own_report`). They are bell only:
+follows or mutes, one row per report and kind (`uq_updates_own_report`). They are bell only:
 never a phone notification and never an email. They show in the bell and in the full updates list
 (`/profile?part=updates`) on phone and laptop, unread like other rows.
+
+Amended 2026-11-18 (quick 261118-rz6): an own event can now happen again (a second Remove after a
+Restore, a second Keep removed). The writers then move that one row's time to now and make it
+unread (an upsert on the same key, `read_at` cleared), for every own kind, so it comes back as the
+newest unread row and the bell never piles up. It keeps its id, and the bell's read mark (the
+largest id shown) still clears it.
 
 | Event | The row says | Tapping it opens |
 |---|---|---|
 | A held report becomes shown, by the late check or a moderator Keep (`own_shown`) | Your report passed the text check and is now showing. | The report |
 | Hidden for review by flags (`own_review`) | Your report is hidden while it's reviewed. | Nothing (a plain row) |
 | A moderator keeps it after a review hide (`own_kept`) | Your report is showing again. Sorry for the wait. | The report |
-| Removed, by a moderator's Remove from any state or the late text check (`own_removed`) | Your report was removed after review. | The Policy page |
+| Removed, by a moderator's Remove from any state or the late text check (`own_removed`) | Your report was removed after review. | ~~The Policy page~~ The author's box while it is still removed (since 2026-11-18), else nothing |
+| A moderator restored it (`own_restored`, since 2026-11-18) | Your report is back. | The report, while it is available |
+| A moderator answered an ask with Keep removed (`own_stays_removed`, since 2026-11-18) | Your report stays removed. | The author's box while it is still removed, else nothing |
 
 No row is written while a report waits for the text check: the message at posting already says
 so. A row about the author's own withheld report never turns into "This report is no longer
@@ -265,6 +277,62 @@ Tests: `TestFlagReviewHide`, `TestFlagReviewConcurrent`, `TestReviewUntouchedByT
 `TestOwnShownAndRemovedRows`, `TestReviewIsWithheldEverywhere` and `TestPushReviewHideAndKeep` in
 `internal/service`, `TestReviewHideFlow` and `TestWithheldReportsInNoFeed` in
 `internal/api/handlers`, and `TestMigration00026` in `internal/store`.
+
+### Removal reasons, asks for review and Restore (since 2026-11-18)
+
+The owner asked (7.1 UAT, 2026-11-17 and 18) that a removed report says why, that its author can
+ask for a second look, and that the moderator can let people see it again, all in few words.
+Before this a removal was final; now only a moderator's Restore undoes it. Reports only: comment
+moderation is unchanged.
+
+- **Why.** Every move to removed records one reason on the report (`reports.removed_reason`,
+  migration 00027): Spam, Abusive, False, Dangerous or Other from the moderator, or `text_check`
+  when the late text check removed it. The moderator's audit row keeps the same five (never
+  `text_check`). `reports.removed_at` keeps when, for the Removed list. Both are cleared by
+  Restore and set on no report that is not removed. Reports removed before 00027 have no reason
+  and show no Why line; their time is taken from the latest Remove action, else the rejecting
+  check, else when the report was made.
+- **Remove needs a reason.** Remove report, from any list or Find, opens a "Why remove?" box built
+  on the Log out box: the five reasons as one radio group of real buttons, then Cancel and Remove.
+  Remove stays off until a reason is picked. The API answers 400 on `reason` without one of the
+  five (`POST /api/moderation/reports/{id}/remove` with `{"reason":"false"}`). Keep is unchanged.
+- **The author's box.** The bell rows "Your report was removed after review." and "Your report
+  stays removed." open a box, in the bell and in the full updates list, rendered as a child of the
+  page body so nothing clips it on iPhone Safari. Title Removed, the line "Why: False" (none
+  without a recorded reason), then one state: a "Note (optional)" box of at most 200 characters
+  with Close and Ask for review; "Asked." while an ask is open; "No asks left." after three. It
+  never shows the report's words, flag counts, who flagged, places or the moderator.
+- **Asks.** `GET` and `POST /api/reports/{id}/review-ask`. Only the report's author, only while it
+  is removed: a stranger, a shown, held or hidden report and an unknown id all answer the same
+  404. One open ask at a time and at most `ReviewAskLimit` (3) per report in total, counted across
+  Restores and later removals; a fourth or a second open ask answers 409 with a plain line. The
+  ask locks the report row first and decides in the same transaction, and a partial unique index
+  (`uq_report_review_asks_open`) backs the one open ask. The note is trimmed plain text for
+  moderators only: never sent to the text check, never logged, never in a public answer.
+- **Review asks list.** First on the moderator screen: each open ask, oldest first, at most 100,
+  with the report as other rows show it, "Why: X" and "Note:" with the author's note when given,
+  and Restore and Keep removed.
+- **Removed list.** Reports removed in the last 30 days, newest removal first, at most 100, each
+  with "Why: X" and Restore.
+- **Restore** (either list): removed to clear, the reason and time cleared, open flags dismissed,
+  `review_kept_at` stamped (so flags can never hide it again and it never sends a phone alert
+  again), an open ask closed as restored, a `restore` audit row and the author's `own_restored`
+  row. The time it lasts is not extended: an expired report comes back into Past only.
+- **Keep removed** (only with an open ask): the ask closed as kept_removed, a `keep_removed` audit
+  row and `own_stays_removed`, which opens the box again so the author may ask while fewer than 3
+  asks are used. Both answers take the check row lock and then the report row lock, like Keep and
+  Remove; a repeated or stale answer answers 409 and writes nothing.
+- **A later Remove** of a restored report works as before, needs a reason and brings
+  `own_removed` back unread.
+- **Ratings.** A restored report counts by its votes like any shown report; a removal counts as a
+  removal always has (neutral). Asks change nothing (`TestRestoredReportCountsInTheRating`).
+
+Tests: `TestRemoveNeedsAReason`, `TestLateTextCheckRecordsTextCheck`, `TestReviewAskRules`,
+`TestReviewAskConcurrent`, `TestRestoreAndKeepRemoved`, `TestRestoreUnderTheRowLock`,
+`TestRestoredReportCountsInTheRating`, `TestUpdatesListBoxRows` and
+`TestPushRestoredReportNeverPushes` in `internal/service`, `TestReviewAskFlow` in
+`internal/api/handlers`, `TestMigration00027` in `internal/store`, and
+`web/moderate_remove_test.mjs` and `web/updates_test.mjs` for the two boxes.
 
 ## Comments
 
