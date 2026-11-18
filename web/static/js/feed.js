@@ -21,6 +21,11 @@
 // report only. The trust line renders the server's counters and words
 // exactly as sent, and this file computes none of them: a count here is never
 // typed, capped or bumped by the browser.
+//
+// Amended 2026-11-18 by quick 261118-saj (owner): a Critical report people in
+// different places flagged carries the Being checked mark after its severity
+// word, the row's one control. It only shows its own line and keeps every
+// press to itself, so the row still opens the report everywhere else.
 (function () {
   'use strict';
 
@@ -313,6 +318,10 @@
     var severityLabel = PinalertTrust.createSeverityLabel();
     body.appendChild(severityLabel);
     body.insertBefore(lead, severityLabel);
+    // Quick 261118-saj: the Being checked mark sits right after the severity
+    // word. It is the row's one control and keeps its presses to itself.
+    var check = PinalertTrust.createCheckMark();
+    body.appendChild(check.el);
 
     // The bold line of a disputed row (cue 3): "Disputed: may not be true",
     // above the counters that carry the server's dispute figures. Hidden on
@@ -359,7 +368,7 @@
     });
 
     return {
-      el: li, glyph: glyph, severity: severityLabel, title: title, meta: meta, written: written,
+      el: li, glyph: glyph, severity: severityLabel, check: check, title: title, meta: meta, written: written,
       away: away, far: far, tag: tag, trust: trust, lead: lead, disputedLine: disputedLine
     };
   }
@@ -388,6 +397,7 @@
   function updateRow(row, report) {
     replacePrefixedClass(row.el, 'sev-', Pinalert.severityClass(report));
     PinalertTrust.updateSeverityLabel(row.severity, report);
+    PinalertTrust.updateCheckMark(row.check, report);
     replacePrefixedClass(row.el, 'age-', 'age-' + PinalertTrust.fadeStage(report));
 
     // The visibility state class goes on the row element (inherits down to

@@ -449,6 +449,13 @@ func (w *PushWorker) sendRow(ctx context.Context, claim sqlcgen.ClaimDuePushesRo
 	if facts.Kept && run.kind != PushKindChanged {
 		return w.skip(ctx, run, pushSkipNotEligible)
 	}
+	// While flags have the Being checked mark on the report, no row of any
+	// kind is sent, a changed note included (quick 261118-saj). A first alert
+	// skipped here is not queued again for the same person after a Keep (the
+	// one first alert per person and report index), so nobody gets it twice.
+	if facts.FlagCheck {
+		return w.skip(ctx, run, pushSkipNotEligible)
+	}
 
 	// A now disputed note reaches a phone only for a report people had confirmed
 	// before, replayed from the report's own vote log. Only a changed row whose

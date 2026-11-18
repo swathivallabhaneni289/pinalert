@@ -230,6 +230,13 @@ type FeedReportResponse struct {
 	// category was retired). Only the reader's own tick reads it. It never
 	// filters, hides or reorders anything by default. Always present.
 	KeptByReliableFilter bool `json:"kept_by_reliable_filter" example:"false"`
+	// BeingChecked is true while people in different places have flagged this
+	// Critical report and no moderator has looked yet. The report stays shown
+	// with a small mark that reads Being checked, and it sends no phone
+	// notification until a moderator keeps or removes it. Only a boolean: it
+	// never says how many flagged, where from or who. The same for every reader.
+	// Always present.
+	BeingChecked bool `json:"being_checked" example:"false"`
 }
 
 // HistoryResponse is how a finished report ended. State is resolved or
@@ -395,6 +402,7 @@ func reportViewToResponse(v service.ReportView) FeedReportResponse {
 		CommentsOpen:          v.CommentsOpen,
 		ConfirmedByPeople:     v.ConfirmedByPeople,
 		KeptByReliableFilter:  v.KeptByReliableFilter,
+		BeingChecked:          v.BeingChecked,
 	}
 }
 

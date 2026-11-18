@@ -238,6 +238,9 @@ type classified struct {
 	// PAGE-02); both are zero for a candidate with no extras row.
 	commentCount    int
 	viewerCommented bool
+	// beingChecked is the Being checked mark from the same extras read (quick
+	// 261118-saj); false for a candidate with no extras row.
+	beingChecked bool
 }
 
 // classify asks the one resolver about one candidate. Nothing here re derives a
@@ -258,7 +261,7 @@ func classify(c historyCandidate, rc readContext, now time.Time) classified {
 	meta := ReportMeta{Severity: r.Severity, Category: r.Category, Moderation: ModerationState(ex.ModerationState)}
 	vis, reason := Resolve(meta, tally, now)
 	view := ViewOf(vis, r.ExpiresAt, now)
-	out := classified{visibility: vis, reason: reason, view: view, tally: tally, reporterID: reporterID, votes: votes, commentCount: int(ex.CommentCount), viewerCommented: ex.ViewerCommented}
+	out := classified{visibility: vis, reason: reason, view: view, tally: tally, reporterID: reporterID, votes: votes, commentCount: int(ex.CommentCount), viewerCommented: ex.ViewerCommented, beingChecked: ex.BeingChecked}
 	if view == FeedViewResolved {
 		out.closure = ClosureOf(votes, r.ID, reporterID)
 	}
@@ -355,6 +358,8 @@ func baseView(in viewInput) ReportView {
 		// The server's word on the popup's promise (backlog 999.12): false on every
 		// finished view by construction.
 		ConfirmExtends: ConfirmExtends(r.Severity, c.visibility, r.CreatedAt, r.ExpiresAt, in.Now),
+		// The Being checked mark, display only (quick 261118-saj).
+		BeingChecked: c.beingChecked,
 	}
 }
 

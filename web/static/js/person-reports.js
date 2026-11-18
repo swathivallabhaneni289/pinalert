@@ -97,7 +97,148 @@ window.PinalertPersonReports = (function () {
     }
   }
 
+  // ---- The Being checked mark of a live row (quick 261118-saj) ----
+  //
+  // The server draws the mark after the label line of a Critical report people
+  // in different places flagged. The row is one link, so the mark is not a
+  // button: its words are already part of the link's name. Here a mouse
+  // resting on it shows its one line, "Being checked.", and leaving hides it;
+  // a tap or click on it shows the line instead of opening the report, until a
+  // second press, Escape or a press anywhere else. At most one line is open.
+  var openMark = null;
+
+  function tipOf(mark) {
+    return mark && typeof mark.querySelector === 'function' ? mark.querySelector('.person-report__check-tip') : null;
+  }
+
+  // markRoom is the band of the screen the line can be seen in: inside every
+  // box around the mark that clips what passes its edge (the page's scroller),
+  // below the sticky top bar and above the phone's app bar. It answers null
+  // where nothing can be measured.
+  function markRoom(mark) {
+    if (typeof window.getComputedStyle !== 'function' || !document.body) {
+      return null;
+    }
+    var top = 0;
+    var bottom = window.innerHeight || Infinity;
+    for (var n = mark.parentNode; n && n.nodeType === 1 && n !== document.body; n = n.parentNode) {
+      var style = window.getComputedStyle(n);
+      if (style && style.overflowY && style.overflowY !== 'visible') {
+        var box = n.getBoundingClientRect();
+        top = Math.max(top, box.top);
+        bottom = Math.min(bottom, box.bottom);
+      }
+    }
+    var topBar = document.querySelector('.top-chrome');
+    if (topBar) {
+      var tb = topBar.getBoundingClientRect();
+      if (tb.height > 0) {
+        top = Math.max(top, tb.bottom);
+      }
+    }
+    var appBar = document.querySelector('body > .app-bar');
+    if (appBar) {
+      var ab = appBar.getBoundingClientRect();
+      if (ab.height > 0) {
+        bottom = Math.min(bottom, ab.top);
+      }
+    }
+    return { top: top, bottom: bottom };
+  }
+
+  // placeMark opens the line above the mark, or below it when above it would
+  // reach under the top bar or past the top of the page's scroller and below
+  // it has more room (review of quick 261118-saj).
+  function placeMark(mark, tip) {
+    mark.removeAttribute('data-tip-below');
+    if (typeof tip.getBoundingClientRect !== 'function') {
+      return;
+    }
+    var room = markRoom(mark);
+    if (!room) {
+      return;
+    }
+    var above = tip.getBoundingClientRect();
+    var pastAbove = Math.max(0, above.bottom - room.bottom) + Math.max(0, room.top - above.top);
+    if (pastAbove === 0) {
+      return;
+    }
+    mark.setAttribute('data-tip-below', '');
+    var below = tip.getBoundingClientRect();
+    var pastBelow = Math.max(0, below.bottom - room.bottom) + Math.max(0, room.top - below.top);
+    if (pastBelow >= pastAbove) {
+      mark.removeAttribute('data-tip-below');
+    }
+  }
+
+  function showMark(mark, pinned) {
+    if (openMark && openMark !== mark) {
+      hideMark(openMark);
+    }
+    tipOf(mark).hidden = false;
+    mark.setAttribute('data-pinned', pinned ? 'true' : 'false');
+    placeMark(mark, tipOf(mark));
+    openMark = mark;
+  }
+
+  function hideMark(mark) {
+    tipOf(mark).hidden = true;
+    mark.removeAttribute('data-pinned');
+    mark.removeAttribute('data-tip-below');
+    if (openMark === mark) {
+      openMark = null;
+    }
+  }
+
+  function wireMark(mark) {
+    if (!tipOf(mark)) {
+      return;
+    }
+    mark.addEventListener('pointerenter', function (evt) {
+      if (evt.pointerType === 'mouse' && tipOf(mark).hidden) {
+        showMark(mark, false);
+      }
+    });
+    mark.addEventListener('pointerleave', function (evt) {
+      if (evt.pointerType === 'mouse' && mark.getAttribute('data-pinned') !== 'true') {
+        hideMark(mark);
+      }
+    });
+    mark.addEventListener('click', function (evt) {
+      evt.preventDefault();
+      evt.stopPropagation();
+      if (!tipOf(mark).hidden && mark.getAttribute('data-pinned') === 'true') {
+        hideMark(mark);
+        return;
+      }
+      showMark(mark, true);
+    });
+  }
+
+  // wireCheckMarks wires every mark the server drew and the two page wide
+  // closers, once.
+  function wireCheckMarks() {
+    var marks = document.querySelectorAll('[data-check-mark]');
+    if (!marks || marks.length === 0) {
+      return;
+    }
+    for (var i = 0; i < marks.length; i++) {
+      wireMark(marks[i]);
+    }
+    document.addEventListener('pointerdown', function (evt) {
+      if (openMark && !(evt.target && openMark.contains(evt.target))) {
+        hideMark(openMark);
+      }
+    }, true);
+    document.addEventListener('keydown', function (evt) {
+      if (evt.key === 'Escape' && openMark) {
+        hideMark(openMark);
+      }
+    });
+  }
+
   function init() {
+    wireCheckMarks();
     var kept = null;
     if (window.PinalertPosition && typeof window.PinalertPosition.read === 'function') {
       kept = window.PinalertPosition.read();
@@ -115,6 +256,7 @@ window.PinalertPersonReports = (function () {
 
   return {
     fillDistances: fillDistances,
-    greatCircleKm: greatCircleKm
+    greatCircleKm: greatCircleKm,
+    wireCheckMarks: wireCheckMarks
   };
 }());

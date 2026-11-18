@@ -148,10 +148,11 @@
           <ol class="person-report-list">
             {{range .Reports}}
             {{if .Href}}
+            {{/* Quick 261118-saj: a Critical report people in different places flagged carries the Being checked mark after its label line. The row is one link, so the mark is not a second control: its words are part of the link's name, a mouse resting on it or a tap on it shows the line (person-reports.js), and the opened report has the full mark. */}}
             <li class="person-report person-report--live {{.SeverityClass}}">
               <a class="person-report__body" href="{{.Href}}">
                 <span class="icon-badge person-report__disc" aria-hidden="true"><span class="icon-glyph {{.IconGlyph}}"></span></span>
-                <span class="person-report__report">{{if .AccessiblePrefix}}<span class="visually-hidden">{{.AccessiblePrefix}} </span>{{end}}<span class="person-report__title">{{.Title}}</span><span class="person-report__label">{{.LabelLine}}</span>{{if .DisputedLine}}<span class="person-report__disputed" aria-hidden="true">{{.DisputedLine}}</span>{{end}}</span>
+                <span class="person-report__report">{{if .AccessiblePrefix}}<span class="visually-hidden">{{.AccessiblePrefix}} </span>{{end}}<span class="person-report__title">{{.Title}}</span><span class="person-report__label">{{.LabelLine}}{{if .BeingChecked}} <span class="person-report__check" data-check-mark><span class="person-report__check-glyph" aria-hidden="true"></span><span class="visually-hidden">Being checked.</span><span class="person-report__check-tip" aria-hidden="true" hidden>Being checked.</span></span>{{end}}</span>{{if .DisputedLine}}<span class="person-report__disputed" aria-hidden="true">{{.DisputedLine}}</span>{{end}}</span>
                 {{/* Review fix IN-T04: the hidden prefix already says Disputed or Not confirmed yet at the start of the row's name, so the visible line and the chip are skipped by a screen reader and the state is read once. */}}
                 <span class="person-report__status"><span class="person-chip {{.ChipClass}}"{{if .AccessiblePrefix}} aria-hidden="true"{{end}}>{{.StatusWord}}</span></span>
                 <span class="person-report__when">{{.WhenText}}</span>

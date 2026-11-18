@@ -274,7 +274,9 @@ func TestLegalPagesRender(t *testing.T) {
 		// Amended 2026-11-17 (quick 261117-vvb): the author is told in the bell,
 		// and flags from three places hide a report until a moderator acts.
 		"A removed report shows to no one. Its author is told in the bell, whether a moderator removed it or the late automatic check did.",
-		"One flag never hides a report. When people in three different places flag it, it is hidden until a moderator keeps or removes it. Its author is told in the bell when it is hidden, shown again or removed, and is never told who flagged it.",
+		// Amended 2026-11-18 (quick 261118-saj): a Critical report flagged this
+		// way stays visible, marked, with its alerts paused.
+		"One flag never hides a report. When people in three different places flag it, it is hidden until a moderator keeps or removes it. A Critical report flagged this way stays visible, marked as being checked, and sends no alerts until a moderator looks. Its author is told in the bell when it is hidden, shown again or removed, and is never told who flagged it.",
 		// Amended 2026-11-18 (quick 261118-rz6): a removed report says why, and
 		// its author can ask for a review from the bell, up to 3 times.
 		"The bell also says why it was removed, and its author can ask for a review there, up to 3 times.",

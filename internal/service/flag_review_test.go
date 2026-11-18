@@ -179,13 +179,18 @@ func TestFlagReviewHide(t *testing.T) {
 		}
 	})
 
-	t.Run("a hidden critical report is withheld too", func(t *testing.T) {
+	// Amended 2026-11-18 by quick 261118-saj (owner): flags never hide a
+	// critical report; it stays clear with the Being checked mark
+	// (flag_check_test.go). The state review itself is still withheld at every
+	// severity, which is what a critical report hidden before migration 00028
+	// was until that migration moved it back to clear.
+	t.Run("a critical report is not hidden, and review is still withheld at every severity", func(t *testing.T) {
 		id := r.report(service.SeverityCritical, service.ModerationClear)
 		r.mustFlag(id, frAt(1))
 		r.mustFlag(id, frAt(2))
 		r.mustFlag(id, frAt(3))
-		if got := r.state(id); got != "review" {
-			t.Fatalf("state = %q, want review", got)
+		if got := r.state(id); got != "clear" {
+			t.Fatalf("state = %q, want clear", got)
 		}
 		meta := service.ReportMeta{Severity: service.SeverityCritical, Category: service.CategoryFlood, Moderation: service.ModerationReview}
 		if !meta.Withheld() {
@@ -464,18 +469,26 @@ func TestReviewUntouchedByTextCheck(t *testing.T) {
 	}
 }
 
-// TestReviewRuleIsStateBased: a pending serious report that three places
-// flagged stays pending, and once the late check passes it, the next flag, even
-// one with no place, hides it, because the rule reads the open flags and not
-// the flag that triggers it.
+// TestReviewRuleIsStateBased: a report whose open flags already came from
+// three places while it could not be hidden is hidden by the next flag, even
+// one with no place, because the rule reads the open flags and not the flag
+// that triggers it.
+//
+// Amended 2026-11-18 by quick 261118-saj (owner): the original case, a
+// pending serious report the late check then passed, now gets the Being
+// checked mark at the third place and is never hidden (flag_check_test.go).
+// The rule is still state based for a non serious report: here the three
+// places are stored while the report is held, then it is released by the
+// late check, and the next placeless flag hides it.
 func TestReviewRuleIsStateBased(t *testing.T) {
 	r := newFrRig(t)
 	ctx := context.Background()
 	now := time.Now().UTC()
-	id := insertPendingReport(t, r.pool, r.q, service.SeverityCritical, service.CategoryFlood, mwDesc, now.Add(-time.Minute), now.Add(6*time.Hour))
-	r.mustFlag(id, frAt(1))
-	r.mustFlag(id, frAt(2))
-	r.mustFlag(id, frAt(3))
+	id := insertPendingReport(t, r.pool, r.q, service.SeverityLow, service.CategoryFlood, mwDesc, now.Add(-time.Minute), now.Add(6*time.Hour))
+	for k := 1; k <= 3; k++ {
+		testutil.MustExec(t, r.pool, `INSERT INTO report_flags (report_id, account_id, reasons, flagger_cell) VALUES ($1, $2, ARRAY['false'], $3)`,
+			id, r.flagger(), fmt.Sprintf("tdr1v8%d", k))
+	}
 	if got := r.state(id); got != "pending" {
 		t.Fatalf("state = %q, want pending", got)
 	}

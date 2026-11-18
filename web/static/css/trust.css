@@ -1921,3 +1921,102 @@
   overflow: visible;
   background: transparent;
 }
+
+/* -------------------------------------------------------------------------
+ * The Being checked mark (quick 261118-saj, owner 2026-11-18). People in
+ * different places flagged this Critical report and no moderator has looked
+ * yet: a small flag button sits right after the severity tag, and its one
+ * line, "Being checked.", opens under it on hover, a tap, Enter or Space.
+ * The button is 24px with a 44px hit area drawn by ::before, so it stays a
+ * real target without crowding the tag. Grayscale only: colour is for
+ * severity. The line floats under the flag and never moves the report.
+ * ---------------------------------------------------------------------- */
+.check-mark:not([hidden]) {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  vertical-align: top;
+}
+
+.check-mark__button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.check-mark__button::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  transform: translate(-50%, -50%);
+}
+
+.check-mark__button:hover,
+.check-mark--open .check-mark__button {
+  background: var(--color-surface);
+}
+
+.check-mark__button:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.check-mark__glyph {
+  display: block;
+  width: 14px;
+  height: 14px;
+  background-color: currentColor;
+  -webkit-mask-image: url("/static/icons/flag.svg");
+  mask-image: url("/static/icons/flag.svg");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+.check-mark__tip:not([hidden]) {
+  position: absolute;
+  top: calc(100% + var(--space-sm));
+  left: 0;
+  z-index: 5;
+  display: block;
+  box-sizing: border-box;
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-shadow: var(--shadow-popup);
+  font-family: var(--font-family);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-regular);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* The line opens above the flag when below it would be cut off by the list
+   or covered by the phone's app bar; trust.js sets this while it is open. */
+.check-mark--above .check-mark__tip:not([hidden]) {
+  top: auto;
+  bottom: calc(100% + var(--space-sm));
+}

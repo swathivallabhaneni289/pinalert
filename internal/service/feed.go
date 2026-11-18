@@ -102,6 +102,11 @@ type ReportView struct {
 	// spot would still move this report's fade time (ConfirmExtends in expiry.go).
 	// Display only, and never read by Resolve (backlog 999.12).
 	ConfirmExtends bool
+	// BeingChecked is true while flags from different places have the Being
+	// checked mark on this serious report and no moderator has looked yet
+	// (quick 261118-saj). It is the same for every reader, display only, never
+	// read by Resolve, and says nothing about who flagged or how many did.
+	BeingChecked bool
 	// ReporterProfilePath is "/u/" plus the reporter's username, set only when the
 	// reporter is opted in, has a clear username, is not deleted, is not the
 	// reader and has not blocked the reader, and only on a live view (Active or

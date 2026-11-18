@@ -165,8 +165,14 @@ WHERE request_account_id = sqlc.arg(account_id)::bigint
 -- other column. Amended by Phase 9 plan 09-10 (D-12): comment_count leaves out
 -- comments whose author the viewer blocked (viewer 0 blocks nobody, so it
 -- counts as before); viewer_commented is the viewer's own and is unchanged.
+--
+-- Amended by quick 261118-saj: being_checked is true while flags have the
+-- Being checked mark on the report (migration 00028): flag_check_at set and
+-- review_kept_at not. It is the same for every reader and is only a boolean,
+-- never a flag count, a cell or a flagger.
 SELECT r.id AS report_id, r.moderation_state, r.client_written_at,
        (f.id IS NOT NULL)::bool AS viewer_flagged,
+       (r.flag_check_at IS NOT NULL AND r.review_kept_at IS NULL)::bool AS being_checked,
        (m.account_id IS NOT NULL)::bool AS viewer_muted,
        (SELECT count(*) FROM comments c
          WHERE c.report_id = r.id AND c.deleted_at IS NULL AND c.moderation_state = 'clear'
@@ -189,8 +195,10 @@ WHERE r.id = ANY(sqlc.arg(report_ids)::bigint[]);
 -- report is the only free text here; the check row itself holds none.
 -- Quick 261118-rz6: removed_reason is the reason of the current removal, NULL
 -- for a report that is not removed or was removed before migration 00027.
+-- Quick 261118-saj: being_checked is the Being checked mark (migration 00028).
 SELECT r.id, r.category, r.severity, r.description, r.created_at, r.expires_at,
        r.client_written_at, r.moderation_state, r.removed_reason,
+       (r.flag_check_at IS NOT NULL AND r.review_kept_at IS NULL)::bool AS being_checked,
        c.status AS check_status, c.verdict, c.scores, c.model,
        COALESCE(c.needs_review, false)::bool AS needs_review,
        (SELECT count(*) FROM report_flags f

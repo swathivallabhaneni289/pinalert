@@ -271,6 +271,11 @@ type ModerationRow struct {
 	// row of the Review asks list and empty when they wrote none. It is for
 	// moderators only and names nobody.
 	AskNote string
+	// BeingChecked is true while flags have the Being checked mark on this
+	// serious report, which stays shown (quick 261118-saj). The screen tags it
+	// Still showing. Read from the flagged list and the one report answer of
+	// Find, Keep and Remove; false on the other lists.
+	BeingChecked bool
 }
 
 // ModerationQueues is the answer of Queues: the lists in their SQL order and
@@ -447,6 +452,9 @@ type moderationRecord struct {
 	// current removal, and the author's note on an open ask (asks list only).
 	RemovedReason string
 	AskNote       string
+	// BeingChecked is the Being checked mark (quick 261118-saj), set by
+	// recordFromFlag and recordFromDetail only.
+	BeingChecked bool
 }
 
 func derefString(p *string) string {
@@ -458,23 +466,23 @@ func derefString(p *string) string {
 
 func recordFromReview(r sqlcgen.ReviewQueueRow) moderationRecord {
 	return moderationRecord{r.ID, r.Category, r.Severity, r.Description, r.CreatedAt, r.ExpiresAt, r.ClientWrittenAt,
-		r.ModerationState, r.CheckStatus, r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts, r.FlagNotes, "", ""}
+		r.ModerationState, r.CheckStatus, r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts, r.FlagNotes, "", "", false}
 }
 
 func recordFromFlag(r sqlcgen.FlagQueueRow) moderationRecord {
 	return moderationRecord{r.ID, r.Category, r.Severity, r.Description, r.CreatedAt, r.ExpiresAt, r.ClientWrittenAt,
-		r.ModerationState, derefString(r.CheckStatus), r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts, r.FlagNotes, "", ""}
+		r.ModerationState, derefString(r.CheckStatus), r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts, r.FlagNotes, "", "", r.BeingChecked}
 }
 
 func recordFromPending(r sqlcgen.PendingQueueRow) moderationRecord {
 	return moderationRecord{r.ID, r.Category, r.Severity, r.Description, r.CreatedAt, r.ExpiresAt, r.ClientWrittenAt,
-		r.ModerationState, r.CheckStatus, r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts, r.FlagNotes, "", ""}
+		r.ModerationState, r.CheckStatus, r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts, r.FlagNotes, "", "", false}
 }
 
 func recordFromDetail(r sqlcgen.ReportForModerationRow) moderationRecord {
 	return moderationRecord{r.ID, r.Category, r.Severity, r.Description, r.CreatedAt, r.ExpiresAt, r.ClientWrittenAt,
 		r.ModerationState, derefString(r.CheckStatus), r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, r.FlagCounts, r.FlagNotes,
-		derefString(r.RemovedReason), ""}
+		derefString(r.RemovedReason), "", r.BeingChecked}
 }
 
 // recordFromAsk and recordFromRemoved serve the two lists of quick
@@ -483,13 +491,13 @@ func recordFromDetail(r sqlcgen.ReportForModerationRow) moderationRecord {
 func recordFromAsk(r sqlcgen.ReviewAskQueueRow) moderationRecord {
 	return moderationRecord{r.ID, r.Category, r.Severity, r.Description, r.CreatedAt, r.ExpiresAt, r.ClientWrittenAt,
 		r.ModerationState, derefString(r.CheckStatus), r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, nil, nil,
-		derefString(r.RemovedReason), derefString(r.AskNote)}
+		derefString(r.RemovedReason), derefString(r.AskNote), false}
 }
 
 func recordFromRemoved(r sqlcgen.RemovedQueueRow) moderationRecord {
 	return moderationRecord{r.ID, r.Category, r.Severity, r.Description, r.CreatedAt, r.ExpiresAt, r.ClientWrittenAt,
 		r.ModerationState, derefString(r.CheckStatus), r.Scores, derefString(r.Model), r.NeedsReview, r.OpenFlagTotal, nil, nil,
-		derefString(r.RemovedReason), ""}
+		derefString(r.RemovedReason), "", false}
 }
 
 // buildRows turns records into ModerationRows. An empty slice reads nothing.
@@ -552,6 +560,9 @@ func (s *ModerationService) buildRows(ctx context.Context, recs []moderationReco
 			FlagReasons: []ModerationFlagCount{},
 			FlagNotes:   []ModerationFlagNote{},
 			AskNote:     rec.AskNote,
+			// The Being checked mark, only ever on a shown serious report
+			// (quick 261118-saj).
+			BeingChecked: rec.BeingChecked && meta.Serious() && !meta.Withheld(),
 		}
 		if r := RemovalReason(rec.RemovedReason); RemovalReasonLabel(r) != "" {
 			row.RemovedReason = r

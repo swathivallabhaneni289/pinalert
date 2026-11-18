@@ -41,8 +41,14 @@ type pushReportFacts struct {
 	View              FeedView
 	Confirmed         bool
 	// Kept is true once a moderator kept the report after a review hide
-	// (quick 261117-vvb). Such a report is never pushed again.
+	// (quick 261117-vvb), or restored it (quick 261118-rz6). Such a report is
+	// never pushed again. A report kept from the Being checked mark is not
+	// Kept: it alerts like any shown report (quick 261118-saj).
 	Kept bool
+	// FlagCheck is true while flags have the Being checked mark on the report
+	// (quick 261118-saj, migration 00028). Nothing of any kind is queued or
+	// sent for it until a moderator keeps or removes it.
+	FlagCheck bool
 }
 
 // loadPushFacts reads one report fresh, builds its vote tally, asks the
@@ -84,7 +90,12 @@ func loadPushFacts(ctx context.Context, q PushFactsQuerier, reportID int64, now 
 		Vis:               vis,
 		View:              view,
 		Confirmed:         ConfirmedByPeople(vis, view, tally),
-		Kept:              row.ReviewKeptAt.Valid,
+		// One settled marker, review_kept_at, for the hide and the mark: a
+		// settled report with flag_check_at set was kept from the mark and
+		// alerts again; one without it stays silent. The mark is on while
+		// flag_check_at is set and the report is not settled (migration 00028).
+		Kept:      row.ReviewKeptAt.Valid && !row.FlagCheckAt.Valid,
+		FlagCheck: row.FlagCheckAt.Valid && !row.ReviewKeptAt.Valid,
 	}
 	if row.Happening != nil {
 		h := Happening(*row.Happening)

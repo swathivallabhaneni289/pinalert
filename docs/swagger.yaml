@@ -319,6 +319,16 @@ definitions:
           report leaves the API (D-23).
         example: false
         type: boolean
+      being_checked:
+        description: |-
+          BeingChecked is true while people in different places have flagged this
+          Critical report and no moderator has looked yet. The report stays shown
+          with a small mark that reads Being checked, and it sends no phone
+          notification until a moderator keeps or removes it. Only a boolean: it
+          never says how many flagged, where from or who. The same for every reader.
+          Always present.
+        example: false
+        type: boolean
       category:
         description: rescue_needed appears only on a report stored before 2026-10-16
           (internal/service.Categories).
@@ -4706,6 +4716,8 @@ paths:
         still accepted on its own as a one reason flag. The body may carry the flagger's latitude and
         longitude, both or neither; only the place cell is kept. One flag never hides the report: once
         people in three different places flag it, it is hidden until a moderator keeps or removes it.
+        A Critical report is never hidden that way: it stays shown with being_checked true and sends
+        no phone notification until a moderator keeps or removes it.
         Each account can flag a report once, and a repeat gets 409. Your own report gets 403. A
         report that does not exist, or that is not shown in any feed, gets 404. Flagging is limited per
         verified account, and a blocked flag gets 429 with a Retry-After header.

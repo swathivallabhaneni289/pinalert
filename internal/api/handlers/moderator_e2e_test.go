@@ -150,7 +150,8 @@ func TestModeratorPageRenders(t *testing.T) {
 		"Flagged by the automatic check", "Flagged by people", "Text check not finished",
 		"Posted normally, but the text scored near the line. Newest first.",
 		// Amended 2026-11-18 (quick 261117-vvb review): hidden reports come first.
-		"People used Flag this report. Hidden by flags first, then most flags.",
+		// Amended 2026-11-18 (quick 261118-saj): marked Critical reports too.
+		"People used Flag this report. Hidden by flags and Still showing first, then most flags.",
 		"The check couldn't finish. Serious reports in this list are already published. Waiting longest first.",
 	} {
 		once("heading or line", text)

@@ -3654,3 +3654,152 @@ func TestMigration00027(t *testing.T) {
 		t.Errorf("after Up again: reason %v and time %v, want no reason and a time", reason, at)
 	}
 }
+
+// TestMigration00028 pins the Being checked mark migration (quick 261118-saj):
+// reports gain flag_check_at, and every serious report hidden for review by
+// flags (critical, or the retired rescue_needed category) moves back to clear
+// with the mark set, so nothing serious stays hidden by flags; a non serious
+// one stays hidden. Down drops the column and leaves a marked report clear.
+func TestMigration00028(t *testing.T) {
+	const file = "migrations/00028_add_flag_check_mark.sql"
+	contents, err := MigrationsFS.ReadFile(file)
+	if err != nil {
+		t.Fatalf("reading embedded %s: %v", file, err)
+	}
+	text := string(contents)
+	up := strings.Index(text, "+goose Up")
+	down := strings.Index(text, "+goose Down")
+	if up < 0 || down < 0 || down < up {
+		t.Fatalf("%s must carry +goose Up then +goose Down", file)
+	}
+	for _, want := range []string{"ADD COLUMN flag_check_at TIMESTAMPTZ", "WHERE moderation_state = 'review'",
+		"(severity = 'critical' OR category = 'rescue_needed')"} {
+		if !strings.Contains(text[:down], want) {
+			t.Errorf("migration 00028 Up must contain %q", want)
+		}
+	}
+	if !strings.Contains(text[down:], "DROP COLUMN flag_check_at") {
+		t.Error("migration 00028 Down must drop flag_check_at")
+	}
+	if strings.Contains(text[down:], "moderation_state =") {
+		t.Error("migration 00028 Down must not move any report: a marked report stays clear")
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping the database part of the 00028 migration test")
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("opening database: %v", err)
+	}
+	defer db.Close()
+
+	goose.SetBaseFS(MigrationsFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("goose dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up: %v", err)
+	}
+	version, err := goose.NumericComponent("00028_add_flag_check_mark.sql")
+	if err != nil {
+		t.Fatalf("parsing version: %v", err)
+	}
+
+	const sessionID = "migration-00028-session"
+	var a int64
+	ids := map[string]int64{}
+	t.Cleanup(func() {
+		_ = goose.Up(db, "migrations")
+		for _, id := range ids {
+			_, _ = db.Exec("DELETE FROM reports WHERE id = $1", id)
+		}
+		if a != 0 {
+			_, _ = db.Exec("DELETE FROM sessions WHERE account_id = $1", a)
+			_, _ = db.Exec("DELETE FROM accounts WHERE id = $1", a)
+		}
+	})
+	columns := func() (n int) {
+		t.Helper()
+		if err := db.QueryRow(`SELECT count(*) FROM information_schema.columns
+			WHERE table_schema = 'public' AND table_name = 'reports' AND column_name = 'flag_check_at'`).Scan(&n); err != nil {
+			t.Fatalf("counting columns: %v", err)
+		}
+		return
+	}
+	if n := columns(); n != 1 {
+		t.Fatalf("after Up: %d of 1 column", n)
+	}
+
+	// Down to 00027, store reports hidden for review the way 00026 left them,
+	// then Up again moves the serious ones.
+	if err := goose.DownTo(db, "migrations", version-1); err != nil {
+		t.Fatalf("goose down to %d: %v", version-1, err)
+	}
+	if n := columns(); n != 0 {
+		t.Fatalf("after Down: %d columns still present", n)
+	}
+	if err := db.QueryRow(`INSERT INTO accounts (email) VALUES ('migration-00028-a@example.com') RETURNING id`).Scan(&a); err != nil {
+		t.Fatalf("inserting account: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO sessions (session_id, account_id) VALUES ($1, $2)`, sessionID, a); err != nil {
+		t.Fatalf("inserting session: %v", err)
+	}
+	for _, rc := range []struct{ name, category, severity, state string }{
+		{"critical", "flood", "critical", "review"},
+		{"rescue", "rescue_needed", "low", "review"},
+		{"medium", "flood", "medium", "review"},
+		{"critical clear", "flood", "critical", "clear"},
+		{"critical removed", "flood", "critical", "removed"},
+	} {
+		var id int64
+		if err := db.QueryRow(`INSERT INTO reports
+			(session_id, category, severity, description, latitude, longitude, geohash, created_at, expires_at, moderation_state)
+			VALUES ($1, $2, $3, 'migration test report', 12.9716, 77.5946, 'tdr1v8y',
+			        now() - interval '1 hour', now() + interval '5 hours', $4) RETURNING id`,
+			sessionID, rc.category, rc.severity, rc.state).Scan(&id); err != nil {
+			t.Fatalf("inserting the %s report: %v", rc.name, err)
+		}
+		ids[rc.name] = id
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up again: %v", err)
+	}
+	read := func(name string) (state string, marked bool) {
+		t.Helper()
+		if err := db.QueryRow(`SELECT moderation_state, flag_check_at IS NOT NULL FROM reports WHERE id = $1`, ids[name]).Scan(&state, &marked); err != nil {
+			t.Fatalf("reading the %s report: %v", name, err)
+		}
+		return
+	}
+	for name, want := range map[string]struct {
+		state  string
+		marked bool
+	}{
+		"critical":         {"clear", true},
+		"rescue":           {"clear", true},
+		"medium":           {"review", false},
+		"critical clear":   {"clear", false},
+		"critical removed": {"removed", false},
+	} {
+		if state, marked := read(name); state != want.state || marked != want.marked {
+			t.Errorf("after Up: the %s report is %q with mark %v, want %q and %v", name, state, marked, want.state, want.marked)
+		}
+	}
+
+	// Down again: the column goes and the marked report stays clear.
+	if err := goose.DownTo(db, "migrations", version-1); err != nil {
+		t.Fatalf("goose down again: %v", err)
+	}
+	var state string
+	if err := db.QueryRow(`SELECT moderation_state FROM reports WHERE id = $1`, ids["critical"]).Scan(&state); err != nil {
+		t.Fatalf("reading state: %v", err)
+	}
+	if state != "clear" {
+		t.Errorf("after Down: the marked report is %q, want clear", state)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		t.Fatalf("goose up at the end: %v", err)
+	}
+}

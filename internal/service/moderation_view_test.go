@@ -9,6 +9,7 @@ package service
 
 import (
 	"os"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -136,6 +137,46 @@ func TestReviewIsWithheldEverywhere(t *testing.T) {
 					t.Errorf("%s %s review: view %q, want none", sev, cat, view)
 				}
 			}
+		}
+	}
+
+	// Amended 2026-11-18 by quick 261118-saj: flags never move a serious report
+	// to review; it keeps the state clear and gets the Being checked mark,
+	// which is not part of ReportMeta, so Resolve cannot read it. A marked
+	// report therefore resolves exactly as a clear serious report: Live by the
+	// critical bypass whatever its votes, and listable everywhere one is.
+	for _, sev := range Severities {
+		for _, cat := range Categories {
+			meta := ReportMeta{Severity: sev, Category: cat, Moderation: ModerationClear}
+			if !meta.Serious() {
+				continue
+			}
+			if meta.Withheld() {
+				t.Errorf("%s %s clear serious: withheld", sev, cat)
+			}
+			for _, tally := range tallies[:3] {
+				vis, reason := Resolve(meta, tally, withheldViewNow)
+				if vis != VisibilityLive || reason != ReasonCriticalBypass {
+					t.Errorf("%s %s clear serious %+v: Resolve = %q %q, want live critical_bypasses_gates", sev, cat, tally, vis, reason)
+				}
+				if !vis.ListableInFeed(false) || !vis.ListableInAll() {
+					t.Errorf("%s %s clear serious: not listable", sev, cat)
+				}
+			}
+		}
+	}
+	// The mark lives outside the resolver: ReportMeta has no field for it and
+	// visibility.go never names it.
+	if n := reflect.TypeOf(ReportMeta{}).NumField(); n != 3 {
+		t.Errorf("ReportMeta has %d fields, want Severity, Category and Moderation only", n)
+	}
+	src, err := os.ReadFile("visibility.go")
+	if err != nil {
+		t.Fatalf("reading visibility.go: %v", err)
+	}
+	for _, banned := range []string{"BeingChecked", "FlagCheck", "flag_check"} {
+		if strings.Contains(string(src), banned) {
+			t.Errorf("visibility.go names %s: the mark must never reach the resolver", banned)
 		}
 	}
 }

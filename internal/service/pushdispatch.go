@@ -397,8 +397,10 @@ func pushEarlier(a, b time.Time) time.Time {
 func (d *PushDispatcher) criticalBranch(ctx context.Context, run *evalRun) error {
 	f := run.facts
 	// A report a moderator kept after a review hide is never pushed again
-	// (quick 261117-vvb).
-	if !f.Meta.Serious() || f.ReporterAccountID == nil || f.Kept {
+	// (quick 261117-vvb). A report with the Being checked mark is not pushed
+	// while the mark is on, and is not marked fanned, so a later run after a
+	// moderator's Keep serves it then (quick 261118-saj).
+	if !f.Meta.Serious() || f.ReporterAccountID == nil || f.Kept || f.FlagCheck {
 		return nil
 	}
 	if !MayNotifyAboutReport(UpdateCriticalNearby, f.Vis, f.ExpiresAt, run.now) {
@@ -482,8 +484,9 @@ func (d *PushDispatcher) criticalBranch(ctx context.Context, run *evalRun) error
 func (d *PushDispatcher) followBranch(ctx context.Context, run *evalRun) error {
 	f := run.facts
 	// Like the Critical branch, a kept report is never pushed again (quick
-	// 261117-vvb).
-	if f.ReporterAccountID == nil || d.updates == nil || f.Kept {
+	// 261117-vvb), and a report with the Being checked mark waits, before the
+	// pass is recorded, so it gets its pass after a Keep (quick 261118-saj).
+	if f.ReporterAccountID == nil || d.updates == nil || f.Kept || f.FlagCheck {
 		return nil
 	}
 	if run.follow != "" {
@@ -567,7 +570,8 @@ func (d *PushDispatcher) changesBranch(ctx context.Context, run *evalRun) error 
 // The query leaves out an alert that is still queued or whose words did not say
 // so, and the unique index keeps it to one.
 func (d *PushDispatcher) confirmedBranch(ctx context.Context, run *evalRun) error {
-	if !run.facts.Confirmed {
+	// Nothing is queued while the Being checked mark is on (quick 261118-saj).
+	if !run.facts.Confirmed || run.facts.FlagCheck {
 		return nil
 	}
 	_, err := d.q.EnqueueConfirmedUpdates(ctx, sqlcgen.EnqueueConfirmedUpdatesParams{

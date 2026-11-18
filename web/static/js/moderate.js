@@ -138,6 +138,9 @@
   // moderator acts. It comes first in the flagged list.
   var HIDDEN_BY_FLAGS_WORD = 'Hidden by flags';
   var HIDDEN_BY_FLAGS_DOES = "Keep report shows it again, and flags can't hide it again. Remove report hides it from everyone and tells the author.";
+  // Quick 261118-saj: a Critical report flags marked Being checked instead of
+  // hiding it. It comes first in the flagged list with the hidden ones.
+  var STILL_SHOWING_WORD = 'Still showing';
   var REMOVED_SENTENCE = 'Removed after review.';
   var SCORED_INTRO = 'The check scored this text:';
   var UNFINISHED_INTRO = "The text check hasn't finished.";
@@ -499,6 +502,11 @@
     line.appendChild(label);
 
     var visibility = report.visibility_word;
+    // Quick 261118-saj: a Critical report flags marked Being checked is still
+    // showing to everyone; its tag says so in place of the showing word.
+    if (report.being_checked === true && (report.view === 'active' || report.view === 'disputed')) {
+      visibility = STILL_SHOWING_WORD;
+    }
     if (typeof visibility === 'string' && visibility !== '') {
       var visibilityEl = makeEl('span', 'mod-row__state');
       Pinalert.setText(visibilityEl, visibility);

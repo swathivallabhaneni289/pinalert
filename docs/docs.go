@@ -3384,7 +3384,7 @@ const docTemplate = `{
         },
         "/reports/{id}/flag": {
             "post": {
-                "description": "Sends a report to the moderators with one or more of five reasons: spam, abusive,\nfalse, dangerous or other, each at most once, and an optional note of at most 300\ncharacters that only moderators see. The note goes through the same text check as a\nreport description, and a refused note gets 422. The older single reason field is\nstill accepted on its own as a one reason flag. The body may carry the flagger's latitude and\nlongitude, both or neither; only the place cell is kept. One flag never hides the report: once\npeople in three different places flag it, it is hidden until a moderator keeps or removes it.\nEach account can flag a report once, and a repeat gets 409. Your own report gets 403. A\nreport that does not exist, or that is not shown in any feed, gets 404. Flagging is limited per\nverified account, and a blocked flag gets 429 with a Retry-After header.\nRequires a session verified by email; an unverified caller receives 401.",
+                "description": "Sends a report to the moderators with one or more of five reasons: spam, abusive,\nfalse, dangerous or other, each at most once, and an optional note of at most 300\ncharacters that only moderators see. The note goes through the same text check as a\nreport description, and a refused note gets 422. The older single reason field is\nstill accepted on its own as a one reason flag. The body may carry the flagger's latitude and\nlongitude, both or neither; only the place cell is kept. One flag never hides the report: once\npeople in three different places flag it, it is hidden until a moderator keeps or removes it.\nA Critical report is never hidden that way: it stays shown with being_checked true and sends\nno phone notification until a moderator keeps or removes it.\nEach account can flag a report once, and a repeat gets 409. Your own report gets 403. A\nreport that does not exist, or that is not shown in any feed, gets 404. Flagging is limited per\nverified account, and a blocked flag gets 429 with a Retry-After header.\nRequires a session verified by email; an unverified caller receives 401.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4621,6 +4621,11 @@ const docTemplate = `{
             "properties": {
                 "approximate": {
                     "description": "Approximate is true when the position and the geohash are a blurred\npoint and the description is empty, which is how a finished Rescue\nreport leaves the API (D-23).",
+                    "type": "boolean",
+                    "example": false
+                },
+                "being_checked": {
+                    "description": "BeingChecked is true while people in different places have flagged this\nCritical report and no moderator has looked yet. The report stays shown\nwith a small mark that reads Being checked, and it sends no phone\nnotification until a moderator keeps or removes it. Only a boolean: it\nnever says how many flagged, where from or who. The same for every reader.\nAlways present.",
                     "type": "boolean",
                     "example": false
                 },

@@ -344,11 +344,19 @@ func TestTrustDisclosure(t *testing.T) {
 	p13MustNotContain(t, "createTrustBlock", create, "preventDefault")
 
 	const listener = "document.addEventListener("
-	if n := strings.Count(code, listener); n != 1 {
-		t.Fatalf("trust.js has %d %s calls on code lines, want exactly 1 (A23)", n, listener)
+	// Amended 2026-11-18 by quick 261118-saj: the Being checked mark adds the
+	// one outside press listener that closes its line, added once and never a
+	// key listener. Escape still has exactly one listener, onDocumentEscape,
+	// which closes an open line first (closeOneLevel).
+	const checkOutside = "document.addEventListener('pointerdown', onCheckOutside, true);"
+	if n := strings.Count(code, checkOutside); n != 1 {
+		t.Fatalf("trust.js has %d outside press listeners for the Being checked mark, want exactly 1", n)
+	}
+	if n := strings.Count(code, listener) - 1; n != 1 {
+		t.Fatalf("trust.js has %d %s calls on code lines besides the mark's, want exactly 1 (A23)", n, listener)
 	}
 	for _, line := range strings.Split(code, "\n") {
-		if strings.Contains(line, listener) {
+		if strings.Contains(line, listener) && !strings.Contains(line, checkOutside) {
 			p13MustContain(t, "the document listener statement", line, "'keydown'", "onDocumentEscape", ", true)")
 		}
 	}
@@ -376,7 +384,14 @@ func TestTrustDisclosure(t *testing.T) {
 
 	// A5: the hover, title and tooltip design is dropped, and there is no
 	// live region because the 30 second poll would re-announce it.
-	p13MustNotContain(t, "trust.js", trust,
+	//
+	// Amended 2026-11-18 by quick 261118-saj (owner: the Being checked words
+	// show "when you hover over the flags"): the Being checked mark's own
+	// section of trust.js is the one place with a hover line and a tooltip
+	// role. The trust block itself still has none, so the ban reads trust.js
+	// with that section cut out, and the section is pinned by
+	// TestCheckMarkContract (check_mark_contract_test.go).
+	p13MustNotContain(t, "trust.js", withoutCheckMarkSection(t, trust),
 		"aria-live", "tooltip", "mouseenter", "mouseover", "setAttribute('title'", ".title =")
 
 	// Plan 03-19 adds the popup branch (A23, A70): the owner of the open popup
@@ -401,9 +416,24 @@ func TestTrustDisclosure(t *testing.T) {
 
 	// The popup has no panel to collapse on close (plan 03-31).
 	p13MustNotContain(t, "trust.js code", code, "collapsePanelsIn")
-	if n := strings.Count(code, "document.addEventListener("); n != 1 {
+	// Amended 2026-11-18 by quick 261118-saj: the mark's outside press
+	// listener is the one other document listener, pinned above.
+	if n := strings.Count(withoutCheckMarkSection(t, code), "document.addEventListener("); n != 1 {
 		t.Errorf("trust.js has %d document listeners after the popup branch, want exactly 1", n)
 	}
+}
+
+// withoutCheckMarkSection returns src with the Being checked mark's section of
+// trust.js cut out (quick 261118-saj): from its first statement to the one
+// capture phase key listener. It works on the raw file and on its code lines.
+func withoutCheckMarkSection(t *testing.T, src string) string {
+	t.Helper()
+	start := strings.Index(src, "var CHECK_NAME = 'Being checked';")
+	end := strings.Index(src, "document.addEventListener('keydown', onDocumentEscape, true);")
+	if start < 0 || end < 0 || end < start {
+		t.Fatalf("trust.js lacks the Being checked mark section markers")
+	}
+	return src[:start] + src[end:]
 }
 
 // p13CSSRule is one parsed rule: the at-rule prelude it sits in (empty at top

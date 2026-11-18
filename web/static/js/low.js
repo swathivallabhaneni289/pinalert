@@ -418,6 +418,9 @@
 
     var severityLabel = PinalertTrust.createSeverityLabel();
     body.appendChild(severityLabel);
+    // Quick 261118-saj: the Being checked mark, right after the severity word.
+    var check = PinalertTrust.createCheckMark();
+    body.appendChild(check.el);
 
     var title = document.createElement('p');
     title.className = 'report-row__title';
@@ -463,6 +466,7 @@
       el: li,
       glyph: glyph,
       severity: severityLabel,
+      check: check,
       title: title,
       meta: meta,
       written: written,
@@ -484,6 +488,7 @@
   function updateLowRow(row, report) {
     replacePrefixedClass(row.el, 'sev-', Pinalert.severityClass(report));
     PinalertTrust.updateSeverityLabel(row.severity, report);
+    PinalertTrust.updateCheckMark(row.check, report);
     replacePrefixedClass(row.el, 'age-', 'age-' + PinalertTrust.fadeStage(report));
     PinalertVisibility.applyVisibilityClass(row.el, report);
 

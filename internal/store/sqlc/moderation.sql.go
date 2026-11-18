@@ -132,7 +132,9 @@ WITH fin AS (
     UPDATE reports r
     SET moderation_state = $7,
         removed_reason = $8::text,
-        removed_at = CASE WHEN $8::text IS NULL THEN NULL ELSE now() END
+        removed_at = CASE WHEN $8::text IS NULL THEN NULL ELSE now() END,
+        -- Quick 261118-saj: a removal takes the Being checked mark with it.
+        flag_check_at = CASE WHEN $8::text IS NULL THEN r.flag_check_at ELSE NULL END
     FROM fin
     WHERE r.id = fin.report_id
       AND r.moderation_state NOT IN ('removed', 'review')
@@ -203,6 +205,7 @@ func (q *Queries) FinishCheckAndSetState(ctx context.Context, arg FinishCheckAnd
 const flagQueue = `-- name: FlagQueue :many
 SELECT r.id, r.category, r.severity, r.description, r.created_at, r.expires_at,
        r.client_written_at, r.moderation_state,
+       (r.flag_check_at IS NOT NULL AND r.review_kept_at IS NULL)::bool AS being_checked,
        c.status AS check_status, c.verdict, c.scores, c.model,
        COALESCE(c.needs_review, false)::bool AS needs_review,
        (SELECT count(*) FROM report_flags f
@@ -222,7 +225,8 @@ FROM reports r
 LEFT JOIN moderation_checks c ON c.report_id = r.id
 WHERE EXISTS (SELECT 1 FROM report_flags f WHERE f.report_id = r.id AND f.dismissed_at IS NULL)
   AND r.moderation_state <> 'removed'
-ORDER BY (r.moderation_state = 'review') DESC, open_flag_total DESC, r.created_at DESC, r.id DESC
+ORDER BY (r.moderation_state = 'review' OR (r.flag_check_at IS NOT NULL AND r.review_kept_at IS NULL)) DESC,
+         open_flag_total DESC, r.created_at DESC, r.id DESC
 LIMIT 100
 `
 
@@ -235,6 +239,7 @@ type FlagQueueRow struct {
 	ExpiresAt       time.Time
 	ClientWrittenAt pgtype.Timestamptz
 	ModerationState string
+	BeingChecked    bool
 	CheckStatus     *string
 	Verdict         *string
 	Scores          []byte
@@ -247,8 +252,10 @@ type FlagQueueRow struct {
 
 // List (b): posts with at least one open flag, most flags first and then
 // newest, at most 100 rows. Quick 261117-vvb: a report hidden for review by
-// flags comes before every other row. LEFT JOIN because a flagged report may have no
-// check row (seeded and older reports).
+// flags comes before every other row. Quick 261118-saj: a serious report with
+// the Being checked mark (being_checked) comes first together with them.
+// LEFT JOIN because a flagged report may have no check row (seeded and older
+// reports).
 func (q *Queries) FlagQueue(ctx context.Context) ([]FlagQueueRow, error) {
 	rows, err := q.db.Query(ctx, flagQueue)
 	if err != nil {
@@ -267,6 +274,7 @@ func (q *Queries) FlagQueue(ctx context.Context) ([]FlagQueueRow, error) {
 			&i.ExpiresAt,
 			&i.ClientWrittenAt,
 			&i.ModerationState,
+			&i.BeingChecked,
 			&i.CheckStatus,
 			&i.Verdict,
 			&i.Scores,
@@ -488,8 +496,14 @@ WITH closed AS (
 )
 UPDATE reports
 SET moderation_state = 'clear',
-    review_kept_at = CASE WHEN reports.moderation_state = 'review' THEN now() ELSE reports.review_kept_at END
-WHERE reports.id = $1 AND reports.moderation_state IN ('pending', 'review')
+    review_kept_at = CASE
+        WHEN reports.moderation_state = 'review' THEN now()
+        WHEN reports.flag_check_at IS NOT NULL AND reports.review_kept_at IS NULL THEN now()
+        ELSE reports.review_kept_at END
+WHERE reports.id = $1
+  AND (reports.moderation_state IN ('pending', 'review')
+       OR (reports.moderation_state = 'clear'
+           AND reports.flag_check_at IS NOT NULL AND reports.review_kept_at IS NULL))
 `
 
 // Keep as one statement. Two data modifying CTEs close the check and dismiss
@@ -501,6 +515,12 @@ WHERE reports.id = $1 AND reports.moderation_state IN ('pending', 'review')
 // Quick 261117-vvb: a report hidden for review is released to clear too, and
 // only then is review_kept_at stamped, so flags can never hide it again. The
 // SET reads the state before this statement, which is why the stamp is a CASE.
+//
+// Quick 261118-saj: Keep of a report with the Being checked mark (shown, or
+// pending and serious) stamps review_kept_at too. That takes the mark off and
+// settles the report: flags never mark or hide it again. flag_check_at stays,
+// which is how push tells a report kept from the mark (alerts again) from one
+// kept after a hide (stays silent).
 func (q *Queries) KeepReport(ctx context.Context, reportID int64) error {
 	_, err := q.db.Exec(ctx, keepReport, reportID)
 	return err
@@ -549,6 +569,41 @@ func (q *Queries) LockReportModeration(ctx context.Context, reportID int64) (Loc
 	var i LockReportModerationRow
 	err := row.Scan(&i.ModerationState, &i.Severity, &i.Category)
 	return i, err
+}
+
+const markReportForFlagCheck = `-- name: MarkReportForFlagCheck :execrows
+UPDATE reports r
+SET flag_check_at = now()
+WHERE r.id = $1
+  AND r.moderation_state IN ('clear', 'pending')
+  AND r.flag_check_at IS NULL
+  AND r.review_kept_at IS NULL
+  AND (SELECT count(DISTINCT f.flagger_cell)
+         FROM report_flags f
+        WHERE f.report_id = r.id
+          AND f.dismissed_at IS NULL
+          AND f.flagger_cell IS NOT NULL) >= $2::bigint
+`
+
+type MarkReportForFlagCheckParams struct {
+	ReportID  int64
+	Threshold int64
+}
+
+// Quick 261118-saj: the serious report's side of HideReportForReview. A
+// serious report (the service decides that in Go from the locked row) is never
+// hidden by flags; once its open flags come from at least threshold different
+// place cells, by the same count as the hide, it gets the Being checked mark
+// and stays shown. Only a report that is shown (clear, or pending and serious,
+// which is published while its check retries), not marked yet and not settled
+// (review_kept_at, one settled marker for the hide and the mark) moves, so the
+// mark is set at most once. One row back means this call set it.
+func (q *Queries) MarkReportForFlagCheck(ctx context.Context, arg MarkReportForFlagCheckParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markReportForFlagCheck, arg.ReportID, arg.Threshold)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const moderationQueueCounts = `-- name: ModerationQueueCounts :one
@@ -738,7 +793,8 @@ WITH closed AS (
 UPDATE reports
 SET moderation_state = 'removed',
     removed_reason = $1::text,
-    removed_at = now()
+    removed_at = now(),
+    flag_check_at = NULL
 WHERE reports.id = $2
 `
 
@@ -752,7 +808,8 @@ type RemoveReportParams struct {
 // so the worker never claims it again. Like Keep, the service runs it inside a
 // transaction after LockModerationCheck. Quick 261118-rz6: the moderator's
 // reason and the time are stored with it, and since then only a moderator's
-// Restore (RestoreReport) brings a removed report back.
+// Restore (RestoreReport) brings a removed report back. Quick 261118-saj: the
+// Being checked mark goes with the removal (flag_check_at cleared).
 func (q *Queries) RemoveReport(ctx context.Context, arg RemoveReportParams) error {
 	_, err := q.db.Exec(ctx, removeReport, arg.RemovedReason, arg.ReportID)
 	return err
@@ -863,7 +920,8 @@ UPDATE reports
 SET moderation_state = 'clear',
     removed_reason = NULL,
     removed_at = NULL,
-    review_kept_at = now()
+    review_kept_at = now(),
+    flag_check_at = NULL
 WHERE reports.id = $1 AND reports.moderation_state = 'removed'
 `
 
@@ -872,7 +930,9 @@ WHERE reports.id = $1 AND reports.moderation_state = 'removed'
 // removal, dismisses any open flags and stamps review_kept_at, so flags can
 // never hide it again and it never sends a phone alert again. The time it
 // lasts is not changed. One row back means this call restored it. The service
-// runs it inside the Restore transaction after the two row locks.
+// runs it inside the Restore transaction after the two row locks. Quick
+// 261118-saj: flag_check_at is cleared too (a removal already clears it), so a
+// restored report is settled and silent, never read as kept from the mark.
 func (q *Queries) RestoreReport(ctx context.Context, reportID int64) (int64, error) {
 	result, err := q.db.Exec(ctx, restoreReport, reportID)
 	if err != nil {
