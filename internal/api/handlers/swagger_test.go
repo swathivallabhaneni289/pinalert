@@ -513,6 +513,37 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 		}
 		p15Assert429(t, strings.ToUpper(rt.method)+" "+rt.path, op)
 	}
+	// Quick 261118-rz6: the author's box of a removed report, read and ask. It
+	// takes no bucket (the cap of 3 asks bounds it), so it carries no 429.
+	for _, rt := range []struct {
+		method string
+		codes  []string
+	}{
+		{"get", []string{"200", "400", "401", "404", "500"}},
+		{"post", []string{"201", "400", "401", "404", "409", "500"}},
+	} {
+		op, ok := spec.Paths["/reports/{id}/review-ask"][rt.method]
+		if !ok {
+			t.Errorf("docs/swagger.json is missing %s /reports/{id}/review-ask", rt.method)
+			continue
+		}
+		var parsed struct {
+			Responses map[string]json.RawMessage `json:"responses"`
+		}
+		if err := json.Unmarshal(op, &parsed); err != nil {
+			t.Fatalf("parsing %s /reports/{id}/review-ask: %v", rt.method, err)
+		}
+		for _, code := range rt.codes {
+			if _, ok := parsed.Responses[code]; !ok {
+				t.Errorf("%s /reports/{id}/review-ask is missing the %s response", rt.method, code)
+			}
+		}
+	}
+	for _, gone := range []string{"/moderation/reports/{id}/restore", "/moderation/reports/{id}/keep-removed"} {
+		if _, ok := spec.Paths[gone]; ok {
+			t.Errorf("docs/swagger.json documents %s, which carries no swag annotation by design", gone)
+		}
+	}
 	for _, gone := range []string{"/moderation/comments", "/moderation/comments/{id}/keep", "/moderation/comments/{id}/remove"} {
 		if _, ok := spec.Paths[gone]; ok {
 			t.Errorf("docs/swagger.json documents %s, which carries no swag annotation by design", gone)
@@ -552,9 +583,17 @@ func TestSwaggerSpecCoversRoutes(t *testing.T) {
 		p14AssertEnum(t, p14SwaggerProp(t, props, "handlers.UpdateWire", "kind"), []string{
 			"reached_live", "hidden", "resolved", "fading", "reliable_nearby",
 			"comment_on_yours", "reply_to_yours", "followed_posted", "more",
-			"own_shown", "own_review", "own_kept", "own_removed",
+			// Amended 2026-11-18 (quick 261118-rz6): two more own rows follow, and the
+			// closed link value policy left with the Policy link of the removed row;
+			// that row now carries review_report_id, an integer.
+			"own_shown", "own_review", "own_kept", "own_removed", "own_restored", "own_stays_removed",
 		})
-		p14AssertEnum(t, p14SwaggerProp(t, props, "handlers.UpdateWire", "link"), []string{"policy"})
+		if _, ok := props["handlers.UpdateWire"]["link"]; ok {
+			t.Error("handlers.UpdateWire still documents link")
+		}
+		if !strings.Contains(string(props["handlers.UpdateWire"]["review_report_id"]), `"integer"`) {
+			t.Errorf("handlers.UpdateWire review_report_id = %s, want an integer", props["handlers.UpdateWire"]["review_report_id"])
+		}
 	}
 
 	// 04-15's contribution: every 429 Phase 4 wires so far is documented, on

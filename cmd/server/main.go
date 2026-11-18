@@ -580,6 +580,9 @@ func main() {
 		// A report flag and the review hide it may cause lock the report and
 		// commit together (quick 261117-vvb).
 		FlagTx: service.PgxFlagTx(pool),
+		// An author's ask for review locks the report, so concurrent asks
+		// cannot pass the cap of 3 (quick 261118-rz6).
+		ReviewAskTx: service.PgxReviewAskTx(pool),
 		// Keep and Remove of a comment write the change, the flag dismissal and
 		// the audit row in one transaction (Phase 8 plan 13).
 		CommentModerationTx: service.PgxCommentModerationTx(pool),

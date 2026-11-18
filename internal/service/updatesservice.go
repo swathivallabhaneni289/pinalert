@@ -346,10 +346,12 @@ type UpdateItem struct {
 	// Trust is the trust sentence chosen from the live trust object.
 	Trust     string
 	MoreCount int
-	// PolicyLink is true only for the removed row about the reader's own report
-	// (quick 261117-vvb): that row opens the Policy page. It is a closed flag,
-	// not an address, so a row can still open only a report or the Policy.
-	PolicyLink bool
+	// ReviewReportID is set only on the removed and stays removed rows about
+	// the reader's own report while that report is still removed (quick
+	// 261118-rz6, which replaced vvb's Policy link): the row opens the author's
+	// box for that report, never the report itself, so it is kept apart from
+	// ReportID, which a row opens.
+	ReviewReportID *int64
 }
 
 // UpdatesPage is one list read: the newest rows, the unread count capped at
@@ -479,22 +481,26 @@ func (s *UpdatesService) List(ctx context.Context, accountID int64, limit int) (
 			view = ViewOf(vis, rep.ExpiresAt, now)
 			unavailable = vis == VisibilityWithheld
 		}
-		// The four rows about the reader's own report (quick 261117-vvb) are
-		// told whatever the report's state, because the state is their news:
-		// one fixed line, no report words, category or trust, and never the no
-		// longer available line. The shown and kept rows open the report only
-		// while it is not withheld (it may have been removed since); the hidden
-		// row opens nothing; the removed row opens the Policy page.
+		// The rows about the reader's own report (quick 261117-vvb, quick
+		// 261118-rz6) are told whatever the report's state, because the state
+		// is their news: one fixed line, no report words, category or trust,
+		// and never the no longer available line. The shown, kept and back
+		// rows open the report only while it is not withheld (it may have been
+		// removed since); the hidden row opens nothing; the removed and stays
+		// removed rows open the author's box while the report is still
+		// removed, and nothing once it was restored.
 		if kind.IsOwnReport() {
 			item.Available = true
 			item.Event = OwnReportLine(kind)
 			switch kind {
-			case UpdateOwnShown, UpdateOwnKept:
+			case UpdateOwnShown, UpdateOwnKept, UpdateOwnRestored:
 				if !unavailable {
 					item.ReportID = row.ReportID
 				}
-			case UpdateOwnRemoved:
-				item.PolicyLink = true
+			case UpdateOwnRemoved, UpdateOwnStaysRemoved:
+				if ok && meta.Moderation == ModerationRemoved {
+					item.ReviewReportID = row.ReportID
+				}
 			}
 			page.Items = append(page.Items, item)
 			continue

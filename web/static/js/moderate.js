@@ -1,9 +1,11 @@
 // moderate.js: the client half of the moderator screen (04-26, D-08). Only
 // listed moderators ever reach this page; everyone else gets the server's
 // plain 404, so this file holds no authority and adds no check of its own.
-// It loads the three lists, writes each heading count from the server's
-// counts object, finds a report by id or pasted link, keeps a report at once,
-// removes one only after an inline confirmation, and refreshes on demand.
+// It loads the lists, writes each heading count from the server's counts
+// object, finds a report by id or pasted link, keeps a report at once,
+// removes one only after the Why remove? box has a reason (quick 261118-rz6,
+// which replaced the inline confirmation), restores a removed report or keeps
+// it removed for an ask for review, and refreshes on demand.
 // There is no polling and nothing is saved for a later retry.
 //
 // SECURITY (T-04-01): every string reaches the DOM through Pinalert.setText,
@@ -55,25 +57,67 @@
     'violence/graphic': 'Graphic violence'
   };
 
-  // The three lists: the key the server uses, the slug the page ids use and
-  // the sentence that says what the two actions do for a report in the list.
+  // The lists: the key the server uses, the slug the page ids use and the
+  // sentence that says what the actions do for a report in the list. hint
+  // marks the three lists of Phase 4 that the Nothing needs a decision line
+  // speaks for. Quick 261118-rz6 added asks first (the open asks for review,
+  // with Restore and Keep removed) and removed last (reports removed in the
+  // last 30 days, with Restore); find never lists them. Those two carry no
+  // does sentence: the owner's agreed rows are the report, Why, the note and
+  // the buttons, nothing more (review fix, 2026-11-18).
   var LISTS = [
+    {
+      key: 'asks',
+      slug: 'asks',
+      answers: true
+    },
     {
       key: 'review',
       slug: 'auto',
+      hint: true,
       does: 'Keep report clears the flag. The report stays. Remove report hides it from everyone and tells the author.'
     },
     {
       key: 'flagged',
       slug: 'people',
+      hint: true,
       does: 'Keep report clears the flags on it. The report stays. Remove report hides it from everyone and tells the author.'
     },
     {
       key: 'pending',
       slug: 'pending',
+      hint: true,
       does: 'Keep report accepts the text as it is and lets the report through the normal rules. Remove report hides it from everyone and tells the author.'
+    },
+    {
+      key: 'removed',
+      slug: 'removed',
+      answers: true
     }
   ];
+
+  // Quick 261118-rz6: the words of the five reasons a moderator picks, and of
+  // the late text check's own reason, keyed by the closed slugs the server
+  // stores. A slug not listed here shows no Why line.
+  var REASON_WORDS = {
+    'spam': 'Spam',
+    'abusive': 'Abusive',
+    'false': 'False',
+    'dangerous': 'Dangerous',
+    'other': 'Other',
+    'text_check': 'Text check'
+  };
+  var WHY_PREFIX = 'Why: ';
+  var NOTE_PREFIX = 'Note: ';
+  var RESTORE_LABEL = 'Restore';
+  var KEEP_REMOVED_LABEL = 'Keep removed';
+  // The address suffix of each action the row buttons send.
+  var ACTION_SUFFIX = {
+    'keep': '/keep',
+    'remove': '/remove',
+    'restore': '/restore',
+    'keep-removed': '/keep-removed'
+  };
 
   var FIND_EMPTY_MESSAGE = 'Enter a report id or a link that includes report=.';
   var FIND_FAILED_MESSAGE = "Couldn't look that up. Try again.";
@@ -83,11 +127,8 @@
   var ACTION_HANDLED_MESSAGE = 'This report was already handled. Refresh the lists.';
   var REFRESHED_TOAST = 'Lists refreshed.';
   var HINT_TEXT = 'Nothing needs a decision here. Use Find a report to look up a post by id.';
-  var REMOVE_QUESTION = 'Remove this report? The author is told it was removed after review.';
   var KEEP_LABEL = 'Keep report';
   var REMOVE_LABEL = 'Remove report';
-  var GO_BACK_LABEL = 'Go back';
-  var CONFIRM_REMOVE_LABEL = 'Yes, remove report';
   var SENDING_LABEL = 'Sending';
   var SHOW_ALL_SCORES = 'Show all scores';
   var MAIN_PAGE_LINK_TEXT = 'View on the main page';
@@ -141,10 +182,17 @@
     var listEl = document.getElementById('mod-list-' + list.slug);
     var empty = document.getElementById('mod-empty-' + list.slug);
     if (!heading || !count || !listEl || !empty || !heading.parentNode) {
-      complete = false;
+      // The two lists of quick 261118-rz6 are wired only when their parts are
+      // on the page, like the Comments section; the three Phase 4 lists must be.
+      if (!list.answers) {
+        complete = false;
+      }
       return;
     }
     sections[list.key] = { heading: heading, count: count, list: listEl, empty: empty, section: heading.parentNode };
+  });
+  LISTS = LISTS.filter(function (list) {
+    return Object.prototype.hasOwnProperty.call(sections, list.key);
   });
   if (!complete) {
     return;
@@ -194,10 +242,33 @@
   // rater the open box is about, and busy holds off a second request.
   var ratingsState = { reporter: '', raterAsked: '', busy: false };
 
+  // The Why remove? box (quick 261118-rz6). Every Remove report button opens
+  // this one box; entry is the row that opened it and reason the picked slug.
+  // Without the box on the page Remove report does nothing.
+  var removeBox = null;
+  (function () {
+    var box = document.getElementById('mod-remove-confirm');
+    var title = document.getElementById('mod-remove-title');
+    var group = document.getElementById('mod-remove-reasons');
+    var cancel = document.getElementById('mod-remove-cancel');
+    var go = document.getElementById('mod-remove-go');
+    if (box && title && group && cancel && go) {
+      removeBox = {
+        box: box,
+        title: title,
+        reasons: Array.prototype.slice.call(group.querySelectorAll('[data-mod-reason]')),
+        cancel: cancel,
+        go: go,
+        entry: null,
+        reason: ''
+      };
+    }
+  }());
+
   // The state. counts holds the server's numbers and only dropReport lowers
   // them. membership maps a report id to the list keys it was in at the last
   // load. entries maps a row key to its entry object.
-  var counts = { review: 0, flagged: 0, pending: 0 };
+  var counts = { asks: 0, review: 0, flagged: 0, pending: 0, removed: 0 };
   var membership = {};
   var entries = {};
   var findState = null;
@@ -575,7 +646,7 @@
     var wanted = listKey === 'find' ? (lists || []) : [listKey];
     var blocks = [];
     LISTS.forEach(function (list) {
-      if (wanted.indexOf(list.key) === -1) {
+      if (list.answers || wanted.indexOf(list.key) === -1) {
         return;
       }
       var block;
@@ -593,30 +664,41 @@
     return blocks;
   }
 
-  function buildRemoveConfirm(entry) {
-    var confirm = makeEl('div', 'mod-confirm');
-    confirm.setAttribute('role', 'group');
-    var questionId = 'mod-' + entry.slug + '-' + entry.id + '-question';
-    confirm.setAttribute('aria-labelledby', questionId);
-    confirm.hidden = true;
+  // whyLine is "Why: False" for a known reason slug, and empty otherwise
+  // (quick 261118-rz6).
+  function whyLine(report) {
+    var slug = typeof report.removed_reason === 'string' ? report.removed_reason : '';
+    if (!Object.prototype.hasOwnProperty.call(REASON_WORDS, slug)) {
+      return '';
+    }
+    return WHY_PREFIX + REASON_WORDS[slug];
+  }
 
-    var question = makeEl('p', 'mod-confirm__question');
-    question.id = questionId;
-    Pinalert.setText(question, REMOVE_QUESTION);
-    confirm.appendChild(question);
-
-    var buttons = makeEl('div', 'mod-confirm__buttons');
-    var goBack = makeButton('btn', 'back', GO_BACK_LABEL, GO_BACK_LABEL);
-    var confirmBtn = makeButton('btn btn--destructive', 'confirm-remove', CONFIRM_REMOVE_LABEL,
-      'Yes, remove report ' + entry.id);
-    buttons.appendChild(goBack);
-    buttons.appendChild(confirmBtn);
-    confirm.appendChild(buttons);
-
-    entry.confirm = confirm;
-    entry.goBack = goBack;
-    entry.confirmBtn = confirmBtn;
-    return confirm;
+  // buildAnswerParts adds the rows of the asks and removed lists: the Why line
+  // when the reason is known, the author's note on an ask when they wrote one
+  // (their own words, through setText only, naming nobody), then Restore, and
+  // Keep removed on an ask.
+  function buildAnswerParts(entry, report, list) {
+    var why = whyLine(report);
+    if (why !== '') {
+      var whyEl = makeEl('p', 'mod-row__reason');
+      Pinalert.setText(whyEl, why);
+      entry.row.appendChild(whyEl);
+    }
+    if (list.key === 'asks' && typeof report.ask_note === 'string' && report.ask_note !== '') {
+      var note = makeEl('p', 'mod-row__ask-note');
+      Pinalert.setText(note, NOTE_PREFIX + report.ask_note);
+      entry.row.appendChild(note);
+    }
+    var actions = makeEl('div', 'mod-row__actions');
+    entry.restoreBtn = makeButton('btn', 'restore', RESTORE_LABEL, 'Restore report ' + report.id);
+    actions.appendChild(entry.restoreBtn);
+    if (list.key === 'asks') {
+      entry.keepRemovedBtn = makeButton('btn', 'keep-removed', KEEP_REMOVED_LABEL, 'Keep report ' + report.id + ' removed');
+      actions.appendChild(entry.keepRemovedBtn);
+    }
+    entry.actions = actions;
+    entry.row.appendChild(actions);
   }
 
   function buildRow(report, listKey, lists) {
@@ -642,9 +724,8 @@
       actions: null,
       keepBtn: null,
       removeBtn: null,
-      confirm: null,
-      goBack: null,
-      confirmBtn: null,
+      restoreBtn: null,
+      keepRemovedBtn: null,
       error: null,
       busy: false
     };
@@ -675,7 +756,9 @@
       row.appendChild(block);
     });
 
-    if (report.moderation === 'removed') {
+    if (list && list.answers) {
+      buildAnswerParts(entry, report, list);
+    } else if (report.moderation === 'removed') {
       var done = makeEl('p', 'mod-row__done');
       Pinalert.setText(done, REMOVED_SENTENCE);
       row.appendChild(done);
@@ -686,10 +769,10 @@
         actions.appendChild(entry.keepBtn);
       }
       entry.removeBtn = makeButton('btn', 'remove', REMOVE_LABEL, 'Remove report ' + report.id);
+      entry.removeBtn.setAttribute('aria-haspopup', 'dialog');
       actions.appendChild(entry.removeBtn);
       entry.actions = actions;
       row.appendChild(actions);
-      row.appendChild(buildRemoveConfirm(entry));
 
       var does = makeEl('p', 'mod-row__does');
       var doesText = NOT_LISTED_DOES;
@@ -697,7 +780,7 @@
         doesText = list.does;
       } else {
         for (var i = 0; i < LISTS.length; i += 1) {
-          if (entry.lists.indexOf(LISTS[i].key) !== -1) {
+          if (LISTS[i].does && entry.lists.indexOf(LISTS[i].key) !== -1) {
             doesText = LISTS[i].does;
             break;
           }
@@ -748,7 +831,7 @@
       var section = sections[list.key];
       var isEmpty = section.list.firstChild === null;
       section.empty.hidden = !isEmpty;
-      if (isEmpty && firstShown === null) {
+      if (isEmpty && list.hint && firstShown === null) {
         firstShown = section.empty;
       }
     });
@@ -766,9 +849,9 @@
   }
 
   function applyQueue(data) {
-    counts.review = toCount(data.counts && data.counts.review);
-    counts.flagged = toCount(data.counts && data.counts.flagged);
-    counts.pending = toCount(data.counts && data.counts.pending);
+    LISTS.forEach(function (list) {
+      counts[list.key] = toCount(data.counts && data.counts[list.key]);
+    });
     membership = {};
     LISTS.forEach(function (list) {
       var reports = Array.isArray(data[list.key]) ? data[list.key] : [];
@@ -900,18 +983,136 @@
     }).then(finishFind);
   }
 
-  function openRemoveConfirm(entry) {
-    entry.actions.hidden = true;
-    entry.confirm.hidden = false;
-    entry.goBack.focus();
+  // ---- The Why remove? box (quick 261118-rz6) ------------------------------
+
+  // setRemoveReason marks one reason as picked (or none for the empty slug)
+  // and turns Remove on only when one is. The picked reason, or the first one
+  // when none is, is the only reason in the tab order (one radio group).
+  function setRemoveReason(slug) {
+    removeBox.reason = '';
+    removeBox.reasons.forEach(function (button) {
+      var on = button.getAttribute('data-mod-reason') === slug;
+      button.setAttribute('aria-checked', on ? 'true' : 'false');
+      if (on) {
+        removeBox.reason = slug;
+      }
+    });
+    removeBox.reasons.forEach(function (button, i) {
+      var picked = button.getAttribute('aria-checked') === 'true';
+      button.setAttribute('tabindex', picked || (removeBox.reason === '' && i === 0) ? '0' : '-1');
+    });
+    setButtonOff(removeBox.go, removeBox.reason === '');
   }
 
-  function closeRemoveConfirm(entry, returnFocus) {
-    entry.confirm.hidden = true;
-    entry.actions.hidden = false;
-    if (returnFocus) {
+  // openRemoveConfirm opens the box for the row whose Remove report was
+  // pressed, with no reason picked. The title takes the first focus, so no
+  // button looks chosen.
+  function openRemoveConfirm(entry) {
+    if (!removeBox) {
+      return;
+    }
+    removeBox.entry = entry;
+    setRemoveReason('');
+    if (typeof removeBox.box.showModal === 'function') {
+      removeBox.box.showModal();
+    } else {
+      removeBox.box.setAttribute('open', '');
+    }
+    removeBox.title.focus();
+  }
+
+  // closeRemoveConfirm closes the box. With returnFocus, focus goes back to
+  // the Remove report button that opened it.
+  function closeRemoveConfirm(returnFocus) {
+    var entry = removeBox.entry;
+    removeBox.entry = null;
+    if (typeof removeBox.box.close === 'function') {
+      if (removeBox.box.open) {
+        removeBox.box.close();
+      }
+    } else {
+      removeBox.box.removeAttribute('open');
+    }
+    if (returnFocus && entry && entry.removeBtn && entry.removeBtn.parentNode) {
       entry.removeBtn.focus();
     }
+  }
+
+  // confirmRemove sends the Remove of the row that opened the box with the
+  // picked reason. Without a reason it does nothing: Remove is off.
+  function confirmRemove() {
+    var entry = removeBox.entry;
+    var reason = removeBox.reason;
+    if (!entry || reason === '' || entry.busy) {
+      return;
+    }
+    closeRemoveConfirm(false);
+    sendAction(entry, 'remove', reason);
+  }
+
+  // onRemoveBoxClick answers the box's own buttons: a reason, Cancel and
+  // Remove. A press anywhere else in the box does nothing.
+  function onRemoveBoxClick(target) {
+    var reasonButton = target.closest('[data-mod-reason]');
+    if (reasonButton) {
+      setRemoveReason(reasonButton.getAttribute('data-mod-reason'));
+      return;
+    }
+    var boxButton = target.closest('[data-mod-remove-box]');
+    if (!boxButton) {
+      return;
+    }
+    if (boxButton.getAttribute('data-mod-remove-box') === 'cancel') {
+      closeRemoveConfirm(true);
+    } else {
+      confirmRemove();
+    }
+  }
+
+  // onRemoveBoxKeydown moves the pick with the arrow keys, as in any radio
+  // group, and wraps at the ends.
+  function onRemoveBoxKeydown(evt) {
+    var current = evt.target.closest('[data-mod-reason]');
+    if (!current) {
+      return;
+    }
+    var step = 0;
+    if (evt.key === 'ArrowRight' || evt.key === 'ArrowDown') {
+      step = 1;
+    } else if (evt.key === 'ArrowLeft' || evt.key === 'ArrowUp') {
+      step = -1;
+    }
+    if (step === 0) {
+      return;
+    }
+    var at = removeBox.reasons.indexOf(current);
+    var next = removeBox.reasons[(at + step + removeBox.reasons.length) % removeBox.reasons.length];
+    setRemoveReason(next.getAttribute('data-mod-reason'));
+    next.focus();
+    evt.preventDefault();
+  }
+
+  // onRemoveBoxCancel is the browser's cancel event (Escape): the same as
+  // Cancel, so focus goes back to the row's Remove report.
+  function onRemoveBoxCancel(evt) {
+    evt.preventDefault();
+    closeRemoveConfirm(true);
+  }
+
+  // ---- Sending an action ---------------------------------------------------
+
+  // The button that sent an action, the one a failure puts focus back on.
+  function starterOf(entry, action) {
+    if (action === 'remove') {
+      return entry.removeBtn;
+    }
+    if (action === 'restore') {
+      return entry.restoreBtn;
+    }
+    if (action === 'keep-removed') {
+      return entry.keepRemovedBtn;
+    }
+    return entry.keepBtn;
   }
 
   function setBusy(entry, busy, action) {
@@ -931,13 +1132,13 @@
         button.removeAttribute('aria-disabled');
       }
     });
-    if (action === 'remove' && entry.confirmBtn) {
+    if (action === 'remove' && entry.removeBtn) {
       if (busy) {
-        Pinalert.setText(entry.confirmBtn, SENDING_LABEL);
-        entry.confirmBtn.setAttribute('aria-label', 'Sending, remove report ' + entry.id);
+        Pinalert.setText(entry.removeBtn, SENDING_LABEL);
+        entry.removeBtn.setAttribute('aria-label', 'Sending, remove report ' + entry.id);
       } else {
-        Pinalert.setText(entry.confirmBtn, CONFIRM_REMOVE_LABEL);
-        entry.confirmBtn.setAttribute('aria-label', 'Yes, remove report ' + entry.id);
+        Pinalert.setText(entry.removeBtn, REMOVE_LABEL);
+        entry.removeBtn.setAttribute('aria-label', 'Remove report ' + entry.id);
       }
     }
   }
@@ -947,7 +1148,7 @@
       entry.error = document.createElement('p');
       entry.error.className = 'inline-error mod-row__error';
       entry.error.setAttribute('role', 'alert');
-      var after = entry.confirm || entry.actions;
+      var after = entry.actions;
       if (after && after.parentNode === entry.row) {
         entry.row.insertBefore(entry.error, after.nextSibling);
       } else {
@@ -958,11 +1159,10 @@
     entry.error.hidden = false;
   }
 
-  // firstRowButton is the first button of a row's shown actions, else of its
-  // shown confirmation, else nothing.
+  // firstRowButton is the first button of a row's shown actions, else
+  // nothing.
   function firstRowButton(row) {
-    var scope = row.querySelector('.mod-row__actions:not([hidden])') ||
-      row.querySelector('.mod-confirm:not([hidden])');
+    var scope = row.querySelector('.mod-row__actions:not([hidden])');
     return scope ? scope.querySelector('button') : null;
   }
 
@@ -983,8 +1183,10 @@
   }
 
   // dropReport lowers the count of each list that held the report, once per
-  // list, with a floor of 0, and takes the report's rows off the page.
-  function dropReport(id, extraKeys) {
+  // list, with a floor of 0, and takes the report's rows off the page. With
+  // onlyKeys (quick 261118-rz6, Keep removed) only those lists lose it; the
+  // report stays on the others.
+  function dropReport(id, extraKeys, onlyKeys) {
     var seen = {};
     Object.keys(membership[id] || {}).forEach(function (key) {
       seen[key] = true;
@@ -993,8 +1195,14 @@
       seen[key] = true;
     });
     LISTS.forEach(function (list) {
+      if (onlyKeys && onlyKeys.indexOf(list.key) === -1) {
+        return;
+      }
       if (seen[list.key]) {
         counts[list.key] = Math.max(0, counts[list.key] - 1);
+      }
+      if (membership[id]) {
+        delete membership[id][list.key];
       }
       var rowKey = list.slug + ':' + id;
       var entry = entries[rowKey];
@@ -1005,9 +1213,24 @@
         delete entries[rowKey];
       }
     });
-    delete membership[id];
+    if (!onlyKeys) {
+      delete membership[id];
+    }
     renderCounts();
     renderEmpties();
+  }
+
+  function actionToast(action, id) {
+    if (action === 'remove') {
+      return removedToast(id);
+    }
+    if (action === 'restore') {
+      return 'Report ' + id + ' restored.';
+    }
+    if (action === 'keep-removed') {
+      return 'Report ' + id + ' stays removed.';
+    }
+    return keptToast(id);
   }
 
   function actionDone(entry, action, body) {
@@ -1027,34 +1250,40 @@
       }
     } else {
       var target = focusTargetAfter(entry);
-      dropReport(entry.id, shownInFind ? findState.lists : []);
+      if (action === 'keep-removed') {
+        // The report stays removed, so it stays on the Removed list.
+        dropReport(entry.id, [], ['asks']);
+      } else {
+        dropReport(entry.id, shownInFind ? findState.lists : []);
+      }
       if (shownInFind && report && isReportId(report.id)) {
         renderFindResult(report, []);
       }
       target.focus();
     }
-    Pinalert.showToast(action === 'remove' ? removedToast(entry.id) : keptToast(entry.id), null, TOAST_MS);
+    Pinalert.showToast(actionToast(action, entry.id), null, TOAST_MS);
   }
 
   function actionFailed(entry, action, message) {
     setBusy(entry, false, action);
     showRowError(entry, message);
-    var starter = action === 'remove' ? entry.confirmBtn : entry.keepBtn;
+    var starter = starterOf(entry, action);
     if (starter) {
       starter.focus();
     }
   }
 
-  // sendAction posts Keep or Remove. It carries no client timer: a timeout
-  // after the server committed would make "Nothing changed" false, and a lost
-  // answer is safe because a retry is answered as already handled.
-  function sendAction(entry, action) {
-    if (entry.busy) {
+  // sendAction posts Keep, Remove (with the picked reason), Restore or Keep
+  // removed. It carries no client timer: a timeout after the server committed
+  // would make "Nothing changed" false, and a lost answer is safe because a
+  // retry is answered as already handled.
+  function sendAction(entry, action, reason) {
+    if (entry.busy || !Object.prototype.hasOwnProperty.call(ACTION_SUFFIX, action)) {
       return;
     }
     setBusy(entry, true, action);
-    var suffix = action === 'remove' ? '/remove' : '/keep';
-    apiRequest('POST', '/api/moderation/reports/' + entry.id + suffix, 0).then(function (res) {
+    var payload = action === 'remove' ? { reason: reason } : undefined;
+    apiRequest('POST', '/api/moderation/reports/' + entry.id + ACTION_SUFFIX[action], 0, payload).then(function (res) {
       if (res.ok) {
         actionDone(entry, action, res.body);
       } else if (res.status === 404 || res.status === 409) {
@@ -1658,6 +1887,11 @@
       onRatingButton(ratingButton);
       return;
     }
+    var removeBoxPart = removeBox ? target.closest('#mod-remove-confirm') : null;
+    if (removeBoxPart) {
+      onRemoveBoxClick(target);
+      return;
+    }
     var button = target.closest('button[data-mod-action]');
     if (!button) {
       return;
@@ -1669,26 +1903,19 @@
     var action = button.getAttribute('data-mod-action');
     if (action === 'keep') { sendAction(entry, 'keep'); return; }
     if (action === 'remove') { openRemoveConfirm(entry); return; }
-    if (action === 'confirm-remove') { sendAction(entry, 'remove'); return; }
-    if (action === 'back') { closeRemoveConfirm(entry, true); }
+    if (action === 'restore') { sendAction(entry, 'restore'); return; }
+    if (action === 'keep-removed') { sendAction(entry, 'keep-removed'); }
   }
 
-  // onRootKeydown gives the open Remove confirmation its own Escape (P4-A5).
+  // onRootKeydown gives the Why remove? box its arrow keys (quick
+  // 261118-rz6). Escape there is the box's own cancel event.
   function onRootKeydown(evt) {
-    if (evt.key !== 'Escape' || !evt.target || typeof evt.target.closest !== 'function') {
+    if (!removeBox || !evt.target || typeof evt.target.closest !== 'function') {
       return;
     }
-    var confirmEl = evt.target.closest('.mod-confirm');
-    if (!confirmEl || confirmEl.hidden) {
-      return;
+    if (evt.target.closest('#mod-remove-confirm')) {
+      onRemoveBoxKeydown(evt);
     }
-    var entry = entryOf(confirmEl);
-    if (!entry || entry.busy) {
-      return;
-    }
-    closeRemoveConfirm(entry, true);
-    evt.preventDefault();
-    evt.stopPropagation();
   }
 
   root.addEventListener('click', onRootClick);
@@ -1697,6 +1924,9 @@
   if (ratingsUi) {
     ratingsUi.form.addEventListener('submit', onRatingsSubmit);
     ratingsUi.box.addEventListener('cancel', onRatingsBoxCancel);
+  }
+  if (removeBox) {
+    removeBox.box.addEventListener('cancel', onRemoveBoxCancel);
   }
   loadLists(false);
 }());

@@ -12,6 +12,31 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const answerOpenReviewAsk = `-- name: AnswerOpenReviewAsk :execrows
+UPDATE report_review_asks
+SET answered_at = now(),
+    answer = $1::text,
+    answered_by_account_id = $2::bigint
+WHERE report_id = $3 AND answered_at IS NULL
+`
+
+type AnswerOpenReviewAskParams struct {
+	Answer             string
+	ModeratorAccountID int64
+	ReportID           int64
+}
+
+// Quick 261118-rz6: closes the report's open ask for review, if there is one,
+// with the answer (restored or kept_removed) and the answering moderator. One
+// row back means an open ask was answered.
+func (q *Queries) AnswerOpenReviewAsk(ctx context.Context, arg AnswerOpenReviewAskParams) (int64, error) {
+	result, err := q.db.Exec(ctx, answerOpenReviewAsk, arg.Answer, arg.ModeratorAccountID, arg.ReportID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const claimDueModerationChecks = `-- name: ClaimDueModerationChecks :many
 WITH due AS MATERIALIZED (
     SELECT mc.report_id
@@ -105,7 +130,9 @@ WITH fin AS (
     RETURNING moderation_checks.report_id
 ), moved AS (
     UPDATE reports r
-    SET moderation_state = $7
+    SET moderation_state = $7,
+        removed_reason = $8::text,
+        removed_at = CASE WHEN $8::text IS NULL THEN NULL ELSE now() END
     FROM fin
     WHERE r.id = fin.report_id
       AND r.moderation_state NOT IN ('removed', 'review')
@@ -118,7 +145,8 @@ JOIN sessions s ON s.session_id = m.session_id
 JOIN accounts a ON a.id = s.account_id
 WHERE $1::text IS NOT NULL
   AND a.deleted_at IS NULL
-ON CONFLICT (account_id, report_id, kind) WHERE kind IN ('own_shown', 'own_review', 'own_kept', 'own_removed') DO NOTHING
+ON CONFLICT (account_id, report_id, kind) WHERE kind IN ('own_shown', 'own_review', 'own_kept', 'own_removed', 'own_restored', 'own_stays_removed')
+DO UPDATE SET id = nextval(pg_get_serial_sequence('updates', 'id')), created_at = now(), read_at = NULL
 `
 
 type FinishCheckAndSetStateParams struct {
@@ -129,6 +157,7 @@ type FinishCheckAndSetStateParams struct {
 	NeedsReview     bool
 	ReportID        int64
 	ModerationState string
+	RemovedReason   *string
 }
 
 // The worker's one write after a verdict: it closes the check and moves the
@@ -149,7 +178,14 @@ type FinishCheckAndSetStateParams struct {
 // showing, own_removed when the late check removed it). The worker decides the
 // kind in Go from the state and the claimed report; SQL decides nothing about
 // visibility. A report whose author has no account, or a deleted one, gets no
-// row, and the unique index makes a repeat a no-op.
+// row.
+//
+// Quick 261118-rz6: removed_reason is text_check when the worker removes the
+// report and NULL otherwise, and removed_at is stamped with it, so the
+// author's box and the moderator's Removed list read why and when. The bell
+// row is an upsert: a row of the same kind that is already there moves to now,
+// becomes unread again and takes a fresh id, so it is never a second row and a
+// read mark sent for a list drawn before it cannot mark it read.
 func (q *Queries) FinishCheckAndSetState(ctx context.Context, arg FinishCheckAndSetStateParams) error {
 	_, err := q.db.Exec(ctx, finishCheckAndSetState,
 		arg.OwnKind,
@@ -159,6 +195,7 @@ func (q *Queries) FinishCheckAndSetState(ctx context.Context, arg FinishCheckAnd
 		arg.NeedsReview,
 		arg.ReportID,
 		arg.ModerationState,
+		arg.RemovedReason,
 	)
 	return err
 }
@@ -283,20 +320,27 @@ func (q *Queries) HideReportForReview(ctx context.Context, arg HideReportForRevi
 }
 
 const insertModerationAction = `-- name: InsertModerationAction :exec
-INSERT INTO moderation_actions (report_id, moderator_account_id, action)
-VALUES ($1, $2, $3)
+INSERT INTO moderation_actions (report_id, moderator_account_id, action, reason)
+VALUES ($1, $2, $3, $4)
 `
 
 type InsertModerationActionParams struct {
 	ReportID           int64
 	ModeratorAccountID int64
 	Action             string
+	Reason             *string
 }
 
-// One audit row per Keep or Remove. It holds the moderator's account id and
-// the action, never report text (T-04-15).
+// One audit row per Keep, Remove, Restore or Keep removed. It holds the
+// moderator's account id, the action and, for a Remove, the reason picked
+// (quick 261118-rz6), never report text (T-04-15).
 func (q *Queries) InsertModerationAction(ctx context.Context, arg InsertModerationActionParams) error {
-	_, err := q.db.Exec(ctx, insertModerationAction, arg.ReportID, arg.ModeratorAccountID, arg.Action)
+	_, err := q.db.Exec(ctx, insertModerationAction,
+		arg.ReportID,
+		arg.ModeratorAccountID,
+		arg.Action,
+		arg.Reason,
+	)
 	return err
 }
 
@@ -366,7 +410,8 @@ JOIN sessions s ON s.session_id = r.session_id
 JOIN accounts a ON a.id = s.account_id
 WHERE r.id = $2
   AND a.deleted_at IS NULL
-ON CONFLICT (account_id, report_id, kind) WHERE kind IN ('own_shown', 'own_review', 'own_kept', 'own_removed') DO NOTHING
+ON CONFLICT (account_id, report_id, kind) WHERE kind IN ('own_shown', 'own_review', 'own_kept', 'own_removed', 'own_restored', 'own_stays_removed')
+DO UPDATE SET id = nextval(pg_get_serial_sequence('updates', 'id')), created_at = now(), read_at = NULL
 `
 
 type InsertOwnReportUpdateParams struct {
@@ -375,10 +420,16 @@ type InsertOwnReportUpdateParams struct {
 }
 
 // Quick 261117-vvb: one bell row for the author of a report about what
-// moderation did to it (own_shown, own_review, own_kept, own_removed). It is
-// written straight to the author's updates, whatever their follows or mutes,
-// and never queued for a phone. A report whose author has no account, or a
-// deleted one, gets no row, and the unique index makes a repeat a no-op.
+// moderation did to it (own_shown, own_review, own_kept, own_removed, and
+// since quick 261118-rz6 own_restored and own_stays_removed). It is written
+// straight to the author's updates, whatever their follows or mutes, and never
+// queued for a phone. A report whose author has no account, or a deleted one,
+// gets no row. Quick 261118-rz6: an own event can happen again, so a row of
+// the same kind that is already there moves to now and becomes unread again
+// instead of adding a second row (uq_updates_own_report). It also takes a
+// fresh id: MarkUpdatesRead marks every row up to the newest id shown, so a
+// row that kept its old id would be marked read by a list drawn before it
+// came back (review fix).
 func (q *Queries) InsertOwnReportUpdate(ctx context.Context, arg InsertOwnReportUpdateParams) (int64, error) {
 	result, err := q.db.Exec(ctx, insertOwnReportUpdate, arg.Kind, arg.ReportID)
 	if err != nil {
@@ -511,13 +562,23 @@ SELECT
     (SELECT count(*) FROM reports r
        JOIN moderation_checks c ON c.report_id = r.id
       WHERE c.status = 'pending' AND r.expires_at > now()
-        AND r.moderation_state <> 'removed')::bigint AS pending_count
+        AND r.moderation_state <> 'removed')::bigint AS pending_count,
+    -- Quick 261118-rz6: the Review asks and Removed headings, over the same
+    -- predicates as ReviewAskQueue and RemovedQueue.
+    (SELECT count(*) FROM report_review_asks a
+       JOIN reports r ON r.id = a.report_id
+      WHERE a.answered_at IS NULL AND r.moderation_state = 'removed')::bigint AS asks_count,
+    (SELECT count(*) FROM reports r
+      WHERE r.moderation_state = 'removed'
+        AND r.removed_at > now() - interval '30 days')::bigint AS removed_count
 `
 
 type ModerationQueueCountsRow struct {
 	ReviewCount  int64
 	FlaggedCount int64
 	PendingCount int64
+	AsksCount    int64
+	RemovedCount int64
 }
 
 // The numbers the headings show: unlimited counts over the same predicates as
@@ -526,7 +587,13 @@ type ModerationQueueCountsRow struct {
 func (q *Queries) ModerationQueueCounts(ctx context.Context) (ModerationQueueCountsRow, error) {
 	row := q.db.QueryRow(ctx, moderationQueueCounts)
 	var i ModerationQueueCountsRow
-	err := row.Scan(&i.ReviewCount, &i.FlaggedCount, &i.PendingCount)
+	err := row.Scan(
+		&i.ReviewCount,
+		&i.FlaggedCount,
+		&i.PendingCount,
+		&i.AsksCount,
+		&i.RemovedCount,
+	)
 	return i, err
 }
 
@@ -660,26 +727,107 @@ const removeReport = `-- name: RemoveReport :exec
 WITH closed AS (
     UPDATE moderation_checks
     SET needs_review = false, status = 'done', lease_until = NULL
-    WHERE report_id = $1
+    WHERE report_id = $2
     RETURNING report_id
 ), dismissed AS (
     UPDATE report_flags
     SET dismissed_at = now()
-    WHERE report_id = $1 AND dismissed_at IS NULL
+    WHERE report_id = $2 AND dismissed_at IS NULL
     RETURNING id
 )
 UPDATE reports
-SET moderation_state = 'removed'
-WHERE reports.id = $1
+SET moderation_state = 'removed',
+    removed_reason = $1::text,
+    removed_at = now()
+WHERE reports.id = $2
 `
 
+type RemoveReportParams struct {
+	RemovedReason string
+	ReportID      int64
+}
+
 // Remove as one statement, with the same two CTEs as Keep. The main statement
-// sets removed on any report, listed or not, and removal is terminal (D-08,
-// R-03). The check is closed so the worker never claims it again. Like Keep,
-// the service runs it inside a transaction after LockModerationCheck.
-func (q *Queries) RemoveReport(ctx context.Context, reportID int64) error {
-	_, err := q.db.Exec(ctx, removeReport, reportID)
+// sets removed on any report, listed or not (D-08, R-03). The check is closed
+// so the worker never claims it again. Like Keep, the service runs it inside a
+// transaction after LockModerationCheck. Quick 261118-rz6: the moderator's
+// reason and the time are stored with it, and since then only a moderator's
+// Restore (RestoreReport) brings a removed report back.
+func (q *Queries) RemoveReport(ctx context.Context, arg RemoveReportParams) error {
+	_, err := q.db.Exec(ctx, removeReport, arg.RemovedReason, arg.ReportID)
 	return err
+}
+
+const removedQueue = `-- name: RemovedQueue :many
+SELECT r.id, r.category, r.severity, r.description, r.created_at, r.expires_at,
+       r.client_written_at, r.moderation_state, r.removed_reason,
+       c.status AS check_status, c.verdict, c.scores, c.model,
+       COALESCE(c.needs_review, false)::bool AS needs_review,
+       (SELECT count(*) FROM report_flags f
+         WHERE f.report_id = r.id AND f.dismissed_at IS NULL)::bigint AS open_flag_total
+FROM reports r
+LEFT JOIN moderation_checks c ON c.report_id = r.id
+WHERE r.moderation_state = 'removed'
+  AND r.removed_at > now() - interval '30 days'
+ORDER BY r.removed_at DESC, r.id DESC
+LIMIT 100
+`
+
+type RemovedQueueRow struct {
+	ID              int64
+	Category        string
+	Severity        string
+	Description     string
+	CreatedAt       time.Time
+	ExpiresAt       time.Time
+	ClientWrittenAt pgtype.Timestamptz
+	ModerationState string
+	RemovedReason   *string
+	CheckStatus     *string
+	Verdict         *string
+	Scores          []byte
+	Model           *string
+	NeedsReview     bool
+	OpenFlagTotal   int64
+}
+
+// Quick 261118-rz6, the Removed list: reports removed in the last 30 days,
+// newest removal first, at most 100 rows, in the moderator row shape with the
+// reason of the removal.
+func (q *Queries) RemovedQueue(ctx context.Context) ([]RemovedQueueRow, error) {
+	rows, err := q.db.Query(ctx, removedQueue)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RemovedQueueRow
+	for rows.Next() {
+		var i RemovedQueueRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Category,
+			&i.Severity,
+			&i.Description,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.ClientWrittenAt,
+			&i.ModerationState,
+			&i.RemovedReason,
+			&i.CheckStatus,
+			&i.Verdict,
+			&i.Scores,
+			&i.Model,
+			&i.NeedsReview,
+			&i.OpenFlagTotal,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const rescheduleModerationCheck = `-- name: RescheduleModerationCheck :exec
@@ -702,6 +850,111 @@ type RescheduleModerationCheckParams struct {
 func (q *Queries) RescheduleModerationCheck(ctx context.Context, arg RescheduleModerationCheckParams) error {
 	_, err := q.db.Exec(ctx, rescheduleModerationCheck, arg.NextAttemptAt, arg.LastError, arg.ReportID)
 	return err
+}
+
+const restoreReport = `-- name: RestoreReport :execrows
+WITH dismissed AS (
+    UPDATE report_flags
+    SET dismissed_at = now()
+    WHERE report_id = $1 AND dismissed_at IS NULL
+    RETURNING id
+)
+UPDATE reports
+SET moderation_state = 'clear',
+    removed_reason = NULL,
+    removed_at = NULL,
+    review_kept_at = now()
+WHERE reports.id = $1 AND reports.moderation_state = 'removed'
+`
+
+// Quick 261118-rz6: a moderator's Restore shows a removed report again. It
+// moves only a removed report, to clear, clears the reason and time of the
+// removal, dismisses any open flags and stamps review_kept_at, so flags can
+// never hide it again and it never sends a phone alert again. The time it
+// lasts is not changed. One row back means this call restored it. The service
+// runs it inside the Restore transaction after the two row locks.
+func (q *Queries) RestoreReport(ctx context.Context, reportID int64) (int64, error) {
+	result, err := q.db.Exec(ctx, restoreReport, reportID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const reviewAskQueue = `-- name: ReviewAskQueue :many
+SELECT r.id, r.category, r.severity, r.description, r.created_at, r.expires_at,
+       r.client_written_at, r.moderation_state, r.removed_reason,
+       c.status AS check_status, c.verdict, c.scores, c.model,
+       COALESCE(c.needs_review, false)::bool AS needs_review,
+       (SELECT count(*) FROM report_flags f
+         WHERE f.report_id = r.id AND f.dismissed_at IS NULL)::bigint AS open_flag_total,
+       a.note AS ask_note
+FROM report_review_asks a
+JOIN reports r ON r.id = a.report_id
+LEFT JOIN moderation_checks c ON c.report_id = r.id
+WHERE a.answered_at IS NULL AND r.moderation_state = 'removed'
+ORDER BY a.created_at ASC, a.id ASC
+LIMIT 100
+`
+
+type ReviewAskQueueRow struct {
+	ID              int64
+	Category        string
+	Severity        string
+	Description     string
+	CreatedAt       time.Time
+	ExpiresAt       time.Time
+	ClientWrittenAt pgtype.Timestamptz
+	ModerationState string
+	RemovedReason   *string
+	CheckStatus     *string
+	Verdict         *string
+	Scores          []byte
+	Model           *string
+	NeedsReview     bool
+	OpenFlagTotal   int64
+	AskNote         *string
+}
+
+// Quick 261118-rz6, the Review asks list: each open ask for review on a report
+// that is still removed, oldest first, at most 100 rows, in the moderator row
+// shape with the reason of the removal and the author's note. The note is the
+// author's own words for moderators only; nothing here names who asked.
+func (q *Queries) ReviewAskQueue(ctx context.Context) ([]ReviewAskQueueRow, error) {
+	rows, err := q.db.Query(ctx, reviewAskQueue)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReviewAskQueueRow
+	for rows.Next() {
+		var i ReviewAskQueueRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Category,
+			&i.Severity,
+			&i.Description,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.ClientWrittenAt,
+			&i.ModerationState,
+			&i.RemovedReason,
+			&i.CheckStatus,
+			&i.Verdict,
+			&i.Scores,
+			&i.Model,
+			&i.NeedsReview,
+			&i.OpenFlagTotal,
+			&i.AskNote,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const reviewQueue = `-- name: ReviewQueue :many

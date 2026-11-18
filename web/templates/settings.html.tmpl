@@ -341,6 +341,10 @@
 
   {{template "reader_dialog.html.tmpl" .}}
 
+  {{/* Quick 261118-rz6: the author's box for their own removed report, opened from the bell. A direct child of body, never inside the bell dropdown. */}}
+
+  {{template "review_ask_box.html.tmpl" .}}
+
   {{template "app_bottombar" .}}
 
   <script src="/static/js/account-menu.js?v={{.AssetVersion}}" defer></script>

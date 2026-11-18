@@ -110,7 +110,7 @@ func lkAct(s *service.ModerationService, action string, id, mod int64) <-chan er
 		if action == service.ModerationActionKeep {
 			_, err = s.Keep(ctx, id, mod)
 		} else {
-			_, err = s.Remove(ctx, id, mod)
+			_, err = s.Remove(ctx, id, mod, service.RemovalSpam)
 		}
 		done <- err
 	}()

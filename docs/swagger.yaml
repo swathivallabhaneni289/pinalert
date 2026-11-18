@@ -1601,6 +1601,26 @@ definitions:
         example: visitor@example.com
         type: string
     type: object
+  handlers.ReviewAskRequest:
+    properties:
+      note:
+        example: The road really was flooded, I took the photo myself.
+        maxLength: 200
+        type: string
+    type: object
+  handlers.ReviewAskResponse:
+    properties:
+      state:
+        enum:
+        - can_ask
+        - asked
+        - no_asks_left
+        example: can_ask
+        type: string
+      why:
+        example: 'Why: False'
+        type: string
+    type: object
   handlers.ShareResponse:
     properties:
       line:
@@ -1893,6 +1913,8 @@ definitions:
         - own_review
         - own_kept
         - own_removed
+        - own_restored
+        - own_stays_removed
         example: reached_live
         type: string
       label:
@@ -1900,15 +1922,6 @@ definitions:
           (UI-SPEC P32-C8).
         example: New. Now confirmed. Flood, Critical. Confirmed by 3 people at different
           spots. 12 minutes ago
-        type: string
-      link:
-        description: |-
-          Link is "policy" only on the row that says the reader's own report was
-          removed: that row opens the Policy page. It is a closed value, never an
-          address, and absent on every other row.
-        enum:
-        - policy
-        example: policy
         type: string
       more_count:
         description: |-
@@ -1930,6 +1943,15 @@ definitions:
           report and the rolled up row. It is never the whole description.
         example: Water over the bridge
         type: string
+      review_report_id:
+        description: |-
+          ReviewReportID is set only on the rows that say the reader's own report
+          was removed or stays removed, while it is still removed: the row opens
+          the reader's box for that report (why it was removed and Ask for
+          review, GET /reports/{id}/review-ask), never the report itself. Absent on
+          every other row.
+        example: 17
+        type: integer
       severity:
         description: Severity is the severity word, empty when unavailable.
         example: Critical
@@ -4952,6 +4974,97 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       summary: Cast a confirm, dispute, resolve, reopen or unresolve vote on a report
+      tags:
+      - reports
+  /reports/{id}/review-ask:
+    get:
+      description: |-
+        For the author of a removed report: why it was removed (absent when no reason was recorded)
+        and whether they can ask a moderator to review it. A report can be asked about 3 times in
+        total, one at a time. Any report that is not the caller's own removed report gets 404 with
+        nothing revealed. Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Report id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ReviewAskResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Read the box of your own removed report
+      tags:
+      - reports
+    post:
+      consumes:
+      - application/json
+      description: |-
+        For the author of a removed report: asks a moderator to look again, with an optional note of at
+        most 200 characters that only moderators see. The note is never sent to the text check. A report
+        can be asked about 3 times in total, one at a time: an ask while one is open, or after 3, gets 409.
+        A moderator answers by restoring the report or keeping it removed, and the author is told in the
+        bell. Any report that is not the caller's own removed report gets 404 with nothing revealed.
+        Requires a session verified by email; an unverified caller receives 401.
+      parameters:
+      - description: Report id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: An optional note for the moderators
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.ReviewAskRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handlers.ReviewAskResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Ask a moderator to review your own removed report
       tags:
       - reports
   /reports/{id}/share:

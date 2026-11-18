@@ -75,6 +75,15 @@ class FakeEl {
   removeEventListener(type, fn) { this.handlers[type] = (this.handlers[type] || []).filter((h) => h !== fn); }
   querySelector(selector) { return this.queries[selector] || null; }
   querySelectorAll(selector) { return this.queries[selector + '[]'] || []; }
+  // closest understands the one shape updates.js asks for, [attribute]
+  // (quick 261118-rz6, the box rows).
+  closest(selector) {
+    const m = /^\[([\w-]+)\]$/.exec(selector);
+    for (let n = this; n; n = n.parentNode) {
+      if (m && n.hasAttribute && n.hasAttribute(m[1])) { return n; }
+    }
+    return null;
+  }
   focus() { this.doc.activeElement = this; }
   fire(type, evt = {}) {
     const event = { type, target: this, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; }, ...evt };
@@ -105,7 +114,8 @@ class FakeText {
 //   hidden:  document.hidden at load.
 //   part:    { data: 'updates', rows: [{ id, isNew }] } builds a My activity list.
 //   laptop:  the answer of matchMedia('(min-width: 900px)').
-function load({ hidden = false, part = null, laptop = false, interval = '30000' } = {}) {
+//   box:     builds the reader's box of quick 261118-rz6 (#review-ask-box).
+function load({ hidden = false, part = null, laptop = false, interval = '30000', box = false } = {}) {
   const doc = {
     activeElement: null,
     hidden,
@@ -178,6 +188,35 @@ function load({ hidden = false, part = null, laptop = false, interval = '30000' 
     'bell-loading': loading, 'bell-error': errorBox, 'bell-stale': stale, 'bell-rows': rows
   };
 
+  // The reader's box (quick 261118-rz6): a dialog with the template's parts.
+  // showModal opens it and close closes it and fires close, as a browser does.
+  let askBox = null;
+  if (box) {
+    askBox = new FakeEl(doc, 'dialog', 'review-ask-box');
+    doc.byId['review-ask-box'] = askBox;
+    askBox.open = false;
+    askBox.shown = 0;
+    askBox.showModal = function () { this.open = true; this.shown += 1; };
+    askBox.close = function () { if (this.open) { this.open = false; this.fire('close'); } };
+    const piece = (tag, id, hiddenAtStart, words = '') => {
+      const el = new FakeEl(doc, tag, id);
+      el.hidden = hiddenAtStart;
+      el.own = words;
+      askBox.appendChild(el);
+      doc.byId[id] = el;
+      return el;
+    };
+    piece('h2', 'review-ask-title', false, 'Removed');
+    piece('p', 'review-ask-why', true);
+    piece('div', 'review-ask-form', true);
+    piece('textarea', 'review-ask-note', false).value = '';
+    piece('p', 'review-ask-asked', true, 'Asked.');
+    piece('p', 'review-ask-none', true, 'No asks left.');
+    piece('p', 'review-ask-error', true).setAttribute('data-failed', "Couldn't send. Try again.");
+    piece('button', 'review-ask-close', false, 'Close');
+    piece('button', 'review-ask-send', true, 'Ask for review');
+  }
+
   if (part) {
     const main = new FakeEl(doc, 'main');
     main.setAttribute('data-part', part.data);
@@ -233,7 +272,7 @@ function load({ hidden = false, part = null, laptop = false, interval = '30000' 
 
   return {
     doc, window, trigger, count, panel, closeButton, body, loading, errorBox, errorRetry,
-    stale, staleRetry, rows, empty, fetches, timeouts, intervals, api: sandbox.window.PinalertUpdates,
+    stale, staleRetry, rows, empty, fetches, timeouts, intervals, api: sandbox.window.PinalertUpdates, askBox,
     // answer resolves the oldest unanswered request with a JSON body.
     answer(body, status = 200) {
       const f = fetches.find((x) => !x.done);
@@ -495,40 +534,217 @@ test('only an available row with a digits id is a link; the rest are plain', asy
 });
 
 // Quick 261117-vvb: the rows about the reader's own report. The hidden row is
-// plain, the showing rows open the report, the removed row opens the Policy
-// through the closed link value "policy" only, and no other link value or
-// address is ever followed.
-test('own report rows: hidden is plain, kept opens the report, removed opens the Policy', async () => {
+// plain and the showing rows open the report.
+// Amended 2026-11-18 (quick 261118-rz6): the removed and stays removed rows
+// no longer open the Policy. While the report is still removed the server
+// sends review_report_id and the row is a button that opens the reader's box;
+// the old link value "policy", or any other, is never followed; the back row
+// opens the report.
+test('own report rows: hidden is plain, kept and back open the report, removed opens the box', async () => {
   const env = load();
   const own = { report_line: '', category: '', severity: '', severity_level: '', trust: '', unread: false };
   env.answer({
     unread: 0,
     updates: [
-      row({ ...own, id: 14, kind: 'own_removed', report_id: undefined, link: 'policy', event: 'Your report was removed after review.' }),
+      row({ ...own, id: 16, kind: 'own_stays_removed', report_id: undefined, review_report_id: 43, event: 'Your report stays removed.' }),
+      row({ ...own, id: 15, kind: 'own_restored', report_id: 42, event: 'Your report is back.' }),
+      row({ ...own, id: 14, kind: 'own_removed', report_id: undefined, review_report_id: 44, event: 'Your report was removed after review.' }),
       row({ ...own, id: 13, kind: 'own_kept', report_id: 41, event: 'Your report is showing again. Sorry for the wait.' }),
       row({ ...own, id: 12, kind: 'own_review', report_id: undefined, event: "Your report is hidden while it's reviewed." }),
       row({ ...own, id: 11, kind: 'own_shown', report_id: 40, event: 'Your report passed the text check and is now showing.' }),
-      row({ ...own, id: 10, kind: 'own_removed', report_id: undefined, link: 'https://example.com', event: 'Your report was removed after review.' }),
-      row({ ...own, id: 9, kind: 'own_removed', report_id: undefined, link: 'policy', available: false, event: 'Your report was removed after review.' })
+      row({ ...own, id: 10, kind: 'own_removed', report_id: undefined, link: 'policy', event: 'Your report was removed after review.' }),
+      row({ ...own, id: 9, kind: 'own_removed', report_id: undefined, review_report_id: 45, available: false, event: 'Your report was removed after review.' }),
+      row({ ...own, id: 8, kind: 'own_removed', report_id: undefined, review_report_id: '04x', event: 'Your report was removed after review.' })
     ]
   });
   await flush();
   env.clickBell();
   await flush();
   const els = env.rows.children.map((li) => li.children[0]);
-  assert.deepEqual(els.map((e) => e.tagName), ['A', 'A', 'DIV', 'A', 'DIV', 'DIV']);
-  assert.equal(els[0].getAttribute('href'), '/policy');
-  assert.equal(els[1].getAttribute('href'), '/?report=41');
-  assert.equal(els[2].hasAttribute('href'), false);
-  assert.equal(els[3].getAttribute('href'), '/?report=40');
-  assert.equal(els[4].hasAttribute('href'), false, 'an unknown link value opens nothing');
-  assert.equal(els[5].hasAttribute('href'), false, 'an unavailable row opens nothing');
-  assert.equal(els[2].find('bell-row__event').textContent, "Your report is hidden while it's reviewed.");
+  assert.deepEqual(els.map((e) => e.tagName), ['BUTTON', 'A', 'BUTTON', 'A', 'DIV', 'A', 'DIV', 'DIV', 'DIV']);
+  const classes = (e) => e.getAttribute('class').split(' ');
+  [[els[0], '43'], [els[2], '44']].forEach(([e, id]) => {
+    assert.equal(e.getAttribute('type'), 'button');
+    assert.equal(e.getAttribute('data-review-ask'), id);
+    assert.equal(e.getAttribute('aria-haspopup'), 'dialog');
+    assert.equal(e.hasAttribute('href'), false, 'a box row is never a link');
+    assert.ok(classes(e).includes('bell-row--box'));
+    assert.equal(classes(e).includes('bell-row--plain'), false);
+  });
+  assert.equal(els[1].getAttribute('href'), '/?report=42');
+  assert.equal(els[3].getAttribute('href'), '/?report=41');
+  assert.equal(els[4].hasAttribute('href'), false);
+  assert.equal(els[5].getAttribute('href'), '/?report=40');
+  [els[6], els[7], els[8]].forEach((e) => {
+    assert.equal(e.hasAttribute('href'), false, 'no Policy link, no link from an unavailable row or a bad id');
+    assert.equal(e.hasAttribute('data-review-ask'), false);
+  });
+  assert.equal(els[0].find('bell-row__event').textContent, 'Your report stays removed.');
+  assert.equal(els[1].find('bell-row__event').textContent, 'Your report is back.');
   els.forEach((e) => {
     assert.equal(e.find('bell-row__line'), null);
     assert.equal(e.find('bell-row__what'), null);
     assert.equal(e.find('bell-row__trust'), null);
   });
+  assert.equal(updatesSource.includes("'/policy'"), false, 'the bell opens no Policy page any more');
+});
+
+// Quick 261118-rz6: an unread box row carries the new mark like a link row,
+// and the first row button takes focus when the list opens.
+test('an unread box row carries the new mark and takes the first focus', async () => {
+  const env = load();
+  const own = { report_line: '', category: '', severity: '', severity_level: '', trust: '', report_id: undefined, kind: 'own_removed', event: 'Your report was removed after review.' };
+  env.answer({ unread: 1, updates: [row({ ...own, id: 31, unread: true, review_report_id: 50 }), row({ ...own, id: 30, unread: false, review_report_id: 51 })] });
+  await flush();
+  env.clickBell();
+  await flush();
+  const [fresh, read] = env.rows.children.map((li) => li.children[0]);
+  assert.ok(fresh.getAttribute('class').split(' ').includes('bell-row--new'));
+  assert.equal(read.getAttribute('class').split(' ').includes('bell-row--new'), false);
+  assert.equal(env.doc.activeElement, fresh);
+});
+
+// openBoxFrom loads the bell with one removed row for report 41, opens the
+// list and presses the row. It returns the env and the row.
+async function openBoxFrom() {
+  const env = load({ box: true });
+  env.answer({ unread: 0, updates: [row({ id: 5, kind: 'own_removed', report_id: undefined, review_report_id: 41, unread: false, report_line: '', category: '', severity: '', severity_level: '', trust: '', event: 'Your report was removed after review.' })] });
+  await flush();
+  env.clickBell();
+  await flush();
+  const button = env.rows.children[0].children[0];
+  env.doc.fireDoc('click', { target: button, preventDefault() {} });
+  await flush();
+  return { env, button };
+}
+
+const askPart = (env, id) => env.doc.byId['review-ask-' + id];
+
+test('a box row reads its box and opens it with the Why line and the note when it can ask', async () => {
+  const { env } = await openBoxFrom();
+  const get = env.pending()[0];
+  assert.equal(get.url, '/api/reports/41/review-ask');
+  assert.equal(get.init.method, 'GET');
+  assert.equal(env.askBox.shown, 0, 'the box waits for its answer');
+  env.answer({ why: 'Why: False', state: 'can_ask' });
+  await flush();
+  assert.equal(env.askBox.open, true);
+  assert.equal(env.doc.activeElement, askPart(env, 'title'), 'the title takes the first focus, no button looks chosen');
+  assert.equal(env.panel.hidden, true, 'the bell list behind the box closes as the box opens');
+  assert.equal(env.trigger.getAttribute('aria-expanded'), 'false');
+  assert.equal(askPart(env, 'why').hidden, false);
+  assert.equal(askPart(env, 'why').textContent, 'Why: False');
+  assert.equal(askPart(env, 'form').hidden, false);
+  assert.equal(askPart(env, 'send').hidden, false);
+  assert.equal(askPart(env, 'asked').hidden, true);
+  assert.equal(askPart(env, 'none').hidden, true);
+});
+
+test('the box says Asked. while an ask is open, No asks left. after three, and no Why line without a reason', async () => {
+  for (const [body, shown] of [[{ why: 'Why: Spam', state: 'asked' }, 'asked'], [{ state: 'no_asks_left' }, 'none']]) {
+    const { env } = await openBoxFrom();
+    env.answer(body);
+    await flush();
+    assert.equal(env.askBox.open, true);
+    assert.equal(askPart(env, shown).hidden, false, shown + ' shows');
+    assert.equal(askPart(env, 'form').hidden, true, 'no note box');
+    assert.equal(askPart(env, 'send').hidden, true, 'no Ask for review');
+    assert.equal(askPart(env, 'why').hidden, body.why === undefined);
+  }
+});
+
+test('Ask for review sends the note and shows Asked. in place', async () => {
+  const { env } = await openBoxFrom();
+  env.answer({ why: 'Why: False', state: 'can_ask' });
+  await flush();
+  askPart(env, 'note').value = 'I took the photo myself.';
+  askPart(env, 'send').fire('click');
+  const post = env.pending()[0];
+  assert.equal(post.url, '/api/reports/41/review-ask');
+  assert.equal(post.init.method, 'POST');
+  assert.deepEqual(JSON.parse(post.init.body), { note: 'I took the photo myself.' });
+  env.answer({ why: 'Why: False', state: 'asked' }, 201);
+  await flush();
+  assert.equal(env.askBox.open, true, 'the box stays open');
+  assert.equal(askPart(env, 'asked').hidden, false);
+  assert.equal(askPart(env, 'form').hidden, true);
+  assert.equal(askPart(env, 'send').hidden, true);
+  assert.equal(env.doc.activeElement, askPart(env, 'asked'), 'focus moves to Asked. so a screen reader reads it');
+  assert.equal(env.pending().some((f) => f.url === '/api/updates'), true, 'the bell reads again');
+});
+
+test('a refused ask reads the box again, and a too long note shows the server line', async () => {
+  const { env } = await openBoxFrom();
+  env.answer({ why: 'Why: False', state: 'can_ask' });
+  await flush();
+  askPart(env, 'send').fire('click');
+  env.answer({ error: { field: 'report', message: 'No asks left.' } }, 409);
+  await flush();
+  const again = env.pending()[0];
+  assert.equal(again.url, '/api/reports/41/review-ask');
+  assert.equal(again.init.method, 'GET');
+  env.answer({ state: 'no_asks_left' });
+  await flush();
+  assert.equal(askPart(env, 'none').hidden, false);
+  assert.equal(env.doc.activeElement, askPart(env, 'none'), 'focus moves to No asks left. so a screen reader reads it');
+
+  const second = await openBoxFrom();
+  second.env.answer({ state: 'can_ask' });
+  await flush();
+  askPart(second.env, 'send').fire('click');
+  second.env.answer({ error: { field: 'note', message: 'Keep the note to 200 characters or fewer.' } }, 400);
+  await flush();
+  assert.equal(askPart(second.env, 'error').hidden, false);
+  assert.equal(askPart(second.env, 'error').textContent, 'Keep the note to 200 characters or fewer.');
+  assert.equal(askPart(second.env, 'form').hidden, false, 'the note stays to be shortened');
+});
+
+test('a row for a report that is no longer removed opens nothing and the bell reads again', async () => {
+  const { env } = await openBoxFrom();
+  env.answer({ error: { field: 'report', message: 'This report is no longer available.' } }, 404);
+  await flush();
+  assert.equal(env.askBox.shown, 0);
+  assert.equal(env.pending().some((f) => f.url === '/api/updates'), true);
+  assert.equal(env.panel.hidden, false, 'with no box the bell list stays open');
+});
+
+// Review fix 2026-11-18: a box opened from the bell closes the list behind it,
+// so Close sends focus to the bell; a box opened from a row outside the bell
+// (the full updates list) sends it back to that row.
+test('Close shuts the box and focus goes to the bell, or back to a row outside the bell', async () => {
+  const { env } = await openBoxFrom();
+  env.answer({ state: 'asked' });
+  await flush();
+  assert.equal(env.panel.hidden, true);
+  askPart(env, 'close').fire('click');
+  assert.equal(env.askBox.open, false);
+  assert.equal(env.doc.activeElement, env.trigger, 'the list closed with the box open, so the bell takes focus');
+  assert.equal(env.panel.hidden, true, 'Close does not open the list again');
+
+  const page = load({ box: true });
+  page.answer({ unread: 0, updates: [] });
+  await flush();
+  const listRow = new FakeEl(page.doc, 'button');
+  listRow.setAttribute('data-review-ask', '41');
+  page.doc.documentElement.appendChild(listRow);
+  page.doc.fireDoc('click', { target: listRow, preventDefault() {} });
+  page.answer({ state: 'asked' });
+  await flush();
+  assert.equal(page.askBox.open, true);
+  assert.equal(page.trigger.getAttribute('aria-expanded'), 'false', 'a row outside the bell leaves the bell as it was');
+  askPart(page, 'close').fire('click');
+  assert.equal(page.doc.activeElement, listRow, 'a row outside the bell takes focus back');
+});
+
+test('a network failure opens the box with the failure line only', async () => {
+  const { env } = await openBoxFrom();
+  env.fail();
+  await flush();
+  assert.equal(env.askBox.open, true);
+  assert.equal(askPart(env, 'error').hidden, false);
+  assert.equal(askPart(env, 'error').textContent, "Couldn't send. Try again.");
+  assert.equal(askPart(env, 'send').hidden, true);
+  assert.equal(askPart(env, 'form').hidden, true);
 });
 
 // Quick 261117-vvb review (2026-11-18): the hidden row is plain but is news, so

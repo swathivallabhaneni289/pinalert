@@ -241,6 +241,10 @@
   {{/* Quick 261030-u78 (WR-E04, owner rule on confirm boxes): the comment-block-confirm box, the same .logout-confirm look, from comment_block_confirm.html.tmpl. comments.js fills and opens it and its Block button is the only thing that sends a block. A direct child of body so no hidden ancestor takes its box away. */}}
   {{template "comment_block_confirm"}}
 
+  {{/* Quick 261118-rz6: the author's box for their own removed report, opened from the bell. A direct child of body, never inside the bell dropdown. */}}
+
+  {{template "review_ask_box.html.tmpl" .}}
+
   {{template "app_bottombar" .}}
 
   {{/* Phase 7.1 plan 13c (D-17): the alerts ask inside the installed iPhone or iPad app, drawn only when the server has a push key and the account has a home area. installed-ask.js opens it once per device and account, and only there. */}}

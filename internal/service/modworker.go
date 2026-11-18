@@ -276,11 +276,15 @@ func (w *ModerationWorker) screenRow(ctx context.Context, row sqlcgen.ClaimDueMo
 	// only when it moved the report. A late reject is own_removed. A pass of a
 	// held report, one this claim found withheld, is own_shown; a serious
 	// report was already showing, so its pass tells nothing.
-	var ownKind *string
+	// Quick 261118-rz6: a late reject records text_check as the reason, which
+	// the author's box shows as "Why: Text check".
+	var ownKind, removedReason *string
 	switch {
 	case state == ModerationRemoved:
 		k := string(UpdateOwnRemoved)
 		ownKind = &k
+		why := string(RemovalTextCheck)
+		removedReason = &why
 	case meta.Withheld():
 		k := string(UpdateOwnShown)
 		ownKind = &k
@@ -288,6 +292,7 @@ func (w *ModerationWorker) screenRow(ctx context.Context, row sqlcgen.ClaimDueMo
 
 	if err := w.q.FinishCheckAndSetState(ctx, sqlcgen.FinishCheckAndSetStateParams{
 		OwnKind:         ownKind,
+		RemovedReason:   removedReason,
 		ModerationState: string(state),
 		Verdict:         string(decision.Verdict),
 		Scores:          scoresJSON,

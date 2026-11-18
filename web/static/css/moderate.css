@@ -6,8 +6,8 @@
 
    Classes owned here: mod-page, mod-page__line, mod-find, mod-find__help,
    mod-find__status, mod-section, mod-section__line, mod-count, mod-list,
-   mod-empty, mod-hint, mod-row and its parts, mod-scores, mod-confirm and its
-   parts. The hidden attribute rule of this repo applies: every rule that sets
+   mod-empty, mod-hint, mod-row and its parts, mod-scores, and since quick
+   261118-rz6 mod-reasons and mod-reason (the inline mod-confirm left then). The hidden attribute rule of this repo applies: every rule that sets
    a display on a mod class carries :not([hidden]), so a hidden element stays
    hidden. A summary keeps its native display so the browser marker stays. */
 
@@ -268,27 +268,79 @@
   font-weight: var(--font-weight-semibold);
 }
 
-.mod-row__actions:not([hidden]),
-.mod-confirm__buttons:not([hidden]) {
+.mod-row__actions:not([hidden]) {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-sm);
 }
 
-.mod-row__actions .btn,
-.mod-confirm__buttons .btn {
+.mod-row__actions .btn {
   width: 100%;
 }
 
-.mod-confirm:not([hidden]) {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-}
-
-.mod-confirm__question {
+/* Quick 261118-rz6: the Why line of a removed report and the author's note on
+   an ask for review. The note keeps the line breaks its author typed. */
+.mod-row__reason,
+.mod-row__ask-note {
+  margin: 0;
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.mod-row__ask-note {
+  white-space: pre-line;
+}
+
+/* Quick 261118-rz6: the five reasons of the Why remove? box (the Log out box
+   of auth.css), two to a row so the box fits at 320px. A chosen reason takes
+   the soft grey fill, weight 600 and a check before the word that every other
+   chosen control uses, so the state does not rest on colour alone. */
+.mod-reasons:not([hidden]) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+
+.mod-reason {
+  width: 100%;
+  margin: 0;
+  gap: var(--space-xs);
+}
+
+.mod-reason[aria-checked="true"],
+.mod-reason[aria-checked="true"]:hover {
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+.mod-reason[aria-checked="true"]::before {
+  content: "";
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-image: url("/static/icons/check.svg"); mask-image: url("/static/icons/check.svg");
+}
+
+/* Remove stays off until a reason is picked: the readable off look of
+   chrome.css's .btn--off, which leaves a destructive button out, so it is
+   restated here for this one button. */
+#mod-remove-go.btn--off[aria-disabled="true"] {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-border);
+  box-shadow: none;
+  cursor: not-allowed;
 }
 
 /* Plan 42 (owner, 2026-10-21: no underlined text): the outlined secondary
@@ -313,8 +365,7 @@
 }
 
 @media (min-width: 360px) {
-  .mod-row__actions:not([hidden]),
-  .mod-confirm__buttons:not([hidden]) {
+  .mod-row__actions:not([hidden]) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -324,5 +375,14 @@
   .mod-row__state:not([hidden]),
   .mod-find input {
     border: 1px solid CanvasText;
+  }
+
+  .mod-reason[aria-checked="true"] {
+    border: 2px solid Highlight;
+  }
+
+  #mod-remove-go.btn--off[aria-disabled="true"] {
+    border: 1px solid GrayText;
+    color: GrayText;
   }
 }

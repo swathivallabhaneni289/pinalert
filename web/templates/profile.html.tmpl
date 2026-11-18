@@ -128,8 +128,8 @@
           {{else if and (eq .Key "updates") .Updates}}
           <ul class="urow-list" id="updates-rows">
             {{range .Updates}}
-            <li class="urow{{if and .Unread (or .Href .OwnPlain)}} urow--new{{end}}{{if not .Href}} urow--plain{{end}}{{if .IsMore}} urow--more{{end}}" data-update-id="{{.ID}}"{{if .Unread}} data-unread="true"{{end}}>
-              {{if .Href}}<a class="urow__link" href="{{.Href}}" aria-label="{{.Label}}">{{else}}<div class="urow__link">{{if and .Unread .OwnPlain}}<span class="visually-hidden">New.</span>{{end}}{{end}}
+            <li class="urow{{if and .Unread (or .Href .OwnPlain .ReviewReportID)}} urow--new{{end}}{{if not (or .Href .ReviewReportID)}} urow--plain{{end}}{{if .IsMore}} urow--more{{end}}" data-update-id="{{.ID}}"{{if .Unread}} data-unread="true"{{end}}>
+              {{if .Href}}<a class="urow__link" href="{{.Href}}" aria-label="{{.Label}}">{{else if .ReviewReportID}}<button type="button" class="urow__link urow__box" data-review-ask="{{.ReviewReportID}}" aria-haspopup="dialog" aria-label="{{.Label}}">{{else}}<div class="urow__link">{{if and .Unread .OwnPlain}}<span class="visually-hidden">New.</span>{{end}}{{end}}
                 <span class="urow__dot" aria-hidden="true"></span>
                 <span class="urow__text">
                   <span class="urow__event">{{.Event}}</span>
@@ -138,7 +138,7 @@
                   {{if .Trust}}<span class="urow__trust">{{.Trust}}</span>{{end}}
                 </span>
                 <span class="urow__when">{{.When}}</span>
-              {{if .Href}}</a>{{else}}</div>{{end}}
+              {{if .Href}}</a>{{else if .ReviewReportID}}</button>{{else}}</div>{{end}}
             </li>
             {{end}}
           </ul>
@@ -160,6 +160,10 @@
   <div id="toast" role="status" aria-live="polite" hidden></div>
   {{/* Review fix K2 (09-REVIEW): the page host of the star box for the reader whose resolve closes the report. It is not a live region and holds nothing until votes.js mounts the box; stars.css places it above the message. It must follow the message directly. */}}
   <div id="rate-host"></div>
+
+  {{/* Quick 261118-rz6: the author's box for their own removed report, opened from the bell. A direct child of body, never inside the bell dropdown. */}}
+
+  {{template "review_ask_box.html.tmpl" .}}
 
   {{template "app_bottombar" .}}
 

@@ -510,6 +510,81 @@ main.profile-page a.activity-retry {
   line-height: var(--line-height-label);
 }
 
+/* ---- The reader's box for their own removed report (quick 261118-rz6) ----- */
+
+/* The removed and stays removed rows are buttons that open the box, in the
+   bell and in the full list. They keep the row's own look: no button fill,
+   border or centring, the whole row pressable. */
+button.bell-row,
+button.urow__link {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-family: var(--font-family);
+  text-align: start;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* The box is the Log out box of auth.css. Its Why line and its one state line
+   are body text; the note box is the flag note's field. */
+.review-ask__why,
+.review-ask__state {
+  margin: 0 0 var(--space-md);
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+}
+
+/* After an ask, focus moves to the state line shown (tabindex -1) so a screen
+   reader reads it; like the box title it draws no ring (review fix,
+   2026-11-18). */
+.review-ask__state:focus {
+  outline: none;
+}
+
+.logout-confirm__title:has(+ .review-ask__why:not([hidden])),
+.logout-confirm__title:has(+ .review-ask__why[hidden] + .review-ask__note:not([hidden])) {
+  margin-bottom: var(--space-sm);
+}
+
+.review-ask__note:not([hidden]) {
+  display: grid;
+  gap: var(--space-xs);
+  margin: 0 0 var(--space-lg);
+}
+
+.review-ask__note label {
+  color: var(--color-text);
+  font-size: var(--font-size-label);
+  line-height: var(--line-height-label);
+  font-weight: var(--font-weight-semibold);
+}
+
+.review-ask__note textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--touch-target-min);
+  margin: 0;
+  padding: var(--space-sm) var(--space-12);
+  font-family: var(--font-family);
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-text-muted);
+  border-radius: 8px;
+  resize: vertical;
+}
+
+.review-ask .inline-error:not([hidden]) {
+  margin: 0 0 var(--space-md);
+}
+
 /* ---- Forced colours ------------------------------------------------------ */
 
 /* A shadow and a background colour disappear in forced colours, so the unread

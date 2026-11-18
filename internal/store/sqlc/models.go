@@ -135,6 +135,7 @@ type ModerationAction struct {
 	ModeratorAccountID int64
 	Action             string
 	CreatedAt          time.Time
+	Reason             *string
 }
 
 type ModerationCheck struct {
@@ -324,6 +325,8 @@ type Report struct {
 	AreaName              *string
 	ShareToken            *string
 	ReviewKeptAt          pgtype.Timestamptz
+	RemovedReason         *string
+	RemovedAt             pgtype.Timestamptz
 }
 
 type ReportFlag struct {
@@ -341,6 +344,17 @@ type ReportMute struct {
 	AccountID int64
 	ReportID  int64
 	CreatedAt time.Time
+}
+
+type ReportReviewAsk struct {
+	ID                  int64
+	ReportID            int64
+	AccountID           int64
+	Note                *string
+	CreatedAt           time.Time
+	AnsweredAt          pgtype.Timestamptz
+	Answer              *string
+	AnsweredByAccountID *int64
 }
 
 type Session struct {

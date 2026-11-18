@@ -275,6 +275,9 @@ func TestLegalPagesRender(t *testing.T) {
 		// and flags from three places hide a report until a moderator acts.
 		"A removed report shows to no one. Its author is told in the bell, whether a moderator removed it or the late automatic check did.",
 		"One flag never hides a report. When people in three different places flag it, it is hidden until a moderator keeps or removes it. Its author is told in the bell when it is hidden, shown again or removed, and is never told who flagged it.",
+		// Amended 2026-11-18 (quick 261118-rz6): a removed report says why, and
+		// its author can ask for a review from the bell, up to 3 times.
+		"The bell also says why it was removed, and its author can ask for a review there, up to 3 times.",
 		"Flags you send, and their reasons. When the page already knows where you are, a flag also keeps a rough square about 150 metres wide, never your exact spot.",
 		"For borderline reports, and for reports whose check finished after they were saved: the check's result, its scores and which model gave them, without the report text.",
 		// Quick 261016-pho: the place search now goes to Photon first, a

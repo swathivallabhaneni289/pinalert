@@ -825,7 +825,7 @@ func TestRemoveReportStatement(t *testing.T) {
 	modReviewCheck(t, q, listed)
 	modFlag(t, q, listed, acc1, "spam")
 	modFlag(t, q, listed, acc2, "abusive")
-	if err := q.RemoveReport(ctx, listed); err != nil {
+	if err := q.RemoveReport(ctx, sqlcgen.RemoveReportParams{ReportID: listed, RemovedReason: "spam"}); err != nil {
 		t.Fatalf("RemoveReport: %v", err)
 	}
 	if s := modState(t, pool, listed); s != "removed" {
@@ -847,7 +847,7 @@ func TestRemoveReportStatement(t *testing.T) {
 
 	pend := modRawReport(t, pool, "remove pending", "low", "pending", now, future)
 	modPendingCheck(t, q, pend)
-	if err := q.RemoveReport(ctx, pend); err != nil {
+	if err := q.RemoveReport(ctx, sqlcgen.RemoveReportParams{ReportID: pend, RemovedReason: "spam"}); err != nil {
 		t.Fatalf("RemoveReport pending: %v", err)
 	}
 	if s := modState(t, pool, pend); s != "removed" {
@@ -861,7 +861,7 @@ func TestRemoveReportStatement(t *testing.T) {
 	}
 
 	bare := modRawReport(t, pool, "remove bare", "low", "clear", now, future)
-	if err := q.RemoveReport(ctx, bare); err != nil {
+	if err := q.RemoveReport(ctx, sqlcgen.RemoveReportParams{ReportID: bare, RemovedReason: "spam"}); err != nil {
 		t.Fatalf("RemoveReport bare: %v", err)
 	}
 	if s := modState(t, pool, bare); s != "removed" {
