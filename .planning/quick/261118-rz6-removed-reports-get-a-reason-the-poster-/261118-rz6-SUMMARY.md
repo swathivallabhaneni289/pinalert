@@ -107,6 +107,11 @@ A moderator now removes a report with one of five reasons. The author's bell row
   - The stays removed row and the second ask: `step4-stays-bell-390-light.png` and `step4-asked-again-390-light.png`.
   - The Removed list: `step6-removed-list-{320,1280}-{light,dark}.png`.
   - The final bell and full list: `step7-final-bell-*.png` and `step7-final-list-*.png`.
+- **Second pass: the full updates list.** The main run's list screenshots came after both Restores, so this pass checked the box row while its report was still removed, on a fresh `p9_rz6_live`. 17 of 17 checks passed; the results are in `/private/tmp/claude-501/-Users-swathivallabhaneni-code-pinalert/2574caf2-6d41-4dbd-95b5-bd3c870af095/scratchpad/rz6/live-list-results.txt`.
+  - At 390 and 1280, light and dark, the `/profile?part=updates` row "Your report was removed after review." was a full width grid button like the other rows. The time sat under the text on the phone and beside it on the laptop, with no button border and no sideways scroll.
+  - The unread row carried the new mark: the red dot and bold text.
+  - A press opened the box with "Why: False" and Ask for review. Close shut it, and focus went back to the row.
+  - Screenshots: `step8-list-box-row-{390,1280}-{light,dark}.png` and `step8-list-box-open-{390,1280}-{light,dark}.png`, in the same shots folder.
 - **For the owner to judge**
   - At 320 "Ask for review" wraps to two lines inside its button (`step2-box-320-dark.png`).
   - A press inside the author's box closes the bell list behind it, by the bell's existing outside press rule, so after Close focus goes to the bell.
