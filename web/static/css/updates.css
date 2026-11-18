@@ -585,6 +585,21 @@ button.urow__link {
   margin: 0 0 var(--space-md);
 }
 
+/* Quick 261118-uoe (owner 2026-11-18, labels "not just clumped up together"):
+   side by side, Close and Ask for review need 258px on one line each and the
+   box's button row has 238px at 320 wide, so in equal halves Ask for review
+   wrapped onto two lines at every width. In this box only, the two buttons
+   stack full width at every width, the action on top, with the Log out box's
+   own gap between them. The Log out, Delete and other boxes keep their row. */
+.review-ask .logout-confirm__actions:not([hidden]) {
+  flex-direction: column-reverse;
+  flex-wrap: nowrap;
+}
+
+.review-ask .logout-confirm__actions .btn {
+  flex: none;
+}
+
 /* ---- Forced colours ------------------------------------------------------ */
 
 /* A shadow and a background colour disappear in forced colours, so the unread
