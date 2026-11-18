@@ -851,7 +851,13 @@ func TestActivityPartsRenderFromTheAddress(t *testing.T) {
 					t.Errorf("hub row %q shows a count %s, the server holds no rows for it", key, count[1])
 				}
 			default:
-				if count == nil || count[1] != strconv.Itoa(rowCount) {
+				// Amended 2026-11-18 (owner on the 7.1 UAT): a part with no
+				// rows shows no count rather than 0.
+				if rowCount == 0 {
+					if count != nil {
+						t.Errorf("hub row %q shows a count %s for no rows, want none", key, count[1])
+					}
+				} else if count == nil || count[1] != strconv.Itoa(rowCount) {
 					t.Errorf("hub row %q count = %v, want the %d rows of its section", key, count, rowCount)
 				}
 			}

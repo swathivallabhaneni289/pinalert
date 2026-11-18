@@ -318,11 +318,12 @@ window.PinalertEndedNearby = (function () {
 
   // writeCount puts the number of rows shown in the hub row and, on a laptop,
   // beside the part title. Both elements are in the page, hidden until now.
+  // Amended 2026-11-18 (owner on the 7.1 UAT): a count of 0 stays hidden.
   function writeCount(count) {
     [hubCountEl, titleCountEl].forEach(function (el) {
       if (el) {
-        Pinalert.setText(el, String(count));
-        el.hidden = false;
+        Pinalert.setText(el, count > 0 ? String(count) : '');
+        el.hidden = !(count > 0);
       }
     });
   }

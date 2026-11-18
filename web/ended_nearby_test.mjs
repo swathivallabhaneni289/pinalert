@@ -420,7 +420,9 @@ test('a cut group says Showing the newest {N}. with the count it shows, and a gr
   assert.equal(shown(m.by('ended-faded-cut')), false);
 });
 
-test('zero reports with no partial flag shows the empty state and a hub count of 0', async () => {
+// Amended 2026-11-18 (owner on the 7.1 UAT, "showing 0 ... looks odd"): a count
+// of 0 is not shown in the hub row or beside the title.
+test('zero reports with no partial flag shows the empty state and no count', async () => {
   const m = load({ position: [12.97, 77.59], answers: [answer([])] });
   m.start();
   await settle();
@@ -428,7 +430,8 @@ test('zero reports with no partial flag shows the empty state and a hub count of
   assert.equal(shown(m.by('ended-resolved')), false);
   assert.equal(shown(m.by('ended-faded')), false);
   assert.equal(shown(m.by('ended-cols')), false);
-  assert.equal(m.by('ended-hub-count').textContent, '0');
+  assert.equal(m.by('ended-hub-count').hidden, true, 'no hub count for 0');
+  assert.equal(m.by('ended-title-count').hidden, true, 'no title count for 0');
 });
 
 test('WR-02: a partial flag never leaves an empty block, and the partial line is its own sentence', async () => {

@@ -289,10 +289,11 @@ func TestActivityPartMembership(t *testing.T) {
 			if len(p.Rows) != 0 || p.Count != 0 {
 				t.Errorf("part %q rows %d count %d, want no server rows", key, len(p.Rows), p.Count)
 			}
-			// Updates shows the number 0 until Phase 3.2; Ended nearby shows no
-			// count until the browser read of a later plan fills it.
-			if wantShow := key == "updates"; p.ShowCount != wantShow {
-				t.Errorf("part %q ShowCount = %v, want %v", key, p.ShowCount, wantShow)
+			// Ended nearby shows no count until the browser read of a later
+			// plan fills it. Amended 2026-11-18 (owner on the 7.1 UAT, "showing
+			// 0 ... looks odd"): an empty Updates part shows no count either.
+			if p.ShowCount {
+				t.Errorf("part %q ShowCount = true with no rows, want false", key)
 			}
 		}
 	})

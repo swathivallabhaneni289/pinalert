@@ -147,8 +147,10 @@ func parseActivityPart(rawPart, rawTab string) string {
 
 // activityPart is one part of the page: its words, its address, how many cards
 // it holds and the cards themselves. Summary is the hub row's one line.
-// ShowCount is false only for Ended nearby, whose rows are a read the browser
-// makes; Updates shows 0 until Phase 3.2 fills it.
+// ShowCount is false for Ended nearby, whose rows are a read the browser
+// makes; Updates shows 0 until Phase 3.2 fills it. Amended 2026-11-18 (owner on
+// the 7.1 UAT, "showing 0 ... looks odd"): a part with no rows shows no count,
+// so ShowCount is also false when Count is 0.
 type activityPart struct {
 	Key        string
 	Name       string
@@ -277,6 +279,7 @@ func fillUpdatesPart(view *activityPageView, page service.UpdatesPage, failed bo
 		}
 		p.Updates = rows
 		p.Count = len(rows)
+		p.ShowCount = p.Count > 0
 		p.NewCount = page.Unread
 		p.UpdatesCut = page.Total > len(rows)
 		if len(page.Items) > 0 {
@@ -399,14 +402,14 @@ func buildActivityPage(page service.ActivityPage, current string, now time.Time)
 		switch spec.Key {
 		case activityPartUpdates:
 			// Phase 3.2: fillUpdatesPart fills the rows, the count, the "{N} new"
-			// tag and the summary after this; here it starts as the empty part.
-			p.ShowCount = true
+			// tag and the summary after this; here it starts as the empty part,
+			// which shows no count.
 			p.Summary = hubUpdatesNone
 		case activityPartConfirmed:
-			p.ShowCount = true
+			p.ShowCount = len(rows) > 0
 			p.Summary = latestSummary(rows, hubConfirmedNone)
 		case activityPartDisputed:
-			p.ShowCount = true
+			p.ShowCount = len(rows) > 0
 			p.Summary = latestSummary(rows, hubDisputedNone)
 		case activityPartEnded:
 			p.Summary = hubEndedSummary
