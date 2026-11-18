@@ -557,6 +557,9 @@ var phaseScripts = []string{
 	// Phase 9 plan 16: the shared star control script joins the scripts held to
 	// the plain punctuation rule. No other entry changed.
 	"stars.js",
+	// Quick 261118-srq: the install offer script of the Settings app row joins
+	// the scripts held to the plain punctuation rule. No other entry changed.
+	"install-app.js",
 }
 
 // TestNewScriptsUsePlainPunctuation holds the phase's new scripts to the house

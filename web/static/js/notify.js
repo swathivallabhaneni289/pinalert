@@ -36,6 +36,12 @@
 //   - It does not touch the browser's own install prompt. Android and laptop
 //     browsers keep their own install control; there is no custom Install
 //     button (decision 5, UI-SPEC 4c).
+//     Amended 2026-11-18 by quick 261118-srq (owner, 7.1 UAT test 8): Settings
+//     now has one row in About Pinalert, Add to Dock on Mac Safari or Install
+//     app where the browser offers a one click install. notify.js only answers
+//     which row fits (installRow, a pure function of the agent and two flags).
+//     The browser's offer is kept and used by install-app.js, so this file
+//     still holds no listener and never asks the browser to install.
 //   - It does not decide any wording. It returns states and reasons only.
 (function () {
   'use strict';
@@ -142,6 +148,63 @@
       parts[i].hidden = names.indexOf(' ' + variant + ' ') === -1;
     }
     return variant;
+  }
+
+  // Quick 261118-srq: which row Settings shows in About Pinalert.
+  //
+  // appleMobileAgent is isAppleMobile as a pure function of the agent and the
+  // touch points, so the row's tests can hand both over.
+  function appleMobileAgent(agent, maxTouchPoints) {
+    if (typeof agent !== 'string') {
+      return false;
+    }
+    if (/iPhone|iPad/.test(agent)) {
+      return true;
+    }
+    return /Macintosh/.test(agent) && typeof maxTouchPoints === 'number' && maxTouchPoints > 1;
+  }
+
+  // The Mac browsers that are not Safari. Chrome, Edge, Opera, Brave and
+  // Vivaldi carry Chrome/; DuckDuckGo carries Ddg/.
+  var OTHER_MAC_BROWSERS = /Chrome|Chromium|CriOS|Edg|Firefox|FxiOS|OPR\/|Opera|Ddg\/|YaBrowser/;
+  // Safari 17 is the first with File > Add to Dock.
+  var DOCK_SAFARI_VERSION = 17;
+
+  // isMacSafari is true for Safari 17 or newer on a Mac: Macintosh with no
+  // more than one touch point (a desktop mode iPad has more), Safari's own
+  // Version/N and no other browser's token.
+  function isMacSafari(agent, maxTouchPoints) {
+    if (typeof agent !== 'string' || !/Macintosh/.test(agent) || appleMobileAgent(agent, maxTouchPoints)) {
+      return false;
+    }
+    if (!/Safari\//.test(agent) || OTHER_MAC_BROWSERS.test(agent)) {
+      return false;
+    }
+    var version = SAFARI_VERSION.exec(agent);
+    return !!version && parseInt(version[1], 10) >= DOCK_SAFARI_VERSION;
+  }
+
+  // installRow answers 'dock', 'install' or '':
+  //   ''        when the page already runs as an installed app, or on an
+  //             iPhone or iPad (they keep their Home Screen guide in
+  //             Notifications);
+  //   'install' when the browser offered a one click install (hasOffer);
+  //   'dock'    Safari 17 or newer in a Mac tab;
+  //   ''        everything else (Firefox, older Safari, anything unknown).
+  function installRow(agent, maxTouchPoints, installed, hasOffer) {
+    if (installed === true || appleMobileAgent(agent, maxTouchPoints)) {
+      return '';
+    }
+    if (hasOffer === true) {
+      return 'install';
+    }
+    return isMacSafari(agent, maxTouchPoints) ? 'dock' : '';
+  }
+
+  // installRowHere is installRow for this browser.
+  function installRowHere(hasOffer) {
+    var nav = typeof navigator !== 'undefined' && navigator ? navigator : {};
+    return installRow(nav.userAgent, nav.maxTouchPoints, isInstalled(), hasOffer === true);
   }
 
   // baseState is what the browser alone can say, with no request:
@@ -613,6 +676,9 @@
     isMacDockApp: isMacDockApp,
     shareStep: shareStep,
     applyShareStep: applyShareStep,
+    isMacSafari: isMacSafari,
+    installRow: installRow,
+    installRowHere: installRowHere,
     keyBytes: keyBytes
   };
 }());

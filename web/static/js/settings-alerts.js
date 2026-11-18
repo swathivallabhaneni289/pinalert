@@ -2,6 +2,8 @@
 // window and the Delete my account box of the Settings page (Phase 3.2 plan 12,
 // D-11, D-23, UI-SPEC E2, E3),
 // and the Notifications rows (Phase 3.2 plan 15, NOTIF-05, UI-SPEC E1).
+// Since quick 261118-srq it also draws the first About Pinalert row, Add to
+// Dock with its window or Install app, see the section of that name below.
 //
 // Owner decision 2026-11-03 (quick 261103-jal): the Notifications box has two
 // rows. The distance select "How far from my home area" is saved at once, and
@@ -893,6 +895,98 @@
     reconcileDevice();
   }
 
+  // ---- Add to Dock and Install app ------------------------------------------
+  //
+  // Quick 261118-srq (owner, 7.1 UAT test 8: "We'll just add something on the
+  // settings"): the first row of About Pinalert. notify.js says which row fits
+  // this browser: Add to Dock on Safari 17 or newer in a Mac tab, which opens
+  // a small window with the two steps; Install app where the browser offered a
+  // one click install, which shows the browser's own confirm box through
+  // install-app.js; no row anywhere else. The wrapper is hidden in the
+  // template, so without the scripts nothing shows. A dismissed install keeps
+  // the row; an accepted one or an installed app hides it.
+
+  var appRowWrap = el('settings-app-row');
+  var dockRow = el('settings-dock-row');
+  var installAppRow = el('settings-install-row');
+  var dockWin = el('settings-dock-window');
+  var dockClose = el('settings-dock-close');
+  var dockTitle = el('settings-dock-title');
+  var appRowReady = !!(appRowWrap && dockRow && installAppRow && dockWin && dockClose && dockTitle);
+  // offerSeen stays true once the browser offered an install, so a dismissed
+  // choice keeps the Install app row.
+  var offerSeen = false;
+
+  function installApi() {
+    var api = window.PinalertInstall;
+    return api && typeof api.prompt === 'function' && typeof api.hasOffer === 'function' &&
+      typeof api.isDone === 'function' ? api : null;
+  }
+
+  // drawAppRow shows the row this browser gets, or none.
+  function drawAppRow() {
+    if (!appRowReady) {
+      return '';
+    }
+    var api = installApi();
+    var which = '';
+    try {
+      if (api && api.hasOffer()) {
+        offerSeen = true;
+      }
+      if (hasNotify() && typeof window.PinalertNotify.installRowHere === 'function') {
+        which = window.PinalertNotify.installRowHere(offerSeen);
+      }
+      if (which === 'install' && (!api || api.isDone())) {
+        which = '';
+      }
+    } catch (err) {
+      which = '';
+    }
+    if (which !== 'dock' && which !== 'install') {
+      which = '';
+    }
+    if (which !== 'dock' && current === 'dock') {
+      closeWindow('dock', false);
+    }
+    dockRow.hidden = which !== 'dock';
+    installAppRow.hidden = which !== 'install';
+    appRowWrap.hidden = which === '';
+    return which;
+  }
+
+  // onInstallApp runs from the tap, which the browser's confirm box needs.
+  function onInstallApp() {
+    var api = installApi();
+    if (!api) {
+      return;
+    }
+    var asked;
+    try {
+      asked = api.prompt();
+    } catch (err) {
+      asked = Promise.resolve('none');
+    }
+    Promise.resolve(asked).then(function () {
+      drawAppRow();
+    }, function () {
+      drawAppRow();
+    });
+  }
+
+  if (appRowReady) {
+    windows.dock = { win: dockWin, row: dockRow, close: dockClose, title: dockTitle };
+    dockRow.addEventListener('click', function () { openWindow('dock'); });
+    dockClose.addEventListener('click', function () { closeWindow('dock', true); });
+    dockWin.addEventListener('keydown', function (e) { onWindowKeydown('dock', e); });
+    installAppRow.addEventListener('click', onInstallApp);
+    var watchApi = installApi();
+    if (watchApi && typeof watchApi.watch === 'function') {
+      watchApi.watch(drawAppRow);
+    }
+    drawAppRow();
+  }
+
   // ---- Wiring ---------------------------------------------------------------
 
   mutedRow.addEventListener('click', function () { openWindow('muted'); });
@@ -931,6 +1025,7 @@
     deleteAccount: deleteAccount,
     saveAlerts: saveAlerts,
     redrawAlerts: redrawAlerts,
-    drawDevice: drawDevice
+    drawDevice: drawDevice,
+    drawAppRow: drawAppRow
   };
 }());

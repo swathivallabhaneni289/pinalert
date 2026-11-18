@@ -235,8 +235,13 @@ func TestSettingsRows(t *testing.T) {
 	// Amended 2026-11-17 (quick 261117-lq0, owner: "I don't think the followers
 	// and following list should be on the settings"): the Following and Followers
 	// button rows are gone.
-	if strings.Join(buttonIDs, ",") != "settings-device-install,settings-radius-nohome,settings-muted-row,settings-muted-people-row,settings-blocked-row,settings-logout-all-row,settings-delete-row" {
-		t.Errorf("Settings button rows are %v, want the Alerts on this device install row, the distance row's Add a home area first, Muted reports, Muted people, Blocked people, Log out of all devices, Delete my account", buttonIDs)
+	//
+	// Amended 2026-11-18 by quick 261118-srq (owner, 7.1 UAT test 8): the first
+	// About Pinalert row is two buttons, Add to Dock and Install app, both
+	// rendered hidden and shown by the script on Mac Safari or where the browser
+	// offers an install, so they sit after Blocked people.
+	if strings.Join(buttonIDs, ",") != "settings-device-install,settings-radius-nohome,settings-muted-row,settings-muted-people-row,settings-blocked-row,settings-dock-row,settings-install-row,settings-logout-all-row,settings-delete-row" {
+		t.Errorf("Settings button rows are %v, want the Alerts on this device install row, the distance row's Add a home area first, Muted reports, Muted people, Blocked people, Add to Dock, Install app, Log out of all devices, Delete my account", buttonIDs)
 	}
 	for _, want := range []string{
 		// Amended 2026-10-22 (owner: "too much details under the heading for

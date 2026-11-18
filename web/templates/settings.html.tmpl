@@ -17,6 +17,8 @@
   <link rel="stylesheet" href="/static/css/person.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/phone.css?v={{.AssetVersion}}">
   <script src="/static/js/theme.js?v={{.AssetVersion}}"></script>
+  {{/* Quick 261118-srq: not deferred, so the browser's install offer is kept even when it comes before the deferred scripts run. */}}
+  <script src="/static/js/install-app.js?v={{.AssetVersion}}"></script>
 </head>
 <body class="has-app-bar">
   <div class="top-chrome">
@@ -158,6 +160,20 @@
         <p class="place-section__line">The rules, how your data is used, and a lighter version for weak networks.</p>
       </div>
       <div class="place-box">
+        {{/* Quick 261118-srq (owner, 7.1 UAT test 8, 2026-11-18: "We'll just add something on the settings", no pop-up): the first row, hidden here and shown by settings-alerts.js only when it fits this browser. Add to Dock on Safari 17 or newer in a Mac tab opens the settings-dock-window; Install app, where the browser offered a one click install, shows the browser's own confirm box. Installed apps, iPhones and iPads (their guide is in Notifications), Firefox and anything unknown get no row. */}}
+        <div id="settings-app-row" hidden>
+          <button type="button" class="place-row" id="settings-dock-row" aria-haspopup="dialog" hidden>
+            <span class="place-row__text">
+              <span class="place-row__label">Add to Dock</span>
+            </span>
+            <span class="app-icon app-icon--chevron-right" aria-hidden="true"></span>
+          </button>
+          <button type="button" class="place-row" id="settings-install-row" hidden>
+            <span class="place-row__text">
+              <span class="place-row__label">Install app</span>
+            </span>
+          </button>
+        </div>
         <a class="place-row" href="/disclaimer" data-open-reader="disclaimer">
           <span class="place-row__text">
             <span class="place-row__label">Disclaimer</span>
@@ -303,6 +319,22 @@
       </div>
       <div class="app-window__body">
         {{template "device_guide"}}
+      </div>
+    </div>
+  </div>
+
+  {{/* Quick 261118-srq: the Add to Dock window, opened from the first About Pinalert row on Safari in a Mac tab. Built like the install guide window and using its step styles; the X is the only way out and there is no lead or hint line. */}}
+  <div class="app-window app-window--edit" id="settings-dock-window" hidden>
+    <div class="app-window__panel" role="dialog" aria-modal="true" aria-labelledby="settings-dock-title">
+      <div class="app-window__head">
+        <h2 class="app-window__title" id="settings-dock-title" tabindex="-1">Add to Dock</h2>
+        <button type="button" class="app-window__close" id="settings-dock-close" aria-label="Close"><span class="app-icon app-icon--x" aria-hidden="true"></span></button>
+      </div>
+      <div class="app-window__body">
+        <ol class="device-guide__steps" role="list">
+          <li class="device-guide__step"><span class="device-guide__tile"><span class="app-icon app-icon--square-plus" aria-hidden="true"></span></span><span class="device-guide__text">Choose <strong>File</strong> &gt; <strong>Add to Dock</strong>.</span></li>
+          <li class="device-guide__step"><span class="device-guide__tile"><span class="app-icon app-icon--map-pin" aria-hidden="true"></span></span><span class="device-guide__text">Click <strong>Add</strong>, then open Pinalert from your Dock.</span></li>
+        </ol>
       </div>
     </div>
   </div>

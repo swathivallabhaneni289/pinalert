@@ -306,9 +306,13 @@ func TestSettingsShowsOnlyExistingRows(t *testing.T) {
 	// Amended 2026-11-17 (quick 261117-vuf, owner on the 7.1 UAT): the section is
 	// called Activity and holds one My activity row, written out in the source, so
 	// still eleven in the source and now eleven drawn.
+	//
+	// Amended 2026-11-18 by quick 261118-srq (owner, 7.1 UAT test 8): the first
+	// About Pinalert row, Add to Dock, opens a window and draws a chevron; its
+	// Install app variant does not. Twelve in the source.
 	p421InOrder(t, "section order", page, `id="settings-activity-title"`, `id="settings-phone-title"`, `id="settings-people-title"`)
-	if got := strings.Count(page, "app-icon--chevron-right"); got != 11 {
-		t.Errorf("settings.html.tmpl holds %d chevrons, want eleven (ten rows plus the My activity row)", got)
+	if got := strings.Count(page, "app-icon--chevron-right"); got != 12 {
+		t.Errorf("settings.html.tmpl holds %d chevrons, want twelve (ten rows, the My activity row and the Add to Dock row)", got)
 	}
 	header := p421ReadTemplate(t, "account_header.html.tmpl")
 	for _, label := range waitingSettingsLabels {
