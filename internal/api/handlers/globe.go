@@ -19,8 +19,8 @@
 // Policy page and the credit line under the globe acknowledge it. To fetch them
 // again, ask the same address for the same 85 tiles (with curl, for example),
 // check each starts with the bytes FF D8 FF, is 256 by 256 and is under 1 MB, and
-// replace the files. These 85 are the only pictures in the repo, an exception the
-// owner approved on 2026-11-18.
+// replace the files. These 85 are the only raster pictures in the project outside
+// .planning, an exception the owner approved on 2026-11-18.
 //
 // The route fails closed. Only the 85 valid indices exist, and anything else is
 // not a route. The router registers these routes and builds its session bypass
