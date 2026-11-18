@@ -128,6 +128,29 @@ func TestFlagCheckFlow(t *testing.T) {
 		}
 	})
 
+	t.Run("a marked report is served everywhere a clear Critical report is", func(t *testing.T) {
+		// Votes, comments, the history and the share link all answer as for any
+		// shown report; the hidden ordinary one answers 404 on each.
+		resp := postVote(t, reader, srv.URL, marked, "confirm", map[string]any{"latitude": vvbLat, "longitude": vvbLon})
+		p20Status(t, "confirm on the marked report", resp, http.StatusOK)
+		for _, path := range []string{"/comments", "/timeline"} {
+			r, err := reader.Get(srv.URL + "/api/reports/" + strconv.FormatInt(marked, 10) + path)
+			if err != nil {
+				t.Fatalf("GET %s: %v", path, err)
+			}
+			p20Status(t, "GET "+path+" of the marked report", r, http.StatusOK)
+			r, err = reader.Get(srv.URL + "/api/reports/" + strconv.FormatInt(ordinary, 10) + path)
+			if err != nil {
+				t.Fatalf("GET %s: %v", path, err)
+			}
+			p20Status(t, "GET "+path+" of the hidden report", r, http.StatusNotFound)
+		}
+		feed, _ := sajFeed(t, reader, srv.URL)
+		if feed[marked]["being_checked"] != true || feed[marked]["your_vote"] != "confirm" {
+			t.Errorf("after the vote: being_checked %v your_vote %v", feed[marked]["being_checked"], feed[marked]["your_vote"])
+		}
+	})
+
 	t.Run("the moderator sees it first, still showing", func(t *testing.T) {
 		flagged := sajFlagged(t, moderator, srv.URL)
 		if len(flagged) < 2 {

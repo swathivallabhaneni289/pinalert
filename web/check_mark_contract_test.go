@@ -78,6 +78,29 @@ func TestCheckMarkContract(t *testing.T) {
 			t.Errorf("feed.css lacks %q", want)
 		}
 	}
+	// The profile's live row: the mark sits in the label line inside the row's
+	// link, as text and a line, never a second control.
+	person := cmRead(t, TemplatesFS, "templates/person.html.tmpl")
+	const personMark = `<span class="person-report__label">{{.LabelLine}}{{if .BeingChecked}} <span class="person-report__check" data-check-mark><span class="person-report__check-glyph" aria-hidden="true"></span><span class="visually-hidden">Being checked.</span><span class="person-report__check-tip" aria-hidden="true" hidden>Being checked.</span></span>{{end}}</span>`
+	if strings.Count(person, personMark) != 1 {
+		t.Error("person.html.tmpl does not draw the mark once in the live row's label line")
+	}
+	if strings.Contains(person, `class="person-report__check"><button`) || strings.Contains(person, `data-check-mark><button`) {
+		t.Error("the profile row's mark must not be a button inside the link")
+	}
+	personCSS := cmRead(t, StaticFS, "static/css/person.css")
+	for _, want := range []string{`mask-image: url("/static/icons/flag.svg");`, ".person-report__check-tip:not([hidden])", "bottom: calc(100% + var(--space-sm));"} {
+		if !strings.Contains(personCSS, want) {
+			t.Errorf("person.css lacks %q", want)
+		}
+	}
+	personJS := cmRead(t, StaticFS, "static/js/person-reports.js")
+	for _, want := range []string{"querySelectorAll('[data-check-mark]')", "evt.preventDefault();", "evt.key === 'Escape'", "wireCheckMarks: wireCheckMarks"} {
+		if !strings.Contains(personJS, want) {
+			t.Errorf("person-reports.js lacks %q", want)
+		}
+	}
+
 	low := cmRead(t, StaticFS, "static/css/low.css")
 	if strings.Count(low, ".report-row--low .report-row__body > .check-mark:not([hidden])") != 2 {
 		t.Error("low.css does not place the mark on the laptop and the phone card")
@@ -129,6 +152,8 @@ func TestCheckMarkPolicyAndNoDashes(t *testing.T) {
 		{TemplatesFS, "templates/legal_body.html.tmpl"}, {TemplatesFS, "templates/moderate.html.tmpl"},
 		{StaticFS, "static/js/moderate.js"}, {StaticFS, "static/js/feed.js"}, {StaticFS, "static/js/map.js"},
 		{StaticFS, "static/js/low.js"}, {StaticFS, "static/css/low.css"},
+		{TemplatesFS, "templates/person.html.tmpl"}, {StaticFS, "static/css/person.css"},
+		{StaticFS, "static/js/person-reports.js"},
 	} {
 		for i, line := range strings.Split(cmRead(t, f.fsys, f.name), "\n") {
 			for _, m := range marks {

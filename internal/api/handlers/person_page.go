@@ -92,6 +92,10 @@ type personReportRow struct {
 	Lon              float64
 	Approx           bool
 	AccessiblePrefix string
+	// BeingChecked draws the Being checked mark after the label line of a live
+	// row (quick 261118-saj): people in different places flagged this Critical
+	// report and no moderator has looked yet. Never set on a finished row.
+	BeingChecked bool
 }
 
 // personReportHref is the Phase 8 report link of a live report: the same
@@ -120,6 +124,7 @@ func personReportRows(rows []service.ProfileReportRow, now time.Time) []personRe
 			pr.LabelLine = service.CategoryWord(v.Category) + " · " + service.SeverityWord(v.Severity)
 			pr.WhenText = "Posted " + profileRelativeTime(v.CreatedAt, now)
 			pr.SeverityClass = "sev-" + string(v.Severity)
+			pr.BeingChecked = v.BeingChecked
 			switch row.Status {
 			case service.ProfileStatusDisputed:
 				pr.ChipClass = "person-chip--grey"
