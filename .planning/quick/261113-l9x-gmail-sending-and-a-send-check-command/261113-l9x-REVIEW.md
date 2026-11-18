@@ -148,7 +148,7 @@ Add a test that formats a mailer from `LoadMailer` with `%v`, `%+v`, `%#v` and `
 
 ```sh
 read -rs SMTP_PASSWORD   # paste, nothing is shown
-SMTP_HOST=smtp.gmail.com SMTP_USERNAME=pinalert.sender@gmail.com SMTP_PASSWORD="$SMTP_PASSWORD" \
+SMTP_HOST=smtp.gmail.com SMTP_USERNAME="<the sending Gmail address>" SMTP_PASSWORD="$SMTP_PASSWORD" \
   go run ./cmd/mailcheck -to your.own@address.example
 unset SMTP_PASSWORD
 ```
