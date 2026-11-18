@@ -255,8 +255,9 @@ never a phone notification and never an email. They show in the bell and in the 
 Amended 2026-11-18 (quick 261118-rz6): an own event can now happen again (a second Remove after a
 Restore, a second Keep removed). The writers then move that one row's time to now and make it
 unread (an upsert on the same key, `read_at` cleared), for every own kind, so it comes back as the
-newest unread row and the bell never piles up. It keeps its id, and the bell's read mark (the
-largest id shown) still clears it.
+newest unread row and the bell never piles up. It also takes a fresh id: the bell's read mark
+clears every row up to the largest id shown, so a row that kept its old id would be marked read by
+a list drawn before it came back (review fix, same day).
 
 | Event | The row says | Tapping it opens |
 |---|---|---|

@@ -87,8 +87,9 @@ RETURNING c.report_id, c.attempts, r.description, r.severity, r.category,
 -- Quick 261118-rz6: removed_reason is text_check when the worker removes the
 -- report and NULL otherwise, and removed_at is stamped with it, so the
 -- author's box and the moderator's Removed list read why and when. The bell
--- row is an upsert: a row of the same kind that is already there moves to now
--- and becomes unread again, so it is never a second row.
+-- row is an upsert: a row of the same kind that is already there moves to now,
+-- becomes unread again and takes a fresh id, so it is never a second row and a
+-- read mark sent for a list drawn before it cannot mark it read.
 WITH fin AS (
     UPDATE moderation_checks
     SET status = 'done',
@@ -119,7 +120,7 @@ JOIN accounts a ON a.id = s.account_id
 WHERE sqlc.narg(own_kind)::text IS NOT NULL
   AND a.deleted_at IS NULL
 ON CONFLICT (account_id, report_id, kind) WHERE kind IN ('own_shown', 'own_review', 'own_kept', 'own_removed', 'own_restored', 'own_stays_removed')
-DO UPDATE SET created_at = now(), read_at = NULL;
+DO UPDATE SET id = nextval(pg_get_serial_sequence('updates', 'id')), created_at = now(), read_at = NULL;
 
 -- name: RescheduleModerationCheck :exec
 -- The provider did not answer: try again later. last_error holds an error
@@ -375,7 +376,10 @@ WHERE r.id = sqlc.arg(report_id)
 -- queued for a phone. A report whose author has no account, or a deleted one,
 -- gets no row. Quick 261118-rz6: an own event can happen again, so a row of
 -- the same kind that is already there moves to now and becomes unread again
--- instead of adding a second row (uq_updates_own_report).
+-- instead of adding a second row (uq_updates_own_report). It also takes a
+-- fresh id: MarkUpdatesRead marks every row up to the newest id shown, so a
+-- row that kept its old id would be marked read by a list drawn before it
+-- came back (review fix).
 INSERT INTO updates (account_id, report_id, kind)
 SELECT s.account_id, r.id, sqlc.arg(kind)::text
 FROM reports r
@@ -384,7 +388,7 @@ JOIN accounts a ON a.id = s.account_id
 WHERE r.id = sqlc.arg(report_id)
   AND a.deleted_at IS NULL
 ON CONFLICT (account_id, report_id, kind) WHERE kind IN ('own_shown', 'own_review', 'own_kept', 'own_removed', 'own_restored', 'own_stays_removed')
-DO UPDATE SET created_at = now(), read_at = NULL;
+DO UPDATE SET id = nextval(pg_get_serial_sequence('updates', 'id')), created_at = now(), read_at = NULL;
 
 -- name: ReviewAskQueue :many
 -- Quick 261118-rz6, the Review asks list: each open ask for review on a report

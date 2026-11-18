@@ -146,7 +146,7 @@ JOIN accounts a ON a.id = s.account_id
 WHERE $1::text IS NOT NULL
   AND a.deleted_at IS NULL
 ON CONFLICT (account_id, report_id, kind) WHERE kind IN ('own_shown', 'own_review', 'own_kept', 'own_removed', 'own_restored', 'own_stays_removed')
-DO UPDATE SET created_at = now(), read_at = NULL
+DO UPDATE SET id = nextval(pg_get_serial_sequence('updates', 'id')), created_at = now(), read_at = NULL
 `
 
 type FinishCheckAndSetStateParams struct {
@@ -183,8 +183,9 @@ type FinishCheckAndSetStateParams struct {
 // Quick 261118-rz6: removed_reason is text_check when the worker removes the
 // report and NULL otherwise, and removed_at is stamped with it, so the
 // author's box and the moderator's Removed list read why and when. The bell
-// row is an upsert: a row of the same kind that is already there moves to now
-// and becomes unread again, so it is never a second row.
+// row is an upsert: a row of the same kind that is already there moves to now,
+// becomes unread again and takes a fresh id, so it is never a second row and a
+// read mark sent for a list drawn before it cannot mark it read.
 func (q *Queries) FinishCheckAndSetState(ctx context.Context, arg FinishCheckAndSetStateParams) error {
 	_, err := q.db.Exec(ctx, finishCheckAndSetState,
 		arg.OwnKind,
@@ -410,7 +411,7 @@ JOIN accounts a ON a.id = s.account_id
 WHERE r.id = $2
   AND a.deleted_at IS NULL
 ON CONFLICT (account_id, report_id, kind) WHERE kind IN ('own_shown', 'own_review', 'own_kept', 'own_removed', 'own_restored', 'own_stays_removed')
-DO UPDATE SET created_at = now(), read_at = NULL
+DO UPDATE SET id = nextval(pg_get_serial_sequence('updates', 'id')), created_at = now(), read_at = NULL
 `
 
 type InsertOwnReportUpdateParams struct {
@@ -425,7 +426,10 @@ type InsertOwnReportUpdateParams struct {
 // queued for a phone. A report whose author has no account, or a deleted one,
 // gets no row. Quick 261118-rz6: an own event can happen again, so a row of
 // the same kind that is already there moves to now and becomes unread again
-// instead of adding a second row (uq_updates_own_report).
+// instead of adding a second row (uq_updates_own_report). It also takes a
+// fresh id: MarkUpdatesRead marks every row up to the newest id shown, so a
+// row that kept its old id would be marked read by a list drawn before it
+// came back (review fix).
 func (q *Queries) InsertOwnReportUpdate(ctx context.Context, arg InsertOwnReportUpdateParams) (int64, error) {
 	result, err := q.db.Exec(ctx, insertOwnReportUpdate, arg.Kind, arg.ReportID)
 	if err != nil {

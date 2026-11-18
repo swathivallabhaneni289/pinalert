@@ -703,3 +703,68 @@ func TestUpdatesListBoxRows(t *testing.T) {
 		}
 	}
 }
+
+// TestRevivedOwnRowSurvivesAnOlderReadMark: an own row that comes back (a
+// second Remove after a Restore) takes a fresh id, so the read mark of a list
+// drawn before it came back (up to the newest id that list showed) leaves it
+// unread, and it is the newest row (review fix, 2026-11-18). With the old id
+// MarkUpdatesRead (id <= up_to) marked it read and the author could miss that
+// the report was taken down again.
+func TestRevivedOwnRowSurvivesAnOlderReadMark(t *testing.T) {
+	r := newRzRig(t)
+	ctx := context.Background()
+	upd := service.NewUpdatesService(r.q, nil)
+	rowID := func(id int64) int64 {
+		t.Helper()
+		var n int64
+		if err := r.pool.QueryRow(ctx, `SELECT id FROM updates WHERE report_id = $1 AND kind = 'own_removed'`, id).Scan(&n); err != nil {
+			t.Fatalf("reading the own_removed row of report %d: %v", id, err)
+		}
+		return n
+	}
+
+	first := r.removed(service.RemovalFalse)
+	oldRow := rowID(first)
+	if _, err := upd.MarkRead(ctx, r.poster, oldRow); err != nil {
+		t.Fatal(err)
+	}
+	r.removed(service.RemovalSpam)
+	page, err := upd.List(ctx, r.poster, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var drawnNewest int64
+	for _, it := range page.Items {
+		if it.ID > drawnNewest {
+			drawnNewest = it.ID
+		}
+	}
+
+	if _, err := r.mods.Restore(ctx, first, r.mod); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.mods.Remove(ctx, first, r.mod, service.RemovalOther); err != nil {
+		t.Fatal(err)
+	}
+	newRow := rowID(first)
+	if newRow <= drawnNewest {
+		t.Fatalf("the revived row has id %d, not above %d, the newest of the list drawn before it", newRow, drawnNewest)
+	}
+	if n := r.own(first, service.UpdateOwnRemoved); n != 1 {
+		t.Fatalf("%d own_removed rows, want 1", n)
+	}
+
+	if _, err := upd.MarkRead(ctx, r.poster, drawnNewest); err != nil {
+		t.Fatal(err)
+	}
+	if n := r.count(`SELECT count(*) FROM updates WHERE id = $1 AND read_at IS NULL`, newRow); n != 1 {
+		t.Error("a read mark for a list drawn before the revival marked the revived row read")
+	}
+	page, err = upd.List(ctx, r.poster, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) == 0 || page.Items[0].ID != newRow || page.Items[0].Kind != service.UpdateOwnRemoved || !page.Items[0].Unread {
+		t.Errorf("the list does not start with the revived row, unread: %+v", page.Items)
+	}
+}
