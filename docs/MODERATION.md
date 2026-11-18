@@ -583,7 +583,10 @@ moderator who removed it and when). A rating its rater clears with Remove my rat
 marked cleared with the time, and the moderator screen still lists it as cleared. When a moderator
 removes every rating one account gave, the account is also barred from rating for good, and the
 moderator and the time are kept on the account. Deleting an account removes its follows, blocks, mutes, bell choices and the ratings it gave
-and received in the one transaction, and switches its profile off. A report's share token stays with the report. An expired report only
+and received in the one transaction, and switches its profile off. Quick 261118-rz6 adds the reason
+for a removed report and when it was removed, and each ask for review with the author's note, the
+answer, when it was answered and the moderator who answered. Deleting an account keeps its asks
+and their notes, like its reports. A report's share token stays with the report. An expired report only
 stops showing in the lists. The Policy page says the same in general and offers removal through
 the contact line when `CONTACT_EMAIL` is set. One small gap: the Policy page lists the scores
 "for borderline reports", which understates the retry case above. If the Policy page is edited,
