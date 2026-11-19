@@ -3,9 +3,9 @@
 //
 // Nothing here runs unless the page wrote the globe markup, which it does only
 // when the device has not chosen the Low data view. The form never waits for
-// this file: the loader runs after the page has loaded and the browser is idle,
-// it asks for WebGL2 before it downloads anything, and it gives up quietly on
-// any failure. A failure leaves the globe's empty space and the credit's
+// this file: the loader runs once this deferred script runs (amended
+// 2026-11-19, it used to wait for load and an idle moment), it asks for WebGL2
+// before it downloads anything, and it gives up quietly on any failure. A failure leaves the globe's empty space and the credit's
 // hidden space, so the card never moves.
 //
 // The libraries are the exact maplibre-gl 5.24.0 files the map page loads. Their
@@ -365,21 +365,11 @@
     injectLibraries(buildMap);
   }
 
-  // The form is usable from the first paint: nothing is downloaded until the
-  // page has loaded and the browser is idle (Safari has no requestIdleCallback).
-  function whenIdle() {
-    if (typeof window.requestIdleCallback === 'function') {
-      window.requestIdleCallback(startGlobe, { timeout: 1500 });
-    } else {
-      setTimeout(startGlobe, 200);
-    }
-  }
-
   window.PinalertLoginGlobe = { canDrawWebGL2: canDrawWebGL2, sizeGlobe: sizeGlobe };
 
-  if (document.readyState === 'complete') {
-    whenIdle();
-  } else {
-    window.addEventListener('load', whenIdle, { once: true });
-  }
+  // Amended 2026-11-19 (owner on the 7.1 globe retest: "it doesnt show right
+  // away"): the globe starts as soon as this deferred script runs, after
+  // auth.js has wired Send, instead of waiting for the load event and an idle
+  // moment. The page's own files are in by then, so the form is not slowed.
+  startGlobe();
 })();

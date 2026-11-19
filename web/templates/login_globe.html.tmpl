@@ -13,7 +13,8 @@
   page and stays visibility hidden until the globe shows, so the card never
   moves when the globe arrives. It sits outside the faded, hidden wrapper.
   The libraries are not tags: their pinned addresses travel as data attributes
-  and the loader injects them after the page has loaded and gone idle.
+  and the loader injects them as soon as it runs (amended 2026-11-19, it used
+  to wait for the page to load and go idle).
 */}}
 {{define "login_globe_css"}}<link rel="stylesheet" href="/static/css/login-globe.css?v={{.AssetVersion}}">{{end}}
 

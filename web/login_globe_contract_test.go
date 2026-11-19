@@ -95,12 +95,18 @@ func TestLoginGlobeTags(t *testing.T) {
 	}
 
 	js := p421ReadStatic(t, "js/login-globe.js")
-	for _, want := range []string{"'anonymous'", "'no-referrer'", "requestIdleCallback", "'load'"} {
+	for _, want := range []string{"'anonymous'", "'no-referrer'"} {
 		if !strings.Contains(js, want) {
 			t.Errorf("login-globe.js lacks %s", want)
 		}
 	}
-	// The loader injects the libraries after the page has loaded and gone idle.
+	// Amended 2026-11-19 (owner on the 7.1 globe retest): the loader starts as
+	// soon as the deferred script runs, never waiting for load or an idle moment.
+	for _, banned := range []string{"requestIdleCallback", "addEventListener('load'"} {
+		if strings.Contains(js, banned) {
+			t.Errorf("login-globe.js still waits on %s", banned)
+		}
+	}
 	p421InOrder(t, "login-globe.js start order", js, "function canDrawWebGL2", "function injectLibraries", "function startGlobe")
 }
 

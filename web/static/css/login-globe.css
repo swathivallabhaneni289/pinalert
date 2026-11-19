@@ -78,9 +78,10 @@
   visibility: visible;
 }
 
-/* The fade in is a keyframe on the inner element, never a script write. */
+/* The fade in is a keyframe on the inner element, never a script write.
+   Amended 2026-11-19 (owner on the 7.1 globe retest): 200ms, was 600ms. */
 .globe-bg.is-ready .globe-bg__map {
-  animation: globe-in 600ms ease-out both;
+  animation: globe-in 200ms ease-out both;
 }
 
 @keyframes globe-in {

@@ -2,7 +2,8 @@
 // sandbox and checks the turning Earth behind the sign in card (Phase 5 plan 07,
 // D-13, UI-SPEC Surface 5, sketch 009 "For the build"):
 //
-//   - nothing is injected before the page has loaded and gone idle, and the
+//   - the libraries are asked for as soon as the script runs (amended
+//     2026-11-19, it used to wait for load and an idle moment), and the
 //     WebGL2 probe runs before any download: with no WebGL2 no link or script
 //     element is ever created and no map is built;
 //   - only an address under /globe/tiles/ is accepted for the tiles;
@@ -227,7 +228,9 @@ function boot(opts = {}) {
       sandbox.maplibregl = { Map: FakeMap };
       ctl.elementsOf('link').concat(ctl.elementsOf('script')).forEach((el) => { if (el.onload) { el.onload(); } });
     },
-    // start runs the page through load and idle up to the injection.
+    // start runs the page through load and idle. Amended 2026-11-19: the
+    // injection now happens when the script runs, so start changes nothing
+    // there; the cases keep calling it so a late load event is covered too.
     start() {
       if (o.readyState !== 'complete') { ctl.fireWindow('load'); }
       ctl.advance(o.idle ? 50 : 200);
@@ -261,22 +264,23 @@ test('with WebGL2 the probe says yes', () => {
   assert.equal(c.sandbox.PinalertLoginGlobe.canDrawWebGL2(), true);
 });
 
-test('nothing is injected before the page has loaded and gone idle', () => {
+// Amended 2026-11-19 (owner on the 7.1 globe retest: "it doesnt show right
+// away"): these two cases said nothing is injected before the load event and an
+// idle moment. The loader now starts as soon as the deferred script runs.
+test('the libraries are asked for as soon as the script runs, before the load event', () => {
   const c = boot({ readyState: 'loading' });
-  c.advance(5000);
-  assert.equal(c.head.children.length, 0, 'nothing while the page is still loading');
-  c.fireWindow('load');
-  assert.equal(c.head.children.length, 0, 'nothing at the load event itself, the browser must go idle first');
-  c.advance(2000);
   assert.equal(c.elementsOf('link').length, 1);
   assert.equal(c.elementsOf('script').length, 1);
+  c.fireWindow('load');
+  c.advance(2000);
+  assert.equal(c.elementsOf('link').length, 1, 'the load event injects nothing more');
+  assert.equal(c.elementsOf('script').length, 1, 'the load event injects nothing more');
 });
 
-test('requestIdleCallback is used when the browser has it', () => {
+test('the start never waits for requestIdleCallback', () => {
   const c = boot({ idle: true });
-  assert.equal(c.head.children.length, 0);
-  c.advance(100);
   assert.equal(c.elementsOf('script').length, 1);
+  assert.equal(c.pendingTimers(), 1, 'only the give up timer is waiting');
 });
 
 test('the libraries are injected with the pinned address, SRI and privacy attributes', () => {
