@@ -764,7 +764,17 @@ func TestWelcomeAlertsScript(t *testing.T) {
 		"askDialog.addEventListener('cancel', onAskCancel);")
 	// Escape is the cancel event, handled there and never from a close event.
 	p13MustContain(t, "onAskCancel", jsFunctionBody(t, js, "onAskCancel(e)"), "e.preventDefault();", "onAskLater()")
-	p13MustNotContain(t, "welcome.js", js, "addEventListener('close'", "'Escape'")
+	p13MustNotContain(t, "welcome.js", js, "'Escape'")
+	// Amended 2026-11-19 by the quick 261119-tnl review: WebKit and Chromium
+	// honour a prevented Escape only twice, then close the dialog themselves. The
+	// one close listener is on the alerts pop-up, and it only finishes sign up as
+	// OK does while OK shows and has not been pressed; it never asks the browser
+	// and never answers Not now.
+	w10Count(t, "welcome.js", js, "addEventListener('close'", 1)
+	p13MustContain(t, "wiring", js, "askDialog.addEventListener('close', onAskClose);")
+	closeBody := jsFunctionBody(t, js, "onAskClose()")
+	p13MustContain(t, "onAskClose", closeBody, "!askOk.hidden", "!askOkBusy", "onAskOk()")
+	p13MustNotContain(t, "onAskClose", closeBody, "enable(", "requestPermission", "postDone(", "onAskLater(")
 
 	// The decision to ask reads the base state only, once, when step 4 finishes.
 	can := jsFunctionBody(t, js, "canAsk()")

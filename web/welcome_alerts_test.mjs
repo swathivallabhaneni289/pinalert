@@ -1670,6 +1670,79 @@ test('blocked: a failed first-run-done after OK puts the pop-up away as drawn an
   assert.equal(doneRequests(page).length, 2);
 });
 
+// Review fix: WebKit and Chromium honour a prevented Escape only twice, then close
+// the dialog themselves. The fake close() fires no close event, so these cases
+// fire it by hand, the way the browser's own queued event would arrive.
+const closedByBrowser = (page) => { page.dialog.open = false; return fire(page.dialog, 'close'); };
+
+test('blocked: a browser that closes the pop-up itself while the line shows finishes sign up once', async () => {
+  const page = atStep4({ notify: makeNotify({ mode: 'blocked' }) });
+  click(page, 'welcome-continue-4');
+  click(page, 'welcome-alerts-allow');
+  await flush();
+  assertOffShown(page);
+  assert.equal(fire(page.dialog, 'cancel').prevented, true);
+  assert.equal(fire(page.dialog, 'cancel').prevented, true);
+  assert.equal(doneRequests(page).length, 0, 'Escape alone adds nothing while the pop-up is open');
+  closedByBrowser(page);
+  assert.equal(doneRequests(page).length, 1, 'the close finishes sign up as OK does');
+  closedByBrowser(page);
+  click(page, OK_BUTTON);
+  await flush();
+  assert.equal(doneRequests(page).length, 1, 'exactly one first-run-done');
+  answer(doneRequests(page)[0], 204);
+  await flush();
+  assert.deepEqual(page.replaced, ['/']);
+});
+
+test('blocked: a close after OK was pressed sends nothing more', async () => {
+  const page = atStep4({ notify: makeNotify({ mode: 'blocked' }) });
+  click(page, 'welcome-continue-4');
+  click(page, 'welcome-alerts-allow');
+  await flush();
+  click(page, OK_BUTTON);
+  closedByBrowser(page);
+  await flush();
+  assert.equal(doneRequests(page).length, 1);
+});
+
+test('blocked: the close that follows a failed first-run-done after OK sends nothing more, and Continue finishes', async () => {
+  const page = atStep4({ notify: makeNotify({ mode: 'blocked' }) });
+  click(page, 'welcome-continue-4');
+  click(page, 'welcome-alerts-allow');
+  await flush();
+  click(page, OK_BUTTON);
+  answer(doneRequests(page)[0], 500);
+  await flush();
+  assert.equal(page.dialog.open, false);
+  fire(page.dialog, 'close'); // the event queued by doneFailed's close()
+  await flush();
+  assert.equal(doneRequests(page).length, 1, 'no second first-run-done from the close');
+  assert.equal(byId(page, 'welcome-error-4').textContent, SAVE_FAILED);
+  click(page, 'welcome-continue-4');
+  assert.equal(doneRequests(page).length, 2, 'Continue still finishes');
+});
+
+test('blocked: a close event while the home area save is out sends nothing, since OK is hidden', async () => {
+  const page = atStep4({ askHome: '', notify: makeNotify({ mode: 'blocked' }) });
+  click(page, 'welcome-continue-4');
+  await pickInAsk(page);
+  const before = page.requests.length;
+  click(page, 'welcome-alerts-allow');
+  await flush();
+  fire(page.dialog, 'close'); // closed while the home area save is out: OK is hidden
+  answer(page.requests[before], 500);
+  await flush();
+  assert.equal(doneRequests(page).length, 0, 'a close while OK is hidden sends nothing');
+});
+
+test('a close of the pop-up before any answer sends nothing', () => {
+  const page = atStep4();
+  click(page, 'welcome-continue-4');
+  closedByBrowser(page);
+  assert.equal(page.requests.length, 0);
+});
+
 test('blocked: a page without the line and OK finishes at once, as before', async () => {
   const page = atStep4({ offLine: false, notify: makeNotify({ mode: 'blocked' }) });
   click(page, 'welcome-continue-4');

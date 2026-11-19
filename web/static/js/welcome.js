@@ -1303,8 +1303,9 @@
     }
   }
 
-  // closeAsk puts the pop-up away when it is open. Nothing is ever sent from the
-  // dialog's close event, so one answer can never produce two requests.
+  // closeAsk puts the pop-up away when it is open. The dialog's close event sends
+  // nothing, except while OK shows and has not been pressed (onAskClose), so one
+  // answer can never produce two requests.
   function closeAsk() {
     if (askDialog && askDialog.open && typeof askDialog.close === 'function') {
       askDialog.close();
@@ -1652,7 +1653,8 @@
   // showAskOff keeps the pop-up open after Allow on a device that refuses
   // notifications (quick 261119-tnl): Not now and Allow go, the line says where
   // to allow them, and OK takes focus. The pop-up stays answered (askBusy), so
-  // Escape does nothing and only OK closes it.
+  // Escape does nothing and only OK closes it. A browser that closes it anyway
+  // (a few Escape presses in a row) finishes sign up as OK does (onAskClose).
   function showAskOff() {
     askDialog.removeAttribute('aria-busy');
     askLater.hidden = true;
@@ -1686,6 +1688,18 @@
     askOkBusy = true;
     askOk.disabled = true;
     postDone();
+  }
+
+  // onAskClose is the pop-up's close event. Escape is prevented while the line
+  // shows, but WebKit and Chromium honour that only twice and then close the
+  // dialog themselves, which would leave step 4 with Continue off. So a close
+  // while OK shows and has not been pressed finishes sign up as OK does. Any
+  // other close sends nothing: by the time the event runs, a failed
+  // first-run-done has hidden OK (hideAskOff) and a pressed OK is busy.
+  function onAskClose() {
+    if (askOk && !askOk.hidden && !askOkBusy) {
+      onAskOk();
+    }
   }
 
   // onAskLater is Not now: it asks the browser nothing, so the browser's one
@@ -1898,6 +1912,7 @@
     askDialog.addEventListener('cancel', onAskCancel);
     if (askOk) {
       askOk.addEventListener('click', onAskOk);
+      askDialog.addEventListener('close', onAskClose);
     }
   }
   if (installDialog && installTitle && installLater) {
