@@ -1736,6 +1736,20 @@ test('blocked: a close event while the home area save is out sends nothing, sinc
   assert.equal(doneRequests(page).length, 0, 'a close while OK is hidden sends nothing');
 });
 
+test('blocked: a step change while the line shows leaves the pop-up open, so no close can finish sign up early', async () => {
+  const page = atStep4({ notify: makeNotify({ mode: 'blocked' }) });
+  click(page, 'welcome-continue-4');
+  click(page, 'welcome-alerts-allow');
+  await flush();
+  page.api.goTo(3);
+  assert.equal(page.dialog.open, true, 'the answered pop-up is not put away by a step change');
+  assert.equal(page.dialog.closeCalls, 0);
+  assert.equal(byId(page, OK_BUTTON).hidden, false);
+  assert.equal(page.requests.length, 0);
+  click(page, OK_BUTTON);
+  assert.equal(doneRequests(page).length, 1);
+});
+
 test('a close of the pop-up before any answer sends nothing', () => {
   const page = atStep4();
   click(page, 'welcome-continue-4');

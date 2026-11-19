@@ -762,7 +762,8 @@ func TestWelcomeAlertsScript(t *testing.T) {
 		"askAllow.addEventListener('click', onAskAllow);",
 		"askLater.addEventListener('click', onAskLater);",
 		"askDialog.addEventListener('cancel', onAskCancel);")
-	// Escape is the cancel event, handled there and never from a close event.
+	// Escape is the cancel event, handled there and never from a close event,
+	// except the close a browser forces after repeated Escape (amendment below).
 	p13MustContain(t, "onAskCancel", jsFunctionBody(t, js, "onAskCancel(e)"), "e.preventDefault();", "onAskLater()")
 	p13MustNotContain(t, "welcome.js", js, "'Escape'")
 	// Amended 2026-11-19 by the quick 261119-tnl review: WebKit and Chromium
