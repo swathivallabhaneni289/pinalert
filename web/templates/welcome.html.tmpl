@@ -217,9 +217,11 @@
         <ul class="app-window__results" id="welcome-alerts-home-results" role="listbox" aria-label="Places found" hidden></ul>
       </div>
       <p class="inline-error" id="welcome-alerts-ask-error" role="alert" hidden></p>
+      <p id="welcome-alerts-off-line" role="status" hidden>Notifications are turned off for Pinalert. Allow them in your browser or device settings to get alerts.</p>
       <div class="logout-confirm__actions">
         <button type="button" class="btn" id="welcome-alerts-later">Not now</button>
         <button type="button" class="btn btn--primary" id="welcome-alerts-allow">Allow</button>
+        <button type="button" class="btn btn--primary" id="welcome-alerts-ok" aria-describedby="welcome-alerts-off-line" hidden>OK</button>
       </div>
     </div>
   </dialog>

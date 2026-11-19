@@ -224,6 +224,11 @@
   var askResults = el('welcome-alerts-home-results');
   // The pop-up's error line: the home area picked in it was not saved (WR-05).
   var askError = el('welcome-alerts-ask-error');
+  // The line and the OK button shown after Allow when the browser or the device
+  // refuses notifications (quick 261119-tnl). A page without them finishes sign
+  // up at once, as before.
+  var askOffLine = el('welcome-alerts-off-line');
+  var askOk = el('welcome-alerts-ok');
   var pushKey = root.getAttribute('data-push-key') || '';
   // The install pop-up of an iPhone or iPad Safari tab (plan 13b): a native dialog
   // outside the flow root, like the alerts pop-up. installShown is true once it
@@ -263,6 +268,11 @@
   // True once Allow has called enable in this visit, so a second Allow after a
   // failed home area save tries the save again and never prompts twice.
   var askEnabled = false;
+  // What enable answered, kept for a second Allow after a failed home area save
+  // (that Allow does not call enable again). null until enable answers.
+  var askAnswer = null;
+  // True from the moment OK is tapped, so a double tap finishes sign up once.
+  var askOkBusy = false;
   // The step 4 button that finished the flow, so focus can go back to it.
   var askOpener = null;
 
@@ -1157,6 +1167,7 @@
   function doneFailed() {
     setFinishing(false);
     closeAsk();
+    hideAskOff();
     askBusy = false;
     setAskDisabled(false);
     // The install pop-up (plan 13b) goes too, and a later Continue records the
@@ -1292,8 +1303,9 @@
     }
   }
 
-  // closeAsk puts the pop-up away when it is open. Nothing is ever sent from the
-  // dialog's close event, so one answer can never produce two requests.
+  // closeAsk puts the pop-up away when it is open. The dialog's close event sends
+  // nothing, except while OK shows and has not been pressed (onAskClose), so one
+  // answer can never produce two requests.
   function closeAsk() {
     if (askDialog && askDialog.open && typeof askDialog.close === 'function') {
       askDialog.close();
@@ -1578,6 +1590,11 @@
   // second enable (enable runs once per visit, so the prompt is never asked in
   // a loop), and Not now still finishes sign up. A page without the error line,
   // or a pop-up the browser has already closed by itself, finishes as before.
+  //
+  // When enable answered blocked (quick 261119-tnl), and the home area is saved,
+  // the pop-up stays open with the line that says where to allow notifications
+  // and one OK button, which finishes sign up (showAskOff, onAskOk). A page
+  // without the line or OK finishes as before.
   function onAskAllow() {
     if (askBusy) {
       return;
@@ -1601,11 +1618,19 @@
     if (askError) {
       hideLine(askError);
     }
-    Promise.resolve(pending).then(function () {}, function () {}).then(function () {
+    Promise.resolve(pending).then(function (result) {
+      if (pending !== null) {
+        askAnswer = result;
+      }
+    }, function () {}).then(function () {
       return place !== null ? saveAskHome(place) : '';
     }).then(function (problem) {
       if (problem && askError && askDialog.open) {
         homeNotSaved(problem);
+        return false;
+      }
+      if (isBlocked(askAnswer) && askOffLine && askOk && askDialog.open) {
+        showAskOff();
         return false;
       }
       return null;
@@ -1616,6 +1641,65 @@
     }, function () {
       postDone();
     });
+  }
+
+  // isBlocked says enable answered that the browser or the device refuses
+  // notifications for this site: it already did, or the person just chose Don't
+  // Allow in its own box. Every other answer, a missing one included, is not.
+  function isBlocked(result) {
+    return result !== null && typeof result === 'object' && result.state === 'blocked';
+  }
+
+  // showAskOff keeps the pop-up open after Allow on a device that refuses
+  // notifications (quick 261119-tnl): Not now and Allow go, the line says where
+  // to allow them, and OK takes focus. The pop-up stays answered (askBusy), so
+  // Escape does nothing and only OK closes it. A browser that closes it anyway
+  // (a few Escape presses in a row) finishes sign up as OK does (onAskClose).
+  function showAskOff() {
+    askDialog.removeAttribute('aria-busy');
+    askLater.hidden = true;
+    askAllow.hidden = true;
+    askOffLine.hidden = false;
+    askOk.hidden = false;
+    askOk.disabled = false;
+    askOkBusy = false;
+    askOk.focus();
+  }
+
+  // hideAskOff puts the pop-up back as it was drawn, for a failed first-run-done
+  // after OK. A page without the line and OK has nothing to put back.
+  function hideAskOff() {
+    if (!askOffLine || !askOk) {
+      return;
+    }
+    askOffLine.hidden = true;
+    askOk.hidden = true;
+    askOk.disabled = false;
+    askOkBusy = false;
+    askLater.hidden = false;
+    askAllow.hidden = false;
+  }
+
+  // onAskOk is OK under the line: it finishes sign up as Allow does, once.
+  function onAskOk() {
+    if (askOkBusy) {
+      return;
+    }
+    askOkBusy = true;
+    askOk.disabled = true;
+    postDone();
+  }
+
+  // onAskClose is the pop-up's close event. Escape is prevented while the line
+  // shows, but WebKit and Chromium honour that only twice and then close the
+  // dialog themselves, which would leave step 4 with Continue off. So a close
+  // while OK shows and has not been pressed finishes sign up as OK does. Any
+  // other close sends nothing: by the time the event runs, a failed
+  // first-run-done has hidden OK (hideAskOff) and a pressed OK is busy.
+  function onAskClose() {
+    if (askOk && !askOk.hidden && !askOkBusy) {
+      onAskOk();
+    }
   }
 
   // onAskLater is Not now: it asks the browser nothing, so the browser's one
@@ -1826,6 +1910,10 @@
     askAllow.addEventListener('click', onAskAllow);
     askLater.addEventListener('click', onAskLater);
     askDialog.addEventListener('cancel', onAskCancel);
+    if (askOk) {
+      askOk.addEventListener('click', onAskOk);
+      askDialog.addEventListener('close', onAskClose);
+    }
   }
   if (installDialog && installTitle && installLater) {
     installLater.addEventListener('click', onInstallLater);

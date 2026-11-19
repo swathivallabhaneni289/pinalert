@@ -603,6 +603,13 @@
   overflow-y: auto;
 }
 
+/* Quick 261119-tnl: the line that shows after Allow when the browser or the
+   device refuses notifications sits 16px above the OK button. It takes no
+   display and no colour of its own, so hidden keeps it away. */
+#welcome-alerts-off-line:not([hidden]) {
+  margin: 0 0 var(--space-md);
+}
+
 @media (forced-colors: active) {
   .welcome {
     border: 1px solid CanvasText;

@@ -626,9 +626,23 @@ func TestWelcomeAlertsAsk(t *testing.T) {
 	// Nothing is chosen on open, there is no supporting line (the paragraphs are
 	// the search status line and the hidden error line), and no link.
 	p13MustNotContain(t, "alerts pop-up", ask, "autofocus", "<a ")
-	w10Count(t, "alerts pop-up", ask, "<p", 2)
-	w10Count(t, "alerts pop-up", ask, "<button", 2)
+	// Amended 2026-11-19 by quick 261119-tnl (owner, 7.1 UAT test 2): the pop-up
+	// holds a third paragraph and a third button, the line and the OK button that
+	// show after Allow when the browser or the device refuses notifications. Both
+	// are hidden as drawn, the line sits after the error line and before the
+	// buttons, and OK comes after Allow in the same row. OK's id does not end in
+	// later or allow, so TestInstalledAlertsAskMatchesSignUp still pairs Not now
+	// and Allow with the installed app's ask.
+	w10Count(t, "alerts pop-up", ask, "<p", 3)
+	w10Count(t, "alerts pop-up", ask, "<button", 3)
 	w10Count(t, "alerts pop-up", ask, "<input", 1)
+	p13MustContain(t, "alerts pop-up", ask,
+		`<p id="welcome-alerts-off-line" role="status" hidden>Notifications are turned off for Pinalert. Allow them in your browser or device settings to get alerts.</p>`,
+		`<button type="button" class="btn btn--primary" id="welcome-alerts-ok" aria-describedby="welcome-alerts-off-line" hidden>OK</button>`)
+	p13Ordered(t, ask, "alerts pop-up", `id="welcome-alerts-ask-error"`, `id="welcome-alerts-off-line"`, `class="logout-confirm__actions"`, `id="welcome-alerts-allow"`, `id="welcome-alerts-ok"`)
+	for _, id := range []string{"welcome-alerts-off-line", "welcome-alerts-ok"} {
+		w10Count(t, "welcome.html.tmpl", page, `id="`+id+`"`, 1)
+	}
 	for _, id := range []string{"welcome-alerts-ask-title", "welcome-alerts-later", "welcome-alerts-allow", "welcome-alerts-home", "welcome-alerts-home-form", "welcome-alerts-home-input", "welcome-alerts-home-status", "welcome-alerts-home-results", "welcome-alerts-ask-error"} {
 		w10Count(t, "welcome.html.tmpl", page, `id="`+id+`"`, 1)
 	}
@@ -748,9 +762,20 @@ func TestWelcomeAlertsScript(t *testing.T) {
 		"askAllow.addEventListener('click', onAskAllow);",
 		"askLater.addEventListener('click', onAskLater);",
 		"askDialog.addEventListener('cancel', onAskCancel);")
-	// Escape is the cancel event, handled there and never from a close event.
+	// Escape is the cancel event, handled there and never from a close event,
+	// except the close a browser forces after repeated Escape (amendment below).
 	p13MustContain(t, "onAskCancel", jsFunctionBody(t, js, "onAskCancel(e)"), "e.preventDefault();", "onAskLater()")
-	p13MustNotContain(t, "welcome.js", js, "addEventListener('close'", "'Escape'")
+	p13MustNotContain(t, "welcome.js", js, "'Escape'")
+	// Amended 2026-11-19 by the quick 261119-tnl review: WebKit and Chromium
+	// honour a prevented Escape only twice, then close the dialog themselves. The
+	// one close listener is on the alerts pop-up, and it only finishes sign up as
+	// OK does while OK shows and has not been pressed; it never asks the browser
+	// and never answers Not now.
+	w10Count(t, "welcome.js", js, "addEventListener('close'", 1)
+	p13MustContain(t, "wiring", js, "askDialog.addEventListener('close', onAskClose);")
+	closeBody := jsFunctionBody(t, js, "onAskClose()")
+	p13MustContain(t, "onAskClose", closeBody, "!askOk.hidden", "!askOkBusy", "onAskOk()")
+	p13MustNotContain(t, "onAskClose", closeBody, "enable(", "requestPermission", "postDone(", "onAskLater(")
 
 	// The decision to ask reads the base state only, once, when step 4 finishes.
 	can := jsFunctionBody(t, js, "canAsk()")
