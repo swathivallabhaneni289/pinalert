@@ -119,7 +119,7 @@ test('count words', () => {
   assert.equal(ctx.openReportWords('3'), '');
   assert.equal(ctx.openReportWords(-1), '');
   assert.equal(ctx.openReportWords(2.5), '');
-  assert.equal(ctx.openReportWords(0), 'No comments');
+  assert.equal(ctx.openReportWords(0), '', 'amended 2026-11-19: no comments gives no words');
   assert.equal(ctx.openReportWords(1), '1 comment');
   assert.equal(ctx.openReportWords(3), '3 comments');
   assert.equal(ctx.openReportWords(1204), '1204 comments');
@@ -127,17 +127,17 @@ test('count words', () => {
 
 test('row name', () => {
   const { ctx } = load();
-  assert.equal(ctx.openReportName(undefined), 'Open report');
-  assert.equal(ctx.openReportName(3), 'Open report, 3 comments');
-  assert.equal(ctx.openReportName(0), 'Open report, No comments');
-  assert.equal(ctx.openReportName(1), 'Open report, 1 comment');
+  assert.equal(ctx.openReportName(undefined), 'Open full report');
+  assert.equal(ctx.openReportName(3), 'Open full report, 3 comments');
+  assert.equal(ctx.openReportName(0), 'Open full report');
+  assert.equal(ctx.openReportName(1), 'Open full report, 1 comment');
 });
 
 test('row count is written from comment_count only and never replaces the node', () => {
   const { ctx } = load();
   const built = ctx.buildOpenReportRow('7');
   const card = { openRow: built.el, openCount: built.count };
-  assert.equal(built.el.getAttribute('aria-label'), 'Open report');
+  assert.equal(built.el.getAttribute('aria-label'), 'Open full report');
   assert.equal(built.count.hidden, true, 'no count shows before the server sends one');
   ctx.writeOpenReportRow(card, { id: 7 });
   assert.equal(built.count.textContent, '');
@@ -145,12 +145,13 @@ test('row count is written from comment_count only and never replaces the node',
   ctx.writeOpenReportRow(card, { id: 7, comment_count: 12 });
   assert.equal(built.count.textContent, '12 comments');
   assert.equal(built.count.hidden, false);
-  assert.equal(built.el.getAttribute('aria-label'), 'Open report, 12 comments');
+  assert.equal(built.el.getAttribute('aria-label'), 'Open full report, 12 comments');
   ctx.writeOpenReportRow(card, { id: 7, comment_count: 0 });
-  assert.equal(built.count.textContent, 'No comments');
+  assert.equal(built.count.textContent, '', 'amended 2026-11-19: no comments gives no words');
+  assert.equal(built.count.hidden, true);
   ctx.writeOpenReportRow(card, { id: 7 });
   assert.equal(built.count.hidden, true);
-  assert.equal(built.el.getAttribute('aria-label'), 'Open report');
+  assert.equal(built.el.getAttribute('aria-label'), 'Open full report');
   assert.equal(card.openRow, built.el, 'the same node throughout');
 });
 

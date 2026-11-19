@@ -291,7 +291,11 @@ window.PinalertMap = (function () {
   // popup events and typing in the panel never reaches the map's key handlers.
   var PANEL_ATTRIBUTE = 'data-report-panel';
   var BACK_TO_LIST_LABEL = 'Back to the list';
-  var OPEN_REPORT_WORDS = 'Open report';
+  // Amended 2026-11-19 (owner on the Phase 4 checks: the row "could've
+  // displayed them better", then "yes do just that"): the row says Open full
+  // report, shows a count only when there are comments, and is drawn like the
+  // See this reporter row, with no icon.
+  var OPEN_REPORT_WORDS = 'Open full report';
   // True while the laptop panel is the report's home.
   var panelOpen = false;
   // True only while enterPanel closes and reopens the one popup so its card
@@ -314,13 +318,11 @@ window.PinalertMap = (function () {
 
   // openReportWords is the count words of the Open report row, from the
   // server's comment_count only. A count that is not a whole number gives no
-  // words, so a made up number is never shown (D-03, SC4, T-08-30).
+  // words, so a made up number is never shown (D-03, SC4, T-08-30). Amended
+  // 2026-11-19: no comments gives no words either (it said No comments).
   function openReportWords(count) {
-    if (typeof count !== 'number' || !isFinite(count) || count < 0 || Math.floor(count) !== count) {
+    if (typeof count !== 'number' || !isFinite(count) || count < 1 || Math.floor(count) !== count) {
       return '';
-    }
-    if (count === 0) {
-      return 'No comments';
     }
     return count + ' comment' + (count === 1 ? '' : 's');
   }
@@ -332,15 +334,13 @@ window.PinalertMap = (function () {
   }
 
   // buildOpenReportRow makes the Open report row of the laptop bubble: the
-  // message icon, the words, the count and the chevron. The count is written
-  // later by writeOpenReportRow. Pressing it opens the panel for this report.
+  // words, the count and the chevron (the message icon left on 2026-11-19).
+  // The count is written later by writeOpenReportRow. Pressing it opens the
+  // panel for this report.
   function buildOpenReportRow(reportId) {
     var row = document.createElement('button');
     row.type = 'button';
     row.className = 'popup-card__open-report';
-    var icon = document.createElement('span');
-    icon.className = 'popup-card__open-icon';
-    icon.setAttribute('aria-hidden', 'true');
     var label = document.createElement('span');
     label.className = 'popup-card__open-label';
     Pinalert.setText(label, OPEN_REPORT_WORDS);
@@ -350,7 +350,6 @@ window.PinalertMap = (function () {
     var chevron = document.createElement('span');
     chevron.className = 'popup-card__open-chevron';
     chevron.setAttribute('aria-hidden', 'true');
-    row.appendChild(icon);
     row.appendChild(label);
     row.appendChild(count);
     row.appendChild(chevron);
