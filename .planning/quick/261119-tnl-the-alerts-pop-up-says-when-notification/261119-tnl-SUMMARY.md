@@ -91,3 +91,28 @@ Screenshots (scratchpad only, not in the repo), in
 
 None of these change the title, the home area ask, the install pop-up, the Settings rows, notify.js,
 the push code or anything on the server.
+
+## Review fixes
+
+One finding, confirmed and fixed (commit 01b11d91).
+
+- **Escape pressed a few times while the line and OK show stranded sign up on step 4.** WebKit and
+  Chromium honour a prevented Escape only twice, then close the dialog themselves. Nothing listened
+  for that close, so first-run-done never went out and Continue stayed off until a reload. Point 4
+  under Deviations above came from a single press. Fix: a close listener on the alerts pop-up
+  (`onAskClose` in web/static/js/welcome.js). It finishes sign up as OK does, but only while OK
+  shows and has not been pressed. Any other close sends nothing. While the pop-up is open, Escape
+  still adds nothing.
+- Five new Node cases in web/welcome_alerts_test.mjs: a browser close while the line shows (exactly
+  one first-run-done, then Nearby), a close after OK was pressed, the close after a failed
+  first-run-done (nothing more, and Continue still finishes), a close while the home area save is
+  out, and a close before any answer. Without the listener, the first case fails.
+- welcome_contract_test.go said there must be no close listener. A dated amendment now allows this
+  one listener and pins what its body does.
+- Tests: `node --test web/*.mjs` 1734 pass, 0 fail. `go test -p 1 ./...` on scratch `p9_tnl_fix`:
+  2534 top level pass, 0 fail, 3 skips (the same three as above).
+- Live check on port 8783 with `p9_tnl_fix`, Playwright WebKit at 1280. The browser box answered
+  denied, then Escape was pressed three times. The pop-up stayed open with focus on OK after presses
+  1 and 2. Press 3 closed it, one first-run-done went out and the page landed on Nearby (`/`). The
+  normal OK run also landed on `/` with one first-run-done. The server was stopped and `p9_tnl_fix`
+  dropped afterwards.
