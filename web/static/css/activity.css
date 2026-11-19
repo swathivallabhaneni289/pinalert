@@ -424,6 +424,13 @@ main.profile-page .activity-retry {
     color: var(--color-text);
   }
 
+  /* Amended 2026-11-19 (owner on the 3.2 check): the Updates screen's page
+     heading says Updates, so the part title would only repeat it. It still
+     names the section through aria-labelledby. */
+  main.profile-page[data-part="updates"] .activity-part__title {
+    display: none;
+  }
+
   main.profile-page .activity-part__count {
     font-weight: var(--font-weight-regular);
     color: var(--color-text-muted);

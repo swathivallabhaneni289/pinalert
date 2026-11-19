@@ -4,7 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   {{template "app_head" .AssetVersion}}
-  <title>Pinalert: My activity</title>
+  {{/* Amended 2026-11-19 (owner on the 3.2 check: the Updates screen said My activity, which does not list Updates): the Updates screen is titled Updates. */}}
+  {{if eq .CurrentPart "updates"}}<title>Pinalert: Updates</title>{{else}}<title>Pinalert: My activity</title>{{end}}
   <link rel="stylesheet" href="/static/css/main.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/feed.css?v={{.AssetVersion}}">
   <link rel="stylesheet" href="/static/css/trust.css?v={{.AssetVersion}}">
@@ -25,7 +26,7 @@
 
   <div class="app-content">
   <main class="profile-page" data-account-id="{{.AccountID}}" data-part="{{.CurrentPart}}" data-resend-page="{{if .LowDataDefault}}/low{{else}}/{{end}}" data-default-radius-km="{{.DefaultRadiusKm}}">
-    <h1 class="activity-heading">My activity</h1>
+    {{if eq .CurrentPart "updates"}}<h1 class="activity-heading">Updates</h1>{{else}}<h1 class="activity-heading">My activity</h1>{{end}}
 
     <div class="queue-strip" id="queue-strip" hidden></div>
 

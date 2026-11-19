@@ -623,14 +623,18 @@ var sizeOnlyNamed = map[string]string{
 	"main.profile-page > .activity-heading": "laptop only: the My activity page heading in the left column; the phone has the top bar title and the hub (D-06, D-19).",
 	"main.profile-page > .activity-hub":     "phone only: the My activity hub list of five parts; the laptop stacks the same five parts on one page (D-19, D-21).",
 	".place-head":                           "laptop only: the page heading of Settings and Official alerts in the left column; the phone has the top bar title (D-06, UI-SPEC 1b).",
-	".welcome__side":                        "laptop only: the dark side panel of the first-time window with the steps; the phone has the progress line (D-27, UI-SPEC Surface 7).",
-	"body > .theme-toggle":                  "laptop only: the light and dark button; the phone follows the device setting (D-08, R8).",
-	".app-topbar > .theme-toggle":           "laptop only: the light and dark button in the top bar; the phone follows the device setting (D-08, R8).",
-	".app-topbar > .app-topbar__brand":      "laptop only: the Pinalert name at the left of the top bar; the phone bar carries the title (UI-SPEC 1c).",
-	".app-topbar > .app-topbar__nav":        "laptop only: the nav links of the top bar; the phone has the bottom bar with the same places (D-10, UI-SPEC 1c).",
-	".app-topbar > .app-topbar__post":       "laptop only: the Post a report link of the top bar; the phone has Report in the bottom bar (D-10, UI-SPEC 1c).",
-	".app-topbar > .app-header":             "laptop only: the person button and menu in the top bar; the phone reaches the same items through Settings (D-11, D-25, UI-SPEC 1c).",
-	"body > .notice-strip":                  "laptop only: the dark Unofficial strip on Nearby; the phone has no strip and no call box on its main screens (D-29, D-30).",
+	// Amended 2026-11-19 (owner on the 3.2 check): the Updates screen's page
+	// heading says Updates, so its part title, which the phone already hides,
+	// is hidden on the laptop too. Both sizes show the word once.
+	`main.profile-page[data-part="updates"] .activity-part__title`: "hidden on the laptop Updates screen, whose page heading already says Updates; the phone hides every part title and shows Updates in the top bar (owner, 2026-11-19).",
+	".welcome__side":                   "laptop only: the dark side panel of the first-time window with the steps; the phone has the progress line (D-27, UI-SPEC Surface 7).",
+	"body > .theme-toggle":             "laptop only: the light and dark button; the phone follows the device setting (D-08, R8).",
+	".app-topbar > .theme-toggle":      "laptop only: the light and dark button in the top bar; the phone follows the device setting (D-08, R8).",
+	".app-topbar > .app-topbar__brand": "laptop only: the Pinalert name at the left of the top bar; the phone bar carries the title (UI-SPEC 1c).",
+	".app-topbar > .app-topbar__nav":   "laptop only: the nav links of the top bar; the phone has the bottom bar with the same places (D-10, UI-SPEC 1c).",
+	".app-topbar > .app-topbar__post":  "laptop only: the Post a report link of the top bar; the phone has Report in the bottom bar (D-10, UI-SPEC 1c).",
+	".app-topbar > .app-header":        "laptop only: the person button and menu in the top bar; the phone reaches the same items through Settings (D-11, D-25, UI-SPEC 1c).",
+	"body > .notice-strip":             "laptop only: the dark Unofficial strip on Nearby; the phone has no strip and no call box on its main screens (D-29, D-30).",
 
 	// Amended 2026-10-29 by Phase 8 plan 07 (D-18 default A, UI-SPEC Size specific
 	// elements and Surface 2): the three entries below name what the laptop panel

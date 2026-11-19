@@ -969,6 +969,20 @@ func TestActivityUpdatesPartRenders(t *testing.T) {
 	body := getProfileQuery(t, viewer, srv.URL, "part=updates")
 	section := partSection(t, body, "updates")
 
+	// Amended 2026-11-19 (owner on the 3.2 check): the Updates screen is
+	// headed and titled Updates, not My activity (activity.css hides the part
+	// title there, so the word is not shown twice).
+	for _, want := range []string{`<title>Pinalert: Updates</title>`, `<h1 class="activity-heading">Updates</h1>`, `data-part="updates"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the Updates screen lacks %s", want)
+		}
+	}
+	for _, gone := range []string{`<title>Pinalert: My activity</title>`, `<h1 class="activity-heading">My activity</h1>`} {
+		if strings.Contains(body, gone) {
+			t.Errorf("the Updates screen still holds %s", gone)
+		}
+	}
+
 	if n := strings.Count(section, `<li class="urow`); n != 3 {
 		t.Fatalf("the Updates part holds %d urow items, want 3: %s", n, section)
 	}
