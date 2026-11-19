@@ -146,7 +146,7 @@ const STEP_NAMES = ['Welcome', 'Disclaimer and policy', 'Your location', 'About 
 // accountId is the id the server writes on the flow root. Left out, the page is
 // as it was, so the earlier cases never meet the install pop-up. installShow
 // false draws it without showModal.
-function buildPage({ start = 1, name = '', home = '', username = '', key = KEY, dialogSupport = true, askHome = 'Benz Circle', askErrorLine = true, install = false, accountId = '', installShow = true } = {}) {
+function buildPage({ start = 1, name = '', home = '', username = '', key = KEY, dialogSupport = true, askHome = 'Benz Circle', askErrorLine = true, install = false, accountId = '', installShow = true, offLine = true } = {}) {
   const doc = {
     activeElement: null,
     byId: {},
@@ -246,8 +246,17 @@ function buildPage({ start = 1, name = '', home = '', username = '', key = KEY, 
   if (askErrorLine) {
     make('p', 'welcome-alerts-ask-error', dialog, 'inline-error').hidden = true;
   }
+  // Quick 261119-tnl: the line and OK shown after Allow on a device that refuses
+  // notifications, both hidden, as the template draws them. offLine false draws
+  // the pop-up without them, as it was before.
+  if (offLine) {
+    make('p', 'welcome-alerts-off-line', dialog).hidden = true;
+  }
   make('button', 'welcome-alerts-later', dialog);
   make('button', 'welcome-alerts-allow', dialog);
+  if (offLine) {
+    make('button', 'welcome-alerts-ok', dialog).hidden = true;
+  }
 
   let installDialog = null;
   if (install) {
@@ -277,6 +286,8 @@ function buildPage({ start = 1, name = '', home = '', username = '', key = KEY, 
 // A fake PinalertNotify. enable answers as the mode says: 'pending' waits for
 // the test, 'ok', 'refused', 'offline', 'failed' resolve at once, 'reject'
 // returns a rejected promise, 'throw' throws before returning anything.
+// Quick 261119-tnl: 'blocked' and 'unsupported' resolve the way notify.js answers
+// a device that refuses notifications and one that has none.
 // macDock is the answer of isMacDockApp (plan 17); left out, the function does
 // not exist, like an older notify.js.
 function makeNotify({ base = 'maybe', mode = 'ok', macDock } = {}) {
@@ -297,6 +308,8 @@ function makeNotify({ base = 'maybe', mode = 'ok', macDock } = {}) {
         return new Promise((resolve, reject) => { waiting.enable = { resolve, reject }; });
       }
       if (mode === 'ok') { return Promise.resolve({ ok: true, state: 'on' }); }
+      if (mode === 'blocked') { return Promise.resolve({ ok: false, state: 'blocked', reason: 'refused' }); }
+      if (mode === 'unsupported') { return Promise.resolve({ ok: false, state: 'unsupported', reason: 'unsupported' }); }
       return Promise.resolve({ ok: false, state: 'ready', reason: mode });
     }
   };
@@ -1518,4 +1531,176 @@ test('asked key: a showModal that throws does not stop first-run-done', () => {
   page.dialog.throwOnShow = true;
   click(page, 'welcome-continue-4');
   assert.equal(doneRequests(page).length, 1);
+});
+
+// ---- Quick 261119-tnl: Allow on a device that refuses notifications ----------
+//
+// When enable answers state blocked (the browser already refuses, or the person
+// just chose Don't Allow in its own box), the pop-up stays open after the home
+// area is saved: Not now and Allow go, one line says where to allow
+// notifications, and OK takes focus and finishes sign up once. Every other
+// answer finishes as before. The cases start with "blocked: ".
+
+const OFF_LINE = 'welcome-alerts-off-line';
+const OK_BUTTON = 'welcome-alerts-ok';
+
+function assertOffShown(page) {
+  assert.equal(page.dialog.open, true, 'the pop-up stays open');
+  assert.equal(page.dialog.closeCalls, 0);
+  assert.equal(byId(page, OFF_LINE).hidden, false, 'the line shows');
+  assert.equal(byId(page, OK_BUTTON).hidden, false, 'OK shows');
+  assert.equal(byId(page, OK_BUTTON).disabled, false);
+  assert.equal(byId(page, 'welcome-alerts-later').hidden, true, 'Not now is hidden');
+  assert.equal(byId(page, 'welcome-alerts-allow').hidden, true, 'Allow is hidden');
+  assert.ok(page.doc.activeElement === byId(page, OK_BUTTON), 'OK takes focus');
+  assert.equal(page.dialog.getAttribute('aria-busy'), null, 'the pop-up is not busy, so the line is announced');
+  assert.equal(doneRequests(page).length, 0, 'first-run-done waits for OK');
+}
+
+test('blocked: Allow keeps the pop-up open with the line and OK, and sends no first-run-done', async () => {
+  const page = atStep4({ notify: makeNotify({ mode: 'blocked' }) });
+  click(page, 'welcome-continue-4');
+  assert.equal(byId(page, OFF_LINE).hidden, true, 'the line starts hidden');
+  assert.equal(byId(page, OK_BUTTON).hidden, true, 'OK starts hidden');
+  click(page, 'welcome-alerts-allow');
+  assert.deepEqual(page.notify.calls.enable, [KEY]);
+  await flush();
+  assertOffShown(page);
+  assert.equal(page.requests.length, 0);
+  assert.deepEqual(page.replaced, []);
+  assert.equal(byId(page, 'welcome-alerts-ask-error').hidden, true, 'the error line stays hidden');
+});
+
+test('blocked: OK sends first-run-done once and a 204 lands on Nearby', async () => {
+  const page = atStep4({ notify: makeNotify({ mode: 'blocked' }) });
+  click(page, 'welcome-continue-4');
+  click(page, 'welcome-alerts-allow');
+  await flush();
+  click(page, OK_BUTTON);
+  assert.equal(doneRequests(page).length, 1);
+  assert.equal(byId(page, OK_BUTTON).disabled, true);
+  answer(doneRequests(page)[0], 204);
+  await flush();
+  assert.deepEqual(page.replaced, ['/']);
+  assert.equal(page.session['pinalert.focusSearch'], '1');
+  assert.equal(page.notify.calls.enable.length, 1);
+  assert.equal(page.permissionCalls.length, 0);
+});
+
+test('blocked: a double tap on OK finishes once', async () => {
+  const page = atStep4({ notify: makeNotify({ mode: 'blocked' }) });
+  click(page, 'welcome-continue-4');
+  click(page, 'welcome-alerts-allow');
+  await flush();
+  click(page, OK_BUTTON);
+  click(page, OK_BUTTON);
+  await flush();
+  assert.equal(doneRequests(page).length, 1);
+});
+
+test('blocked: Escape and the hidden Not now and Allow do nothing while the line shows', async () => {
+  const page = atStep4({ notify: makeNotify({ mode: 'blocked' }) });
+  click(page, 'welcome-continue-4');
+  click(page, 'welcome-alerts-allow');
+  await flush();
+  const event = fire(page.dialog, 'cancel');
+  assert.equal(event.prevented, true, 'the browser does not close the pop-up by itself');
+  click(page, 'welcome-alerts-later');
+  click(page, 'welcome-alerts-allow');
+  await flush();
+  assert.equal(page.requests.length, 0);
+  assert.equal(page.notify.calls.enable.length, 1);
+  assertOffShown(page);
+});
+
+test('blocked: the home area picked in the pop-up is saved before the line shows', async () => {
+  const page = atStep4({ askHome: '', notify: makeNotify({ mode: 'blocked' }) });
+  click(page, 'welcome-continue-4');
+  await pickInAsk(page);
+  const before = page.requests.length;
+  click(page, 'welcome-alerts-allow');
+  await flush();
+  assert.equal(byId(page, OFF_LINE).hidden, true, 'no line while the home area is saved');
+  assert.deepEqual(sent(page).slice(before), ['PATCH ' + PROFILE_ADDRESS]);
+  assert.deepEqual(bodyOf(page.requests[before]), { home_area: { name: 'Hebbal', lat: 13.0358, lon: 77.597 } });
+  answer(page.requests[before], 200, {});
+  await flush();
+  assertOffShown(page);
+  click(page, OK_BUTTON);
+  assert.deepEqual(sent(page).slice(before), ['PATCH ' + PROFILE_ADDRESS, 'POST ' + DONE_ADDRESS]);
+});
+
+test('blocked: a failed home area save keeps its own error line, and the retry that saves it then shows the line', async () => {
+  const page = atStep4({ askHome: '', notify: makeNotify({ mode: 'blocked' }) });
+  click(page, 'welcome-continue-4');
+  await pickInAsk(page);
+  const before = page.requests.length;
+  click(page, 'welcome-alerts-allow');
+  await flush();
+  answer(page.requests[before], 500);
+  await flush();
+  assert.equal(byId(page, 'welcome-alerts-ask-error').hidden, false, 'the home area line shows');
+  assert.equal(byId(page, OFF_LINE).hidden, true, 'the notifications line waits');
+  assert.equal(byId(page, 'welcome-alerts-allow').hidden, false);
+  click(page, 'welcome-alerts-allow');
+  assert.equal(page.notify.calls.enable.length, 1, 'enable runs once');
+  await flush();
+  answer(page.requests[before + 1], 200, {});
+  await flush();
+  assertOffShown(page);
+  assert.equal(byId(page, 'welcome-alerts-ask-error').hidden, true);
+});
+
+test('blocked: a failed first-run-done after OK puts the pop-up away as drawn and step 4 shows the save line', async () => {
+  const page = atStep4({ notify: makeNotify({ mode: 'blocked' }) });
+  click(page, 'welcome-continue-4');
+  click(page, 'welcome-alerts-allow');
+  await flush();
+  click(page, OK_BUTTON);
+  answer(doneRequests(page)[0], 500);
+  await flush();
+  assert.equal(page.dialog.open, false);
+  assert.equal(byId(page, OFF_LINE).hidden, true);
+  assert.equal(byId(page, OK_BUTTON).hidden, true);
+  assert.equal(byId(page, 'welcome-alerts-later').hidden, false);
+  assert.equal(byId(page, 'welcome-alerts-allow').hidden, false);
+  assert.equal(byId(page, 'welcome-error-4').textContent, SAVE_FAILED);
+  click(page, 'welcome-continue-4');
+  assert.equal(page.dialog.showCalls, 1, 'the pop-up is not asked again');
+  assert.equal(doneRequests(page).length, 2);
+});
+
+test('blocked: a page without the line and OK finishes at once, as before', async () => {
+  const page = atStep4({ offLine: false, notify: makeNotify({ mode: 'blocked' }) });
+  click(page, 'welcome-continue-4');
+  click(page, 'welcome-alerts-allow');
+  await flush();
+  assert.equal(doneRequests(page).length, 1);
+});
+
+for (const [label, notify] of [
+  ['ok', () => makeNotify({ mode: 'ok' })],
+  ['ready refused', () => makeNotify({ mode: 'refused' })],
+  ['unsupported', () => makeNotify({ mode: 'unsupported' })],
+  ['a rejected promise', () => makeNotify({ mode: 'reject' })],
+  ['a throw', () => makeNotify({ mode: 'throw' })],
+  ['no answer', () => ({ ...makeNotify(), enable(key) { return undefined; } })]
+]) {
+  test('blocked: enable answering ' + label + ' finishes as before, with no line and no OK', async () => {
+    const page = atStep4({ notify: notify() });
+    click(page, 'welcome-continue-4');
+    click(page, 'welcome-alerts-allow');
+    await flush();
+    assert.equal(doneRequests(page).length, 1);
+    assert.equal(byId(page, OFF_LINE).hidden, true);
+    assert.equal(byId(page, OK_BUTTON).hidden, true);
+    answer(doneRequests(page)[0], 204);
+    await flush();
+    assert.deepEqual(page.replaced, ['/']);
+  });
+}
+
+test('blocked: the script writes the line with no markup sink and the template words stay in the template', () => {
+  assert.ok(!/welcome-alerts-off-line[^\n]*innerHTML/.test(source));
+  assert.ok(!source.includes('Notifications are turned off'), 'the words live in welcome.html.tmpl only');
 });
