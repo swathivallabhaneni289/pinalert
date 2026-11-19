@@ -78,7 +78,7 @@ A follow note shows the same things in the same order, with one different line: 
 
 A comment note shows only a fixed phrase after the category: "{Category} report near {area} has a new comment" or "has a new reply". It never carries the comment's words, a username or a count.
 
-It never shows the reporter's description, name or email, a phone number, a street, a coordinate, a vote count, or anyone's score. The area name is kept for the lock screen only. It is in no feed, bell or page response, with one exception added by Phase 8: the Share window title and the public report page `/r/{token}` also carry it, as a coarse area, so the link preview can say where. That looked up name is the same one, stored once per report.
+It never shows the reporter's description, name or email, a phone number, a street, a coordinate, a vote count, or anyone's score. The area name is kept for the lock screen only. It is in no feed, bell or page response, with one exception added by Phase 8: the Share window title and the public report page `/r/{token}` also carry it, as a coarse area, so the link preview can say where. That looked up name is the same one, stored once per report. On 2026-11-19 the owner added update rows in the bell and the Updates screen (quick 261119-sps): they show the same stored name, looked up once per report when a row first needs it.
 
 The What is happening pick stays optional on the report form, as Phase 3.4 built it. A Critical report posted without one gets its category and Critical in the title instead (the older words). Making the pick required is a question for the owner and is not decided here.
 
