@@ -3,16 +3,16 @@ status: testing
 phase: 04-robustness-real-world-resilience
 source: [04-VERIFICATION.md, 04-27-SUMMARY.md, 04-REVIEW-SERVER.md, 04-REVIEW-WEB.md]
 started: 2026-10-16T18:40:00+05:30
-updated: 2026-10-22T23:45:00+05:30
+updated: 2026-11-19T22:15:00+05:30
 ---
 
 ## Current Test
 
-number: 11
-name: Search a place, and tap to place the pin
+number: 10
+name: The flag and review flow, then the Being checked mark (moderator screen part of test 10)
 expected: |
-  On the laptop, in Search a place at the top, type a near spelling such as "Benz Circl" or "Patamat": suggestions appear a moment after you stop typing, the right place comes first, inside India and near you, and typing fast never shows an error. Area names end with the district and state. Then press Post a report: on the window's small map, one tap (or click) anywhere puts the pin on that exact spot. You do not have to send the report; Close is fine.
-awaiting: user response
+  Paused 2026-11-19 at the owner's word ("we will complete them tomorroq"). Resume with check 14 step 1: as testing.10 post a Low Traffic report "Test report for the review check" near Benz Circle; Claude flags it from three made up accounts at three places; the poster's bell says it is being reviewed; the moderator (testing.2 in a Private window, localhost:8782/moderate) removes it with a reason; the poster opens the bell row (Why: the reason, an optional note, Ask for review) and asks; the moderator restores it from Review asks; the poster's bell says Your report is back. Then a Critical report flagged from three places stays visible with the flag mark (hover or tap: Being checked.), is first on the moderator list tagged Still showing, and Keep clears the mark. Then the deferral answer for tests 12, 13 and 15.
+awaiting: owner, next session
 
 ## Tests
 
@@ -107,14 +107,16 @@ blocked: 0
 ## Gaps
 
 - truth: "The Disclaimer's ambulance number is right for every state"
-  status: failed
+  status: resolved
+  resolved: "Built in plan 04-30. 2026-11-19 the owner read the Disclaimer on the test copy: Older numbers for police (100), fire (101) and ambulance (108, or 102 in some states). Owner: \"yes\"."
   reason: "User asked to add the 102 note (2026-10-22): the national portal lists 102 as the National Ambulance Service; 108 is the number in most states"
   severity: minor
   test: 7
   artifacts: [the Disclaimer text (search: Older numbers for police), internal/api/handlers/legal_e2e_test.go pins]
   missing: ["ambulance (108, or 102 in some states)"]
 - truth: "The Flag window asks why the report is a problem, lets people give every reason that applies and say more in their own words"
-  status: failed
+  status: resolved
+  resolved: "Built in plan 04-31. 2026-11-19 the owner opened Flag this report on the test copy (the why question, the Dispute line under it, five tick boxes, Tell the moderators more (optional), Send to moderators and Go back): \"That works fine and everything\". Looking at the bubble the owner also said the Open report row with No comments looked off; asked whether a list click should open the full report beside the map instead, the owner kept the bubble for list and pin clicks (Phase 8 D-18 default A stands) and chose a clearer last row: af07b7ec, Open full report, a count only when there are comments, drawn like See this reporter. Owner: \"yes\"."
   reason: "User reported: the Dispute note sits in the middle of the options, only one reason can be picked, and there is no box to explain"
   severity: major
   test: 10
@@ -122,13 +124,15 @@ blocked: 0
   missing: [title as a why question, the Dispute line under the title, tick boxes, an optional note of up to 300 characters screened like report text and shown to moderators]
 - truth: "Flag this report looks the same everywhere, as the calm row of the laptop Low data view, and Mute (Phase 3.2) says plainly what it does and sits with it"
   status: failed
+  note: "2026-11-19: Flag this report is the calm row in the laptop bubble (seen in the owner's session). The Stop updates about this report row was not looked at yet; look at it in the next session."
   reason: "User reported (2026-10-22, phone report view): \"why in the phone it's saying mute this report instead of something else, and why is it just like another button? Why is it not like how it is in the laptop version for the low data view. I think we should keep it that way for all of the flagging this report thing.\""
   severity: minor
   test: 10
   artifacts: [the laptop report popup Flag (boxed, border on all sides), the 3.2 mute control (mute.js, updates.css; a small outlined button between Mark resolved and the trust card)]
   missing: [Flag as the calm full width row on the laptop popup too; Mute as a calm row above Flag with a bell off glyph, reading "Stop updates about this report" and "Get updates about this report again"; proposed to the owner, answer pending]
 - truth: "A place search answers with places near the person, says plainly when nothing near matches, and the picked place is marked on the map"
-  status: failed
+  status: resolved
+  resolved: "Built in plan 04-32 and the solid place pin (786d793). 2026-10-25 the owner: place search \"works fine now\". 2026-11-19 the owner searched Kanaka Durga Temple on the test copy and looked at the pin: \"Tried the nearby thing and it worked\"."
   reason: "User reported: the map just zooms out and points at no place; a famous place used as a landmark is not available"
   severity: major
   test: 11
