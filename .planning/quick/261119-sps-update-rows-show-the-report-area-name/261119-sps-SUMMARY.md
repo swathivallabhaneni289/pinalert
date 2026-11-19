@@ -132,3 +132,16 @@ in read, so the name shows on the next refresh.
   name and home area through SQL on the scratch database `p9_sps_live` only.
 - **Process slip.** One shell call ran `git stash list` in the worktree. It is read only and changed
   nothing, but it was against the rule of no stash commands in a worktree.
+
+## Review fixes
+
+Both review findings were real and are fixed; none skipped.
+
+- `docs/TRUST-MODEL.md`, Reliable reporter alerts: the bell note no longer claims "no place name";
+  it now says the note shows the report's coarse area name like every update row (quick 261119-sps).
+- Old clauses edited, not appended to: `docs/PUSH.md` and the TRUST-MODEL "What is never sent"
+  paragraph drop "bell" from the no response lists and "only" or "alone" after lock screen; "one
+  exception" and "two surfaces only" no longer exclude the update rows.
+- Reran on the scratch database `p9_sps_fix` (dropped after): `go build`, `go vet` clean;
+  `go test ./... -p 1 -count=1 -v` 2540 passed, 0 failed, 3 skipped, 22 packages ok;
+  `node --test web/*.mjs` 1715 passed, 0 failed.
