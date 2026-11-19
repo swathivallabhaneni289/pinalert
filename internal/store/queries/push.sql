@@ -299,19 +299,25 @@ ORDER BY p.evaluated_at ASC NULLS FIRST, r.created_at DESC, r.id DESC
 LIMIT sqlc.arg(row_cap)::int;
 
 -- name: SetReportAreaName :exec
--- Stores the coarse area name from the reverse lookup (D-19). Read only by push
--- code, never by the feed.
+-- Stores the coarse area name from the reverse lookup (D-19). Read by push
+-- code, by Share, and (quick 261119-sps, owner 2026-11-19) by the update rows
+-- of the bell and the Updates screen; never by the feed.
 UPDATE reports
 SET area_name = sqlc.arg(area_name)::text
 WHERE id = sqlc.arg(report_id)::bigint;
 
--- name: MarkAreaLookupTried :exec
--- Records that the reverse lookup was tried, so a failing lookup is not retried
--- on every sweep.
+-- name: MarkAreaLookupTried :execrows
+-- Claims the one reverse lookup of a report, so a failing lookup is not retried
+-- on every sweep. Amended 2026-11-19 (quick 261119-sps): the write is
+-- conditional. It changes a row only when the lookup was never tried, and only
+-- the caller that gets 1 back may call out, so two callers at the same moment
+-- look a report up once. A progress row that exists with no attempt yet is
+-- still claimed.
 INSERT INTO push_report_progress (report_id, area_lookup_at)
 VALUES (sqlc.arg(report_id)::bigint, sqlc.arg(now)::timestamptz)
 ON CONFLICT (report_id) DO UPDATE
-SET area_lookup_at = EXCLUDED.area_lookup_at;
+SET area_lookup_at = EXCLUDED.area_lookup_at
+WHERE push_report_progress.area_lookup_at IS NULL;
 
 -- name: GetPushReportProgress :one
 -- Where a report stands in the fan out. No row means it was never looked at.

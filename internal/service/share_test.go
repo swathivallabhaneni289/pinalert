@@ -292,7 +292,7 @@ func TestShareLinkAreaLookupOnce(t *testing.T) {
 		namer := &shareNamer{name: "Benz Circle"}
 		svc := rig.service(service.WithShareAreaNamer(namer))
 		id := rig.report(t, "medium", "flood", "clear", 10*time.Minute, 2*time.Hour)
-		if err := sqlcgen.New(rig.pool).MarkAreaLookupTried(ctx, sqlcgen.MarkAreaLookupTriedParams{ReportID: id, Now: time.Now()}); err != nil {
+		if _, err := sqlcgen.New(rig.pool).MarkAreaLookupTried(ctx, sqlcgen.MarkAreaLookupTriedParams{ReportID: id, Now: time.Now()}); err != nil {
 			t.Fatalf("marking the lookup: %v", err)
 		}
 		link, err := svc.EnsureLink(ctx, id, rig.reporter)

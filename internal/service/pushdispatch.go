@@ -154,7 +154,7 @@ type PushDispatchQuerier interface {
 	MarkReportEvaluated(ctx context.Context, arg sqlcgen.MarkReportEvaluatedParams) error
 	MarkCriticalFanout(ctx context.Context, arg sqlcgen.MarkCriticalFanoutParams) error
 	MarkFollowFanout(ctx context.Context, arg sqlcgen.MarkFollowFanoutParams) error
-	MarkAreaLookupTried(ctx context.Context, arg sqlcgen.MarkAreaLookupTriedParams) error
+	MarkAreaLookupTried(ctx context.Context, arg sqlcgen.MarkAreaLookupTriedParams) (int64, error)
 	SetReportAreaName(ctx context.Context, arg sqlcgen.SetReportAreaNameParams) error
 	CountReporterFanouts(ctx context.Context, arg sqlcgen.CountReporterFanoutsParams) (int64, error)
 	PushHomeCandidates(ctx context.Context, arg sqlcgen.PushHomeCandidatesParams) ([]sqlcgen.PushHomeCandidatesRow, error)
