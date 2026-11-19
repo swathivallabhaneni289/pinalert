@@ -84,6 +84,12 @@ type UpdatesService struct {
 	q       UpdatesQuerier
 	reports NearbyReader
 	now     func() time.Time
+	// The background area lookup of quick 261119-sps (updatesarea.go). Unset
+	// leaves StartAreaLookups doing nothing.
+	areaStore   UpdatesAreaStore
+	areaNamer   AreaNamer
+	areaSpacing time.Duration
+	areaDone    func()
 }
 
 // UpdatesOption configures an UpdatesService at construction time.
@@ -103,7 +109,7 @@ func WithUpdatesClock(fn func() time.Time) UpdatesOption {
 // pointer stored in the interface is not a nil interface (the PlaceSearch
 // comment in router.go says the same).
 func NewUpdatesService(q UpdatesQuerier, reports NearbyReader, opts ...UpdatesOption) *UpdatesService {
-	s := &UpdatesService{q: q, reports: reports, now: time.Now}
+	s := &UpdatesService{q: q, reports: reports, now: time.Now, areaSpacing: updatesAreaLookupSpacing}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -352,6 +358,12 @@ type UpdateItem struct {
 	// box for that report, never the report itself, so it is kept apart from
 	// ReportID, which a row opens.
 	ReviewReportID *int64
+	// Area is the report's stored coarse area name cut by AreaWords (quick
+	// 261119-sps, owner 2026-11-19). It is empty whenever the row hides the
+	// report's own words (an unavailable report, a finished Rescue report, the
+	// rolled up row), on a row not about one report, and while no name is
+	// stored. The reader's own report rows carry it like any other row.
+	Area string
 }
 
 // UpdatesPage is one list read: the newest rows, the unread count capped at
@@ -360,6 +372,11 @@ type UpdatesPage struct {
 	Items  []UpdateItem
 	Unread int
 	Total  int
+	// AreaMissing lists, newest row first and once each, the reports of rows
+	// that would carry an area but have no stored name and whose one lookup
+	// was never tried (quick 261119-sps). StartAreaLookups takes it after the
+	// answer is written.
+	AreaMissing []int64
 }
 
 // List returns the account's newest updates, newest first, with the unread
@@ -441,6 +458,30 @@ func (s *UpdatesService) List(ctx context.Context, accountID int64, limit int) (
 		return UpdatesPage{}, err
 	}
 
+	// areaOf is the area a row about rep carries (quick 261119-sps): the stored
+	// name cut by AreaWords, or nothing for a finished Rescue report, whose row
+	// shows no report words either. A row that would carry an area while no
+	// name is stored and the lookup was never tried puts its report on
+	// AreaMissing, once.
+	missingSeen := make(map[int64]struct{})
+	areaOf := func(rep sqlcgen.ReportsForUpdatesRow, finishedRescue bool) string {
+		if finishedRescue {
+			return ""
+		}
+		if rep.AreaName != nil {
+			if name := AreaWords(*rep.AreaName); name != "" {
+				return name
+			}
+		}
+		if !rep.AreaLookupTried {
+			if _, dup := missingSeen[rep.ID]; !dup {
+				missingSeen[rep.ID] = struct{}{}
+				page.AreaMissing = append(page.AreaMissing, rep.ID)
+			}
+		}
+		return ""
+	}
+
 	for _, row := range rows {
 		kind := UpdateKind(row.Kind)
 		item := UpdateItem{
@@ -481,6 +522,9 @@ func (s *UpdatesService) List(ctx context.Context, accountID int64, limit int) (
 			view = ViewOf(vis, rep.ExpiresAt, now)
 			unavailable = vis == VisibilityWithheld
 		}
+		finished := view == FeedViewResolved || view == FeedViewPast
+		// The same rule as CoarsenFinishedRescue, which drops the report line.
+		finishedRescue := finished && meta.Category == CategoryRescueNeeded
 		// The rows about the reader's own report (quick 261117-vvb, quick
 		// 261118-rz6) are told whatever the report's state, because the state
 		// is their news: one fixed line, no report words, category or trust,
@@ -501,6 +545,12 @@ func (s *UpdatesService) List(ctx context.Context, accountID int64, limit int) (
 				if ok && meta.Moderation == ModerationRemoved {
 					item.ReviewReportID = row.ReportID
 				}
+			}
+			// Quick 261119-sps: the area only while the report is not withheld
+			// or gone. item.Available is true on these rows whatever the
+			// state, so it cannot be the test.
+			if ok && !unavailable {
+				item.Area = areaOf(rep, finishedRescue)
 			}
 			page.Items = append(page.Items, item)
 			continue
@@ -548,13 +598,13 @@ func (s *UpdatesService) List(ctx context.Context, accountID int64, limit int) (
 		})
 		confirmed := ConfirmedByPeople(vis, view, tally)
 
-		finished := view == FeedViewResolved || view == FeedViewPast
 		item.Available = true
 		item.ReportID = row.ReportID
 		item.Category = meta.Category
 		item.Severity = meta.Severity
 		item.Event = EventLine(kind)
 		item.Trust = UpdateTrustLine(kind, trust, view, confirmed)
+		item.Area = areaOf(rep, finishedRescue)
 		if kind == UpdateFollowedPosted {
 			// Line 1 names the person, line 2 is the category and severity words
 			// and never the report's own text (UI-SPEC 2a).

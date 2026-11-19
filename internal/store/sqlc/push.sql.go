@@ -831,11 +831,12 @@ func (q *Queries) GetPushReportProgress(ctx context.Context, reportID int64) (Pu
 	return i, err
 }
 
-const markAreaLookupTried = `-- name: MarkAreaLookupTried :exec
+const markAreaLookupTried = `-- name: MarkAreaLookupTried :execrows
 INSERT INTO push_report_progress (report_id, area_lookup_at)
 VALUES ($1::bigint, $2::timestamptz)
 ON CONFLICT (report_id) DO UPDATE
 SET area_lookup_at = EXCLUDED.area_lookup_at
+WHERE push_report_progress.area_lookup_at IS NULL
 `
 
 type MarkAreaLookupTriedParams struct {
@@ -843,11 +844,18 @@ type MarkAreaLookupTriedParams struct {
 	Now      time.Time
 }
 
-// Records that the reverse lookup was tried, so a failing lookup is not retried
-// on every sweep.
-func (q *Queries) MarkAreaLookupTried(ctx context.Context, arg MarkAreaLookupTriedParams) error {
-	_, err := q.db.Exec(ctx, markAreaLookupTried, arg.ReportID, arg.Now)
-	return err
+// Claims the one reverse lookup of a report, so a failing lookup is not retried
+// on every sweep. Amended 2026-11-19 (quick 261119-sps): the write is
+// conditional. It changes a row only when the lookup was never tried, and only
+// the caller that gets 1 back may call out, so two callers at the same moment
+// look a report up once. A progress row that exists with no attempt yet is
+// still claimed.
+func (q *Queries) MarkAreaLookupTried(ctx context.Context, arg MarkAreaLookupTriedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markAreaLookupTried, arg.ReportID, arg.Now)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const markCriticalFanout = `-- name: MarkCriticalFanout :exec
@@ -1388,8 +1396,9 @@ type SetReportAreaNameParams struct {
 	ReportID int64
 }
 
-// Stores the coarse area name from the reverse lookup (D-19). Read only by push
-// code, never by the feed.
+// Stores the coarse area name from the reverse lookup (D-19). Read by push
+// code, by Share, and (quick 261119-sps, owner 2026-11-19) by the update rows
+// of the bell and the Updates screen; never by the feed.
 func (q *Queries) SetReportAreaName(ctx context.Context, arg SetReportAreaNameParams) error {
 	_, err := q.db.Exec(ctx, setReportAreaName, arg.AreaName, arg.ReportID)
 	return err

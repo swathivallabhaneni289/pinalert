@@ -77,6 +77,14 @@ type Deps struct {
 	// must leave it as an untyped nil: a typed nil *geocode.Client stored in
 	// the interface would not match the handler's nil check.
 	PlaceSearch handlers.PlaceSearcher
+	// AreaNamer is the reverse area lookup behind the update rows' area name
+	// (quick 261119-sps): a signed in read of the bell or of the Updates screen
+	// starts the one lookup of a report with no name yet, after answering. It
+	// must be the same *geocode.Client as Geocode, so the one request a second
+	// limiter stays process wide. Left nil, nothing is looked up and rows carry
+	// only names already stored. A caller with geocoding off must leave it an
+	// untyped nil, for the reason PlaceSearch gives.
+	AreaNamer service.AreaNamer
 	// PlaceRateLimit configures the per account budget of GET
 	// /api/geocode/place. Left at its zero value, PlaceRateLimitDefault below
 	// is used.
@@ -760,7 +768,13 @@ func NewRouter(deps Deps) *chi.Mux {
 	if deps.Reports != nil {
 		nearbyReader = deps.Reports
 	}
-	updates := service.NewUpdatesService(deps.Sessions, nearbyReader)
+	// Quick 261119-sps: the background area lookup of the update rows, only
+	// with a namer and a store. Every route that reads it is in the gated group.
+	var updatesOpts []service.UpdatesOption
+	if deps.AreaNamer != nil && deps.Sessions != nil {
+		updatesOpts = append(updatesOpts, service.WithUpdatesAreaLookup(deps.Sessions, deps.AreaNamer))
+	}
+	updates := service.NewUpdatesService(deps.Sessions, nearbyReader, updatesOpts...)
 	mutes := service.NewMuteService(deps.Sessions)
 	// Phase 9 plan 07: the people service (opt in switch, follow, block, lists,
 	// profile). It screens a Name and a pending username through the same

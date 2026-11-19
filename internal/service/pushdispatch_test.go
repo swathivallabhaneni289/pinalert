@@ -201,13 +201,19 @@ func (f *dispatchFake) NotifyFollowersOf(_ context.Context, _ sqlcgen.NotifyFoll
 	return f.bellFollowers, nil
 }
 
-func (f *dispatchFake) MarkAreaLookupTried(_ context.Context, a sqlcgen.MarkAreaLookupTriedParams) error {
+// MarkAreaLookupTried mirrors the conditional claim of quick 261119-sps: 1 only
+// when the lookup was never tried, 0 after that. areaTried counts the calls.
+func (f *dispatchFake) MarkAreaLookupTried(_ context.Context, a sqlcgen.MarkAreaLookupTriedParams) (int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.rec("MarkAreaLookupTried")
 	f.areaTried++
-	f.prog(a.ReportID).AreaLookupAt = pgtype.Timestamptz{Time: a.Now, Valid: true}
-	return nil
+	p := f.prog(a.ReportID)
+	if p.AreaLookupAt.Valid {
+		return 0, nil
+	}
+	p.AreaLookupAt = pgtype.Timestamptz{Time: a.Now, Valid: true}
+	return 1, nil
 }
 
 func (f *dispatchFake) SetReportAreaName(_ context.Context, a sqlcgen.SetReportAreaNameParams) error {

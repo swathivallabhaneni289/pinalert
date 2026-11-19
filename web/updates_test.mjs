@@ -482,6 +482,29 @@ test('a row shows event, first line, category and severity, trust and time as te
   assert.equal(sev.getAttribute('aria-hidden'), 'true');
 });
 
+// Quick 261119-sps (owner, 2026-11-19): the type line names the report's area
+// after the severity, with the same middle dot. With no area the line is exactly
+// as before; with a category but no severity the area follows the category; a
+// row with no type line shows no area.
+test('the type line adds the area after category and severity', async () => {
+  const env = load();
+  env.answer({ unread: 0, updates: [
+    row({ id: 4, unread: false, category: 'Road blocked', severity: 'Low', severity_level: 'low', area: 'Benz Circle' }),
+    row({ id: 3, unread: false, category: 'Road blocked', severity: '', severity_level: '', area: 'Benz Circle' }),
+    row({ id: 2, unread: false, category: 'Road blocked', severity: 'Low', severity_level: 'low' }),
+    row({ id: 1, unread: false, kind: 'own_shown', report_line: '', category: '', severity: '', severity_level: '', trust: '', area: 'Benz Circle', event: 'Your report is shown.' })
+  ] });
+  await flush();
+  env.clickBell();
+  await flush();
+  const rows = env.rows.children.map((li) => li.children[0]);
+  assert.equal(rows[0].find('bell-row__what').textContent, 'Road blocked · Low · Benz Circle');
+  assert.equal(rows[1].find('bell-row__what').textContent, 'Road blocked · Benz Circle');
+  assert.equal(rows[2].find('bell-row__what').textContent, 'Road blocked · Low');
+  assert.equal(rows[3].find('bell-row__what'), null);
+  assert.ok(!rows[3].textContent.includes('Benz Circle'), 'a row with no type line shows no area');
+});
+
 test('the severity class comes from a closed table and report text stays text', async () => {
   const env = load();
   env.answer({

@@ -212,6 +212,21 @@
     return isLinkRow(u) || boxId(u) !== '' || (u.available === true && u.kind === KIND_OWN_REVIEW);
   }
 
+  // typeLine is the words of a row's type line: "{category} · {severity}" and,
+  // when the server sent one, " · {area}" (quick 261119-sps, owner 2026-11-19).
+  // With no area the line is exactly as before. Only called for a row with a
+  // category, so a row with no type line never shows an area.
+  function typeLine(u) {
+    var words = u.category;
+    if (text(u.severity) !== '') {
+      words += ' ' + MIDDLE_DOT + ' ' + u.severity;
+    }
+    if (text(u.area) !== '') {
+      words += ' ' + MIDDLE_DOT + ' ' + u.area;
+    }
+    return words;
+  }
+
   function severityClass(level) {
     return typeof level === 'string' && Object.prototype.hasOwnProperty.call(SEVERITY_CLASS, level) ? SEVERITY_CLASS[level] : '';
   }
@@ -286,11 +301,7 @@
       dot.setAttribute('class', sev === '' ? 'bell-row__sev' : 'bell-row__sev ' + sev);
       dot.setAttribute('aria-hidden', 'true');
       what.appendChild(dot);
-      var words = u.category;
-      if (text(u.severity) !== '') {
-        words += ' ' + MIDDLE_DOT + ' ' + u.severity;
-      }
-      what.appendChild(document.createTextNode(words));
+      what.appendChild(document.createTextNode(typeLine(u)));
       el.appendChild(what);
     }
     if (text(u.trust) !== '') {

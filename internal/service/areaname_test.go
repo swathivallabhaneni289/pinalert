@@ -18,11 +18,20 @@ type areaStoreFake struct {
 	events   *[]string
 	markErr  error
 	storedAs []string
+	// tried makes the claim find the lookup already tried (quick 261119-sps).
+	tried bool
 }
 
-func (f *areaStoreFake) MarkAreaLookupTried(_ context.Context, arg sqlcgen.MarkAreaLookupTriedParams) error {
+func (f *areaStoreFake) MarkAreaLookupTried(_ context.Context, arg sqlcgen.MarkAreaLookupTriedParams) (int64, error) {
 	*f.events = append(*f.events, "mark")
-	return f.markErr
+	if f.markErr != nil {
+		return 0, f.markErr
+	}
+	if f.tried {
+		return 0, nil
+	}
+	f.tried = true
+	return 1, nil
 }
 
 func (f *areaStoreFake) SetReportAreaName(_ context.Context, arg sqlcgen.SetReportAreaNameParams) error {
@@ -111,6 +120,31 @@ func TestLookUpReportAreaName(t *testing.T) {
 		}
 		if namer.calls != 0 {
 			t.Errorf("namer called %d times, want 0", namer.calls)
+		}
+	})
+
+	// Quick 261119-sps: the mark is a claim, so a lookup already tried makes no
+	// outside call and a second caller with the same store does not call out.
+	t.Run("a claim that finds the lookup tried makes no outside call", func(t *testing.T) {
+		var events []string
+		store := &areaStoreFake{events: &events, tried: true}
+		namer := &areaNamerFake{events: &events, name: "Benz Circle"}
+		if got := service.LookUpReportAreaName(context.Background(), store, namer, 7, 16.5, 80.6, now); got != "" {
+			t.Errorf("name = %q, want empty", got)
+		}
+		if namer.calls != 0 || len(store.storedAs) != 0 {
+			t.Errorf("namer calls = %d, stored %v, want no call and nothing stored", namer.calls, store.storedAs)
+		}
+	})
+
+	t.Run("a second caller after a failed lookup does not call out again", func(t *testing.T) {
+		var events []string
+		store := &areaStoreFake{events: &events}
+		namer := &areaNamerFake{events: &events, err: errors.New("lookup down")}
+		service.LookUpReportAreaName(context.Background(), store, namer, 7, 16.5, 80.6, now)
+		service.LookUpReportAreaName(context.Background(), store, namer, 7, 16.5, 80.6, now)
+		if namer.calls != 1 {
+			t.Errorf("namer called %d times, want 1", namer.calls)
 		}
 	})
 

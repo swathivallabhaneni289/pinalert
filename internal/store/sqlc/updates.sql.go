@@ -741,10 +741,34 @@ func (q *Queries) ReportForMute(ctx context.Context, reportID int64) (ReportForM
 	return i, err
 }
 
-const reportsForUpdates = `-- name: ReportsForUpdates :many
-SELECT id, severity, category, description, created_at, expires_at, moderation_state
+const reportPointForAreaLookup = `-- name: ReportPointForAreaLookup :one
+SELECT latitude, longitude
 FROM reports
-WHERE id = ANY($1::bigint[])
+WHERE id = $1::bigint
+`
+
+type ReportPointForAreaLookupRow struct {
+	Latitude  float64
+	Longitude float64
+}
+
+// The point of one report, read only by the background area lookup that a bell
+// or Updates read starts (quick 261119-sps). It feeds the reverse lookup and is
+// never put in a response.
+func (q *Queries) ReportPointForAreaLookup(ctx context.Context, reportID int64) (ReportPointForAreaLookupRow, error) {
+	row := q.db.QueryRow(ctx, reportPointForAreaLookup, reportID)
+	var i ReportPointForAreaLookupRow
+	err := row.Scan(&i.Latitude, &i.Longitude)
+	return i, err
+}
+
+const reportsForUpdates = `-- name: ReportsForUpdates :many
+SELECT r.id, r.severity, r.category, r.description, r.created_at, r.expires_at, r.moderation_state,
+       r.area_name,
+       (p.area_lookup_at IS NOT NULL)::boolean AS area_lookup_tried
+FROM reports r
+LEFT JOIN push_report_progress p ON p.report_id = r.id
+WHERE r.id = ANY($1::bigint[])
 `
 
 type ReportsForUpdatesRow struct {
@@ -755,10 +779,15 @@ type ReportsForUpdatesRow struct {
 	CreatedAt       time.Time
 	ExpiresAt       time.Time
 	ModerationState string
+	AreaName        *string
+	AreaLookupTried bool
 }
 
 // The reports behind a page of updates, in one batch, at any expiry. The
-// columns the sentence and the resolver need; no coordinate column.
+// columns the sentence and the resolver need; no coordinate column. Amended
+// 2026-11-19 (quick 261119-sps): the stored coarse area name for the row's type
+// line, and whether its one lookup was already tried, so a read can start the
+// lookup for a report that has neither.
 func (q *Queries) ReportsForUpdates(ctx context.Context, reportIds []int64) ([]ReportsForUpdatesRow, error) {
 	rows, err := q.db.Query(ctx, reportsForUpdates, reportIds)
 	if err != nil {
@@ -776,6 +805,8 @@ func (q *Queries) ReportsForUpdates(ctx context.Context, reportIds []int64) ([]R
 			&i.CreatedAt,
 			&i.ExpiresAt,
 			&i.ModerationState,
+			&i.AreaName,
+			&i.AreaLookupTried,
 		); err != nil {
 			return nil, err
 		}

@@ -920,11 +920,27 @@ func TestPushReportProgressAndRecent(t *testing.T) {
 	if _, err := q.GetPushReportProgress(ctx, live); !errors.Is(err, pgx.ErrNoRows) {
 		t.Errorf("progress of an unseen report = %v, want no row", err)
 	}
-	if err := q.MarkAreaLookupTried(ctx, sqlcgen.MarkAreaLookupTriedParams{ReportID: live, Now: pushNow}); err != nil {
-		t.Fatalf("area lookup mark: %v", err)
+	// Amended 2026-11-19 (quick 261119-sps): the mark is a claim. The first call
+	// on a report with no progress row gets 1, a repeat gets 0, and the second
+	// call does not move the stamp.
+	if n, err := q.MarkAreaLookupTried(ctx, sqlcgen.MarkAreaLookupTriedParams{ReportID: live, Now: pushNow}); err != nil || n != 1 {
+		t.Fatalf("area lookup claim = %d (%v), want 1", n, err)
+	}
+	if n, err := q.MarkAreaLookupTried(ctx, sqlcgen.MarkAreaLookupTriedParams{ReportID: live, Now: pushNow.Add(time.Hour)}); err != nil || n != 0 {
+		t.Fatalf("repeated area lookup claim = %d (%v), want 0", n, err)
 	}
 	if err := q.MarkReportEvaluated(ctx, sqlcgen.MarkReportEvaluatedParams{ReportID: live, Now: pushNow.Add(time.Minute)}); err != nil {
 		t.Fatalf("evaluated mark: %v", err)
+	}
+	// A progress row that already exists with no attempt yet is still claimed.
+	if err := q.MarkReportEvaluated(ctx, sqlcgen.MarkReportEvaluatedParams{ReportID: expired, Now: pushNow}); err != nil {
+		t.Fatalf("evaluated mark of the expired report: %v", err)
+	}
+	if n, err := q.MarkAreaLookupTried(ctx, sqlcgen.MarkAreaLookupTriedParams{ReportID: expired, Now: pushNow}); err != nil || n != 1 {
+		t.Fatalf("area lookup claim on an existing progress row = %d (%v), want 1", n, err)
+	}
+	if n, err := q.MarkAreaLookupTried(ctx, sqlcgen.MarkAreaLookupTriedParams{ReportID: expired, Now: pushNow}); err != nil || n != 0 {
+		t.Fatalf("repeated claim on an existing progress row = %d (%v), want 0", n, err)
 	}
 	p, err := q.GetPushReportProgress(ctx, live)
 	if err != nil || !p.AreaLookupAt.Valid || !p.EvaluatedAt.Valid || p.CriticalState != nil || p.ReliableState != nil {

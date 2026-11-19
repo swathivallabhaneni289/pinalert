@@ -800,12 +800,14 @@ func Profile(svc *service.AuthService, updates *service.UpdatesService, tmpl *te
 		// with the part's error state instead of a 500. The read mark stays with
 		// the browser (plan 08). Amended 2026-11-17 (quick 261117-vuf): Updates
 		// is drawn only on its own screen now, so the read is made only there.
+		var areaMissing []int64
 		if updates != nil && view.CurrentPart == activityPartUpdates {
 			updatesPage, uerr := updates.List(r.Context(), acc.ID, service.ActivityUpdatesListSize)
 			if uerr != nil {
 				log.Printf("handlers: Profile: updates: %v", uerr)
 			}
 			fillUpdatesPart(&view, updatesPage, uerr != nil, now)
+			areaMissing = updatesPage.AreaMissing
 		}
 
 		policyLead, policyLink, policyTail := removedPolicyPointerParts()
@@ -846,7 +848,12 @@ func Profile(svc *service.AuthService, updates *service.UpdatesService, tmpl *te
 		if err := tmpl.ExecuteTemplate(w, profileTemplateName, vm); err != nil {
 			log.Printf("handlers: Profile: %v", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
 		}
+		// Quick 261119-sps: only on the Updates screen, and only after the page
+		// is written, the area lookups of up to three reports with no name yet
+		// start in the background, as on the bell's read.
+		updates.StartAreaLookups(areaMissing)
 	}
 }
 

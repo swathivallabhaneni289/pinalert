@@ -593,6 +593,9 @@ func main() {
 		// to hand to the PlaceSearcher interface directly.
 		Geocode:     geocodeClient,
 		PlaceSearch: geocodeClient,
+		// The same client names the area of an update row's report (quick
+		// 261119-sps), so the bell shares the one limiter with push and Share.
+		AreaNamer: geocodeClient,
 		GeocodeRateLimit: api.GeocodeRateLimit{
 			Burst: geocodeRateLimitBurst,
 			Every: geocodeRateLimitEvery,
