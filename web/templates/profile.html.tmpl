@@ -134,7 +134,7 @@
                 <span class="urow__text">
                   <span class="urow__event">{{.Event}}</span>
                   {{if .ReportLine}}<span class="urow__line">{{.ReportLine}}</span>{{end}}
-                  {{if .Category}}<span class="urow__what"><span class="urow__sev {{.SeverityClass}}" aria-hidden="true"></span>{{.Category}}{{if .Severity}} &middot; {{.Severity}}{{end}}</span>{{end}}
+                  {{if .Category}}<span class="urow__what"><span class="urow__sev {{.SeverityClass}}" aria-hidden="true"></span>{{.Category}}{{if .Severity}} &middot; {{.Severity}}{{end}}{{if .Area}} &middot; {{.Area}}{{end}}</span>{{end}}
                   {{if .Trust}}<span class="urow__trust">{{.Trust}}</span>{{end}}
                 </span>
                 <span class="urow__when">{{.When}}</span>

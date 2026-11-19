@@ -677,6 +677,23 @@ func TestFillUpdatesPart(t *testing.T) {
 		}
 	})
 
+	// Added 2026-11-19 (quick 261119-sps, owner): the Updates screen carries the
+	// same area and label as the bell; a row with no area is as before.
+	t.Run("the area reaches the row and its label", func(t *testing.T) {
+		view := base(t)
+		named := p32Item(5, service.UpdateReachedLive, false, 3)
+		named.Area = "Benz Circle"
+		plain := p32Item(4, service.UpdateReachedLive, false, 3)
+		fillUpdatesPart(&view, service.UpdatesPage{Items: []service.UpdateItem{named, plain}, Total: 2}, false, wm5Now)
+		p := wm5Part(t, view, "updates")
+		if p.Updates[0].Area != "Benz Circle" || !strings.Contains(p.Updates[0].Label, "Flood, Critical, Benz Circle.") {
+			t.Errorf("named row = %+v", p.Updates[0])
+		}
+		if p.Updates[1].Area != "" || !strings.Contains(p.Updates[1].Label, "Flood, Critical. ") {
+			t.Errorf("plain row = %+v", p.Updates[1])
+		}
+	})
+
 	// Added 2026-10-29 by Phase 8 plan 11 (D-16, A-P8-3): the two comment kinds
 	// reach the Updates part like any other event row and read their own line.
 	t.Run("the two comment kinds read their own lines", func(t *testing.T) {

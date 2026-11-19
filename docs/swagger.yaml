@@ -1886,6 +1886,15 @@ definitions:
     type: object
   handlers.UpdateWire:
     properties:
+      area:
+        description: |-
+          Area is the report's coarse area name, the short form phone alerts use
+          (quick 261119-sps, owner 2026-11-19). It is absent while no name is
+          known, for an unavailable report, a finished Rescue report, the rolled up
+          row and a row not about one report. It never holds a road, a house number
+          or a postcode.
+        example: Benz Circle
+        type: string
       available:
         description: |-
           Available is false when the report was held, removed or has gone since the
@@ -5302,7 +5311,9 @@ paths:
         checks the reports you posted or voted on, so the bell polls this route. It takes
         no parameter and no location. Every sentence is written by the server. A report
         that was held, removed or has gone reads as an update that is no longer available,
-        with no detail. The answer is never cached.
+        with no detail. The answer is never cached. A row about a report carries the
+        report's coarse area name when one is known; when none is known yet, the server
+        looks it up once, after answering, so it shows on a later read.
         Requires a session verified by email; an unverified caller receives 401.
       produces:
       - application/json

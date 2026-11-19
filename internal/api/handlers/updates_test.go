@@ -95,6 +95,37 @@ func TestUpdateRowLabel(t *testing.T) {
 			},
 			want: "And 4 more changes. 1 hour ago",
 		},
+		// Added 2026-11-19 (quick 261119-sps, owner): the area follows the
+		// category and severity in the same sentence.
+		{
+			name: "the area follows the category and severity",
+			item: service.UpdateItem{
+				Kind: service.UpdateHidden, ReportID: &id, Available: true, Unread: false,
+				CreatedAt: ago(3 * time.Hour), Event: "Now disputed",
+				Category: service.CategoryRoadBlocked, Severity: service.SeverityLow, Area: "Benz Circle",
+				Trust: "2 people nearby disputed this.",
+			},
+			want: "Now disputed. Road blocked, Low, Benz Circle. 2 people nearby disputed this. 3 hours ago",
+		},
+		{
+			name: "a follow row's area joins its category sentence",
+			item: service.UpdateItem{
+				Kind: service.UpdateFollowedPosted, ReportID: &id, Available: true, Unread: true,
+				CreatedAt: ago(12 * time.Minute), Event: "ravi.k posted a report",
+				ReportLine: "Flood, Critical.", Area: "Benz Circle",
+				Category: service.CategoryFlood, Severity: service.SeverityCritical,
+				Trust: "Not confirmed yet.",
+			},
+			want: "New. ravi.k posted a report. Flood, Critical, Benz Circle. Not confirmed yet. 12 minutes ago",
+		},
+		{
+			name: "a row with no category says no area",
+			item: service.UpdateItem{
+				Kind: service.UpdateOwnShown, ReportID: &id, Available: true, Unread: false,
+				CreatedAt: ago(time.Hour), Event: "Your report is shown.", Area: "Benz Circle",
+			},
+			want: "Your report is shown. 1 hour ago",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -152,6 +183,19 @@ func TestUpdateWire(t *testing.T) {
 	if want := "New. Now confirmed. Road under water. Storm/Cyclone damage, Medium. Confirmed by 2 people at different spots. 5 minutes ago"; full.Label != want {
 		t.Errorf("wire label = %q, want %q", full.Label, want)
 	}
+	if full.Area != "" {
+		t.Errorf("an item with no area has wire area %q", full.Area)
+	}
+
+	// Quick 261119-sps: the area passes through and joins the label.
+	named := updateWire(service.UpdateItem{
+		ID: 44, Kind: service.UpdateReachedLive, ReportID: &id, Available: true,
+		CreatedAt: p32Now.Add(-5 * time.Minute), Event: "Now confirmed",
+		Category: service.CategoryRoadBlocked, Severity: service.SeverityLow, Area: "Benz Circle",
+	}, p32Now)
+	if named.Area != "Benz Circle" || !strings.Contains(named.Label, "Road blocked, Low, Benz Circle.") {
+		t.Errorf("named row area = %q, label = %q", named.Area, named.Label)
+	}
 
 	// An unavailable item: no report id, no report line, no category, no more
 	// count, and those keys are absent from the JSON.
@@ -166,7 +210,8 @@ func TestUpdateWire(t *testing.T) {
 	if err := json.Unmarshal(raw, &keys); err != nil {
 		t.Fatalf("decoding: %v", err)
 	}
-	for _, k := range []string{"report_id", "report_line", "more_count"} {
+	// Amended 2026-11-19 (quick 261119-sps): area is absent too.
+	for _, k := range []string{"report_id", "report_line", "more_count", "area"} {
 		if _, ok := keys[k]; ok {
 			t.Errorf("an unavailable item carries %q: %s", k, raw)
 		}

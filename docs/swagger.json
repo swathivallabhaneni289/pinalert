@@ -4085,7 +4085,7 @@
         },
         "/updates": {
             "get": {
-                "description": "Brings the signed in account's updates up to date and answers the unread count,\ncapped at 99, and the latest 10 updates, newest first. The poll itself is what\nchecks the reports you posted or voted on, so the bell polls this route. It takes\nno parameter and no location. Every sentence is written by the server. A report\nthat was held, removed or has gone reads as an update that is no longer available,\nwith no detail. The answer is never cached.\nRequires a session verified by email; an unverified caller receives 401.",
+                "description": "Brings the signed in account's updates up to date and answers the unread count,\ncapped at 99, and the latest 10 updates, newest first. The poll itself is what\nchecks the reports you posted or voted on, so the bell polls this route. It takes\nno parameter and no location. Every sentence is written by the server. A report\nthat was held, removed or has gone reads as an update that is no longer available,\nwith no detail. The answer is never cached. A row about a report carries the\nreport's coarse area name when one is known; when none is known yet, the server\nlooks it up once, after answering, so it shows on a later read.\nRequires a session verified by email; an unverified caller receives 401.",
                 "produces": [
                     "application/json"
                 ],
@@ -6435,6 +6435,11 @@
         "handlers.UpdateWire": {
             "type": "object",
             "properties": {
+                "area": {
+                    "description": "Area is the report's coarse area name, the short form phone alerts use\n(quick 261119-sps, owner 2026-11-19). It is absent while no name is\nknown, for an unavailable report, a finished Rescue report, the rolled up\nrow and a row not about one report. It never holds a road, a house number\nor a postcode.",
+                    "type": "string",
+                    "example": "Benz Circle"
+                },
                 "available": {
                     "description": "Available is false when the report was held, removed or has gone since the\nupdate was made.",
                     "type": "boolean",

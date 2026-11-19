@@ -340,10 +340,24 @@ WHERE r.id = c.report_id
 
 -- name: ReportsForUpdates :many
 -- The reports behind a page of updates, in one batch, at any expiry. The
--- columns the sentence and the resolver need; no coordinate column.
-SELECT id, severity, category, description, created_at, expires_at, moderation_state
+-- columns the sentence and the resolver need; no coordinate column. Amended
+-- 2026-11-19 (quick 261119-sps): the stored coarse area name for the row's type
+-- line, and whether its one lookup was already tried, so a read can start the
+-- lookup for a report that has neither.
+SELECT r.id, r.severity, r.category, r.description, r.created_at, r.expires_at, r.moderation_state,
+       r.area_name,
+       (p.area_lookup_at IS NOT NULL)::boolean AS area_lookup_tried
+FROM reports r
+LEFT JOIN push_report_progress p ON p.report_id = r.id
+WHERE r.id = ANY(sqlc.arg(report_ids)::bigint[]);
+
+-- name: ReportPointForAreaLookup :one
+-- The point of one report, read only by the background area lookup that a bell
+-- or Updates read starts (quick 261119-sps). It feeds the reverse lookup and is
+-- never put in a response.
+SELECT latitude, longitude
 FROM reports
-WHERE id = ANY(sqlc.arg(report_ids)::bigint[]);
+WHERE id = sqlc.arg(report_id)::bigint;
 
 -- name: ReportForMute :one
 -- One report's identity for the mute action (D-11): enough for the caller to

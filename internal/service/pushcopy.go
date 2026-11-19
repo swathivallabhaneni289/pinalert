@@ -2,7 +2,8 @@
 // A notification is built here and only here, from the closed inputs of
 // PushTextInput. The reporter's words, names, phone numbers, addresses and
 // coordinates have no field, so they can never reach a notification (D-14).
-// The area name is coarse and used by push only (D-19, D-20). Whether the
+// The area name is coarse (D-19, D-20); since quick 261119-sps the update rows
+// of the bell show it too, cut by AreaWords like here. Whether the
 // words say Not confirmed yet is decided by the caller from ConfirmedByPeople
 // and passed in as Confirmed, never from the resolve reason (decision 2, which
 // supersedes D-17). The site asks every notification to make no noise; that is

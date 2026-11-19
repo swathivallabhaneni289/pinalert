@@ -194,8 +194,11 @@ type activityUpdateRow struct {
 	// SeverityClass is the closed class of the severity dot, empty when the row
 	// has none.
 	SeverityClass string
-	Trust         string
-	When          string
+	// Area is the report's coarse area name, drawn after the severity on the
+	// type line, under the same rules as the bell's (quick 261119-sps).
+	Area  string
+	Trust string
+	When  string
 	// Label is the row's accessible name (UI-SPEC P32-C8).
 	Label string
 	// OwnPlain marks the plain row that says the reader's own report is hidden
@@ -266,6 +269,7 @@ func fillUpdatesPart(view *activityPageView, page service.UpdatesPage, failed bo
 				Category:      updateCategoryWord(item.Category),
 				Severity:      updateSeverityWord(item.Severity),
 				SeverityClass: updateSeverityClass(item.Severity),
+				Area:          item.Area,
 				Trust:         item.Trust,
 				When:          profileRelativeTime(item.CreatedAt, now),
 				Label:         updateRowLabel(item, now),

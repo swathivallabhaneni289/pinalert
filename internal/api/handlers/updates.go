@@ -67,6 +67,12 @@ type UpdateWire struct {
 	Severity string `json:"severity" example:"Critical"`
 	// SeverityLevel is the raw closed value for the severity dot colour.
 	SeverityLevel string `json:"severity_level" enums:"low,medium,critical,''" example:"critical"`
+	// Area is the report's coarse area name, the short form phone alerts use
+	// (quick 261119-sps, owner 2026-11-19). It is absent while no name is
+	// known, for an unavailable report, a finished Rescue report, the rolled up
+	// row and a row not about one report. It never holds a road, a house number
+	// or a postcode.
+	Area string `json:"area,omitempty" example:"Benz Circle"`
 	// Trust is the trust sentence for the report now, chosen when the list is read.
 	Trust string `json:"trust" example:"Confirmed by 3 people at different spots."`
 	// When is how long ago, in the app's short words.
@@ -190,6 +196,10 @@ func updateSeverityLevel(s service.Severity) string {
 // {Severity}.", the trust sentence and the time in full words. A part with no
 // words is left out, so an unavailable row and the rolled up row read as their
 // one line and their time.
+//
+// Amended 2026-11-19 (quick 261119-sps): the area follows the category and
+// severity in the same sentence, "{Category}, {Severity}, {Area}.". A row with
+// no area reads exactly as before, and a row with no category says no area.
 func updateRowLabel(item service.UpdateItem, now time.Time) string {
 	var parts []string
 	if item.Unread {
@@ -198,13 +208,23 @@ func updateRowLabel(item service.UpdateItem, now time.Time) string {
 	if s := sentence(item.Event); s != "" {
 		parts = append(parts, s)
 	}
+	follow := item.Kind == service.UpdateFollowedPosted
 	if s := sentence(item.ReportLine); s != "" {
+		// A follow row's report line is the "{Category}, {Severity}." sentence,
+		// so its area joins that sentence.
+		if follow && item.Category != "" && item.Area != "" {
+			s = strings.TrimSuffix(s, ".") + ", " + item.Area + "."
+		}
 		parts = append(parts, s)
 	}
 	// A follow row's report line already is "{Category}, {Severity}." (UI-SPEC
 	// 2a), so its label does not say it a second time (review K5, 2026-10-30).
-	if item.Category != "" && item.Kind != service.UpdateFollowedPosted {
-		parts = append(parts, updateCategoryWord(item.Category)+", "+updateSeverityWord(item.Severity)+".")
+	if item.Category != "" && !follow {
+		what := updateCategoryWord(item.Category) + ", " + updateSeverityWord(item.Severity)
+		if item.Area != "" {
+			what += ", " + item.Area
+		}
+		parts = append(parts, what+".")
 	}
 	if s := sentence(item.Trust); s != "" {
 		parts = append(parts, s)
@@ -228,6 +248,7 @@ func updateWire(item service.UpdateItem, now time.Time) UpdateWire {
 		Category:       updateCategoryWord(item.Category),
 		Severity:       updateSeverityWord(item.Severity),
 		SeverityLevel:  updateSeverityLevel(item.Severity),
+		Area:           item.Area,
 		Trust:          item.Trust,
 		When:           profileRelativeTime(item.CreatedAt, now),
 		Label:          updateRowLabel(item, now),
@@ -244,7 +265,9 @@ func updateWire(item service.UpdateItem, now time.Time) UpdateWire {
 // @Description checks the reports you posted or voted on, so the bell polls this route. It takes
 // @Description no parameter and no location. Every sentence is written by the server. A report
 // @Description that was held, removed or has gone reads as an update that is no longer available,
-// @Description with no detail. The answer is never cached.
+// @Description with no detail. The answer is never cached. A row about a report carries the
+// @Description report's coarse area name when one is known; when none is known yet, the server
+// @Description looks it up once, after answering, so it shows on a later read.
 // @Description Requires a session verified by email; an unverified caller receives 401.
 // @Tags updates
 // @Produce json
@@ -280,6 +303,10 @@ func GetUpdates(updates *service.UpdatesService) http.HandlerFunc {
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, http.StatusOK, resp)
+		// Quick 261119-sps: after the answer is written, the area lookups of
+		// up to three reports with no name yet start in the background. The
+		// answer never waits for them; the name shows on the next poll.
+		updates.StartAreaLookups(page.AreaMissing)
 	}
 }
 
