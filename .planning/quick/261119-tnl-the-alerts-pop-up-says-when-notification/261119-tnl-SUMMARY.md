@@ -94,7 +94,7 @@ the push code or anything on the server.
 
 ## Review fixes
 
-One finding, confirmed and fixed (commit 01b11d91).
+One finding, confirmed and fixed (commits 01b11d91 and 1ae7f172).
 
 - **Escape pressed a few times while the line and OK show stranded sign up on step 4.** WebKit and
   Chromium honour a prevented Escape only twice, then close the dialog themselves. Nothing listened
@@ -103,13 +103,17 @@ One finding, confirmed and fixed (commit 01b11d91).
   (`onAskClose` in web/static/js/welcome.js). It finishes sign up as OK does, but only while OK
   shows and has not been pressed. Any other close sends nothing. While the pop-up is open, Escape
   still adds nothing.
-- Five new Node cases in web/welcome_alerts_test.mjs: a browser close while the line shows (exactly
+- Six new Node cases in web/welcome_alerts_test.mjs (commits 01b11d91 and 1ae7f172):
+  a browser close while the line shows (exactly
   one first-run-done, then Nearby), a close after OK was pressed, the close after a failed
   first-run-done (nothing more, and Continue still finishes), a close while the home area save is
-  out, and a close before any answer. Without the listener, the first case fails.
+  out, a close before any answer, and a step change while the line shows (goTo puts the pop-up
+  away only when it is not answered, so it stays open and no close can finish sign up early).
+  Without the listener, the first case fails.
 - welcome_contract_test.go said there must be no close listener. A dated amendment now allows this
   one listener and pins what its body does.
-- Tests: `node --test web/*.mjs` 1734 pass, 0 fail. `go test -p 1 ./...` on scratch `p9_tnl_fix`:
+- Tests after both commits: `node --test web/*.mjs` 1735 pass, 0 fail.
+  `go test -p 1 ./...` on a fresh scratch `p9_tnl_fix`:
   2534 top level pass, 0 fail, 3 skips (the same three as above).
 - Live check on port 8783 with `p9_tnl_fix`, Playwright WebKit at 1280. The browser box answered
   denied, then Escape was pressed three times. The pop-up stayed open with focus on OK after presses
